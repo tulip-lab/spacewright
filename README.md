@@ -1,135 +1,260 @@
-# Workspace Commands
+# Workspace
 
-本目录主要管理基于 `fish + yabai + skhd` 的工作空间切换、布局恢复与状态检查。
+This directory manages the workspace automation layer built on top of:
 
-## 常用命令速查
+- fish functions
+- yabai
+- skhd
 
-### 1. 总入口命令
+The workspace subsystem is responsible for organizing repeatable work modes, app layouts, and task-oriented workspaces across the internal and external displays.
 
-| 命令 | 作用 | 典型使用场景 |
-|---|---|---|
-| `work_wide` | 切换到整体 wide 工作模式 | 外接屏横向布局工作时使用 |
-| `work_tall` | 切换到整体 tall 工作模式 | 外接屏纵向布局工作时使用 |
-| `work_status` | 查看当前整体 workspace 状态 | 排查当前空间分布是否正常 |
-| `work_mode_status` | 查看各模块当前 mode 状态 | 检查 GTD / Coding / Office / Research 当前布局情况 |
-| `work_reload` | 重新加载 workspace 相关 fish functions | 修改 workspace 脚本后使用 |
+## What This Directory Is For
 
----
+The workspace layer provides:
 
-### 2. GTD 模块
+- wide and tall work modes
+- GTD workspaces
+- coding workspaces
+- office workspaces
+- research workspaces
+- internal fixed spaces and external task spaces
+- status and reload commands for daily use and debugging
 
-| 命令 | 作用 | 典型使用场景 |
-|---|---|---|
-| `gtd_wide_all` | 进入 GTD wide 总模式，同时加载 internal 区域 | 进入 GTD 日常工作宽屏模式 |
-| `gtd_tall_all` | 进入 GTD tall 总模式，同时加载 internal 区域 | 进入 GTD 日常工作竖屏模式 |
-| `gtd_wide` | 仅执行 GTD 外接屏 wide 布局 | 单独调整 GTD 外接屏布局时 |
-| `gtd_tall` | 仅执行 GTD 外接屏 tall 布局 | 单独调整 GTD 外接屏布局时 |
-| `gtd_chat` | 打开或恢复 GTD 聊天区 | 处理微信、消息、Keybase、钉钉时 |
-| `gtd_calendar` | 打开或恢复 GTD 日历区 | 查看 Calendar 与 Reminders 时 |
-| `gtd_mail_wide` | GTD 邮件区 wide 布局 | Thunderbird 邮件处理 |
-| `gtd_mail_tall` | GTD 邮件区 tall 布局 | Thunderbird 邮件处理 |
-| `gtd_meeting_wide` | GTD 会议区 wide 布局 | Outlook、Zoom、Teams 会议场景 |
-| `gtd_meeting_tall` | GTD 会议区 tall 布局 | Outlook、Zoom、Teams 会议场景 |
-| `gtd_support_wide` | GTD 支撑区 wide 布局 | Dia、Notes 等辅助工作 |
-| `gtd_support_tall` | GTD 支撑区 tall 布局 | Dia、Notes 等辅助工作 |
-| `gtd_review_wide` | GTD 评审区 wide 布局 | Finder + Preview + ChatGPT + Notes 的论文评审场景 |
-| `gtd_review_tall` | GTD 评审区 tall 布局 | Finder + Preview + ChatGPT + Notes 的论文评审场景 |
-| `gtd_status` | 查看 GTD 详细状态 | 检查 GTD spaces、displays、apps |
-| `gtd_mode_status` | 查看 GTD mode 状态 | 检查 GTD wide / tall / internal spaces |
-| `gtd_reload` | 重新加载 GTD 相关 fish functions | 修改 GTD 脚本后使用 |
+This `README.md` focuses on how to use the commands.
 
----
+For design rationale and architecture decisions, see:
 
-### 3. Coding 模块
+- [design-notes.md](design-notes.md)
 
-| 命令 | 作用 | 典型使用场景 |
-|---|---|---|
-| `coding_wide_all` | 进入 Coding wide 总模式，并加载 control 区 | 编码主工作流，宽屏模式 |
-| `coding_tall_all` | 进入 Coding tall 总模式，并加载 control 区 | 编码主工作流，竖屏模式 |
-| `coding_wide` | 仅执行 Coding 外接屏 wide 布局 | 单独调整 coding editor 区时 |
-| `coding_tall` | 仅执行 Coding 外接屏 tall 布局 | 单独调整 coding editor 区时 |
-| `coding_editor_wide` | Coding editor 的 wide 布局 | 左 ChatGPT，右 VS Code |
-| `coding_editor_tall` | Coding editor 的 tall 布局 | 上 ChatGPT，下 VS Code |
-| `coding_control` | 打开或恢复 Coding internal 控制区 | Warp + SmartGit 辅助区 |
-| `coding_status` | 查看 Coding 详细状态 | 检查 Coding spaces 和 apps |
-| `coding_mode_status` | 查看 Coding mode 状态 | 检查 Coding wide / tall / internal spaces |
-| `coding_reload` | 重新加载 Coding 相关 fish functions | 修改 Coding 脚本后使用 |
+## Command Structure
 
----
+The command naming follows a consistent structure.
 
-### 4. Office 模块
-
-| 命令 | 作用 | 典型使用场景 |
-|---|---|---|
-| `office_wide` | 进入 Office wide 模式 | 文字与幻灯片工作场景 |
-| `office_tall` | 进入 Office tall 模式 | 文字与幻灯片工作场景 |
-| `office_writing_wide` | Office 写作区 wide 布局 | Word 写作 |
-| `office_writing_tall` | Office 写作区 tall 布局 | Word 写作 |
-| `office_slides_wide` | Office 幻灯片区 wide 布局 | PowerPoint 制作 |
-| `office_slides_tall` | Office 幻灯片区 tall 布局 | PowerPoint 制作 |
-| `office_status` | 查看 Office 详细状态 | 检查 Office spaces 和 apps |
-| `office_mode_status` | 查看 Office mode 状态 | 检查 Office wide / tall spaces |
-| `office_reload` | 重新加载 Office 相关 fish functions | 修改 Office 脚本后使用 |
-
----
-
-### 5. Research 模块
-
-| 命令 | 作用 | 典型使用场景 |
-|---|---|---|
-| `research_wide` | 进入 Research wide 模式 | Zotero 研究工作场景 |
-| `research_tall` | 进入 Research tall 模式 | Zotero 研究工作场景 |
-| `research_status` | 查看 Research 详细状态 | 检查 Research spaces 和 apps |
-| `research_mode_status` | 查看 Research mode 状态 | 检查 Research wide / tall spaces |
-| `research_reload` | 重新加载 Research 相关 fish functions | 修改 Research 脚本后使用 |
-
----
-
-### 6. Cleanup 命令
-
-| 命令 | 作用 | 典型使用场景 |
-|---|---|---|
-| `gtd_cleanup_wide_spaces` | 清理空的 GTD wide spaces | wide space 遗留时 |
-| `gtd_cleanup_tall_spaces` | 清理空的 GTD tall spaces | tall space 遗留时 |
-| `coding_cleanup_wide_spaces` | 清理空的 Coding wide spaces | coding wide 遗留时 |
-| `coding_cleanup_tall_spaces` | 清理空的 Coding tall spaces | coding tall 遗留时 |
-| `office_cleanup_wide_spaces` | 清理空的 Office wide spaces | office wide 遗留时 |
-| `office_cleanup_tall_spaces` | 清理空的 Office tall spaces | office tall 遗留时 |
-| `research_cleanup_wide_spaces` | 清理空的 Research wide spaces | research wide 遗留时 |
-| `research_cleanup_tall_spaces` | 清理空的 Research tall spaces | research tall 遗留时 |
-
----
-
-## 推荐使用顺序
-
-| 场景 | 推荐命令 |
+| Type | Meaning |
 |---|---|
-| 整体切到宽屏工作流 | `work_wide` |
-| 整体切到竖屏工作流 | `work_tall` |
-| 进入 GTD 日常工作流 | `gtd_wide_all` / `gtd_tall_all` |
-| 进入论文评审工作流 | `gtd_review_wide` / `gtd_review_tall` |
-| 进入编码工作流 | `coding_wide_all` / `coding_tall_all` |
-| 检查当前系统状态 | `work_status` |
-| 检查当前模块布局状态 | `work_mode_status` |
+| `*_wide` | apply the wide layout for a module or workspace |
+| `*_tall` | apply the tall layout for a module or workspace |
+| `*_all` | full entry point for a module, usually including related internal spaces and cleanup |
+| `*_status` | show detailed current state |
+| `*_mode_status` | show current mode-level status |
+| `*_reload` | reload fish functions after editing scripts |
 
----
+## Most Common Commands
 
-## 当前设计约定
+### Global entry points
 
-| 类型 | 约定 |
+| Command | Purpose | Typical use |
+|---|---|---|
+| `work_wide` | switch the whole system into wide work mode | normal external-display wide workflow |
+| `work_tall` | switch the whole system into tall work mode | normal external-display tall workflow |
+| `work_status` | show the overall current workspace state | troubleshooting or verification |
+| `work_mode_status` | show mode status across modules | checking GTD / Coding / Office / Research layouts |
+| `work_reload` | reload workspace-related fish functions | after editing workspace scripts |
+
+## GTD Commands
+
+### Main GTD entry points
+
+| Command | Purpose | Typical use |
+|---|---|---|
+| `gtd_wide_all` | enter the full GTD wide mode | GTD daily work on wide layout |
+| `gtd_tall_all` | enter the full GTD tall mode | GTD daily work on tall layout |
+| `gtd_wide` | apply only the GTD external wide layout | adjusting GTD external spaces only |
+| `gtd_tall` | apply only the GTD external tall layout | adjusting GTD external spaces only |
+
+### GTD internal spaces
+
+| Command | Purpose | Typical use |
+|---|---|---|
+| `gtd_chat` | restore or open the GTD chat space | Keybase, WeChat, DingTalk, Messages |
+| `gtd_calendar` | restore or open the GTD calendar space | Calendar and Reminders |
+
+### GTD task spaces
+
+| Command | Purpose | Typical use |
+|---|---|---|
+| `gtd_mail_wide` | GTD mail workspace in wide layout | Thunderbird mail handling |
+| `gtd_mail_tall` | GTD mail workspace in tall layout | Thunderbird mail handling |
+| `gtd_meeting_wide` | GTD meeting workspace in wide layout | Outlook, Zoom, Teams on wide layout |
+| `gtd_meeting_tall` | GTD meeting workspace in tall layout | Outlook, Zoom, Teams on tall layout |
+| `gtd_support_wide` | GTD support workspace in wide layout | Dia and Notes support work |
+| `gtd_support_tall` | GTD support workspace in tall layout | Dia and Notes support work |
+| `gtd_review_wide` | GTD review workspace in wide layout | Finder, Preview, ChatGPT, Notes for review |
+| `gtd_review_tall` | GTD review workspace in tall layout | Finder, Preview, ChatGPT, Notes for review |
+
+### GTD status and reload
+
+| Command | Purpose |
 |---|---|
-| internal spaces | 常驻、复用型空间，例如 `gtd_chat`、`gtd_calendar`、`coding_control` |
-| external spaces | 按需创建的专项工作区，通常要求核心 app 已打开 |
-| wide / tall | 表示外接屏的两种主要布局模式 |
-| `*_all` | 组合入口，通常同时处理 external 与 internal 区域 |
-| `*_status` | 查看详细状态 |
-| `*_mode_status` | 查看模块级别布局状态 |
-| `*_reload` | 修改 fish functions 后重新加载 |
+| `gtd_status` | show detailed GTD state |
+| `gtd_mode_status` | show GTD wide / tall / internal mode state |
+| `gtd_reload` | reload GTD-related fish functions |
 
----
+## Coding Commands
 
-## 备注
+### Main Coding entry points
 
-- `skhd` 当前主要绑定的是高频入口命令，例如 `work_wide`、`work_tall`、`gtd_review_wide`、`coding_wide_all`。
-- `yabai` 负责底层的 space、window、display 管理。
-- `fish functions` 负责具体业务逻辑。
+| Command | Purpose | Typical use |
+|---|---|---|
+| `coding_wide_all` | enter the full Coding wide mode | normal coding workflow on wide layout |
+| `coding_tall_all` | enter the full Coding tall mode | normal coding workflow on tall layout |
+| `coding_wide` | apply only the Coding external wide layout | adjusting coding editor workspace only |
+| `coding_tall` | apply only the Coding external tall layout | adjusting coding editor workspace only |
+
+### Coding task spaces
+
+| Command | Purpose | Typical use |
+|---|---|---|
+| `coding_editor_wide` | coding editor workspace in wide layout | left ChatGPT, right VS Code |
+| `coding_editor_tall` | coding editor workspace in tall layout | top ChatGPT, bottom VS Code |
+| `coding_control` | internal coding support workspace | Warp and SmartGit |
+
+### Coding status and reload
+
+| Command | Purpose |
+|---|---|
+| `coding_status` | show detailed Coding state |
+| `coding_mode_status` | show Coding wide / tall / internal mode state |
+| `coding_reload` | reload Coding-related fish functions |
+
+## Office Commands
+
+| Command | Purpose | Typical use |
+|---|---|---|
+| `office_wide` | enter Office wide mode | writing and slides work on wide layout |
+| `office_tall` | enter Office tall mode | writing and slides work on tall layout |
+| `office_writing_wide` | Office writing workspace in wide layout | Microsoft Word |
+| `office_writing_tall` | Office writing workspace in tall layout | Microsoft Word |
+| `office_slides_wide` | Office slides workspace in wide layout | Microsoft PowerPoint |
+| `office_slides_tall` | Office slides workspace in tall layout | Microsoft PowerPoint |
+| `office_status` | show detailed Office state | troubleshooting |
+| `office_mode_status` | show Office mode state | checking wide / tall spaces |
+| `office_reload` | reload Office-related fish functions | after editing Office scripts |
+
+## Research Commands
+
+| Command | Purpose | Typical use |
+|---|---|---|
+| `research_wide` | enter Research wide mode | Zotero research workflow on wide layout |
+| `research_tall` | enter Research tall mode | Zotero research workflow on tall layout |
+| `research_status` | show detailed Research state | troubleshooting |
+| `research_mode_status` | show Research mode state | checking wide / tall spaces |
+| `research_reload` | reload Research-related fish functions | after editing Research scripts |
+
+## Cleanup Commands
+
+These are usually not the first commands you run manually, but they are useful when checking or maintaining the system.
+
+| Command | Purpose |
+|---|---|
+| `gtd_cleanup_wide_spaces` | remove empty GTD wide spaces |
+| `gtd_cleanup_tall_spaces` | remove empty GTD tall spaces |
+| `coding_cleanup_wide_spaces` | remove empty Coding wide spaces |
+| `coding_cleanup_tall_spaces` | remove empty Coding tall spaces |
+| `office_cleanup_wide_spaces` | remove empty Office wide spaces |
+| `office_cleanup_tall_spaces` | remove empty Office tall spaces |
+| `research_cleanup_wide_spaces` | remove empty Research wide spaces |
+| `research_cleanup_tall_spaces` | remove empty Research tall spaces |
+
+## Recommended Usage Patterns
+
+### Start a normal working session
+
+| Goal | Recommended command |
+|---|---|
+| start the whole system in wide mode | `work_wide` |
+| start the whole system in tall mode | `work_tall` |
+
+### Enter a focused workflow directly
+
+| Goal | Recommended command |
+|---|---|
+| enter review mode | `gtd_review_wide` or `gtd_review_tall` |
+| enter coding mode | `coding_wide_all` or `coding_tall_all` |
+| enter GTD meeting mode | `gtd_meeting_wide` or `gtd_meeting_tall` |
+| enter GTD support mode | `gtd_support_wide` or `gtd_support_tall` |
+
+### Inspect current state
+
+| Goal | Recommended command |
+|---|---|
+| check overall status | `work_status` |
+| check overall mode state | `work_mode_status` |
+| check GTD state | `gtd_mode_status` |
+| check Coding state | `coding_mode_status` |
+
+## Current Design Conventions
+
+| Concept | Meaning |
+|---|---|
+| internal spaces | persistent reusable support spaces such as `gtd_chat`, `gtd_calendar`, `coding_control` |
+| external spaces | task-oriented spaces created on demand |
+| wide / tall | the two main external-display layout modes |
+| `*_all` | full module entry points, usually including related internal spaces and cleanup |
+| status commands | used to inspect current system state |
+| reload commands | used after changing fish scripts |
+
+## Important Notes
+
+### Internal vs external spaces
+
+Internal spaces are intended to be more persistent and reusable.
+
+Examples:
+
+- `gtd_chat`
+- `gtd_calendar`
+- `coding_control`
+
+External task spaces are more conditional and usually depend on a core app being open.
+
+Examples:
+
+- `gtd_mail_*`
+- `gtd_review_*`
+- `coding_editor_*`
+- `office_*`
+- `research_*`
+
+### Core-app creation rule
+
+Many external spaces are only created if the related core application exists.
+
+Examples:
+
+- GTD mail requires `Thunderbird`
+- GTD review requires `Preview`
+- Coding editor requires `Code`
+- Office writing requires `Microsoft Word`
+- Office slides requires `Microsoft PowerPoint`
+- Research requires `Zotero`
+
+### Hotkey layer
+
+Many of the most frequently used commands are also bound through `skhd`.
+
+See:
+
+- [../.config/skhd/README.md](../.config/skhd/README.md)
+- [../.config/skhd/design-notes.md](../.config/skhd/design-notes.md)
+
+## Related Documentation
+
+| Document | Purpose |
+|---|---|
+| [design-notes.md](design-notes.md) | workspace design and architecture notes |
+| [../.config/skhd/README.md](../.config/skhd/README.md) | skhd hotkey usage |
+| [../.config/skhd/design-notes.md](../.config/skhd/design-notes.md) | skhd design notes |
+| [../.config/yabai/design-notes.md](../.config/yabai/design-notes.md) | yabai design notes |
+| [../migration-notes.md](../migration-notes.md) | migration workflow for a new machine |
+
+## Practical Advice
+
+A good default approach is:
+
+1. use `work_wide` or `work_tall` for broad mode switching
+2. use direct module commands when entering a very specific task state
+3. use `*_status` or `*_mode_status` when something looks wrong
+4. use `*_reload` after editing workspace fish scripts
+
+This keeps the system predictable and easy to recover when needed.
