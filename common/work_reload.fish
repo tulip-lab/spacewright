@@ -21,6 +21,10 @@ function work_reload --description "Reload the full workspace system"
     source ~/.config/fish/functions/workspace/common/work_tall.fish
     source ~/.config/fish/functions/workspace/common/work_check.fish
 
+    source ~/.config/fish/functions/workspace/common/set_internal_display_uuid.fish
+    source ~/.config/fish/functions/workspace/common/get_internal_display_uuid.fish
+    source ~/.config/fish/functions/workspace/common/detect_and_set_internal_display_uuid.fish
+
     display_reload
     gtd_reload
     coding_reload

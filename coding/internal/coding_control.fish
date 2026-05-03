@@ -37,7 +37,6 @@ function coding_control --description "Collect Warp and SmartGit onto the intern
     # -------------------------------------------------------------------------
 
     set -l label coding_control
-    set -l internal_uuid (get_internal_display_uuid 2>/dev/null)
 
     # -------------------------------------------------------------------------
     # 1. Find candidate windows first
@@ -67,7 +66,7 @@ function coding_control --description "Collect Warp and SmartGit onto the intern
     # 2. Resolve target display
     #    coding_control is always anchored to the internal display.
     # -------------------------------------------------------------------------
-    set -l target_display (resolve_target_display $internal_uuid 1)
+    set -l target_display (resolve_internal_display)
 
     # -------------------------------------------------------------------------
     # 3. Find or create target labeled space

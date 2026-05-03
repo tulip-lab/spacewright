@@ -26,12 +26,11 @@ function gtd_calendar --description "Collect Calendar and Reminders onto the int
     # -------------------------------------------------------------------------
 
     set -l label gtd_calendar
-    set -l internal_uuid (get_internal_display_uuid 2>/dev/null)
 
     # -------------------------------------------------------------------------
     # 1. Resolve target display and target space
     # -------------------------------------------------------------------------
-    set -l target_display (resolve_target_display $internal_uuid 1)
+    set -l target_display (resolve_internal_display)
     set -l target_space (find_or_create_labeled_space $label $target_display)
 
     if test -z "$target_space"

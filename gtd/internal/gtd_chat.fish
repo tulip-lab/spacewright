@@ -33,10 +33,9 @@ function gtd_chat --description "Fast GTD chat workspace layout on internal disp
     # -------------------------------------------------------------------------
 
     set -l label gtd_chat
-    set -l internal_uuid (get_internal_display_uuid 2>/dev/null)
 
     # 1. resolve target display
-    set -l target_display (resolve_target_display $internal_uuid 1)
+    set -l target_display (resolve_internal_display)
 
     # 2. find or create target space
     set -l target_space (find_or_create_labeled_space $label $target_display)

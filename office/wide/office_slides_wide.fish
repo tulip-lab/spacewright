@@ -40,7 +40,6 @@ function office_slides_wide --description "Collect PowerPoint and ChatGPT onto t
     office_cleanup_tall_spaces
 
     set -l label office_slides_wide
-    set -l internal_uuid (get_internal_display_uuid 2>/dev/null)
 
     # 1. Find PowerPoint first; if not found, do not create the workspace
     set -l windows_json (yabai -m query --windows)
@@ -81,17 +80,7 @@ function office_slides_wide --description "Collect PowerPoint and ChatGPT onto t
     ' | head -n 1)
 
     # 2. Resolve target display
-    set -l displays_json (yabai -m query --displays)
-
-    set -l target_display (echo $displays_json | jq -r --arg uuid "$internal_uuid" '
-        .[]
-        | select(.uuid != $uuid)
-        | .index
-    ' | head -n 1)
-
-    if test -z "$target_display"
-        set target_display (resolve_target_display $internal_uuid 1)
-    end
+    set -l target_display (resolve_external_display)
 
     # 3. Find or create target labeled space
     set -l target_space (find_or_create_labeled_space $label $target_display)

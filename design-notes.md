@@ -19,6 +19,25 @@ The current design removes machine-specific UUID constants from business-level w
 
 This reduces migration cost to a single setup command on a new machine.
 
+## Why Display Resolution Was Further Unified
+
+After the UUID decoupling step, many workspace functions still retained transitional display-selection logic based on:
+
+- `get_internal_display_uuid`
+- `resolve_target_display`
+- direct display enumeration through `yabai -m query --displays`
+
+That transitional form has now been further simplified.
+
+The current rule is:
+
+- internal fixed workspaces use `resolve_internal_display`
+- external task workspaces use `resolve_external_display`
+
+This means business-level workspace functions no longer need to know how internal and external displays are resolved. That logic now lives in the common helper layer.
+
+This change reduces repeated display-selection boilerplate, improves readability, and keeps future display-policy changes localized to shared helpers rather than scattered across module functions.
+
 ## Why Labeled and Unlabeled Space Cleanup Are Separate
 
 The system distinguishes between two different cleanup responsibilities.
@@ -75,32 +94,13 @@ The current maintenance strategy is:
 3. prefer small local fixes over broad hidden abstractions
 4. use `*_reload` commands as the standard post-edit validation step
 5. use `*_mode_status` and `*_status` for regression checking
+6. use `work_check` as the lightweight full-system regression entry point after structural edits
 
 The system is now considered structurally stable. Future changes should focus on incremental behavioral refinement rather than broad architectural rewrites.
 
-
 ## TODO List
 
-### 1. Further simplify display-resolution logic
-
-Although the internal display UUID has already been decoupled from business-level workspace functions, many functions still retain a transitional pattern based on:
-
-- `get_internal_display_uuid`
-- `resolve_target_display`
-
-A future cleanup pass should further simplify display selection by using:
-
-- `resolve_internal_display`
-- `resolve_external_display`
-
-directly inside workspace functions where possible.
-
-This change is mainly a maintainability improvement and should reduce repeated display-selection boilerplate across GTD, coding, office, and research modules.
-
-**Estimated effort:** medium  
-**Affected files:** most workspace entry functions in `gtd`, `coding`, `office`, and `research`
-
-### 2. Refine ChatGPT ownership handling
+### 1. Refine ChatGPT ownership handling
 
 The current global rule is intentionally simple:
 
@@ -117,7 +117,7 @@ This is not a correctness issue. It is a future maintainability improvement.
 **Estimated effort:** small to medium  
 **Affected files:** all workspace functions that currently capture `ChatGPT`
 
-### 3. Improve WhatsApp compatibility in `gtd_chat`
+### 2. Improve WhatsApp compatibility in `gtd_chat`
 
 `gtd_chat` currently treats `WhatsApp` as best-effort rather than as a strict layout dependency.
 
@@ -137,7 +137,7 @@ The current four-window core remains:
 **Estimated effort:** small  
 **Affected files:** `workspace/gtd/internal/gtd_chat.fish`, related notes in documentation
 
-### 4. Strengthen top-level work orchestration
+### 3. Strengthen top-level work orchestration
 
 The current top-level workspace layer already includes:
 
@@ -160,7 +160,7 @@ This would improve system-wide maintenance and regression checking.
 **Estimated effort:** small to medium  
 **Affected files:** `workspace/common/work_*.fish`
 
-### 5. Consider whether office or research should gain internal fixed workspaces
+### 4. Consider whether office or research should gain internal fixed workspaces
 
 At present:
 
@@ -178,7 +178,7 @@ This should only be done if a stable daily-use support pattern emerges.
 **Estimated effort:** medium  
 **Affected files:** potential new `internal` workspace files for `office` and `research`
 
-### 6. Continue abstraction cleanup carefully
+### 5. Continue abstraction cleanup carefully
 
 The current system is already stable and usable. Any future abstraction work should remain conservative.
 

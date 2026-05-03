@@ -41,7 +41,6 @@ function coding_editor_wide --description "Collect VS Code and ChatGPT onto the 
     coding_cleanup_tall_spaces
 
     set -l label coding_editor_wide
-    set -l internal_uuid (get_internal_display_uuid 2>/dev/null)
 
     # -------------------------------------------------------------------------
     # 2. Find Code first; if not found, do not create the workspace
@@ -71,17 +70,7 @@ function coding_editor_wide --description "Collect VS Code and ChatGPT onto the 
     # 3. Resolve target display
     #    Prefer an external display; if none exists, fall back to internal.
     # -------------------------------------------------------------------------
-    set -l displays_json (yabai -m query --displays)
-
-    set -l target_display (echo $displays_json | jq -r --arg uuid "$internal_uuid" '
-        .[]
-        | select(.uuid != $uuid)
-        | .index
-    ' | head -n 1)
-
-    if test -z "$target_display"
-        set target_display (resolve_target_display $internal_uuid 1)
-    end
+    set -l target_display (resolve_external_display)
 
     # -------------------------------------------------------------------------
     # 4. Find or create target labeled space

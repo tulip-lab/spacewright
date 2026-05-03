@@ -46,23 +46,7 @@ function gtd_meeting_tall --description "Collect Outlook, Zoom and Teams onto th
     gtd_cleanup_wide_spaces
 
     set -l label gtd_meeting_tall
-    set -l internal_uuid (get_internal_display_uuid 2>/dev/null)
-
-    # -------------------------------------------------------------------------
-    # 2. Resolve target display
-    #    Prefer an external display; if none exists, fall back to internal.
-    # -------------------------------------------------------------------------
-    set -l displays_json (yabai -m query --displays)
-
-    set -l target_display (echo $displays_json | jq -r --arg uuid "$internal_uuid" '
-        .[]
-        | select(.uuid != $uuid)
-        | .index
-    ' | head -n 1)
-
-    if test -z "$target_display"
-        set target_display (resolve_target_display $internal_uuid 1)
-    end
+    set -l target_display (resolve_external_display)
 
     # -------------------------------------------------------------------------
     # 3. Find or create target labeled space

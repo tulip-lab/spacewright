@@ -33,6 +33,8 @@ They are responsible for:
 - focusing displays and spaces safely
 - cleaning unlabeled empty spaces
 - resolving internal and external display roles
+- storing and reading the configured internal display UUID
+- best-effort detection of the internal display UUID
 
 Current core helpers include:
 
@@ -46,6 +48,7 @@ Current core helpers include:
 - `ws_focus_space`
 - `set_internal_display_uuid`
 - `get_internal_display_uuid`
+- `detect_and_set_internal_display_uuid`
 
 These helpers allow all module-level workspace functions to share the same lifecycle and display-selection logic.
 
@@ -61,7 +64,11 @@ set_internal_display_uuid <new-internal-display-uuid>
 
 The value is stored as a fish universal variable and reused by all workspace modules.
 
-When moving the workspace system to a new machine, the only required display-specific step is:
+On a new machine, bootstrap may attempt to detect and set the internal display UUID automatically when the display topology is simple enough.
+
+Automatic detection uses `yabai` as the source of truth for display UUIDs.
+
+If the result is ambiguous, configure it manually with:
 
 ```bash
 set_internal_display_uuid <new-internal-display-uuid>
