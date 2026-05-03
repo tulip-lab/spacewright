@@ -1,4 +1,16 @@
-function research_status
+function research_status --description "Show display, space and research application status"
+    # -------------------------------------------------------------------------
+    # Purpose:
+    #   Show a full research status snapshot, including:
+    #     - displays
+    #     - spaces
+    #     - research-related application windows
+    #
+    # Covered research apps:
+    #   - Zotero
+    #   - ChatGPT
+    # -------------------------------------------------------------------------
+
     echo "===== DISPLAYS ====="
     yabai -m query --displays | jq '.[] | {
         index,
@@ -21,7 +33,10 @@ function research_status
     echo "===== RESEARCH APPS ====="
     yabai -m query --windows | jq '
         .[]
-        | select(.app=="Zotero")
+        | select(
+            .app=="Zotero"
+            or .app=="ChatGPT"
+        )
         | {
             id,
             app,

@@ -1,4 +1,11 @@
-function research_mode_status
+function research_mode_status --description "Show research spaces grouped by mode"
+    # -------------------------------------------------------------------------
+    # Purpose:
+    #   Show current research spaces grouped into:
+    #     - wide mode spaces
+    #     - tall mode spaces
+    # -------------------------------------------------------------------------
+
     echo "===== RESEARCH WIDE SPACES ====="
     yabai -m query --spaces | jq '
         .[]

@@ -3,6 +3,6 @@ function work_tall
 
     gtd_tall_all
     coding_tall_all
-    office_tall
-    research_tall
+#    office_tall
+#    research_tall
 end

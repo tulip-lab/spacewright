@@ -3,6 +3,6 @@ function work_wide
 
     gtd_wide_all
     coding_wide_all
-    office_wide
-    research_wide
+#    office_wide
+#    research_wide
 end

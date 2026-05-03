@@ -32,20 +32,17 @@ function office_writing_tall --description "Collect Word and ChatGPT onto the ta
     #   - The function is re-runnable.
     #   - It reuses an existing labeled space when possible.
     #   - It performs a retry pass for window moves.
+    #   - If the primary app is missing, it destroys any stale empty labeled
+    #     workspace with the same label.
     #   - It clears unlabeled empty spaces on the target display at the end.
     # -------------------------------------------------------------------------
 
-    # -------------------------------------------------------------------------
-    # 1. Cleanup office wide spaces before entering tall mode
-    # -------------------------------------------------------------------------
     office_cleanup_wide_spaces
 
     set -l label office_writing_tall
     set -l internal_uuid "37D8832A-2D66-02CA-B9F7-8F30A301B230"
 
-    # -------------------------------------------------------------------------
-    # 2. Find Word first; if not found, do not create the workspace
-    # -------------------------------------------------------------------------
+    # 1. Find Word first; if not found, do not create the workspace
     set -l windows_json (yabai -m query --windows)
 
     set -l word_window (echo $windows_json | jq -r '
@@ -56,6 +53,22 @@ function office_writing_tall --description "Collect Word and ChatGPT onto the ta
     ' | head -n 1)
 
     if test -z "$word_window"
+        # ---------------------------------------------------------------------
+        # No primary Word window exists.
+        # If an old labeled workspace already exists and is empty, destroy it
+        # so stale office writing spaces do not accumulate.
+        # ---------------------------------------------------------------------
+        set -l stale_space (yabai -m query --spaces | jq -r --arg label "$label" '
+            .[]
+            | select(.label==$label)
+            | select((.windows | length) == 0)
+            | .index
+        ' | head -n 1)
+
+        if test -n "$stale_space"
+            yabai -m space $stale_space --destroy
+        end
+
         return 0
     end
 
@@ -67,10 +80,7 @@ function office_writing_tall --description "Collect Word and ChatGPT onto the ta
         | .id
     ' | head -n 1)
 
-    # -------------------------------------------------------------------------
-    # 3. Resolve target display
-    #    Prefer an external display; if none exists, fall back to internal.
-    # -------------------------------------------------------------------------
+    # 2. Resolve target display
     set -l displays_json (yabai -m query --displays)
 
     set -l target_display (echo $displays_json | jq -r --arg uuid "$internal_uuid" '
@@ -83,18 +93,14 @@ function office_writing_tall --description "Collect Word and ChatGPT onto the ta
         set target_display (resolve_target_display $internal_uuid 1)
     end
 
-    # -------------------------------------------------------------------------
-    # 4. Find or create target labeled space
-    # -------------------------------------------------------------------------
+    # 3. Find or create target labeled space
     set -l target_space (find_or_create_labeled_space $label $target_display)
 
     if test -z "$target_space"
         return 1
     end
 
-    # -------------------------------------------------------------------------
-    # 5. Normalize target space state
-    # -------------------------------------------------------------------------
+    # 4. Normalize target space state
     prepare_labeled_space $target_space $label float
 
     ws_focus_display $target_display
@@ -102,9 +108,7 @@ function office_writing_tall --description "Collect Word and ChatGPT onto the ta
     ws_focus_space $target_space
     sleep 0.15
 
-    # -------------------------------------------------------------------------
-    # 6. First-pass move
-    # -------------------------------------------------------------------------
+    # 5. First-pass move
     if test -n "$word_window"
         yabai -m window $word_window --space $target_space
     end
@@ -117,9 +121,7 @@ function office_writing_tall --description "Collect Word and ChatGPT onto the ta
     ws_focus_space $target_space
     sleep 0.15
 
-    # -------------------------------------------------------------------------
-    # 7. Retry pass for windows that did not move successfully
-    # -------------------------------------------------------------------------
+    # 6. Retry pass for windows that did not move successfully
     set -l windows_json_retry (yabai -m query --windows)
 
     set -l word_retry (echo $windows_json_retry | jq -r --argjson s $target_space '
@@ -150,9 +152,7 @@ function office_writing_tall --description "Collect Word and ChatGPT onto the ta
     ws_focus_space $target_space
     sleep 0.15
 
-    # -------------------------------------------------------------------------
-    # 8. Final capture on target space
-    # -------------------------------------------------------------------------
+    # 7. Final capture on target space
     set -l windows_json_final (yabai -m query --windows)
 
     set word_window (echo $windows_json_final | jq -r --argjson s $target_space '
@@ -171,10 +171,7 @@ function office_writing_tall --description "Collect Word and ChatGPT onto the ta
         | .id
     ' | head -n 1)
 
-    # -------------------------------------------------------------------------
-    # 9. Apply final layout
-    #    ChatGPT on the upper half, Word on the lower half.
-    # -------------------------------------------------------------------------
+    # 8. Apply final layout
     if test -n "$chatgpt_window"
         yabai -m window $chatgpt_window --grid 2:1:0:0:1:1
     end
@@ -183,9 +180,7 @@ function office_writing_tall --description "Collect Word and ChatGPT onto the ta
         yabai -m window $word_window --grid 2:1:0:1:1:1
     end
 
-    # -------------------------------------------------------------------------
-    # 10. Final focus and cleanup
-    # -------------------------------------------------------------------------
+    # 9. Final focus and cleanup
     ws_focus_space $target_space
     cleanup_unlabeled_empty_spaces $target_display
 end

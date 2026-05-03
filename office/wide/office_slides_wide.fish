@@ -32,6 +32,8 @@ function office_slides_wide --description "Collect PowerPoint and ChatGPT onto t
     #   - The function is re-runnable.
     #   - It reuses an existing labeled space when possible.
     #   - It performs a retry pass for window moves.
+    #   - If the primary app is missing, it destroys any stale empty labeled
+    #     workspace with the same label.
     #   - It clears unlabeled empty spaces on the target display at the end.
     # -------------------------------------------------------------------------
 
@@ -51,6 +53,22 @@ function office_slides_wide --description "Collect PowerPoint and ChatGPT onto t
     ' | head -n 1)
 
     if test -z "$ppt_window"
+        # ---------------------------------------------------------------------
+        # No primary PowerPoint window exists.
+        # If an old labeled workspace already exists and is empty, destroy it
+        # so stale office slides spaces do not accumulate.
+        # ---------------------------------------------------------------------
+        set -l stale_space (yabai -m query --spaces | jq -r --arg label "$label" '
+            .[]
+            | select(.label==$label)
+            | select((.windows | length) == 0)
+            | .index
+        ' | head -n 1)
+
+        if test -n "$stale_space"
+            yabai -m space $stale_space --destroy
+        end
+
         return 0
     end
 
