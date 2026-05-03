@@ -26,7 +26,7 @@ function gtd_calendar --description "Collect Calendar and Reminders onto the int
     # -------------------------------------------------------------------------
 
     set -l label gtd_calendar
-    set -l internal_uuid "37D8832A-2D66-02CA-B9F7-8F30A301B230"
+    set -l internal_uuid (get_internal_display_uuid 2>/dev/null)
 
     # -------------------------------------------------------------------------
     # 1. Resolve target display and target space

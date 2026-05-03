@@ -21,6 +21,11 @@ function research_reload --description "Reload all research workspace functions 
     source ~/.config/fish/functions/workspace/common/ws_focus_display.fish
     source ~/.config/fish/functions/workspace/common/ws_focus_space.fish
 
+    source ~/.config/fish/functions/workspace/common/set_internal_display_uuid.fish
+    source ~/.config/fish/functions/workspace/common/get_internal_display_uuid.fish
+    source ~/.config/fish/functions/workspace/common/resolve_internal_display.fish
+    source ~/.config/fish/functions/workspace/common/resolve_external_display.fish
+
     # 2. Research cleanup helpers
     source ~/.config/fish/functions/workspace/research/research_cleanup_wide_spaces.fish
     source ~/.config/fish/functions/workspace/research/research_cleanup_tall_spaces.fish

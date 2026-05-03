@@ -40,7 +40,7 @@ function office_writing_wide --description "Collect Word and ChatGPT onto the wi
     office_cleanup_tall_spaces
 
     set -l label office_writing_wide
-    set -l internal_uuid "37D8832A-2D66-02CA-B9F7-8F30A301B230"
+    set -l internal_uuid (get_internal_display_uuid 2>/dev/null)
 
     # 1. Find Word first; if not found, do not create the workspace
     set -l windows_json (yabai -m query --windows)

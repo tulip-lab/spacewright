@@ -7,8 +7,7 @@ function office_reload --description "Reload all office workspace functions and 
     #   1. Common workspace helpers
     #   2. Office cleanup helpers
     #   3. Concrete office workspace functions
-    #   4. Aggregate entry functions
-    #   5. Status / inspection helpers
+    #   4. Status / inspection helpers
     # -------------------------------------------------------------------------
 
     # 1. Common workspace helpers
@@ -21,6 +20,11 @@ function office_reload --description "Reload all office workspace functions and 
     source ~/.config/fish/functions/workspace/common/cleanup_unlabeled_empty_spaces.fish
     source ~/.config/fish/functions/workspace/common/ws_focus_display.fish
     source ~/.config/fish/functions/workspace/common/ws_focus_space.fish
+
+    source ~/.config/fish/functions/workspace/common/set_internal_display_uuid.fish
+    source ~/.config/fish/functions/workspace/common/get_internal_display_uuid.fish
+    source ~/.config/fish/functions/workspace/common/resolve_internal_display.fish
+    source ~/.config/fish/functions/workspace/common/resolve_external_display.fish
 
     # 2. Office cleanup helpers
     source ~/.config/fish/functions/workspace/office/office_cleanup_wide_spaces.fish

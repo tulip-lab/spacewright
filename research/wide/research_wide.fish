@@ -40,7 +40,7 @@ function research_wide --description "Collect Zotero and ChatGPT onto the wide r
     research_cleanup_tall_spaces
 
     set -l label research_wide
-    set -l internal_uuid "37D8832A-2D66-02CA-B9F7-8F30A301B230"
+    set -l internal_uuid (get_internal_display_uuid 2>/dev/null)
 
     # 1. Find Zotero first; if not found, do not create the workspace
     set -l windows_json (yabai -m query --windows)

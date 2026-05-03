@@ -43,7 +43,7 @@ function gtd_support_tall --description "Collect Notes and Dia onto the tall GTD
     gtd_cleanup_wide_spaces
 
     set -l label gtd_support_tall
-    set -l internal_uuid "37D8832A-2D66-02CA-B9F7-8F30A301B230"
+    set -l internal_uuid (get_internal_display_uuid 2>/dev/null)
 
     # -------------------------------------------------------------------------
     # 2. Resolve target display

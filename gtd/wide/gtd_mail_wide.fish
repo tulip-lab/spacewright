@@ -31,7 +31,7 @@ function gtd_mail_wide --description "Collect Thunderbird onto the wide GTD mail
     gtd_cleanup_tall_spaces
 
     set -l label gtd_mail_wide
-    set -l internal_uuid "37D8832A-2D66-02CA-B9F7-8F30A301B230"
+    set -l internal_uuid (get_internal_display_uuid 2>/dev/null)
 
     # -------------------------------------------------------------------------
     # 2. Find Thunderbird first; if not found, do not create the workspace
