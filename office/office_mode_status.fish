@@ -1,4 +1,11 @@
-function office_mode_status
+function office_mode_status --description "Show office spaces grouped by mode"
+    # -------------------------------------------------------------------------
+    # Purpose:
+    #   Show current office spaces grouped into:
+    #     - wide mode spaces
+    #     - tall mode spaces
+    # -------------------------------------------------------------------------
+
     echo "===== OFFICE WIDE SPACES ====="
     yabai -m query --spaces | jq '
         .[]

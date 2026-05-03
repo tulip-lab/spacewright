@@ -4,10 +4,16 @@ function focus_display_if_needed
         return 1
     end
 
-    set target_display $argv[1]
-    set current_display (yabai -m query --displays | jq -r '.[] | select(.["has-focus"]==true) | .index' | head -n 1)
+    set -l target_display $argv[1]
+    set -l current_display (yabai -m query --displays --display 2>/dev/null | jq -r '.index')
 
-    if test "$current_display" != "$target_display"
-        yabai -m display --focus $target_display
+    if test -z "$current_display"
+        return 1
     end
+
+    if test "$current_display" = "$target_display"
+        return 0
+    end
+
+    yabai -m display --focus $target_display 2>/dev/null
 end

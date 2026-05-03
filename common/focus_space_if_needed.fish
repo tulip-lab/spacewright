@@ -4,10 +4,16 @@ function focus_space_if_needed
         return 1
     end
 
-    set target_space $argv[1]
-    set current_space (yabai -m query --spaces | jq -r '.[] | select(.["has-focus"]==true) | .index' | head -n 1)
+    set -l target_space $argv[1]
+    set -l current_space (yabai -m query --spaces --space 2>/dev/null | jq -r '.index')
 
-    if test "$current_space" != "$target_space"
-        yabai -m space --focus $target_space
+    if test -z "$current_space"
+        return 1
     end
+
+    if test "$current_space" = "$target_space"
+        return 0
+    end
+
+    yabai -m space --focus $target_space 2>/dev/null
 end

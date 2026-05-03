@@ -1,4 +1,15 @@
-function coding_mode_status
+function coding_mode_status --description "Show coding spaces grouped by mode"
+    # -------------------------------------------------------------------------
+    # Purpose:
+    #   Show current coding spaces grouped into:
+    #     - wide mode spaces
+    #     - tall mode spaces
+    #     - internal fixed spaces
+    #
+    # Internal fixed spaces:
+    #   - coding_control
+    # -------------------------------------------------------------------------
+
     echo "===== CODING WIDE SPACES ====="
     yabai -m query --spaces | jq '
         .[]

@@ -1,4 +1,16 @@
-function gtd_status
+function gtd_status --description "Show display, space and GTD application status"
+    # -------------------------------------------------------------------------
+    # Purpose:
+    #   Show a full GTD status snapshot, including:
+    #     - displays
+    #     - spaces
+    #     - GTD-related application windows
+    #
+    # Notes:
+    #   The GTD application list is delegated to `gtd_apps` so the app filter
+    #   is defined in one place only.
+    # -------------------------------------------------------------------------
+
     echo "===== DISPLAYS ====="
     yabai -m query --displays | jq '.[] | {
         index,
@@ -19,29 +31,5 @@ function gtd_status
 
     echo
     echo "===== GTD APPS ====="
-    yabai -m query --windows | jq '
-        .[]
-        | select(
-            .app=="Thunderbird"
-            or .app=="Calendar"
-            or .app=="Reminders"
-            or .app=="Microsoft Outlook"
-            or .app=="zoom.us"
-            or .app=="Microsoft Teams"
-            or .app=="WeChat"
-            or .app=="Keybase"
-            or .app=="DingTalk"
-            or .app=="Messages"
-            or .app=="WhatsApp"
-            or .app=="ChatGPT"
-            or .app=="Notes"
-        )
-        | {
-            id,
-            app,
-            title,
-            space,
-            is_visible: .["is-visible"],
-            is_minimized: .["is-minimized"]
-        }'
+    gtd_apps
 end

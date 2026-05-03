@@ -1,4 +1,17 @@
-function office_status
+function office_status --description "Show display, space and office application status"
+    # -------------------------------------------------------------------------
+    # Purpose:
+    #   Show a full office status snapshot, including:
+    #     - displays
+    #     - spaces
+    #     - office-related application windows
+    #
+    # Covered office apps:
+    #   - Microsoft Word
+    #   - Microsoft PowerPoint
+    #   - ChatGPT
+    # -------------------------------------------------------------------------
+
     echo "===== DISPLAYS ====="
     yabai -m query --displays | jq '.[] | {
         index,
@@ -24,6 +37,7 @@ function office_status
         | select(
             .app=="Microsoft Word"
             or .app=="Microsoft PowerPoint"
+            or .app=="ChatGPT"
         )
         | {
             id,

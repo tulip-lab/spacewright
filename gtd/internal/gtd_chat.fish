@@ -1,90 +1,72 @@
-function gtd_chat
-    set label gtd_chat
-    set internal_uuid "37D8832A-2D66-02CA-B9F7-8F30A301B230"
+function gtd_chat --description "Fast GTD chat workspace layout on internal display"
+    set -l label gtd_chat
+    set -l internal_uuid "37D8832A-2D66-02CA-B9F7-8F30A301B230"
 
-    set target_display (yabai -m query --displays | jq -r ".[] | select(.uuid==\"$internal_uuid\") | .index" | head -n 1)
-    if test -z "$target_display"
-        set target_display 1
-    end
+    # 1. resolve target display
+    set -l target_display (resolve_target_display $internal_uuid 1)
 
-    # 优先复用已有 labeled space
-    set target_space (yabai -m query --spaces | jq -r ".[] | select(.label==\"$label\") | .index" | head -n 1)
-
-    # 如果没有，才创建
+    # 2. find or create target space
+    set -l target_space (find_or_create_labeled_space $label $target_display)
     if test -z "$target_space"
-        focus_display_if_needed $target_display
-        sleep 0.4
-
-        yabai -m space --create
-        sleep 0.8
-
-        set target_space (yabai -m query --spaces | jq -r ".[] | select(.display==$target_display and .label==\"\") | .index" | tail -n 1)
-
-        yabai -m space $target_space --label $label
-        yabai -m space $target_space --layout float
+        return 1
     end
 
-    focus_space_if_needed $target_space
-    sleep 0.5
+    # 3. normalize target space
+    prepare_labeled_space $target_space $label float
 
-    set wechat   (yabai -m query --windows | jq -r '.[] | select(.app=="WeChat" and .["is-minimized"]==false) | .id' | head -n 1)
-    set keybase  (yabai -m query --windows | jq -r '.[] | select(.app=="Keybase" and .["is-minimized"]==false) | .id' | head -n 1)
-    set dingtalk (yabai -m query --windows | jq -r '.[] | select(.app=="DingTalk" and .["is-minimized"]==false) | .id' | head -n 1)
-    set messages (yabai -m query --windows | jq -r '.[] | select(.app=="Messages" and .["is-minimized"]==false) | .id' | head -n 1)
-    set whatsapp (yabai -m query --windows | jq -r '.[] | select((.app=="‎WhatsApp" or .app=="WhatsApp") and .["is-minimized"]==false) | .id' | head -n 1)
+    ws_focus_display $target_display
+    sleep 0.15
+    ws_focus_space $target_space
+    sleep 0.15
 
-    if test -n "$wechat"
-        yabai -m window $wechat --space $target_space
-    end
-    if test -n "$keybase"
-        yabai -m window $keybase --space $target_space
-    end
-    if test -n "$dingtalk"
-        yabai -m window $dingtalk --space $target_space
-    end
-    if test -n "$messages"
-        yabai -m window $messages --space $target_space
-    end
-    if test -n "$whatsapp"
-        yabai -m window $whatsapp --space $target_space
+    # 4. first capture
+    set -l windows_json (yabai -m query --windows)
+
+    set -l wechat (echo $windows_json | jq -r '.[] | select(.app=="WeChat" and .["is-minimized"]==false) | .id' | head -n 1)
+    set -l keybase (echo $windows_json | jq -r '.[] | select(.app=="Keybase" and .["is-minimized"]==false) | .id' | head -n 1)
+    set -l dingtalk (echo $windows_json | jq -r '.[] | select((.app=="钉钉" or .app=="DingTalk") and .["is-minimized"]==false) | .id' | head -n 1)
+    set -l messages (echo $windows_json | jq -r '.[] | select(.app=="Messages" and .["is-minimized"]==false) | .id' | head -n 1)
+    set -l whatsapp (echo $windows_json | jq -r '.[] | select((.app=="‎WhatsApp" or .app=="WhatsApp") and .["is-minimized"]==false) | .id' | head -n 1)
+
+    for wid in $wechat $keybase $dingtalk $messages $whatsapp
+        if test -n "$wid"
+            yabai -m window $wid --space $target_space
+        end
     end
 
-    sleep 1
-    focus_space_if_needed $target_space
-    sleep 0.6
+    sleep 0.25
+    ws_focus_space $target_space
+    sleep 0.15
 
-    set wechat_retry   (yabai -m query --windows | jq -r ".[] | select(.app==\"WeChat\" and .space!=$target_space and .[\"is-minimized\"]==false) | .id" | head -n 1)
-    set keybase_retry  (yabai -m query --windows | jq -r ".[] | select(.app==\"Keybase\" and .space!=$target_space and .[\"is-minimized\"]==false) | .id" | head -n 1)
-    set dingtalk_retry (yabai -m query --windows | jq -r ".[] | select(.app==\"DingTalk\" and .space!=$target_space and .[\"is-minimized\"]==false) | .id" | head -n 1)
-    set messages_retry (yabai -m query --windows | jq -r ".[] | select(.app==\"Messages\" and .space!=$target_space and .[\"is-minimized\"]==false) | .id" | head -n 1)
-    set whatsapp_retry (yabai -m query --windows | jq -r ".[] | select((.app==\"‎WhatsApp\" or .app==\"WhatsApp\") and .space!=$target_space and .[\"is-minimized\"]==false) | .id" | head -n 1)
+    # 5. retry capture
+    set -l windows_json_retry (yabai -m query --windows)
 
-    if test -n "$wechat_retry"
-        yabai -m window $wechat_retry --space $target_space
-    end
-    if test -n "$keybase_retry"
-        yabai -m window $keybase_retry --space $target_space
-    end
-    if test -n "$dingtalk_retry"
-        yabai -m window $dingtalk_retry --space $target_space
-    end
-    if test -n "$messages_retry"
-        yabai -m window $messages_retry --space $target_space
-    end
-    if test -n "$whatsapp_retry"
-        yabai -m window $whatsapp_retry --space $target_space
+    set -l wechat_retry (echo $windows_json_retry | jq -r --argjson s $target_space '.[] | select(.app=="WeChat" and .space!=$s and .["is-minimized"]==false) | .id' | head -n 1)
+    set -l keybase_retry (echo $windows_json_retry | jq -r --argjson s $target_space '.[] | select(.app=="Keybase" and .space!=$s and .["is-minimized"]==false) | .id' | head -n 1)
+    set -l dingtalk_retry (echo $windows_json_retry | jq -r --argjson s $target_space '.[] | select((.app=="钉钉" or .app=="DingTalk") and .space!=$s and .["is-minimized"]==false) | .id' | head -n 1)
+    set -l messages_retry (echo $windows_json_retry | jq -r --argjson s $target_space '.[] | select(.app=="Messages" and .space!=$s and .["is-minimized"]==false) | .id' | head -n 1)
+    set -l whatsapp_retry (echo $windows_json_retry | jq -r --argjson s $target_space '.[] | select((.app=="‎WhatsApp" or .app=="WhatsApp") and .space!=$s and .["is-minimized"]==false) | .id' | head -n 1)
+
+    for wid in $wechat_retry $keybase_retry $dingtalk_retry $messages_retry $whatsapp_retry
+        if test -n "$wid"
+            yabai -m window $wid --space $target_space
+        end
     end
 
-    sleep 1
-    focus_space_if_needed $target_space
-    sleep 0.6
+    sleep 0.25
+    ws_focus_space $target_space
+    sleep 0.15
 
-    set wechat   (yabai -m query --windows | jq -r ".[] | select(.app==\"WeChat\" and .space==$target_space and .[\"is-minimized\"]==false) | .id" | head -n 1)
-    set keybase  (yabai -m query --windows | jq -r ".[] | select(.app==\"Keybase\" and .space==$target_space and .[\"is-minimized\"]==false) | .id" | head -n 1)
-    set dingtalk (yabai -m query --windows | jq -r ".[] | select(.app==\"DingTalk\" and .space==$target_space and .[\"is-minimized\"]==false) | .id" | head -n 1)
-    set messages (yabai -m query --windows | jq -r ".[] | select(.app==\"Messages\" and .space==$target_space and .[\"is-minimized\"]==false) | .id" | head -n 1)
-    set whatsapp (yabai -m query --windows | jq -r ".[] | select((.app==\"‎WhatsApp\" or .app==\"WhatsApp\") and .space==$target_space and .[\"is-minimized\"]==false) | .id" | head -n 1)
+    # 6. final capture on target space
+    set -l windows_json_final (yabai -m query --windows)
 
+    set wechat (echo $windows_json_final | jq -r --argjson s $target_space '.[] | select(.app=="WeChat" and .space==$s and .["is-minimized"]==false) | .id' | head -n 1)
+    set keybase (echo $windows_json_final | jq -r --argjson s $target_space '.[] | select(.app=="Keybase" and .space==$s and .["is-minimized"]==false) | .id' | head -n 1)
+    set dingtalk (echo $windows_json_final | jq -r --argjson s $target_space '.[] | select((.app=="钉钉" or .app=="DingTalk") and .space==$s and .["is-minimized"]==false) | .id' | head -n 1)
+    set messages (echo $windows_json_final | jq -r --argjson s $target_space '.[] | select(.app=="Messages" and .space==$s and .["is-minimized"]==false) | .id' | head -n 1)
+    set whatsapp (echo $windows_json_final | jq -r --argjson s $target_space '.[] | select((.app=="‎WhatsApp" or .app=="WhatsApp") and .space==$s and .["is-minimized"]==false) | .id' | head -n 1)
+
+    # 7. final layout
     if test -n "$keybase"
         yabai -m window $keybase --grid 2:2:0:0:1:1
     end
@@ -103,5 +85,6 @@ function gtd_chat
         yabai -m window $whatsapp --resize abs:885:560
     end
 
-    focus_space_if_needed $target_space
+    ws_focus_space $target_space
+    cleanup_unlabeled_empty_spaces $target_display
 end

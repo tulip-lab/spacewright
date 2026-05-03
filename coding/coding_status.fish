@@ -1,4 +1,22 @@
-function coding_status
+function coding_status --description "Show display, space and coding application status"
+    # -------------------------------------------------------------------------
+    # Purpose:
+    #   Show a full coding status snapshot, including:
+    #     - displays
+    #     - spaces
+    #     - coding-related application windows
+    #
+    # Covered coding apps:
+    #   - Code
+    #   - ChatGPT
+    #   - Warp
+    #   - SmartGit
+    #
+    # Notes:
+    #   Finder is intentionally excluded because it is not currently part of the
+    #   rebuilt coding workspace layout set.
+    # -------------------------------------------------------------------------
+
     echo "===== DISPLAYS ====="
     yabai -m query --displays | jq '.[] | {
         index,
@@ -23,7 +41,7 @@ function coding_status
         .[]
         | select(
             .app=="Code"
-            or .app=="Finder"
+            or .app=="ChatGPT"
             or .app=="Warp"
             or .app=="SmartGit"
         )

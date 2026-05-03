@@ -1,43 +1,101 @@
-function gtd_support_wide
-    # 进入 wide 模式前，先清理已经空掉的 GTD tall spaces
+function gtd_support_wide --description "Collect Notes and Dia onto the wide GTD support workspace and apply the standard support layout"
+    # -------------------------------------------------------------------------
+    # Workspace:
+    #   gtd_support_wide
+    #
+    # Purpose:
+    #   Move support-related applications to the GTD support workspace in wide
+    #   mode and place them into a stable horizontal layout.
+    #
+    # Target display:
+    #   Prefer an external display.
+    #   Fall back to the internal display if no external display is available.
+    #
+    # Managed apps:
+    #   - Notes
+    #   - Dia
+    #
+    # Window selection rules:
+    #   - Notes:
+    #       Prefer a non-minimized window whose title is not empty.
+    #       If none is found, fall back to any non-minimized Notes window.
+    #   - Dia:
+    #       Prefer a non-minimized window whose title is not empty and does not
+    #       contain "New Tab".
+    #       If none is found, fall back to any non-minimized Dia window.
+    #
+    # Layout:
+    #   - Notes -> left 2/5
+    #   - Dia   -> right 3/5
+    #
+    # Notes:
+    #   - Before entering GTD support wide mode, empty GTD tall spaces are
+    #     cleaned.
+    #   - The function is re-runnable.
+    #   - It reuses an existing labeled space when possible.
+    #   - It performs a retry pass for window moves.
+    #   - It clears unlabeled empty spaces on the target display at the end.
+    # -------------------------------------------------------------------------
+
+    # -------------------------------------------------------------------------
+    # 1. Cleanup GTD tall spaces before entering wide mode
+    # -------------------------------------------------------------------------
     gtd_cleanup_tall_spaces
 
-    set label gtd_support_wide
-    set internal_uuid "37D8832A-2D66-02CA-B9F7-8F30A301B230"
+    set -l label gtd_support_wide
+    set -l internal_uuid "37D8832A-2D66-02CA-B9F7-8F30A301B230"
 
-    # 选择外接屏；如果没有外接屏，则回退到内置屏
-    set target_display (yabai -m query --displays | jq -r ".[] | select(.uuid!=\"$internal_uuid\") | .index" | head -n 1)
+    # -------------------------------------------------------------------------
+    # 2. Resolve target display
+    #    Prefer an external display; if none exists, fall back to internal.
+    # -------------------------------------------------------------------------
+    set -l displays_json (yabai -m query --displays)
+
+    set -l target_display (echo $displays_json | jq -r --arg uuid "$internal_uuid" '
+        .[]
+        | select(.uuid != $uuid)
+        | .index
+    ' | head -n 1)
+
     if test -z "$target_display"
-        set target_display (yabai -m query --displays | jq -r ".[] | select(.uuid==\"$internal_uuid\") | .index" | head -n 1)
+        set target_display (resolve_target_display $internal_uuid 1)
     end
 
-    # 优先复用已有 labeled space
-    set target_space (yabai -m query --spaces | jq -r ".[] | select(.label==\"$label\") | .index" | head -n 1)
+    # -------------------------------------------------------------------------
+    # 3. Find or create target labeled space
+    # -------------------------------------------------------------------------
+    set -l target_space (find_or_create_labeled_space $label $target_display)
 
-    # 不存在时才创建
     if test -z "$target_space"
-        focus_display_if_needed $target_display
-        sleep 0.4
-
-        yabai -m space --create
-        sleep 0.8
-
-        set target_space (yabai -m query --spaces | jq -r ".[] | select(.display==$target_display and .label==\"\") | .index" | tail -n 1)
-
-        yabai -m space $target_space --label $label
-        yabai -m space $target_space --layout float
+        return 1
     end
 
-    # Notes：优先取标题非空的主窗口
-    set notes (yabai -m query --windows | jq -r '
+    # -------------------------------------------------------------------------
+    # 4. Normalize target space state
+    # -------------------------------------------------------------------------
+    prepare_labeled_space $target_space $label float
+
+    ws_focus_display $target_display
+    sleep 0.15
+    ws_focus_space $target_space
+    sleep 0.15
+
+    # -------------------------------------------------------------------------
+    # 5. First-pass window capture
+    # -------------------------------------------------------------------------
+    set -l windows_json (yabai -m query --windows)
+
+    # Notes: prefer non-empty title
+    set -l notes (echo $windows_json | jq -r '
         .[]
         | select(.app=="Notes")
         | select(.["is-minimized"]==false)
         | select(.title != null and .title != "")
         | .id
     ' | head -n 1)
+
     if test -z "$notes"
-        set notes (yabai -m query --windows | jq -r '
+        set notes (echo $windows_json | jq -r '
             .[]
             | select(.app=="Notes")
             | select(.["is-minimized"]==false)
@@ -45,8 +103,8 @@ function gtd_support_wide
         ' | head -n 1)
     end
 
-    # Dia：优先取标题非空且不是 New Tab 的主窗口
-    set dia (yabai -m query --windows | jq -r '
+    # Dia: prefer non-empty title and not "New Tab"
+    set -l dia (echo $windows_json | jq -r '
         .[]
         | select(.app=="Dia")
         | select(.["is-minimized"]==false)
@@ -54,8 +112,9 @@ function gtd_support_wide
         | select((.title | ascii_downcase | contains("new tab")) | not)
         | .id
     ' | head -n 1)
+
     if test -z "$dia"
-        set dia (yabai -m query --windows | jq -r '
+        set dia (echo $windows_json | jq -r '
             .[]
             | select(.app=="Dia")
             | select(.["is-minimized"]==false)
@@ -63,112 +122,136 @@ function gtd_support_wide
         ' | head -n 1)
     end
 
-    # 第一轮搬运
+    # -------------------------------------------------------------------------
+    # 6. First-pass move
+    # -------------------------------------------------------------------------
     if test -n "$notes"
         yabai -m window $notes --space $target_space
     end
+
     if test -n "$dia"
         yabai -m window $dia --space $target_space
     end
 
-    sleep 1
-    focus_space_if_needed $target_space
-    sleep 0.6
+    sleep 0.25
+    ws_focus_space $target_space
+    sleep 0.15
 
-    # 第二轮校验与补搬运
-    set notes_retry (yabai -m query --windows | jq -r "
+    # -------------------------------------------------------------------------
+    # 7. Retry pass for windows that did not move successfully
+    # -------------------------------------------------------------------------
+    set -l windows_json_retry (yabai -m query --windows)
+
+    set -l notes_retry (echo $windows_json_retry | jq -r --argjson s $target_space '
         .[]
-        | select(.app==\"Notes\")
-        | select(.space!=$target_space)
-        | select(.[\"is-minimized\"]==false)
-        | select(.title != null and .title != \"\")
+        | select(.app=="Notes")
+        | select(.space!=$s)
+        | select(.["is-minimized"]==false)
+        | select(.title != null and .title != "")
         | .id
-    " | head -n 1)
+    ' | head -n 1)
+
     if test -z "$notes_retry"
-        set notes_retry (yabai -m query --windows | jq -r "
+        set notes_retry (echo $windows_json_retry | jq -r --argjson s $target_space '
             .[]
-            | select(.app==\"Notes\")
-            | select(.space!=$target_space)
-            | select(.[\"is-minimized\"]==false)
+            | select(.app=="Notes")
+            | select(.space!=$s)
+            | select(.["is-minimized"]==false)
             | .id
-        " | head -n 1)
+        ' | head -n 1)
     end
 
-    set dia_retry (yabai -m query --windows | jq -r "
+    set -l dia_retry (echo $windows_json_retry | jq -r --argjson s $target_space '
         .[]
-        | select(.app==\"Dia\")
-        | select(.space!=$target_space)
-        | select(.[\"is-minimized\"]==false)
-        | select(.title != null and .title != \"\")
-        | select((.title | ascii_downcase | contains(\"new tab\")) | not)
+        | select(.app=="Dia")
+        | select(.space!=$s)
+        | select(.["is-minimized"]==false)
+        | select(.title != null and .title != "")
+        | select((.title | ascii_downcase | contains("new tab")) | not)
         | .id
-    " | head -n 1)
+    ' | head -n 1)
+
     if test -z "$dia_retry"
-        set dia_retry (yabai -m query --windows | jq -r "
+        set dia_retry (echo $windows_json_retry | jq -r --argjson s $target_space '
             .[]
-            | select(.app==\"Dia\")
-            | select(.space!=$target_space)
-            | select(.[\"is-minimized\"]==false)
+            | select(.app=="Dia")
+            | select(.space!=$s)
+            | select(.["is-minimized"]==false)
             | .id
-        " | head -n 1)
+        ' | head -n 1)
     end
 
     if test -n "$notes_retry"
         yabai -m window $notes_retry --space $target_space
     end
+
     if test -n "$dia_retry"
         yabai -m window $dia_retry --space $target_space
     end
 
-    sleep 1
-    focus_space_if_needed $target_space
-    sleep 0.6
+    sleep 0.25
+    ws_focus_space $target_space
+    sleep 0.15
 
-    # 在目标 space 内重新获取窗口 id
-    set notes (yabai -m query --windows | jq -r "
+    # -------------------------------------------------------------------------
+    # 8. Final capture on target space
+    # -------------------------------------------------------------------------
+    set -l windows_json_final (yabai -m query --windows)
+
+    set notes (echo $windows_json_final | jq -r --argjson s $target_space '
         .[]
-        | select(.app==\"Notes\")
-        | select(.space==$target_space)
-        | select(.[\"is-minimized\"]==false)
-        | select(.title != null and .title != \"\")
+        | select(.app=="Notes")
+        | select(.space==$s)
+        | select(.["is-minimized"]==false)
+        | select(.title != null and .title != "")
         | .id
-    " | head -n 1)
+    ' | head -n 1)
+
     if test -z "$notes"
-        set notes (yabai -m query --windows | jq -r "
+        set notes (echo $windows_json_final | jq -r --argjson s $target_space '
             .[]
-            | select(.app==\"Notes\")
-            | select(.space==$target_space)
-            | select(.[\"is-minimized\"]==false)
+            | select(.app=="Notes")
+            | select(.space==$s)
+            | select(.["is-minimized"]==false)
             | .id
-        " | head -n 1)
+        ' | head -n 1)
     end
 
-    set dia (yabai -m query --windows | jq -r "
+    set dia (echo $windows_json_final | jq -r --argjson s $target_space '
         .[]
-        | select(.app==\"Dia\")
-        | select(.space==$target_space)
-        | select(.[\"is-minimized\"]==false)
-        | select(.title != null and .title != \"\")
-        | select((.title | ascii_downcase | contains(\"new tab\")) | not)
+        | select(.app=="Dia")
+        | select(.space==$s)
+        | select(.["is-minimized"]==false)
+        | select(.title != null and .title != "")
+        | select((.title | ascii_downcase | contains("new tab")) | not)
         | .id
-    " | head -n 1)
+    ' | head -n 1)
+
     if test -z "$dia"
-        set dia (yabai -m query --windows | jq -r "
+        set dia (echo $windows_json_final | jq -r --argjson s $target_space '
             .[]
-            | select(.app==\"Dia\")
-            | select(.space==$target_space)
-            | select(.[\"is-minimized\"]==false)
+            | select(.app=="Dia")
+            | select(.space==$s)
+            | select(.["is-minimized"]==false)
             | .id
-        " | head -n 1)
+        ' | head -n 1)
     end
 
-    # 保持原来的布局：Dia 右 3/5，Notes 左 2/5
-    if test -n "$dia"
-        yabai -m window $dia --grid 1:5:2:0:3:1
-    end
+    # -------------------------------------------------------------------------
+    # 9. Apply final layout
+    #    Keep Notes on the left 2/5 and Dia on the right 3/5.
+    # -------------------------------------------------------------------------
     if test -n "$notes"
         yabai -m window $notes --grid 1:5:0:0:2:1
     end
 
-    focus_space_if_needed $target_space
+    if test -n "$dia"
+        yabai -m window $dia --grid 1:5:2:0:3:1
+    end
+
+    # -------------------------------------------------------------------------
+    # 10. Final focus and cleanup
+    # -------------------------------------------------------------------------
+    ws_focus_space $target_space
+    cleanup_unlabeled_empty_spaces $target_display
 end

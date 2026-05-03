@@ -1,104 +1,155 @@
-function gtd_calendar
-    set label gtd_calendar
-    set internal_uuid "37D8832A-2D66-02CA-B9F7-8F30A301B230"
+function gtd_calendar --description "Collect Calendar and Reminders onto the internal display and apply the standard GTD calendar layout"
+    # -------------------------------------------------------------------------
+    # Workspace:
+    #   gtd_calendar
+    #
+    # Purpose:
+    #   Gather Calendar-related applications onto the internal display and place
+    #   them into a stable GTD calendar layout.
+    #
+    # Target display:
+    #   Internal display identified by UUID.
+    #
+    # Managed apps:
+    #   - Calendar
+    #   - Reminders
+    #
+    # Layout:
+    #   - Calendar  -> left half
+    #   - Reminders -> right half
+    #
+    # Notes:
+    #   - The function is designed to be re-runnable.
+    #   - It reuses an existing labeled space when possible.
+    #   - It performs a retry pass for window moves.
+    #   - It clears unlabeled empty spaces on the target display at the end.
+    # -------------------------------------------------------------------------
 
-    set target_display (yabai -m query --displays | jq -r ".[] | select(.uuid==\"$internal_uuid\") | .index" | head -n 1)
-    if test -z "$target_display"
-        set target_display 1
-    end
+    set -l label gtd_calendar
+    set -l internal_uuid "37D8832A-2D66-02CA-B9F7-8F30A301B230"
 
-    # 优先复用已有 labeled space
-    set target_space (yabai -m query --spaces | jq -r ".[] | select(.label==\"$label\") | .index" | head -n 1)
+    # -------------------------------------------------------------------------
+    # 1. Resolve target display and target space
+    # -------------------------------------------------------------------------
+    set -l target_display (resolve_target_display $internal_uuid 1)
+    set -l target_space (find_or_create_labeled_space $label $target_display)
 
-    # 如果没有，才创建
     if test -z "$target_space"
-        focus_display_if_needed $target_display
-        sleep 0.4
-
-        yabai -m space --create
-        sleep 0.8
-
-        set target_space (yabai -m query --spaces | jq -r ".[] | select(.display==$target_display and .label==\"\") | .index" | tail -n 1)
-
-        yabai -m space $target_space --label $label
-        yabai -m space $target_space --layout float
+        return 1
     end
 
-    set calendar (yabai -m query --windows | jq -r '
+    # -------------------------------------------------------------------------
+    # 2. Normalize target space state
+    # -------------------------------------------------------------------------
+    prepare_labeled_space $target_space $label float
+
+    ws_focus_display $target_display
+    sleep 0.15
+    ws_focus_space $target_space
+    sleep 0.15
+
+    # -------------------------------------------------------------------------
+    # 3. First-pass window capture
+    # -------------------------------------------------------------------------
+    set -l windows_json (yabai -m query --windows)
+
+    set -l calendar (echo $windows_json | jq -r '
         .[]
         | select(.app=="Calendar")
         | select(.["is-minimized"]==false)
         | .id
     ' | head -n 1)
 
-    set reminders (yabai -m query --windows | jq -r '
+    set -l reminders (echo $windows_json | jq -r '
         .[]
         | select(.app=="Reminders")
         | select(.["is-minimized"]==false)
         | .id
     ' | head -n 1)
 
+    # -------------------------------------------------------------------------
+    # 4. First-pass move
+    # -------------------------------------------------------------------------
     if test -n "$calendar"
         yabai -m window $calendar --space $target_space
     end
+
     if test -n "$reminders"
         yabai -m window $reminders --space $target_space
     end
 
-    sleep 1
-    focus_space_if_needed $target_space
-    sleep 0.6
+    sleep 0.25
+    ws_focus_space $target_space
+    sleep 0.15
 
-    set calendar_retry (yabai -m query --windows | jq -r "
-        .[]
-        | select(.app==\"Calendar\")
-        | select(.space!=$target_space)
-        | select(.[\"is-minimized\"]==false)
-        | .id
-    " | head -n 1)
+    # -------------------------------------------------------------------------
+    # 5. Retry pass for windows that did not move successfully
+    # -------------------------------------------------------------------------
+    set -l windows_json_retry (yabai -m query --windows)
 
-    set reminders_retry (yabai -m query --windows | jq -r "
+    set -l calendar_retry (echo $windows_json_retry | jq -r --argjson s $target_space '
         .[]
-        | select(.app==\"Reminders\")
-        | select(.space!=$target_space)
-        | select(.[\"is-minimized\"]==false)
+        | select(.app=="Calendar")
+        | select(.space!=$s)
+        | select(.["is-minimized"]==false)
         | .id
-    " | head -n 1)
+    ' | head -n 1)
+
+    set -l reminders_retry (echo $windows_json_retry | jq -r --argjson s $target_space '
+        .[]
+        | select(.app=="Reminders")
+        | select(.space!=$s)
+        | select(.["is-minimized"]==false)
+        | .id
+    ' | head -n 1)
 
     if test -n "$calendar_retry"
         yabai -m window $calendar_retry --space $target_space
     end
+
     if test -n "$reminders_retry"
         yabai -m window $reminders_retry --space $target_space
     end
 
-    sleep 1
-    focus_space_if_needed $target_space
-    sleep 0.6
+    sleep 0.25
+    ws_focus_space $target_space
+    sleep 0.15
 
-    set calendar (yabai -m query --windows | jq -r "
+    # -------------------------------------------------------------------------
+    # 6. Final capture on target space
+    # -------------------------------------------------------------------------
+    set -l windows_json_final (yabai -m query --windows)
+
+    set calendar (echo $windows_json_final | jq -r --argjson s $target_space '
         .[]
-        | select(.app==\"Calendar\")
-        | select(.space==$target_space)
-        | select(.[\"is-minimized\"]==false)
+        | select(.app=="Calendar")
+        | select(.space==$s)
+        | select(.["is-minimized"]==false)
         | .id
-    " | head -n 1)
+    ' | head -n 1)
 
-    set reminders (yabai -m query --windows | jq -r "
+    set reminders (echo $windows_json_final | jq -r --argjson s $target_space '
         .[]
-        | select(.app==\"Reminders\")
-        | select(.space==$target_space)
-        | select(.[\"is-minimized\"]==false)
+        | select(.app=="Reminders")
+        | select(.space==$s)
+        | select(.["is-minimized"]==false)
         | .id
-    " | head -n 1)
+    ' | head -n 1)
 
-    # 左 Calendar，右 Reminders
+    # -------------------------------------------------------------------------
+    # 7. Apply final layout
+    # -------------------------------------------------------------------------
     if test -n "$calendar"
         yabai -m window $calendar --grid 1:2:0:0:1:1
     end
+
     if test -n "$reminders"
         yabai -m window $reminders --grid 1:2:1:0:1:1
     end
 
-    focus_space_if_needed $target_space
+    # -------------------------------------------------------------------------
+    # 8. Final focus and cleanup
+    # -------------------------------------------------------------------------
+    ws_focus_space $target_space
+    cleanup_unlabeled_empty_spaces $target_display
 end
