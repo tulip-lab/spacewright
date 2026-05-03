@@ -1,260 +1,156 @@
-# Workspace
+# Workspace System
 
-This directory manages the workspace automation layer built on top of:
+## Overview
 
-- fish functions
-- yabai
-- skhd
+This workspace system is organized into four operational modules:
 
-The workspace subsystem is responsible for organizing repeatable work modes, app layouts, and task-oriented workspaces across the internal and external displays.
+- `gtd`
+- `coding`
+- `office`
+- `research`
 
-## What This Directory Is For
+Each module follows a consistent structure wherever applicable:
 
-The workspace layer provides:
+- cleanup helpers
+- reload function
+- status helpers
+- mode-status helper
+- `tall` entry
+- `wide` entry
+- optional `internal` workspaces for module-specific fixed layouts
 
-- wide and tall work modes
-- GTD workspaces
-- coding workspaces
-- office workspaces
-- research workspaces
-- internal fixed spaces and external task spaces
-- status and reload commands for daily use and debugging
+The system is designed to keep workspace behavior predictable, composable, and portable across machines.
 
-This `README.md` focuses on how to use the commands.
+## Common Helper Layer
 
-For design rationale and architecture decisions, see:
+Shared helpers are located in `workspace/common`.
 
-- [design-notes.md](design-notes.md)
+They are responsible for:
 
-## Command Structure
+- creating or reusing labeled spaces
+- normalizing labeled spaces
+- resolving target displays
+- focusing displays and spaces safely
+- cleaning unlabeled empty spaces
+- resolving internal and external display roles
 
-The command naming follows a consistent structure.
+Current core helpers include:
 
-| Type | Meaning |
-|---|---|
-| `*_wide` | apply the wide layout for a module or workspace |
-| `*_tall` | apply the tall layout for a module or workspace |
-| `*_all` | full entry point for a module, usually including related internal spaces and cleanup |
-| `*_status` | show detailed current state |
-| `*_mode_status` | show current mode-level status |
-| `*_reload` | reload fish functions after editing scripts |
+- `find_or_create_labeled_space`
+- `prepare_labeled_space`
+- `cleanup_unlabeled_empty_spaces`
+- `resolve_target_display`
+- `resolve_internal_display`
+- `resolve_external_display`
+- `ws_focus_display`
+- `ws_focus_space`
+- `set_internal_display_uuid`
+- `get_internal_display_uuid`
 
-## Most Common Commands
-
-### Global entry points
+These helpers allow all module-level workspace functions to share the same lifecycle and display-selection logic.
 
-| Command | Purpose | Typical use |
-|---|---|---|
-| `work_wide` | switch the whole system into wide work mode | normal external-display wide workflow |
-| `work_tall` | switch the whole system into tall work mode | normal external-display tall workflow |
-| `work_status` | show the overall current workspace state | troubleshooting or verification |
-| `work_mode_status` | show mode status across modules | checking GTD / Coding / Office / Research layouts |
-| `work_reload` | reload workspace-related fish functions | after editing workspace scripts |
+## Display Configuration
 
-## GTD Commands
-
-### Main GTD entry points
-
-| Command | Purpose | Typical use |
-|---|---|---|
-| `gtd_wide_all` | enter the full GTD wide mode | GTD daily work on wide layout |
-| `gtd_tall_all` | enter the full GTD tall mode | GTD daily work on tall layout |
-| `gtd_wide` | apply only the GTD external wide layout | adjusting GTD external spaces only |
-| `gtd_tall` | apply only the GTD external tall layout | adjusting GTD external spaces only |
+The internal display UUID is no longer hardcoded inside module functions.
 
-### GTD internal spaces
-
-| Command | Purpose | Typical use |
-|---|---|---|
-| `gtd_chat` | restore or open the GTD chat space | Keybase, WeChat, DingTalk, Messages |
-| `gtd_calendar` | restore or open the GTD calendar space | Calendar and Reminders |
+Instead, the machine-specific internal display UUID is stored once through:
 
-### GTD task spaces
+```bash
+set_internal_display_uuid <new-internal-display-uuid>
+```
 
-| Command | Purpose | Typical use |
-|---|---|---|
-| `gtd_mail_wide` | GTD mail workspace in wide layout | Thunderbird mail handling |
-| `gtd_mail_tall` | GTD mail workspace in tall layout | Thunderbird mail handling |
-| `gtd_meeting_wide` | GTD meeting workspace in wide layout | Outlook, Zoom, Teams on wide layout |
-| `gtd_meeting_tall` | GTD meeting workspace in tall layout | Outlook, Zoom, Teams on tall layout |
-| `gtd_support_wide` | GTD support workspace in wide layout | Dia and Notes support work |
-| `gtd_support_tall` | GTD support workspace in tall layout | Dia and Notes support work |
-| `gtd_review_wide` | GTD review workspace in wide layout | Finder, Preview, ChatGPT, Notes for review |
-| `gtd_review_tall` | GTD review workspace in tall layout | Finder, Preview, ChatGPT, Notes for review |
-
-### GTD status and reload
-
-| Command | Purpose |
-|---|---|
-| `gtd_status` | show detailed GTD state |
-| `gtd_mode_status` | show GTD wide / tall / internal mode state |
-| `gtd_reload` | reload GTD-related fish functions |
-
-## Coding Commands
-
-### Main Coding entry points
-
-| Command | Purpose | Typical use |
-|---|---|---|
-| `coding_wide_all` | enter the full Coding wide mode | normal coding workflow on wide layout |
-| `coding_tall_all` | enter the full Coding tall mode | normal coding workflow on tall layout |
-| `coding_wide` | apply only the Coding external wide layout | adjusting coding editor workspace only |
-| `coding_tall` | apply only the Coding external tall layout | adjusting coding editor workspace only |
-
-### Coding task spaces
-
-| Command | Purpose | Typical use |
-|---|---|---|
-| `coding_editor_wide` | coding editor workspace in wide layout | left ChatGPT, right VS Code |
-| `coding_editor_tall` | coding editor workspace in tall layout | top ChatGPT, bottom VS Code |
-| `coding_control` | internal coding support workspace | Warp and SmartGit |
-
-### Coding status and reload
+The value is stored as a fish universal variable and reused by all workspace modules.
 
-| Command | Purpose |
-|---|---|
-| `coding_status` | show detailed Coding state |
-| `coding_mode_status` | show Coding wide / tall / internal mode state |
-| `coding_reload` | reload Coding-related fish functions |
-
-## Office Commands
+When moving the workspace system to a new machine, the only required display-specific step is:
 
-| Command | Purpose | Typical use |
-|---|---|---|
-| `office_wide` | enter Office wide mode | writing and slides work on wide layout |
-| `office_tall` | enter Office tall mode | writing and slides work on tall layout |
-| `office_writing_wide` | Office writing workspace in wide layout | Microsoft Word |
-| `office_writing_tall` | Office writing workspace in tall layout | Microsoft Word |
-| `office_slides_wide` | Office slides workspace in wide layout | Microsoft PowerPoint |
-| `office_slides_tall` | Office slides workspace in tall layout | Microsoft PowerPoint |
-| `office_status` | show detailed Office state | troubleshooting |
-| `office_mode_status` | show Office mode state | checking wide / tall spaces |
-| `office_reload` | reload Office-related fish functions | after editing Office scripts |
+```bash
+set_internal_display_uuid <new-internal-display-uuid>
+```
 
-## Research Commands
+After that, the normal reload commands can be used.
 
-| Command | Purpose | Typical use |
-|---|---|---|
-| `research_wide` | enter Research wide mode | Zotero research workflow on wide layout |
-| `research_tall` | enter Research tall mode | Zotero research workflow on tall layout |
-| `research_status` | show detailed Research state | troubleshooting |
-| `research_mode_status` | show Research mode state | checking wide / tall spaces |
-| `research_reload` | reload Research-related fish functions | after editing Research scripts |
+## Module Conventions
 
-## Cleanup Commands
+All workspace modules follow these conventions:
 
-These are usually not the first commands you run manually, but they are useful when checking or maintaining the system.
+1. A workspace function may reuse an existing labeled space instead of creating a new one.
+2. A workspace function always normalizes the labeled space before arranging windows.
+3. When a primary application for a workspace is missing, the workspace function may destroy an old empty labeled space with the same label before returning.
+4. Unlabeled empty spaces are cleaned separately from labeled empty spaces.
+5. Labeled empty spaces are cleaned by module-specific cleanup helpers such as:
+   - `gtd_cleanup_*`
+   - `coding_cleanup_*`
+   - `office_cleanup_*`
+   - `research_cleanup_*`
 
-| Command | Purpose |
-|---|---|
-| `gtd_cleanup_wide_spaces` | remove empty GTD wide spaces |
-| `gtd_cleanup_tall_spaces` | remove empty GTD tall spaces |
-| `coding_cleanup_wide_spaces` | remove empty Coding wide spaces |
-| `coding_cleanup_tall_spaces` | remove empty Coding tall spaces |
-| `office_cleanup_wide_spaces` | remove empty Office wide spaces |
-| `office_cleanup_tall_spaces` | remove empty Office tall spaces |
-| `research_cleanup_wide_spaces` | remove empty Research wide spaces |
-| `research_cleanup_tall_spaces` | remove empty Research tall spaces |
+This separation keeps empty spaces under control without deleting meaningful structured workspaces too aggressively.
 
-## Recommended Usage Patterns
+## ChatGPT Ownership Rule
 
-### Start a normal working session
+`ChatGPT` is treated as a shared single-instance helper application across multiple modules.
 
-| Goal | Recommended command |
-|---|---|
-| start the whole system in wide mode | `work_wide` |
-| start the whole system in tall mode | `work_tall` |
+The global ownership rule is:
 
-### Enter a focused workflow directly
+**the last module invoked owns the `ChatGPT` window**
 
-| Goal | Recommended command |
-|---|---|
-| enter review mode | `gtd_review_wide` or `gtd_review_tall` |
-| enter coding mode | `coding_wide_all` or `coding_tall_all` |
-| enter GTD meeting mode | `gtd_meeting_wide` or `gtd_meeting_tall` |
-| enter GTD support mode | `gtd_support_wide` or `gtd_support_tall` |
+If `ChatGPT` appears in more than one workspace design, the most recently executed module function may move it into that module’s workspace.
 
-### Inspect current state
+This behavior is intentional and is the standard rule for the current workspace system.
 
-| Goal | Recommended command |
-|---|---|
-| check overall status | `work_status` |
-| check overall mode state | `work_mode_status` |
-| check GTD state | `gtd_mode_status` |
-| check Coding state | `coding_mode_status` |
+## Stale Space Cleanup Rule
 
-## Current Design Conventions
+If a workspace depends on a required primary application, such as Word, PowerPoint, or Zotero, and that application is not currently available, the workspace function will:
 
-| Concept | Meaning |
-|---|---|
-| internal spaces | persistent reusable support spaces such as `gtd_chat`, `gtd_calendar`, `coding_control` |
-| external spaces | task-oriented spaces created on demand |
-| wide / tall | the two main external-display layout modes |
-| `*_all` | full module entry points, usually including related internal spaces and cleanup |
-| status commands | used to inspect current system state |
-| reload commands | used after changing fish scripts |
+1. check whether an old labeled space with the same label already exists
+2. destroy that space if it is empty
+3. return without creating a new workspace
 
-## Important Notes
+This prevents old empty labeled spaces from persisting after application state changes.
 
-### Internal vs external spaces
+## GTD Chat Special Note
 
-Internal spaces are intended to be more persistent and reusable.
+`gtd_chat` uses the following windows as its core layout:
 
-Examples:
+- `Keybase`
+- `钉钉`
+- `WeChat`
+- `Messages`
 
-- `gtd_chat`
-- `gtd_calendar`
-- `coding_control`
+`WhatsApp` is treated as best-effort. If it can be detected and moved reliably, it may be included. If it cannot be moved cleanly, the workspace still counts as valid without it.
 
-External task spaces are more conditional and usually depend on a core app being open.
+So `WhatsApp` is not a strict success condition for `gtd_chat`.
 
-Examples:
+## Reload Commands
 
-- `gtd_mail_*`
-- `gtd_review_*`
-- `coding_editor_*`
-- `office_*`
-- `research_*`
+The main reload commands are:
 
-### Core-app creation rule
+```bash
+gtd_reload
+coding_reload
+office_reload
+research_reload
+```
 
-Many external spaces are only created if the related core application exists.
+These reload commands source both module-local functions and the shared helper functions in `workspace/common`.
 
-Examples:
+## Status Commands
 
-- GTD mail requires `Thunderbird`
-- GTD review requires `Preview`
-- Coding editor requires `Code`
-- Office writing requires `Microsoft Word`
-- Office slides requires `Microsoft PowerPoint`
-- Research requires `Zotero`
+The main inspection commands are:
 
-### Hotkey layer
+```bash
+gtd_status
+coding_status
+office_status
+research_status
+```
 
-Many of the most frequently used commands are also bound through `skhd`.
+Mode-level inspection commands are:
 
-See:
+```bash
+gtd_mode_status
+coding_mode_status
+office_mode_status
+research_mode_status
+```
 
-- [../.config/skhd/README.md](../.config/skhd/README.md)
-- [../.config/skhd/design-notes.md](../.config/skhd/design-notes.md)
-
-## Related Documentation
-
-| Document | Purpose |
-|---|---|
-| [design-notes.md](design-notes.md) | workspace design and architecture notes |
-| [../.config/skhd/README.md](../.config/skhd/README.md) | skhd hotkey usage |
-| [../.config/skhd/design-notes.md](../.config/skhd/design-notes.md) | skhd design notes |
-| [../.config/yabai/design-notes.md](../.config/yabai/design-notes.md) | yabai design notes |
-| [../migration-notes.md](../migration-notes.md) | migration workflow for a new machine |
-
-## Practical Advice
-
-A good default approach is:
-
-1. use `work_wide` or `work_tall` for broad mode switching
-2. use direct module commands when entering a very specific task state
-3. use `*_status` or `*_mode_status` when something looks wrong
-4. use `*_reload` after editing workspace fish scripts
-
-This keeps the system predictable and easy to recover when needed.
+These commands are intended for day-to-day maintenance and regression checking after changes to workspace behavior.
