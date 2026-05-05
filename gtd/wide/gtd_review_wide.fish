@@ -289,5 +289,5 @@ function gtd_review_wide --description "Collect review-related windows onto the 
     # 11. Final focus and cleanup
     # -------------------------------------------------------------------------
     ws_focus_space $target_space
-    cleanup_unlabeled_empty_spaces $target_display
+    cleanup_unlabeled_empty_spaces $target_space
 end

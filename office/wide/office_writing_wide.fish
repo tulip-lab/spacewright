@@ -171,5 +171,5 @@ function office_writing_wide --description "Collect Word and ChatGPT onto the wi
 
     # 9. Final focus and cleanup
     ws_focus_space $target_space
-    cleanup_unlabeled_empty_spaces $target_display
+    cleanup_unlabeled_empty_spaces $target_space
 end

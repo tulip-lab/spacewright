@@ -203,5 +203,5 @@ function gtd_chat --description "Fast GTD chat workspace layout on internal disp
     end
 
     ws_focus_space $target_space
-    cleanup_unlabeled_empty_spaces $target_display
+    cleanup_unlabeled_empty_spaces $target_space
 end

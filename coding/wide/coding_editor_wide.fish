@@ -176,5 +176,5 @@ function coding_editor_wide --description "Collect VS Code and ChatGPT onto the 
     # 10. Final focus and cleanup
     # -------------------------------------------------------------------------
     ws_focus_space $target_space
-    cleanup_unlabeled_empty_spaces $target_display
+    cleanup_unlabeled_empty_spaces $target_space
 end

@@ -17,10 +17,11 @@ function gtd_wide --description "Arrange all GTD wide workspaces and clean oppos
 
     gtd_cleanup_tall_spaces
 
-    gtd_mail_wide
-    gtd_meeting_wide
     gtd_support_wide
     gtd_review_wide
+    
+    gtd_mail_wide
+    gtd_meeting_wide
 
     gtd_cleanup_tall_spaces
 end

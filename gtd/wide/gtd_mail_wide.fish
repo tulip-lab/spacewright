@@ -130,5 +130,5 @@ function gtd_mail_wide --description "Collect Thunderbird onto the wide GTD mail
     # 10. Final focus and cleanup
     # -------------------------------------------------------------------------
     ws_focus_space $target_space
-    cleanup_unlabeled_empty_spaces $target_display
+    cleanup_unlabeled_empty_spaces $target_space
 end
