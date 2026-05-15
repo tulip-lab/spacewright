@@ -3,7 +3,7 @@ function gtd_support_solo --description "Collect Dia onto the solo GTD support w
     gtd_cleanup_tall_spaces
 
     set -l label gtd_support_solo
-    set -l windows_json (yabai -m query --windows)
+    set -l windows_json (ws_query_windows "gtd_support_solo" initial); or return 1
 
     set -l dia (echo $windows_json | ws_find_window "Dia" --nonempty-title --exclude-title "new tab")
 
@@ -33,7 +33,7 @@ function gtd_support_solo --description "Collect Dia onto the solo GTD support w
 
     ws_move_app_to_space $target_space "Dia" $dia
 
-    set -l windows_json_final (yabai -m query --windows)
+    set -l windows_json_final (ws_query_windows "gtd_support_solo" final); or return 1
 
     set dia (echo $windows_json_final | ws_find_window "Dia" --space $target_space --nonempty-title --exclude-title "new tab")
 

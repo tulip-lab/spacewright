@@ -56,7 +56,7 @@ function gtd_meeting_tall --description "Collect Outlook, Zoom and Teams onto th
     #    Outlook, Zoom, and Teams are all primary meeting apps. If none are
     #    present, do not create the workspace.
     # -------------------------------------------------------------------------
-    set -l windows_json (yabai -m query --windows)
+    set -l windows_json (ws_query_windows "gtd_meeting_tall" initial); or return 1
 
     set -l out (echo $windows_json | ws_find_window "Microsoft Outlook")
 
@@ -99,7 +99,7 @@ function gtd_meeting_tall --description "Collect Outlook, Zoom and Teams onto th
     # -------------------------------------------------------------------------
     # 7. Final capture on target space
     # -------------------------------------------------------------------------
-    set -l windows_json_final (yabai -m query --windows)
+    set -l windows_json_final (ws_query_windows "gtd_meeting_tall" final); or return 1
 
     set out (echo $windows_json_final | ws_find_window "Microsoft Outlook" --space $target_space)
 

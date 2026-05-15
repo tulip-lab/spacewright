@@ -17,7 +17,9 @@ function research_status --description "Show display, space and research applica
 
     echo
     echo "===== RESEARCH APPS ====="
-    yabai -m query --windows | jq '
+    set -l windows_json (ws_query_windows research_status status); or return 1
+
+    echo $windows_json | jq '
         .[]
         | select(
             .app=="Zotero"

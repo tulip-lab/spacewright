@@ -14,7 +14,7 @@ function cleanup_labeled_empty_spaces --description "Destroy empty spaces whose 
         set display_name "labeled"
     end
 
-    set -l candidates (yabai -m query --spaces | jq -r --arg pattern "$label_pattern" '
+    set -l candidates (ws_yabai -m query --spaces | jq -r --arg pattern "$label_pattern" '
         [.[]
         | select(.label | test($pattern))
         | select((.windows | length) == 0)
@@ -26,6 +26,6 @@ function cleanup_labeled_empty_spaces --description "Destroy empty spaces whose 
 
     for s in $candidates
         echo "Destroying empty $display_name space: $s"
-        yabai -m space $s --destroy
+        ws_yabai -m space $s --destroy >/dev/null 2>&1
     end
 end

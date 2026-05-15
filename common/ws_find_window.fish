@@ -41,7 +41,13 @@ function ws_find_window --description "Find the first matching non-minimized win
     end
 
     set -l bad_window_dir /tmp/workspace-ws-window-bad
-    set -l candidates (jq -r \
+    set -l windows_json
+    read -lz windows_json
+    if test -z "$windows_json"
+        return 1
+    end
+
+    set -l candidates (printf '%s\n' "$windows_json" | jq -r \
         --arg app "$app" \
         --arg app_regex "$app_regex" \
         --arg space "$space" \

@@ -108,6 +108,20 @@ work_diagnostics
 
 The diagnostic output is read-only. It reports display state, labeled spaces, empty labeled spaces, duplicate labels, empty unlabeled spaces, and bad-window cache entries.
 
+If a workspace command appears to hang after rebooting macOS, profile the shared yabai calls separately from window actions:
+
+```fish
+work_reload
+set -gx WORKSPACE_DEBUG_YABAI 1
+set -gx WORKSPACE_DEBUG_WINDOW 1
+time gtd_chat
+time gtd_calendar
+set -e WORKSPACE_DEBUG_YABAI
+set -e WORKSPACE_DEBUG_WINDOW
+```
+
+`WORKSPACE_YABAI_COMMAND_TIMEOUT_SECONDS` controls the timeout for shared yabai queries, display focus, and space operations. It defaults to `5` seconds. `WORKSPACE_YABAI_TIMEOUT_SECONDS` controls direct window operations through `ws_window` and defaults to `1` second.
+
 Phase 8.5 adds conservative manual recovery commands:
 
 ```fish

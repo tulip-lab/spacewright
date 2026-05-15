@@ -31,7 +31,7 @@ function gtd_calendar --description "Collect Calendar and Reminders onto the int
     # 1. First-pass window capture
     #    At least one calendar app must exist before creating the workspace.
     # -------------------------------------------------------------------------
-    set -l windows_json (yabai -m query --windows)
+    set -l windows_json (ws_query_windows gtd_calendar initial); or return 1
 
     set -l calendar (echo $windows_json | ws_find_window "Calendar")
 
@@ -71,7 +71,7 @@ function gtd_calendar --description "Collect Calendar and Reminders onto the int
     # -------------------------------------------------------------------------
     # 5. Final capture on target space
     # -------------------------------------------------------------------------
-    set -l windows_json_final (yabai -m query --windows)
+    set -l windows_json_final (ws_query_windows gtd_calendar final); or return 1
 
     set calendar (echo $windows_json_final | ws_find_window "Calendar" --space $target_space)
 

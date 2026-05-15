@@ -10,6 +10,8 @@ function work_command_check --description "Check that documented workspace comma
         work_cleanup_empty_labeled_spaces \
         work_cleanup_empty_unlabeled_spaces \
         work_recover_light \
+        ws_yabai \
+        ws_query_windows \
         display_reload \
         display_apply_solo \
         display_apply_wide_left \

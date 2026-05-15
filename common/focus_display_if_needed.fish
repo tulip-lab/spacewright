@@ -5,7 +5,7 @@ function focus_display_if_needed
     end
 
     set -l target_display $argv[1]
-    set -l current_display (yabai -m query --displays --display 2>/dev/null | jq -r '.index')
+    set -l current_display (ws_yabai -m query --displays --display 2>/dev/null | jq -r '.index')
 
     if test -z "$current_display"
         return 1
@@ -15,5 +15,5 @@ function focus_display_if_needed
         return 0
     end
 
-    yabai -m display --focus $target_display 2>/dev/null
+    ws_yabai -m display --focus $target_display >/dev/null 2>&1
 end

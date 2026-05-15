@@ -3,6 +3,8 @@ function source_workspace_common --description "Source shared workspace helper f
     source ~/.config/fish/functions/workspace/common/focus_space_if_needed.fish
     source ~/.config/fish/functions/workspace/common/ws_focus_display.fish
     source ~/.config/fish/functions/workspace/common/ws_focus_space.fish
+    source ~/.config/fish/functions/workspace/common/ws_yabai.fish
+    source ~/.config/fish/functions/workspace/common/ws_query_windows.fish
     source ~/.config/fish/functions/workspace/common/ws_find_window.fish
     source ~/.config/fish/functions/workspace/common/ws_move_app_to_space.fish
     source ~/.config/fish/functions/workspace/common/ws_move_app_pair_to_space.fish

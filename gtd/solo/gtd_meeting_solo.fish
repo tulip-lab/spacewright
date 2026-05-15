@@ -3,7 +3,7 @@ function gtd_meeting_solo --description "Collect meeting apps onto the solo GTD 
     gtd_cleanup_tall_spaces
 
     set -l label gtd_meeting_solo
-    set -l windows_json (yabai -m query --windows)
+    set -l windows_json (ws_query_windows "gtd_meeting_solo" initial); or return 1
 
     set -l out (echo $windows_json | ws_find_window "Microsoft Outlook")
 
@@ -33,7 +33,7 @@ function gtd_meeting_solo --description "Collect meeting apps onto the solo GTD 
 
     ws_move_windows_to_space $target_space $out $zoom $teams
 
-    set -l windows_json_final (yabai -m query --windows)
+    set -l windows_json_final (ws_query_windows "gtd_meeting_solo" final); or return 1
 
     set out (echo $windows_json_final | ws_find_window "Microsoft Outlook" --space $target_space)
 

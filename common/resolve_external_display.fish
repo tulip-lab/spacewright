@@ -20,7 +20,7 @@ function resolve_external_display --description "Resolve the preferred external 
         return 0
     end
 
-    set -l external_display (yabai -m query --displays | jq -r --arg uuid "$internal_uuid" '
+    set -l external_display (ws_yabai -m query --displays | jq -r --arg uuid "$internal_uuid" '
         .[]
         | select(.uuid != $uuid)
         | .index

@@ -36,7 +36,7 @@ function gtd_mail_tall --description "Collect Thunderbird onto the tall GTD mail
     # -------------------------------------------------------------------------
     # 2. Find Thunderbird first; if not found, do not create the workspace
     # -------------------------------------------------------------------------
-    set -l windows_json (yabai -m query --windows)
+    set -l windows_json (ws_query_windows "gtd_mail_tall" initial); or return 1
 
     set -l tb (echo $windows_json | ws_find_window "Thunderbird")
 
@@ -81,7 +81,7 @@ function gtd_mail_tall --description "Collect Thunderbird onto the tall GTD mail
     # -------------------------------------------------------------------------
     # 7. Final capture on target space
     # -------------------------------------------------------------------------
-    set -l windows_json_final (yabai -m query --windows)
+    set -l windows_json_final (ws_query_windows "gtd_mail_tall" final); or return 1
 
     set tb (echo $windows_json_final | ws_find_window "Thunderbird" --space $target_space)
 

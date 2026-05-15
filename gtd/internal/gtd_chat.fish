@@ -36,7 +36,7 @@ function gtd_chat --description "Fast GTD chat workspace layout on internal disp
 
     # 1. first capture
     #    At least one chat app must exist before creating the workspace.
-    set -l windows_json (yabai -m query --windows)
+    set -l windows_json (ws_query_windows gtd_chat initial); or return 1
 
     set -l wechat (echo $windows_json | ws_find_window "WeChat")
 
@@ -80,7 +80,7 @@ function gtd_chat --description "Fast GTD chat workspace layout on internal disp
     end
 
     # 5. final capture on target space
-    set -l windows_json_final (yabai -m query --windows)
+    set -l windows_json_final (ws_query_windows gtd_chat final); or return 1
 
     set wechat (echo $windows_json_final | ws_find_window "WeChat" --space $target_space)
 

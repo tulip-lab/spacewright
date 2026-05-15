@@ -3,7 +3,7 @@ function gtd_review_solo --description "Collect review-related windows onto the 
     gtd_cleanup_tall_spaces
 
     set -l label gtd_review_solo
-    set -l windows_json (yabai -m query --windows)
+    set -l windows_json (ws_query_windows "gtd_review_solo" initial); or return 1
 
     set -l preview (echo $windows_json | ws_find_window "Preview")
 
@@ -39,7 +39,7 @@ function gtd_review_solo --description "Collect review-related windows onto the 
 
     ws_move_windows_to_space $target_space $finder $preview $chatgpt $notes
 
-    set -l windows_json_final (yabai -m query --windows)
+    set -l windows_json_final (ws_query_windows "gtd_review_solo" final); or return 1
 
     set finder (echo $windows_json_final | ws_find_window "Finder" --space $target_space)
 

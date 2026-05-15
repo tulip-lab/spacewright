@@ -13,8 +13,13 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
     # -------------------------------------------------------------------------
     # 1. Reuse only if the labeled space already exists on target display
     # -------------------------------------------------------------------------
+    set -l spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+    if test $status -ne 0 -o -z "$spaces_json"
+        return 1
+    end
+
     set -l existing_space_on_target (
-        yabai -m query --spaces | jq -r \
+        echo $spaces_json | jq -r \
             --arg label "$label" \
             --argjson display "$target_display" \
             '.[]
@@ -31,7 +36,7 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
     # 2. Destroy empty same-label spaces stranded on other displays
     # -------------------------------------------------------------------------
     set -l stale_spaces (
-        yabai -m query --spaces | jq -r \
+        echo $spaces_json | jq -r \
             --arg label "$label" \
             --argjson display "$target_display" \
             '.[]
@@ -40,28 +45,42 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
     )
 
     for s in $stale_spaces
-        yabai -m space $s --destroy 2>/dev/null
+        ws_yabai -m space $s --destroy >/dev/null 2>&1
         sleep 0.2
     end
 
     # -------------------------------------------------------------------------
     # 3. Record existing space UUIDs before creation
     # -------------------------------------------------------------------------
-    set -l before_uuids (
-        yabai -m query --spaces | jq -r '.[].uuid'
-    )
+    set spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+    if test $status -ne 0 -o -z "$spaces_json"
+        return 1
+    end
+
+    set -l before_uuids (echo $spaces_json | jq -r '.[].uuid')
+    if test -z "$before_uuids"
+        return 1
+    end
 
     # -------------------------------------------------------------------------
     # 4. Create a new space
     # -------------------------------------------------------------------------
-    yabai -m space --create
+    ws_yabai -m space --create >/dev/null 2>&1
+    if test $status -ne 0
+        return 1
+    end
     sleep 0.8
 
     # -------------------------------------------------------------------------
     # 5. Find the newly created space by UUID difference
     # -------------------------------------------------------------------------
+    set spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+    if test $status -ne 0 -o -z "$spaces_json"
+        return 1
+    end
+
     set -l new_space_uuid (
-        yabai -m query --spaces | jq -r '.[].uuid' \
+        echo $spaces_json | jq -r '.[].uuid' \
         | while read -l u
             if not contains -- $u $before_uuids
                 echo $u
@@ -75,7 +94,7 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
     end
 
     set -l new_space_index (
-        yabai -m query --spaces | jq -r \
+            echo $spaces_json | jq -r \
             --arg uuid "$new_space_uuid" \
             '.[]
              | select(.uuid==$uuid)
@@ -83,7 +102,7 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
     )
 
     set -l new_space_display (
-        yabai -m query --spaces | jq -r \
+            echo $spaces_json | jq -r \
             --arg uuid "$new_space_uuid" \
             '.[]
              | select(.uuid==$uuid)
@@ -98,15 +117,20 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
     # 6. If created on the wrong display, move it explicitly
     # -------------------------------------------------------------------------
     if test "$new_space_display" != "$target_display"
-        yabai -m space $new_space_index --display $target_display 2>/dev/null
+        ws_yabai -m space $new_space_index --display $target_display >/dev/null 2>&1
         sleep 0.8
     end
 
     # -------------------------------------------------------------------------
     # 7. Re-resolve current index after possible move
     # -------------------------------------------------------------------------
+    set spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+    if test $status -ne 0 -o -z "$spaces_json"
+        return 1
+    end
+
     set -l final_space_index (
-        yabai -m query --spaces | jq -r \
+            echo $spaces_json | jq -r \
             --arg uuid "$new_space_uuid" \
             '.[]
              | select(.uuid==$uuid)

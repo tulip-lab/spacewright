@@ -46,7 +46,7 @@ function coding_editor_wide --description "Collect VS Code and ChatGPT onto the 
     # -------------------------------------------------------------------------
     # 2. Find Code first; if not found, do not create the workspace
     # -------------------------------------------------------------------------
-    set -l windows_json (yabai -m query --windows)
+    set -l windows_json (ws_query_windows "coding_editor_wide" initial); or return 1
 
     set -l code_window (echo $windows_json | ws_find_window "Code")
 
@@ -97,7 +97,7 @@ function coding_editor_wide --description "Collect VS Code and ChatGPT onto the 
     # -------------------------------------------------------------------------
     # 7. Final capture on target space
     # -------------------------------------------------------------------------
-    set -l windows_json_final (yabai -m query --windows)
+    set -l windows_json_final (ws_query_windows "coding_editor_wide" final); or return 1
 
     set code_window (echo $windows_json_final | ws_find_window "Code" --space $target_space)
 

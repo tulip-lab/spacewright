@@ -42,7 +42,7 @@ function office_slides_tall --description "Collect PowerPoint and ChatGPT onto t
     set -l label office_slides_tall
 
     # 1. Find PowerPoint first; if not found, do not create the workspace
-    set -l windows_json (yabai -m query --windows)
+    set -l windows_json (ws_query_windows "office_slides_tall" initial); or return 1
 
     set -l ppt_window (echo $windows_json | ws_find_window "Microsoft PowerPoint")
 
@@ -85,7 +85,7 @@ function office_slides_tall --description "Collect PowerPoint and ChatGPT onto t
         "ChatGPT" $chatgpt_window
 
     # 6. Final capture on target space
-    set -l windows_json_final (yabai -m query --windows)
+    set -l windows_json_final (ws_query_windows "office_slides_tall" final); or return 1
 
     set ppt_window (echo $windows_json_final | ws_find_window "Microsoft PowerPoint" --space $target_space)
 

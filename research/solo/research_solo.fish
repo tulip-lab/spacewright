@@ -3,7 +3,7 @@ function research_solo --description "Collect Zotero and ChatGPT onto the solo r
     research_cleanup_tall_spaces
 
     set -l label research_solo
-    set -l windows_json (yabai -m query --windows)
+    set -l windows_json (ws_query_windows "research_solo" initial); or return 1
 
     set -l zotero_window (echo $windows_json | ws_find_window "Zotero")
 
@@ -35,7 +35,7 @@ function research_solo --description "Collect Zotero and ChatGPT onto the solo r
         "ChatGPT" $chatgpt_window \
         --helper-visible
 
-    set -l windows_json_final (yabai -m query --windows)
+    set -l windows_json_final (ws_query_windows "research_solo" final); or return 1
 
     set zotero_window (echo $windows_json_final | ws_find_window "Zotero" --space $target_space)
 

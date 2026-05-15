@@ -17,7 +17,7 @@ function prepare_labeled_space --description "Normalize labeled space state"
     # -------------------------------------------------------------------------
     if test -n "$label"
         set -l other_spaces (
-            yabai -m query --spaces | jq -r \
+            ws_yabai -m query --spaces | jq -r \
                 --arg label "$label" \
                 --argjson target "$target_space" \
                 '.[]
@@ -26,11 +26,11 @@ function prepare_labeled_space --description "Normalize labeled space state"
         )
 
         for s in $other_spaces
-            yabai -m space $s --label ""
+            ws_yabai -m space $s --label "" >/dev/null 2>&1
         end
 
-        yabai -m space $target_space --label $label
+        ws_yabai -m space $target_space --label $label >/dev/null 2>&1
     end
 
-    yabai -m space $target_space --layout $layout
+    ws_yabai -m space $target_space --layout $layout >/dev/null 2>&1
 end

@@ -53,7 +53,7 @@ function gtd_review_wide --description "Collect review-related windows onto the 
     # -------------------------------------------------------------------------
     # 2. Find Preview first; if not found, do not create the workspace
     # -------------------------------------------------------------------------
-    set -l windows_json (yabai -m query --windows)
+    set -l windows_json (ws_query_windows "gtd_review_wide" initial); or return 1
 
     set -l preview (echo $windows_json | ws_find_window "Preview")
 
@@ -112,7 +112,7 @@ function gtd_review_wide --description "Collect review-related windows onto the 
     # -------------------------------------------------------------------------
     # 8. Final capture on target space
     # -------------------------------------------------------------------------
-    set -l windows_json_final (yabai -m query --windows)
+    set -l windows_json_final (ws_query_windows "gtd_review_wide" final); or return 1
 
     set finder (echo $windows_json_final | ws_find_window "Finder" --space $target_space)
 

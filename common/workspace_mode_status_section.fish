@@ -7,7 +7,13 @@ function workspace_mode_status_section --description "Print labeled spaces match
     end
 
     echo "===== $title ====="
-    yabai -m query --spaces | jq --arg pattern "$label_pattern" '
+    set -l spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+    if test $status -ne 0 -o -z "$spaces_json"
+        echo "[WARN] workspace_mode_status_section could not query spaces from yabai" >&2
+        return 1
+    end
+
+    echo $spaces_json | jq --arg pattern "$label_pattern" '
         .[]
         | select(.label | test($pattern))
         | {

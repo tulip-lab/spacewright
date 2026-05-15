@@ -38,9 +38,9 @@ function detect_and_set_internal_display_uuid --description "Detect and set the 
         return 1
     end
 
-    set -l displays_json (yabai -m query --displays 2>/dev/null)
+    set -l displays_json (ws_yabai -m query --displays 2>/dev/null)
 
-    if test -z "$displays_json"
+    if test $status -ne 0 -o -z "$displays_json"
         echo "[WARN] Could not query displays from yabai"
         return 1
     end

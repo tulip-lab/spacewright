@@ -330,6 +330,15 @@ The current tested performance target is:
 - a newly encountered stale window should add at most the configured timeout once
 - repeated commands should skip known bad windows until the cache expires
 
+Non-window yabai operations use a separate bounded wrapper:
+
+- `ws_yabai` is the supported wrapper for shared `yabai -m query`, `space`, and `display` calls.
+- `ws_query_windows` is the supported helper for module-level full-window captures.
+- `WORKSPACE_YABAI_COMMAND_TIMEOUT_SECONDS` controls this timeout and defaults to `5` seconds.
+- `WORKSPACE_DEBUG_YABAI=1` prints slow or failed shared yabai calls.
+- Workspace commands must fail closed when an initial yabai query cannot return reliable JSON. They should not treat an empty timeout result as "no matching apps" or as a valid empty space list.
+- Space creation must compare UUIDs only after a successful pre-create and post-create space snapshot.
+
 The latest local verification after Phase 7 showed:
 
 - `gtd_tall_all`: sub-second after bad-window filtering

@@ -28,7 +28,9 @@ function gtd_apps --description "Show all current GTD-related application window
     #   - Dia
     # -------------------------------------------------------------------------
 
-    yabai -m query --windows | jq '
+    set -l windows_json (ws_query_windows gtd_apps status); or return 1
+
+    echo $windows_json | jq '
         .[]
         | select(
             .app=="Thunderbird"

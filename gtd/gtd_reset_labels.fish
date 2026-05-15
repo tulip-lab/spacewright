@@ -41,9 +41,15 @@ function gtd_reset_labels --description "Remove labels from all current GTD work
         gtd_review_wide
 
     for label in $labels
-        set -l spaces (yabai -m query --spaces | jq -r --arg label "$label" '.[] | select(.label==$label) | .index')
+        set -l spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+        if test $status -ne 0 -o -z "$spaces_json"
+            echo "[WARN] gtd_reset_labels could not query spaces from yabai" >&2
+            return 1
+        end
+
+        set -l spaces (echo $spaces_json | jq -r --arg label "$label" '.[] | select(.label==$label) | .index')
         for s in $spaces
-            yabai -m space $s --label ""
+            ws_yabai -m space $s --label "" >/dev/null 2>&1
         end
     end
 end

@@ -24,7 +24,9 @@ function coding_status --description "Show display, space and coding application
 
     echo
     echo "===== CODING APPS ====="
-    yabai -m query --windows | jq '
+    set -l windows_json (ws_query_windows coding_status status); or return 1
+
+    echo $windows_json | jq '
         .[]
         | select(
             .app=="Code"

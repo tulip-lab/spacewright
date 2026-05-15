@@ -42,7 +42,7 @@ function office_writing_wide --description "Collect Word and ChatGPT onto the wi
     set -l label office_writing_wide
 
     # 1. Find Word first; if not found, do not create the workspace
-    set -l windows_json (yabai -m query --windows)
+    set -l windows_json (ws_query_windows "office_writing_wide" initial); or return 1
 
     set -l word_window (echo $windows_json | ws_find_window "Microsoft Word")
 
@@ -85,7 +85,7 @@ function office_writing_wide --description "Collect Word and ChatGPT onto the wi
         "ChatGPT" $chatgpt_window
 
     # 6. Final capture on target space
-    set -l windows_json_final (yabai -m query --windows)
+    set -l windows_json_final (ws_query_windows "office_writing_wide" final); or return 1
 
     set word_window (echo $windows_json_final | ws_find_window "Microsoft Word" --space $target_space)
 

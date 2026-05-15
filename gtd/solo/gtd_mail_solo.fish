@@ -3,7 +3,7 @@ function gtd_mail_solo --description "Collect Thunderbird onto the solo GTD mail
     gtd_cleanup_tall_spaces
 
     set -l label gtd_mail_solo
-    set -l windows_json (yabai -m query --windows)
+    set -l windows_json (ws_query_windows "gtd_mail_solo" initial); or return 1
 
     set -l tb (echo $windows_json | ws_find_window "Thunderbird")
 
@@ -29,7 +29,7 @@ function gtd_mail_solo --description "Collect Thunderbird onto the solo GTD mail
 
     ws_move_app_to_space $target_space "Thunderbird" $tb
 
-    set -l windows_json_final (yabai -m query --windows)
+    set -l windows_json_final (ws_query_windows "gtd_mail_solo" final); or return 1
 
     set tb (echo $windows_json_final | ws_find_window "Thunderbird" --space $target_space)
 

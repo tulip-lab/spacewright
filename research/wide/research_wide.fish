@@ -43,7 +43,7 @@ function research_wide --description "Collect Zotero and ChatGPT onto the wide r
     set -l label research_wide
 
     # 1. Find Zotero first; if not found, do not create the workspace
-    set -l windows_json (yabai -m query --windows)
+    set -l windows_json (ws_query_windows "research_wide" initial); or return 1
 
     set -l zotero_window (echo $windows_json | ws_find_window "Zotero")
 
@@ -88,7 +88,7 @@ function research_wide --description "Collect Zotero and ChatGPT onto the wide r
         "ChatGPT" $chatgpt_window
 
     # 6. Final capture on target space
-    set -l windows_json_final (yabai -m query --windows)
+    set -l windows_json_final (ws_query_windows "research_wide" final); or return 1
 
     set zotero_window (echo $windows_json_final | ws_find_window "Zotero" --space $target_space)
 

@@ -18,7 +18,9 @@ function office_status --description "Show display, space and office application
 
     echo
     echo "===== OFFICE APPS ====="
-    yabai -m query --windows | jq '
+    set -l windows_json (ws_query_windows office_status status); or return 1
+
+    echo $windows_json | jq '
         .[]
         | select(
             .app=="Microsoft Word"

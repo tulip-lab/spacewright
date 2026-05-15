@@ -44,7 +44,7 @@ function gtd_support_wide --description "Collect Dia onto the wide GTD support w
     # 2. First-pass window capture
     #    Dia must exist before creating the workspace.
     # -------------------------------------------------------------------------
-    set -l windows_json (yabai -m query --windows)
+    set -l windows_json (ws_query_windows "gtd_support_wide" initial); or return 1
 
     # Dia: prefer non-empty title and not "New Tab"
     set -l dia (echo $windows_json | ws_find_window "Dia" --nonempty-title --exclude-title "new tab")
@@ -90,7 +90,7 @@ function gtd_support_wide --description "Collect Dia onto the wide GTD support w
     # -------------------------------------------------------------------------
     # 6. Final capture on target space
     # -------------------------------------------------------------------------
-    set -l windows_json_final (yabai -m query --windows)
+    set -l windows_json_final (ws_query_windows "gtd_support_wide" final); or return 1
 
     set dia (echo $windows_json_final | ws_find_window "Dia" --space $target_space --nonempty-title --exclude-title "new tab")
 

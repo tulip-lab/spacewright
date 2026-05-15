@@ -47,7 +47,7 @@ function coding_control --description "Collect Warp, SmartGit, and FlClash onto 
     # -------------------------------------------------------------------------
     # 1. Find candidate windows first
     # -------------------------------------------------------------------------
-    set -l windows_json (yabai -m query --windows)
+    set -l windows_json (ws_query_windows "coding_control" initial); or return 1
 
     set -l flclash_running (echo $windows_json | jq -r '
         .[]
@@ -67,7 +67,7 @@ function coding_control --description "Collect Warp, SmartGit, and FlClash onto 
     if test -n "$flclash_running" -a -z "$flclash_visible"
         open -a FlClash
         sleep 0.5
-        set windows_json (yabai -m query --windows)
+        set windows_json (ws_query_windows "coding_control" refresh); or return 1
     end
 
     set -l warp (echo $windows_json | jq -r '
@@ -132,7 +132,7 @@ function coding_control --description "Collect Warp, SmartGit, and FlClash onto 
     # -------------------------------------------------------------------------
     # 6. Final capture on target space
     # -------------------------------------------------------------------------
-    set -l windows_json_final (yabai -m query --windows)
+    set -l windows_json_final (ws_query_windows "coding_control" final); or return 1
 
     set warp (echo $windows_json_final | jq -r --argjson s $target_space '
         .[]
