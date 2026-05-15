@@ -12,24 +12,15 @@ function gtd_reload --description "Reload all GTD workspace functions and helper
     # -------------------------------------------------------------------------
 
     # 1. Common workspace helpers
-    source ~/.config/fish/functions/workspace/common/focus_display_if_needed.fish
-    source ~/.config/fish/functions/workspace/common/focus_space_if_needed.fish
-
-    source ~/.config/fish/functions/workspace/common/resolve_target_display.fish
-    source ~/.config/fish/functions/workspace/common/find_or_create_labeled_space.fish
-    source ~/.config/fish/functions/workspace/common/prepare_labeled_space.fish
-    source ~/.config/fish/functions/workspace/common/cleanup_unlabeled_empty_spaces.fish
-    source ~/.config/fish/functions/workspace/common/ws_focus_display.fish
-    source ~/.config/fish/functions/workspace/common/ws_focus_space.fish
-
-    source ~/.config/fish/functions/workspace/common/set_internal_display_uuid.fish
-    source ~/.config/fish/functions/workspace/common/get_internal_display_uuid.fish
-    source ~/.config/fish/functions/workspace/common/resolve_internal_display.fish
-    source ~/.config/fish/functions/workspace/common/resolve_external_display.fish
+    if test "$WORKSPACE_SKIP_COMMON_RELOAD" != "1"
+        source ~/.config/fish/functions/workspace/common/source_workspace_common.fish
+        source_workspace_common
+    end
 
     # 2. GTD cleanup / metadata helpers
     source ~/.config/fish/functions/workspace/gtd/gtd_cleanup_wide_spaces.fish
     source ~/.config/fish/functions/workspace/gtd/gtd_cleanup_tall_spaces.fish
+    source ~/.config/fish/functions/workspace/gtd/gtd_cleanup_solo_spaces.fish
     source ~/.config/fish/functions/workspace/gtd/gtd_reset_labels.fish
     source ~/.config/fish/functions/workspace/gtd/gtd_labels.fish
     source ~/.config/fish/functions/workspace/gtd/gtd_apps.fish
@@ -37,6 +28,11 @@ function gtd_reload --description "Reload all GTD workspace functions and helper
     # 3. GTD concrete workspace functions
     source ~/.config/fish/functions/workspace/gtd/internal/gtd_chat.fish
     source ~/.config/fish/functions/workspace/gtd/internal/gtd_calendar.fish
+
+    source ~/.config/fish/functions/workspace/gtd/solo/gtd_mail_solo.fish
+    source ~/.config/fish/functions/workspace/gtd/solo/gtd_meeting_solo.fish
+    source ~/.config/fish/functions/workspace/gtd/solo/gtd_review_solo.fish
+    source ~/.config/fish/functions/workspace/gtd/solo/gtd_support_solo.fish
 
     source ~/.config/fish/functions/workspace/gtd/tall/gtd_mail_tall.fish
     source ~/.config/fish/functions/workspace/gtd/tall/gtd_meeting_tall.fish
@@ -51,6 +47,7 @@ function gtd_reload --description "Reload all GTD workspace functions and helper
     source ~/.config/fish/functions/workspace/gtd/wide/gtd_wide.fish
 
     # 4. GTD aggregate entry functions
+    source ~/.config/fish/functions/workspace/gtd/gtd_solo_all.fish
     source ~/.config/fish/functions/workspace/gtd/gtd_tall_all.fish
     source ~/.config/fish/functions/workspace/gtd/gtd_wide_all.fish
 

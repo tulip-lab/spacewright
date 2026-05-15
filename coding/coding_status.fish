@@ -11,29 +11,16 @@ function coding_status --description "Show display, space and coding application
     #   - ChatGPT
     #   - Warp
     #   - SmartGit
+    #   - FlClash / Thaw
     #
     # Notes:
     #   Finder is intentionally excluded because it is not currently part of the
     #   rebuilt coding workspace layout set.
     # -------------------------------------------------------------------------
 
-    echo "===== DISPLAYS ====="
-    yabai -m query --displays | jq '.[] | {
-        index,
-        uuid,
-        frame,
-        has_focus: .["has-focus"],
-        spaces
-    }'
-
-    echo
-    echo "===== SPACES ====="
-    yabai -m query --spaces | jq '.[] | {
-        index,
-        label,
-        display,
-        windows
-    }'
+    if test "$WORKSPACE_SKIP_STATUS_SNAPSHOT" != "1"
+        workspace_status_snapshot
+    end
 
     echo
     echo "===== CODING APPS ====="
@@ -44,6 +31,8 @@ function coding_status --description "Show display, space and coding application
             or .app=="ChatGPT"
             or .app=="Warp"
             or .app=="SmartGit"
+            or .app=="FlClash"
+            or .app=="Thaw"
         )
         | {
             id,

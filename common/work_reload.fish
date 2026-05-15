@@ -2,22 +2,8 @@ function work_reload --description "Reload all workspace display/common/module f
     # -------------------------------------------------------------------------
     # Common helpers
     # -------------------------------------------------------------------------
-    source ~/.config/fish/functions/workspace/common/focus_display_if_needed.fish
-    source ~/.config/fish/functions/workspace/common/focus_space_if_needed.fish
-    source ~/.config/fish/functions/workspace/common/ws_focus_display.fish
-    source ~/.config/fish/functions/workspace/common/ws_focus_space.fish
-
-    source ~/.config/fish/functions/workspace/common/set_internal_display_uuid.fish
-    source ~/.config/fish/functions/workspace/common/get_internal_display_uuid.fish
-    source ~/.config/fish/functions/workspace/common/detect_and_set_internal_display_uuid.fish
-
-    source ~/.config/fish/functions/workspace/common/find_or_create_labeled_space.fish
-    source ~/.config/fish/functions/workspace/common/prepare_labeled_space.fish
-    source ~/.config/fish/functions/workspace/common/cleanup_unlabeled_empty_spaces.fish
-
-    source ~/.config/fish/functions/workspace/common/resolve_target_display.fish
-    source ~/.config/fish/functions/workspace/common/resolve_internal_display.fish
-    source ~/.config/fish/functions/workspace/common/resolve_external_display.fish
+    source ~/.config/fish/functions/workspace/common/source_workspace_common.fish
+    source_workspace_common
 
     # -------------------------------------------------------------------------
     # Display layer
@@ -36,7 +22,15 @@ function work_reload --description "Reload all workspace display/common/module f
     # Top-level work entry points
     # -------------------------------------------------------------------------
     source ~/.config/fish/functions/workspace/common/work_status.fish
+    source ~/.config/fish/functions/workspace/common/work_diagnostics.fish
+    source ~/.config/fish/functions/workspace/common/work_bad_windows.fish
+    source ~/.config/fish/functions/workspace/common/work_clear_bad_windows.fish
+    source ~/.config/fish/functions/workspace/common/work_cleanup_empty_labeled_spaces.fish
+    source ~/.config/fish/functions/workspace/common/work_cleanup_empty_unlabeled_spaces.fish
+    source ~/.config/fish/functions/workspace/common/work_recover_light.fish
+    source ~/.config/fish/functions/workspace/common/work_command_check.fish
     source ~/.config/fish/functions/workspace/common/work_mode_status.fish
+    source ~/.config/fish/functions/workspace/common/work_solo.fish
     source ~/.config/fish/functions/workspace/common/work_wide.fish
     source ~/.config/fish/functions/workspace/common/work_tall.fish
     source ~/.config/fish/functions/workspace/common/work_check.fish
@@ -44,9 +38,25 @@ function work_reload --description "Reload all workspace display/common/module f
     # -------------------------------------------------------------------------
     # Reload nested modules
     # -------------------------------------------------------------------------
+    set -l had_skip_common_reload 0
+    set -l previous_skip_common_reload
+
+    if set -q WORKSPACE_SKIP_COMMON_RELOAD
+        set had_skip_common_reload 1
+        set previous_skip_common_reload $WORKSPACE_SKIP_COMMON_RELOAD
+    end
+
+    set -g WORKSPACE_SKIP_COMMON_RELOAD 1
+
     display_reload
     gtd_reload
     coding_reload
     office_reload
     research_reload
+
+    if test "$had_skip_common_reload" -eq 1
+        set -g WORKSPACE_SKIP_COMMON_RELOAD $previous_skip_common_reload
+    else
+        set -e WORKSPACE_SKIP_COMMON_RELOAD
+    end
 end

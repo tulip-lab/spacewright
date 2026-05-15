@@ -6,7 +6,8 @@ function work_check --description "Run workspace reload and mode-status checks"
     #
     # Behavior:
     #   1. Reload all workspace modules
-    #   2. Print mode-status outputs for GTD, coding, office, and research
+    #   2. Print read-only diagnostics
+    #   3. Print mode-status outputs for GTD, coding, office, and research
     # -------------------------------------------------------------------------
 
     echo "===== RELOAD ====="
@@ -14,6 +15,10 @@ function work_check --description "Run workspace reload and mode-status checks"
     coding_reload
     office_reload
     research_reload
+
+    echo
+    echo "===== WORKSPACE DIAGNOSTICS ====="
+    work_diagnostics
 
     echo
     echo "===== GTD MODE STATUS ====="

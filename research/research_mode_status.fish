@@ -1,33 +1,9 @@
 function research_mode_status --description "Show research spaces grouped by mode"
-    # -------------------------------------------------------------------------
-    # Purpose:
-    #   Show current research spaces grouped into:
-    #     - wide mode spaces
-    #     - tall mode spaces
-    # -------------------------------------------------------------------------
-
-    echo "===== RESEARCH WIDE SPACES ====="
-    yabai -m query --spaces | jq '
-        .[]
-        | select((.label | test("^research.*_wide$")) or (.label == "research_wide"))
-        | {
-            index,
-            label,
-            display,
-            window_count: (.windows | length),
-            windows
-        }'
+    workspace_mode_status_section "RESEARCH SOLO SPACES" '^research(_.*)?_solo$'
 
     echo
-    echo "===== RESEARCH TALL SPACES ====="
-    yabai -m query --spaces | jq '
-        .[]
-        | select(.label | test("^research.*_tall$"))
-        | {
-            index,
-            label,
-            display,
-            window_count: (.windows | length),
-            windows
-        }'
+    workspace_mode_status_section "RESEARCH WIDE SPACES" '^research(_.*)?_wide$'
+
+    echo
+    workspace_mode_status_section "RESEARCH TALL SPACES" '^research(_.*)?_tall$'
 end

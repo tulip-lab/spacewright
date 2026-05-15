@@ -11,23 +11,9 @@ function research_status --description "Show display, space and research applica
     #   - ChatGPT
     # -------------------------------------------------------------------------
 
-    echo "===== DISPLAYS ====="
-    yabai -m query --displays | jq '.[] | {
-        index,
-        uuid,
-        frame,
-        has_focus: .["has-focus"],
-        spaces
-    }'
-
-    echo
-    echo "===== SPACES ====="
-    yabai -m query --spaces | jq '.[] | {
-        index,
-        label,
-        display,
-        windows
-    }'
+    if test "$WORKSPACE_SKIP_STATUS_SNAPSHOT" != "1"
+        workspace_status_snapshot
+    end
 
     echo
     echo "===== RESEARCH APPS ====="

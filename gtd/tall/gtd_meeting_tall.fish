@@ -17,6 +17,8 @@ function gtd_meeting_tall --description "Collect Outlook, Zoom and Teams onto th
     #   - Microsoft Teams
     #
     # Window selection rules:
+    #   - At least one of Outlook, Zoom, or Teams must be present. If none are
+    #     present, the workspace is not created.
     #   - Outlook:
     #       Take the first non-minimized Outlook window.
     #   - Zoom:
@@ -36,7 +38,7 @@ function gtd_meeting_tall --description "Collect Outlook, Zoom and Teams onto th
     #     cleaned.
     #   - The function is re-runnable.
     #   - It reuses an existing labeled space when possible.
-    #   - It performs a retry pass for window moves.
+    #   - It moves only the initially captured window IDs.
     #   - It clears unlabeled empty spaces on the target display at the end.
     # -------------------------------------------------------------------------
 
@@ -44,9 +46,29 @@ function gtd_meeting_tall --description "Collect Outlook, Zoom and Teams onto th
     # 1. Cleanup GTD wide spaces before entering tall mode
     # -------------------------------------------------------------------------
     gtd_cleanup_wide_spaces
+    gtd_cleanup_solo_spaces
 
     set -l label gtd_meeting_tall
     set -l target_display (resolve_external_display)
+
+    # -------------------------------------------------------------------------
+    # 2. First-pass window capture
+    #    Outlook, Zoom, and Teams are all primary meeting apps. If none are
+    #    present, do not create the workspace.
+    # -------------------------------------------------------------------------
+    set -l windows_json (yabai -m query --windows)
+
+    set -l out (echo $windows_json | ws_find_window "Microsoft Outlook")
+
+    set -l zoom (echo $windows_json | ws_find_window "zoom.us" --exclude-title meeting --exclude-title video --exclude-title share --exclude-title screen --exclude-title mini)
+
+    set -l teams (echo $windows_json | ws_find_window "Microsoft Teams" --exclude-title meeting --exclude-title video --exclude-title call --exclude-title share --exclude-title screen --exclude-title mini)
+
+    if test -z "$out" -a -z "$zoom" -a -z "$teams"
+        destroy_empty_labeled_space $label
+
+        return 0
+    end
 
     # -------------------------------------------------------------------------
     # 3. Find or create target labeled space
@@ -64,160 +86,26 @@ function gtd_meeting_tall --description "Collect Outlook, Zoom and Teams onto th
 
     ws_focus_display $target_display
     sleep 0.15
+    gtd_cleanup_wide_spaces
+    gtd_cleanup_solo_spaces
     ws_focus_space $target_space
     sleep 0.15
-
-    # -------------------------------------------------------------------------
-    # 5. First-pass window capture
-    # -------------------------------------------------------------------------
-    set -l windows_json (yabai -m query --windows)
-
-    set -l out (echo $windows_json | jq -r '
-        .[]
-        | select(.app=="Microsoft Outlook")
-        | select(.["is-minimized"]==false)
-        | .id
-    ' | head -n 1)
-
-    set -l zoom (echo $windows_json | jq -r '
-        .[]
-        | select(.app=="zoom.us")
-        | select(.["is-minimized"]==false)
-        | select((.title | ascii_downcase | contains("meeting")) | not)
-        | select((.title | ascii_downcase | contains("video"))   | not)
-        | select((.title | ascii_downcase | contains("share"))   | not)
-        | select((.title | ascii_downcase | contains("screen"))  | not)
-        | select((.title | ascii_downcase | contains("mini"))    | not)
-        | .id
-    ' | head -n 1)
-
-    set -l teams (echo $windows_json | jq -r '
-        .[]
-        | select(.app=="Microsoft Teams")
-        | select(.["is-minimized"]==false)
-        | select((.title | ascii_downcase | contains("meeting")) | not)
-        | select((.title | ascii_downcase | contains("video"))   | not)
-        | select((.title | ascii_downcase | contains("call"))    | not)
-        | select((.title | ascii_downcase | contains("share"))   | not)
-        | select((.title | ascii_downcase | contains("screen"))  | not)
-        | select((.title | ascii_downcase | contains("mini"))    | not)
-        | .id
-    ' | head -n 1)
 
     # -------------------------------------------------------------------------
     # 6. First-pass move
     # -------------------------------------------------------------------------
-    if test -n "$out"
-        yabai -m window $out --space $target_space
-    end
-
-    if test -n "$zoom"
-        yabai -m window $zoom --space $target_space
-    end
-
-    if test -n "$teams"
-        yabai -m window $teams --space $target_space
-    end
-
-    sleep 0.25
-    ws_focus_space $target_space
-    sleep 0.15
+    ws_move_windows_to_space $target_space $out $zoom $teams
 
     # -------------------------------------------------------------------------
-    # 7. Retry pass for windows that did not move successfully
-    # -------------------------------------------------------------------------
-    set -l windows_json_retry (yabai -m query --windows)
-
-    set -l out_retry (echo $windows_json_retry | jq -r --argjson s $target_space '
-        .[]
-        | select(.app=="Microsoft Outlook")
-        | select(.space!=$s)
-        | select(.["is-minimized"]==false)
-        | .id
-    ' | head -n 1)
-
-    set -l zoom_retry (echo $windows_json_retry | jq -r --argjson s $target_space '
-        .[]
-        | select(.app=="zoom.us")
-        | select(.space!=$s)
-        | select(.["is-minimized"]==false)
-        | select((.title | ascii_downcase | contains("meeting")) | not)
-        | select((.title | ascii_downcase | contains("video"))   | not)
-        | select((.title | ascii_downcase | contains("share"))   | not)
-        | select((.title | ascii_downcase | contains("screen"))  | not)
-        | select((.title | ascii_downcase | contains("mini"))    | not)
-        | .id
-    ' | head -n 1)
-
-    set -l teams_retry (echo $windows_json_retry | jq -r --argjson s $target_space '
-        .[]
-        | select(.app=="Microsoft Teams")
-        | select(.space!=$s)
-        | select(.["is-minimized"]==false)
-        | select((.title | ascii_downcase | contains("meeting")) | not)
-        | select((.title | ascii_downcase | contains("video"))   | not)
-        | select((.title | ascii_downcase | contains("call"))    | not)
-        | select((.title | ascii_downcase | contains("share"))   | not)
-        | select((.title | ascii_downcase | contains("screen"))  | not)
-        | select((.title | ascii_downcase | contains("mini"))    | not)
-        | .id
-    ' | head -n 1)
-
-    if test -n "$out_retry"
-        yabai -m window $out_retry --space $target_space
-    end
-
-    if test -n "$zoom_retry"
-        yabai -m window $zoom_retry --space $target_space
-    end
-
-    if test -n "$teams_retry"
-        yabai -m window $teams_retry --space $target_space
-    end
-
-    sleep 0.25
-    ws_focus_space $target_space
-    sleep 0.15
-
-    # -------------------------------------------------------------------------
-    # 8. Final capture on target space
+    # 7. Final capture on target space
     # -------------------------------------------------------------------------
     set -l windows_json_final (yabai -m query --windows)
 
-    set out (echo $windows_json_final | jq -r --argjson s $target_space '
-        .[]
-        | select(.app=="Microsoft Outlook")
-        | select(.space==$s)
-        | select(.["is-minimized"]==false)
-        | .id
-    ' | head -n 1)
+    set out (echo $windows_json_final | ws_find_window "Microsoft Outlook" --space $target_space)
 
-    set zoom (echo $windows_json_final | jq -r --argjson s $target_space '
-        .[]
-        | select(.app=="zoom.us")
-        | select(.space==$s)
-        | select(.["is-minimized"]==false)
-        | select((.title | ascii_downcase | contains("meeting")) | not)
-        | select((.title | ascii_downcase | contains("video"))   | not)
-        | select((.title | ascii_downcase | contains("share"))   | not)
-        | select((.title | ascii_downcase | contains("screen"))  | not)
-        | select((.title | ascii_downcase | contains("mini"))    | not)
-        | .id
-    ' | head -n 1)
+    set zoom (echo $windows_json_final | ws_find_window "zoom.us" --space $target_space --exclude-title meeting --exclude-title video --exclude-title share --exclude-title screen --exclude-title mini)
 
-    set teams (echo $windows_json_final | jq -r --argjson s $target_space '
-        .[]
-        | select(.app=="Microsoft Teams")
-        | select(.space==$s)
-        | select(.["is-minimized"]==false)
-        | select((.title | ascii_downcase | contains("meeting")) | not)
-        | select((.title | ascii_downcase | contains("video"))   | not)
-        | select((.title | ascii_downcase | contains("call"))    | not)
-        | select((.title | ascii_downcase | contains("share"))   | not)
-        | select((.title | ascii_downcase | contains("screen"))  | not)
-        | select((.title | ascii_downcase | contains("mini"))    | not)
-        | .id
-    ' | head -n 1)
+    set teams (echo $windows_json_final | ws_find_window "Microsoft Teams" --space $target_space --exclude-title meeting --exclude-title video --exclude-title call --exclude-title share --exclude-title screen --exclude-title mini)
 
     # -------------------------------------------------------------------------
     # 9. Apply final layout
@@ -225,20 +113,22 @@ function gtd_meeting_tall --description "Collect Outlook, Zoom and Teams onto th
     #    the lower full width.
     # -------------------------------------------------------------------------
     if test -n "$zoom"
-        yabai -m window $zoom --grid 2:2:0:0:1:1
+        ws_window $zoom --grid 2:2:0:0:1:1
     end
 
     if test -n "$teams"
-        yabai -m window $teams --grid 2:2:1:0:1:1
+        ws_window $teams --grid 2:2:1:0:1:1
     end
 
     if test -n "$out"
-        yabai -m window $out --grid 2:1:0:1:1:1
+        ws_window $out --grid 2:1:0:1:1:1
     end
 
     # -------------------------------------------------------------------------
     # 10. Final focus and cleanup
     # -------------------------------------------------------------------------
     ws_focus_space $target_space
+    gtd_cleanup_wide_spaces
+    gtd_cleanup_solo_spaces
     cleanup_unlabeled_empty_spaces $target_space
 end

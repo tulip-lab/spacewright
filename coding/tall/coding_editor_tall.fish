@@ -31,7 +31,7 @@ function coding_editor_tall --description "Collect VS Code and ChatGPT onto the 
     #     cleaned.
     #   - The function is re-runnable.
     #   - It reuses an existing labeled space when possible.
-    #   - It performs a retry pass for window moves.
+    #   - It moves only the initially captured window IDs.
     #   - It clears unlabeled empty spaces on the target display at the end.
     # -------------------------------------------------------------------------
 
@@ -39,6 +39,7 @@ function coding_editor_tall --description "Collect VS Code and ChatGPT onto the 
     # 1. Cleanup coding wide spaces before entering tall mode
     # -------------------------------------------------------------------------
     coding_cleanup_wide_spaces
+    coding_cleanup_solo_spaces
 
     set -l label coding_editor_tall
 
@@ -47,24 +48,16 @@ function coding_editor_tall --description "Collect VS Code and ChatGPT onto the 
     # -------------------------------------------------------------------------
     set -l windows_json (yabai -m query --windows)
 
-    set -l code_window (echo $windows_json | jq -r '
-        .[]
-        | select(.app=="Code")
-        | select(.["is-minimized"]==false)
-        | .id
-    ' | head -n 1)
+    set -l code_window (echo $windows_json | ws_find_window "Code")
 
     if test -z "$code_window"
+        destroy_empty_labeled_space $label
+
         return 0
     end
 
     # ChatGPT is optional and does not decide whether this workspace should exist
-    set -l chatgpt_window (echo $windows_json | jq -r '
-        .[]
-        | select(.app=="ChatGPT")
-        | select(.["is-minimized"]==false)
-        | .id
-    ' | head -n 1)
+    set -l chatgpt_window (echo $windows_json | ws_find_window "ChatGPT")
 
     # -------------------------------------------------------------------------
     # 3. Resolve target display
@@ -88,93 +81,45 @@ function coding_editor_tall --description "Collect VS Code and ChatGPT onto the 
 
     ws_focus_display $target_display
     sleep 0.15
+    coding_cleanup_wide_spaces
+    coding_cleanup_solo_spaces
     ws_focus_space $target_space
     sleep 0.15
 
     # -------------------------------------------------------------------------
-    # 6. First-pass move
+    # 6. Move captured windows
     # -------------------------------------------------------------------------
-    if test -n "$code_window"
-        yabai -m window $code_window --space $target_space
-    end
-
-    if test -n "$chatgpt_window"
-        yabai -m window $chatgpt_window --space $target_space
-    end
-
-    sleep 0.25
-    ws_focus_space $target_space
-    sleep 0.15
+    ws_move_app_pair_to_space \
+        $target_space \
+        "Code" $code_window \
+        "ChatGPT" $chatgpt_window
 
     # -------------------------------------------------------------------------
-    # 7. Retry pass for windows that did not move successfully
-    # -------------------------------------------------------------------------
-    set -l windows_json_retry (yabai -m query --windows)
-
-    set -l code_retry (echo $windows_json_retry | jq -r --argjson s $target_space '
-        .[]
-        | select(.app=="Code")
-        | select(.space!=$s)
-        | select(.["is-minimized"]==false)
-        | .id
-    ' | head -n 1)
-
-    set -l chatgpt_retry (echo $windows_json_retry | jq -r --argjson s $target_space '
-        .[]
-        | select(.app=="ChatGPT")
-        | select(.space!=$s)
-        | select(.["is-minimized"]==false)
-        | .id
-    ' | head -n 1)
-
-    if test -n "$code_retry"
-        yabai -m window $code_retry --space $target_space
-    end
-
-    if test -n "$chatgpt_retry"
-        yabai -m window $chatgpt_retry --space $target_space
-    end
-
-    sleep 0.25
-    ws_focus_space $target_space
-    sleep 0.15
-
-    # -------------------------------------------------------------------------
-    # 8. Final capture on target space
+    # 7. Final capture on target space
     # -------------------------------------------------------------------------
     set -l windows_json_final (yabai -m query --windows)
 
-    set code_window (echo $windows_json_final | jq -r --argjson s $target_space '
-        .[]
-        | select(.app=="Code")
-        | select(.space==$s)
-        | select(.["is-minimized"]==false)
-        | .id
-    ' | head -n 1)
+    set code_window (echo $windows_json_final | ws_find_window "Code" --space $target_space)
 
-    set chatgpt_window (echo $windows_json_final | jq -r --argjson s $target_space '
-        .[]
-        | select(.app=="ChatGPT")
-        | select(.space==$s)
-        | select(.["is-minimized"]==false)
-        | .id
-    ' | head -n 1)
+    set chatgpt_window (echo $windows_json_final | ws_find_window "ChatGPT" --space $target_space)
 
     # -------------------------------------------------------------------------
-    # 9. Apply final layout
+    # 8. Apply final layout
     #    Keep ChatGPT on the upper half and VS Code on the lower half.
     # -------------------------------------------------------------------------
     if test -n "$chatgpt_window"
-        yabai -m window $chatgpt_window --grid 2:1:0:0:1:1
+        ws_window $chatgpt_window --grid 2:1:0:0:1:1
     end
 
     if test -n "$code_window"
-        yabai -m window $code_window --grid 2:1:0:1:1:1
+        ws_window $code_window --grid 2:1:0:1:1:1
     end
 
     # -------------------------------------------------------------------------
-    # 10. Final focus and cleanup
+    # 9. Final focus and cleanup
     # -------------------------------------------------------------------------
     ws_focus_space $target_space
+    coding_cleanup_wide_spaces
+    coding_cleanup_solo_spaces
     cleanup_unlabeled_empty_spaces $target_space
 end

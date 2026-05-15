@@ -10,12 +10,16 @@ function gtd_reset_labels --description "Remove labels from all current GTD work
     # Current GTD labels:
     #   - gtd_chat
     #   - gtd_calendar
+    #   - gtd_mail_solo
     #   - gtd_mail_tall
     #   - gtd_mail_wide
+    #   - gtd_meeting_solo
     #   - gtd_meeting_tall
     #   - gtd_meeting_wide
+    #   - gtd_support_solo
     #   - gtd_support_tall
     #   - gtd_support_wide
+    #   - gtd_review_solo
     #   - gtd_review_tall
     #   - gtd_review_wide
     # -------------------------------------------------------------------------
@@ -23,12 +27,16 @@ function gtd_reset_labels --description "Remove labels from all current GTD work
     set -l labels \
         gtd_chat \
         gtd_calendar \
+        gtd_mail_solo \
         gtd_mail_tall \
         gtd_mail_wide \
+        gtd_meeting_solo \
         gtd_meeting_tall \
         gtd_meeting_wide \
+        gtd_support_solo \
         gtd_support_tall \
         gtd_support_wide \
+        gtd_review_solo \
         gtd_review_tall \
         gtd_review_wide
 

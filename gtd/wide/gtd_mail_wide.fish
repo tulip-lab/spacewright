@@ -21,7 +21,7 @@ function gtd_mail_wide --description "Collect Thunderbird onto the wide GTD mail
     #   - Before entering GTD mail wide mode, empty GTD tall spaces are cleaned.
     #   - The function is re-runnable.
     #   - It reuses an existing labeled space when possible.
-    #   - It performs a retry pass for window moves.
+    #   - It moves only the initially captured window IDs.
     #   - It clears unlabeled empty spaces on the target display at the end.
     # -------------------------------------------------------------------------
 
@@ -29,6 +29,7 @@ function gtd_mail_wide --description "Collect Thunderbird onto the wide GTD mail
     # 1. Cleanup GTD tall spaces before entering wide mode
     # -------------------------------------------------------------------------
     gtd_cleanup_tall_spaces
+    gtd_cleanup_solo_spaces
 
     set -l label gtd_mail_wide
 
@@ -37,14 +38,11 @@ function gtd_mail_wide --description "Collect Thunderbird onto the wide GTD mail
     # -------------------------------------------------------------------------
     set -l windows_json (yabai -m query --windows)
 
-    set -l tb (echo $windows_json | jq -r '
-        .[]
-        | select(.app=="Thunderbird")
-        | select(.["is-minimized"]==false)
-        | .id
-    ' | head -n 1)
+    set -l tb (echo $windows_json | ws_find_window "Thunderbird")
 
     if test -z "$tb"
+        destroy_empty_labeled_space $label
+
         return 0
     end
 
@@ -70,65 +68,36 @@ function gtd_mail_wide --description "Collect Thunderbird onto the wide GTD mail
 
     ws_focus_display $target_display
     sleep 0.15
+    gtd_cleanup_tall_spaces
+    gtd_cleanup_solo_spaces
     ws_focus_space $target_space
     sleep 0.15
 
     # -------------------------------------------------------------------------
-    # 6. First-pass move
+    # 6. Move captured Thunderbird window
     # -------------------------------------------------------------------------
-    if test -n "$tb"
-        yabai -m window $tb --space $target_space
-    end
-
-    sleep 0.25
-    ws_focus_space $target_space
-    sleep 0.15
+    ws_move_app_to_space $target_space "Thunderbird" $tb
 
     # -------------------------------------------------------------------------
-    # 7. Retry pass if Thunderbird did not move successfully
-    # -------------------------------------------------------------------------
-    set -l windows_json_retry (yabai -m query --windows)
-
-    set -l tb_retry (echo $windows_json_retry | jq -r --argjson s $target_space '
-        .[]
-        | select(.app=="Thunderbird")
-        | select(.space!=$s)
-        | select(.["is-minimized"]==false)
-        | .id
-    ' | head -n 1)
-
-    if test -n "$tb_retry"
-        yabai -m window $tb_retry --space $target_space
-    end
-
-    sleep 0.25
-    ws_focus_space $target_space
-    sleep 0.15
-
-    # -------------------------------------------------------------------------
-    # 8. Final capture on target space
+    # 7. Final capture on target space
     # -------------------------------------------------------------------------
     set -l windows_json_final (yabai -m query --windows)
 
-    set tb (echo $windows_json_final | jq -r --argjson s $target_space '
-        .[]
-        | select(.app=="Thunderbird")
-        | select(.space==$s)
-        | select(.["is-minimized"]==false)
-        | .id
-    ' | head -n 1)
+    set tb (echo $windows_json_final | ws_find_window "Thunderbird" --space $target_space)
 
     # -------------------------------------------------------------------------
-    # 9. Apply final layout
+    # 8. Apply final layout
     #    Keep Thunderbird on the right 3/5.
     # -------------------------------------------------------------------------
     if test -n "$tb"
-        yabai -m window $tb --grid 1:5:2:0:3:1
+        ws_window $tb --grid 1:5:2:0:3:1
     end
 
     # -------------------------------------------------------------------------
-    # 10. Final focus and cleanup
+    # 9. Final focus and cleanup
     # -------------------------------------------------------------------------
     ws_focus_space $target_space
+    gtd_cleanup_tall_spaces
+    gtd_cleanup_solo_spaces
     cleanup_unlabeled_empty_spaces $target_space
 end

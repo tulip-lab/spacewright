@@ -15,8 +15,17 @@ function office_tall --description "Arrange all office tall workspaces and clean
 
     office_cleanup_wide_spaces
 
+    set -l old_skip_labeled_cleanup "$WORKSPACE_SKIP_LABELED_CLEANUP"
+    set -gx WORKSPACE_SKIP_LABELED_CLEANUP 1
+
     office_writing_tall
     office_slides_tall
+
+    if test -n "$old_skip_labeled_cleanup"
+        set -gx WORKSPACE_SKIP_LABELED_CLEANUP "$old_skip_labeled_cleanup"
+    else
+        set -e WORKSPACE_SKIP_LABELED_CLEANUP
+    end
 
     office_cleanup_wide_spaces
 end

@@ -21,6 +21,41 @@ Each module follows a consistent structure wherever applicable:
 
 The system is designed to keep workspace behavior predictable, composable, and portable across machines.
 
+## New Machine Bootstrap
+
+On a new Mac or after a macOS/yabai reset, configure the internal display UUID before relying on WIDE, TALL, or internal workspace commands.
+
+Recommended bootstrap:
+
+```fish
+work_reload
+detect_and_set_internal_display_uuid
+get_internal_display_uuid
+work_diagnostics
+```
+
+`detect_and_set_internal_display_uuid` uses `yabai` display metadata as the source of truth. It is safe when the topology is simple enough to infer the internal display. If it cannot determine the internal display confidently, inspect the current displays:
+
+```fish
+yabai -m query --displays | jq -r '.[] | "index=\(.index) uuid=\(.uuid) focus=\(.[\"has-focus\"]) frame=(\(.frame.x),\(.frame.y),\(.frame.w),\(.frame.h)) spaces=\(.spaces)"'
+```
+
+Then set the internal display manually:
+
+```fish
+set_internal_display_uuid <internal-display-uuid>
+```
+
+Confirm the stored value:
+
+```fish
+get_internal_display_uuid
+```
+
+The value is stored in the fish universal variable `WORKSPACE_INTERNAL_DISPLAY_UUID`, so it persists across future fish sessions for the same user.
+
+This setup matters because internal fixed workspaces such as `gtd_chat`, `gtd_calendar`, and `coding_control` must stay anchored to the internal display. External modes such as `work_wide` and `work_tall` also use the configured internal UUID to identify the external display.
+
 ## Common Helper Layer
 
 Shared helpers are located in `workspace/common`.
@@ -40,6 +75,9 @@ Current core helpers include:
 
 - `find_or_create_labeled_space`
 - `prepare_labeled_space`
+- `source_workspace_common`
+- `workspace_status_snapshot`
+- `workspace_mode_status_section`
 - `cleanup_unlabeled_empty_spaces`
 - `resolve_target_display`
 - `resolve_internal_display`
@@ -49,32 +87,97 @@ Current core helpers include:
 - `set_internal_display_uuid`
 - `get_internal_display_uuid`
 - `detect_and_set_internal_display_uuid`
+- `work_diagnostics`
+- `work_bad_windows`
+- `work_clear_bad_windows`
+- `work_cleanup_empty_labeled_spaces`
+- `work_cleanup_empty_unlabeled_spaces`
+- `work_recover_light`
+- `work_command_check`
 
 These helpers allow all module-level workspace functions to share the same lifecycle and display-selection logic.
 
-## Display Configuration
+## Diagnostics And Light Recovery
 
-The internal display UUID is no longer hardcoded inside module functions.
+Use `work_diagnostics` first when a display transition or workspace command leaves the system in an unexpected state:
 
-Instead, the machine-specific internal display UUID is stored once through:
-
-```bash
-set_internal_display_uuid <new-internal-display-uuid>
+```fish
+work_reload
+work_diagnostics
 ```
 
-The value is stored as a fish universal variable and reused by all workspace modules.
+The diagnostic output is read-only. It reports display state, labeled spaces, empty labeled spaces, duplicate labels, empty unlabeled spaces, and bad-window cache entries.
 
-On a new machine, bootstrap may attempt to detect and set the internal display UUID automatically when the display topology is simple enough.
+Phase 8.5 adds conservative manual recovery commands:
 
-Automatic detection uses `yabai` as the source of truth for display UUIDs.
-
-If the result is ambiguous, configure it manually with:
-
-```bash
-set_internal_display_uuid <new-internal-display-uuid>
+```fish
+work_bad_windows
+work_clear_bad_windows
+work_cleanup_empty_labeled_spaces
+work_cleanup_empty_unlabeled_spaces
+work_recover_light
 ```
 
-After that, the normal reload commands can be used.
+The recovery rules are intentionally limited:
+
+- `work_bad_windows` only prints cached bad yabai window IDs.
+- `work_clear_bad_windows` only clears `/tmp/workspace-ws-window-bad`.
+- `work_cleanup_empty_labeled_spaces` destroys only empty spaces with known workspace labels.
+- `work_cleanup_empty_unlabeled_spaces` destroys empty unlabeled spaces except the current protected space.
+- `work_recover_light` runs diagnostics, then the two empty-space cleanup commands, then diagnostics again.
+
+`work_recover_light` does not move windows, does not apply layouts, and does not switch display profiles.
+
+## Mode Commands
+
+The workspace system currently supports three top-level work modes:
+
+```fish
+display_apply_solo
+work_solo
+
+display_apply_wide_left
+work_wide
+
+display_apply_tall_left
+work_tall
+```
+
+The `display_apply_*` commands apply the display profile and reload workspace functions. The `work_*` commands then arrange the intended workspaces for that display mode.
+
+Module-level entries can also be run directly:
+
+```fish
+coding_solo
+coding_wide
+coding_tall
+
+research_solo
+research_wide
+research_tall
+
+gtd_support_solo
+gtd_support_wide
+gtd_support_tall
+
+gtd_review_solo
+gtd_review_wide
+gtd_review_tall
+
+gtd_mail_solo
+gtd_mail_wide
+gtd_mail_tall
+
+gtd_meeting_solo
+gtd_meeting_wide
+gtd_meeting_tall
+
+office_writing_wide
+office_writing_tall
+
+office_slides_wide
+office_slides_tall
+```
 
 ## Module Conventions
 
@@ -131,7 +234,7 @@ So `WhatsApp` is not a strict success condition for `gtd_chat`.
 
 The main reload commands are:
 
-```bash
+```fish
 gtd_reload
 coding_reload
 office_reload
@@ -144,7 +247,12 @@ These reload commands source both module-local functions and the shared helper f
 
 The main inspection commands are:
 
-```bash
+```fish
+work_diagnostics
+work_check
+work_status
+work_mode_status
+
 gtd_status
 coding_status
 office_status
@@ -153,7 +261,7 @@ research_status
 
 Mode-level inspection commands are:
 
-```bash
+```fish
 gtd_mode_status
 coding_mode_status
 office_mode_status
@@ -161,3 +269,44 @@ research_mode_status
 ```
 
 These commands are intended for day-to-day maintenance and regression checking after changes to workspace behavior.
+
+Command-entry validation:
+
+```fish
+work_reload
+work_command_check
+```
+
+`work_command_check` verifies that documented workspace, display, status, recovery, and hotkey entry functions are loaded.
+
+## Recommended Daily Sequences
+
+Single internal display:
+
+```fish
+display_apply_solo
+work_solo
+work_diagnostics
+```
+
+Wide external display:
+
+```fish
+display_apply_wide_left
+work_wide
+work_diagnostics
+```
+
+Tall external display:
+
+```fish
+display_apply_tall_left
+work_tall
+work_diagnostics
+```
+
+If diagnostics show only empty workspace spaces or stale bad-window cache entries, run:
+
+```fish
+work_recover_light
+```
