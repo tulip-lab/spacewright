@@ -163,7 +163,7 @@ function coding_control --description "Collect Warp, SmartGit, and FlClash onto 
     # 8. Apply final layout
     #    Warp occupies the upper 2/3 region.
     #    SmartGit uses a fixed absolute position and size.
-    #    FlClash occupies the lower 1/3 region.
+    #    FlClash uses a similar size, slightly offset from SmartGit.
     # -------------------------------------------------------------------------
     if test -n "$warp"
         ws_window $warp --grid 3:1:0:0:1:2
@@ -176,7 +176,8 @@ function coding_control --description "Collect Warp, SmartGit, and FlClash onto 
 
     for wid in $flclash
         if test -n "$wid"
-            ws_window $wid --grid 3:1:0:2:1:1
+            ws_window $wid --move abs:360:120
+            ws_window $wid --resize abs:1200:1040
         end
     end
 

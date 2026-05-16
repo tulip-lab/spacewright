@@ -698,6 +698,18 @@ work_recover_light
 
 This command does not move windows, apply layouts, or switch display profiles.
 
+## Phase 12 GTD Meeting Stability
+
+Phase 12 closes the Outlook-specific GTD meeting issue where yabai can expose a `Microsoft Outlook` window that is not movable and has no AX reference.
+
+Rules added in this phase:
+
+- `ws_find_window --movable` filters candidate windows to `can-move=true`.
+- `gtd_find_outlook_window` only returns movable Outlook windows.
+- If Outlook exists but no movable Outlook window is available, meeting commands warn instead of pretending Outlook was moved.
+- `gtd_reopen_outlook` is a light manual recovery command: it clears Outlook bad-window cache entries, activates/reopens Outlook, and prints Outlook window diagnostics.
+- `gtd_apps` reports `can_move`, `can_resize`, `has_ax_reference`, and `bad_window_cached` so Outlook AX/yabai state can be diagnosed without ad hoc jq commands.
+
 ## TODO List
 
 ### 1. Refine ChatGPT ownership handling

@@ -1,5 +1,5 @@
 function ws_find_window --description "Find the first matching non-minimized window id from yabai window JSON"
-    argparse 'space=' 'not-space=' 'app-regex=' 'exclude-title=' visible nonempty-title -- $argv
+    argparse 'space=' 'not-space=' 'app-regex=' 'exclude-title=' visible nonempty-title movable -- $argv
     or return 1
 
     set -l app $argv[1]
@@ -13,6 +13,7 @@ function ws_find_window --description "Find the first matching non-minimized win
     set -l exclude_title "$_flag_exclude_title"
     set -l visible 0
     set -l nonempty_title 0
+    set -l movable 0
 
     if set -q _flag_visible
         set visible 1
@@ -20,6 +21,10 @@ function ws_find_window --description "Find the first matching non-minimized win
 
     if set -q _flag_nonempty_title
         set nonempty_title 1
+    end
+
+    if set -q _flag_movable
+        set movable 1
     end
 
     set -l exclude_title_json '[]'
@@ -54,6 +59,7 @@ function ws_find_window --description "Find the first matching non-minimized win
         --arg not_space "$not_space" \
         --arg visible "$visible" \
         --arg nonempty_title "$nonempty_title" \
+        --arg movable "$movable" \
         --argjson exclude_title "$exclude_title_json" '
         .[]
         | select(
@@ -66,6 +72,7 @@ function ws_find_window --description "Find the first matching non-minimized win
         | select(.["is-minimized"]==false)
         | select(($visible!="1") or (.["is-visible"]==true))
         | select(($nonempty_title!="1") or (.title != null and .title != ""))
+        | select(($movable!="1") or (.["can-move"]==true))
         | . as $window
         | select(
             ($exclude_title | length == 0) or all($exclude_title[];

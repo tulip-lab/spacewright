@@ -58,6 +58,8 @@ function work_command_check --description "Check that documented workspace comma
         gtd_solo_all \
         gtd_wide_all \
         gtd_tall_all \
+        gtd_find_outlook_window \
+        gtd_reopen_outlook \
         gtd_chat \
         gtd_calendar \
         office_wide \

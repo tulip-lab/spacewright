@@ -29,8 +29,27 @@ function gtd_apps --description "Show all current GTD-related application window
     # -------------------------------------------------------------------------
 
     set -l windows_json (ws_query_windows gtd_apps status); or return 1
+    set -l bad_window_ids_json '[]'
+    set -l bad_window_dir /tmp/workspace-ws-window-bad
 
-    echo $windows_json | jq '
+    if test -d "$bad_window_dir"
+        set -l bad_window_files (find "$bad_window_dir" -type f 2>/dev/null)
+        set -l bad_window_ids
+
+        for file in $bad_window_files
+            set -l window_id (basename "$file")
+
+            if string match -qr '^[0-9]+$' -- "$window_id"
+                set -a bad_window_ids "$window_id"
+            end
+        end
+
+        if test (count $bad_window_ids) -gt 0
+            set bad_window_ids_json (printf '%s\n' $bad_window_ids | jq -R . | jq -s .)
+        end
+    end
+
+    echo $windows_json | jq --argjson bad_window_ids "$bad_window_ids_json" '
         .[]
         | select(
             .app=="Thunderbird"
@@ -52,10 +71,16 @@ function gtd_apps --description "Show all current GTD-related application window
             or .app=="Dia"
         )
         | {
+            id,
             app,
             title,
             space,
+            display,
             is_visible: .["is-visible"],
-            is_minimized: .["is-minimized"]
+            is_minimized: .["is-minimized"],
+            can_move: .["can-move"],
+            can_resize: .["can-resize"],
+            has_ax_reference: .["has-ax-reference"],
+            bad_window_cached: ((.id | tostring) as $id | ($bad_window_ids | index($id)) != null)
         }'
 end

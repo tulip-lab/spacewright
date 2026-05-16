@@ -26,6 +26,8 @@ function gtd_reload --description "Reload all GTD workspace functions and helper
     source ~/.config/fish/functions/workspace/gtd/gtd_apps.fish
 
     # 3. GTD concrete workspace functions
+    source ~/.config/fish/functions/workspace/gtd/internal/gtd_find_outlook_window.fish
+    source ~/.config/fish/functions/workspace/gtd/internal/gtd_reopen_outlook.fish
     source ~/.config/fish/functions/workspace/gtd/internal/gtd_chat.fish
     source ~/.config/fish/functions/workspace/gtd/internal/gtd_calendar.fish
 

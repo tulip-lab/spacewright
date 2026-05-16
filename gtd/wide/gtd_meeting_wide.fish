@@ -58,13 +58,18 @@ function gtd_meeting_wide --description "Collect Outlook, Zoom and Teams onto th
     # -------------------------------------------------------------------------
     set -l windows_json (ws_query_windows "gtd_meeting_wide" initial); or return 1
 
-    set -l out (echo $windows_json | ws_find_window "Microsoft Outlook")
+    set -l out (gtd_find_outlook_window gtd_meeting_wide)
+    set -l outlook_status $status
 
     set -l zoom (echo $windows_json | ws_find_window "zoom.us" --exclude-title meeting --exclude-title video --exclude-title share --exclude-title screen --exclude-title mini)
 
     set -l teams (echo $windows_json | ws_find_window "Microsoft Teams" --exclude-title meeting --exclude-title video --exclude-title call --exclude-title share --exclude-title screen --exclude-title mini)
 
     if test -z "$out" -a -z "$zoom" -a -z "$teams"
+        if test "$outlook_status" -eq 2
+            return 1
+        end
+
         destroy_empty_labeled_space $label
 
         return 0
@@ -101,7 +106,7 @@ function gtd_meeting_wide --description "Collect Outlook, Zoom and Teams onto th
     # -------------------------------------------------------------------------
     set -l windows_json_final (ws_query_windows "gtd_meeting_wide" final); or return 1
 
-    set out (echo $windows_json_final | ws_find_window "Microsoft Outlook" --space $target_space)
+    set out (echo $windows_json_final | ws_find_window "Microsoft Outlook" --space $target_space --movable)
 
     set zoom (echo $windows_json_final | ws_find_window "zoom.us" --space $target_space --exclude-title meeting --exclude-title video --exclude-title share --exclude-title screen --exclude-title mini)
 

@@ -324,3 +324,18 @@ If diagnostics show only empty workspace spaces or stale bad-window cache entrie
 ```fish
 work_recover_light
 ```
+
+If `gtd_meeting_*` warns that Outlook exists but is not movable, inspect the GTD app diagnostics:
+
+```fish
+gtd_apps
+```
+
+Outlook should report `can_move=true` and `has_ax_reference=true`. If it does not, use the light Outlook recovery command:
+
+```fish
+gtd_reopen_outlook
+gtd_meeting_tall
+```
+
+`gtd_reopen_outlook` does not quit Outlook. It clears Outlook entries from the workspace bad-window cache, asks Outlook to activate/reopen, then prints the current Outlook window diagnostics.
