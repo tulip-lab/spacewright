@@ -46,14 +46,10 @@ function gtd_support_wide --description "Collect Dia onto the wide GTD support w
     # -------------------------------------------------------------------------
     set -l windows_json (ws_query_windows "gtd_support_wide" initial); or return 1
 
-    # Dia: prefer non-empty title and not "New Tab"
-    set -l dia (echo $windows_json | ws_find_window "Dia" --nonempty-title --exclude-title "new tab")
+    set -l dia_windows (printf '%s\n' "$windows_json" | gtd_support_find_dia_windows gtd_support_wide)
+    or return 1
 
-    if test -z "$dia"
-        set dia (echo $windows_json | ws_find_window "Dia")
-    end
-
-    if test -z "$dia"
+    if test (count $dia_windows) -eq 0
         destroy_empty_labeled_space $label
 
         return 0
@@ -83,28 +79,22 @@ function gtd_support_wide --description "Collect Dia onto the wide GTD support w
     sleep 0.15
 
     # -------------------------------------------------------------------------
-    # 5. Move captured Dia window
+    # 5. Move captured Dia windows
     # -------------------------------------------------------------------------
-    ws_move_app_to_space $target_space "Dia" $dia
+    ws_move_windows_to_space $target_space $dia_windows
 
     # -------------------------------------------------------------------------
     # 6. Final capture on target space
     # -------------------------------------------------------------------------
     set -l windows_json_final (ws_query_windows "gtd_support_wide" final); or return 1
 
-    set dia (echo $windows_json_final | ws_find_window "Dia" --space $target_space --nonempty-title --exclude-title "new tab")
-
-    if test -z "$dia"
-        set dia (echo $windows_json_final | ws_find_window "Dia" --space $target_space)
-    end
+    set dia_windows (printf '%s\n' "$windows_json_final" | ws_find_windows "Dia" --space $target_space)
 
     # -------------------------------------------------------------------------
     # 7. Apply final layout
-    #    Keep Dia full-size on the support workspace.
+    #    Keep one Dia full-size and split multiple Dia windows by mode.
     # -------------------------------------------------------------------------
-    if test -n "$dia"
-        ws_window $dia --grid 1:1:0:0:1:1
-    end
+    gtd_support_layout_dia_windows wide $dia_windows
 
     # -------------------------------------------------------------------------
     # 8. Final focus and cleanup

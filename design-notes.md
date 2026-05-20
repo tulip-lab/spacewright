@@ -1,925 +1,426 @@
 # Workspace Design Notes
 
+This file is the design-level source of truth for the workspace automation system. Daily commands and troubleshooting steps live in `README.md`; this document records the current rules, boundaries, and backlog.
+
 ## Design Goals
 
-The workspace system is designed around four goals:
+The workspace system is built around four goals:
 
 1. predictable space labeling and reuse
 2. minimal stale-space accumulation
 3. portable cross-machine behavior
-4. consistent layout semantics across modules
+4. consistent layout semantics without hiding workflow-specific rules
 
-The system is modular so that GTD, coding, office, and research workflows can evolve independently while still sharing a common operational model.
+The system is modular: GTD, coding, office, and research workflows can evolve independently while sharing common display, space, query, and recovery helpers.
 
-## Why Internal Display UUID Was Decoupled
+## Current Architecture
 
-Earlier versions hardcoded the internal display UUID directly inside multiple workspace functions. That made migration to a new machine inconvenient because the same UUID had to be edited in many files.
+### Display Roles
 
-The current design removes machine-specific UUID constants from business-level workspace functions and stores the internal display UUID once through a fish universal variable. The helper functions `get_internal_display_uuid`, `resolve_internal_display`, and `resolve_external_display` provide a single indirection layer that makes the system portable.
+Business-level workspace functions do not hardcode display UUIDs. The internal display UUID is stored once and resolved through helpers:
 
-This reduces migration cost to a single setup command on a new machine.
-
-The operational setup command is:
-
-```fish
-detect_and_set_internal_display_uuid
-```
-
-If detection is ambiguous, the manual setup command is:
-
-```fish
-set_internal_display_uuid <internal-display-uuid>
-```
-
-The stored value should be checked with:
-
-```fish
-get_internal_display_uuid
-```
-
-This value is important because it defines the display roles used by the whole workspace system:
-
-- `resolve_internal_display` uses it to anchor internal fixed workspaces.
-- `resolve_external_display` uses it to choose the non-internal display for WIDE and TALL task workspaces.
-- `display_apply_solo`, `work_solo`, `work_wide`, and `work_tall` all assume this role mapping is correct.
-
-If the UUID is missing or wrong, the visible symptom is usually not a shell error. The more likely failure mode is that windows move to the wrong display or external layouts fall back to the internal screen.
-
-The workspace internal display role is separate from the macOS primary display. External display profiles may place the external monitor at `origin:(0,0)` so the Dock and menu-bar-primary behavior belong to the external monitor, while internal fixed workspaces still resolve through `WORKSPACE_INTERNAL_DISPLAY_UUID`.
-
-## Why Display Resolution Was Further Unified
-
-After the UUID decoupling step, many workspace functions still retained transitional display-selection logic based on:
-
+- `detect_and_set_internal_display_uuid`
+- `set_internal_display_uuid <internal-display-uuid>`
 - `get_internal_display_uuid`
-- `resolve_target_display`
-- direct display enumeration through `yabai -m query --displays`
+- `resolve_internal_display`
+- `resolve_external_display`
 
-That transitional form has now been further simplified.
-
-The current rule is:
+Current display role rules:
 
 - internal fixed workspaces use `resolve_internal_display`
 - external task workspaces use `resolve_external_display`
+- external resolution must fail closed on query failure
+- fallback to internal is allowed only after a successful display query confirms single-display operation
 
-This means business-level workspace functions no longer need to know how internal and external displays are resolved. That logic now lives in the common helper layer.
+The workspace internal display role is separate from the macOS primary display. External display profiles may put the external monitor at `origin:(0,0)` so Dock and menu-bar-primary behavior belong to the external screen, while internal fixed workspaces still resolve through `WORKSPACE_INTERNAL_DISPLAY_UUID`.
 
-This change reduces repeated display-selection boilerplate, improves readability, and keeps future display-policy changes localized to shared helpers rather than scattered across module functions.
+### Display Profiles And Workspace Entry
 
-## Why Display Profiles and Workspace Recovery Are Separate
-
-The display layer and the workspace layer now have distinct responsibilities.
-
-Display-profile functions such as:
+Display profile functions apply monitor geometry only:
 
 - `display_wide_left`
 - `display_tall_left`
+- `display_solo`
 
-are responsible only for monitor geometry and arrangement. They mainly apply `displayplacer` profiles and remain tied to specific physical monitor setups.
+Mode entry is a two-step contract:
 
-Workspace recovery is a separate concern. After a display topology change, the workspace system must be reloaded and the target mode must be re-entered. This is now represented by the `display_apply_*` layer, such as:
+- `display_apply_solo; and work_solo`
+- `display_apply_wide_left; and work_wide`
+- `display_apply_tall_left; and work_tall`
 
-- `display_apply_wide_left`
-- `display_apply_tall_left`
-- `display_apply_solo`
+`display_apply_*` commands:
 
-These functions apply the display profile and then run:
+- run the corresponding display profile
+- fail fast if displayplacer fails
+- reload display/workspace functions
+- wait briefly through `display_verify_mode`
+- run `work_display_health <mode>`
 
-- `display_reload`
-- `work_reload`
+`WORKSPACE_DISPLAY_SETTLE_SECONDS` controls the post-profile wait and defaults to `0.8`.
 
-They do not automatically force the final workspace mode. The user may then explicitly run:
+SKHD top-level mode bindings use `display_apply_*; and work_*` so workspace movement does not run when display health fails.
 
-- `work_wide`
-- `work_tall`
-- `work_solo`
-- or a specific module entry such as `coding_wide` or `gtd_review_wide`
+### Display Health
 
-This keeps display setup and workspace intent clearly separated.
+`work_display_health [solo|wide|tall]` is the focused read-only display-role check. It reports:
 
-## Why Labeled and Unlabeled Space Cleanup Are Separate
+- configured internal display UUID
+- resolved internal/external display indexes
+- external display count
+- external display origin health
+- external display shape
+- Dock `orientation` and `autohide`
 
-The system distinguishes between two different cleanup responsibilities.
+Expected mode-specific state:
 
-`cleanup_unlabeled_empty_spaces` handles empty spaces that do not carry structural meaning. These are usually transient or accidental spaces created during window movement or space creation.
+- `solo`: no external display is visible
+- `wide`: external display is wider than tall and at `origin:(0,0)`
+- `tall`: external display is taller than wide and at `origin:(0,0)`
 
-Module-specific cleanup functions such as `gtd_cleanup_wide_spaces` or `research_cleanup_tall_spaces` handle empty spaces that still carry valid labels. These are structured workspaces that have become empty after mode switching or app disappearance.
+`work_display_health <mode>` returns nonzero when warnings are present. Plain `work_display_health` remains a read-only report suitable for diagnostics.
 
-Keeping these two cleanup mechanisms separate reduces the risk of deleting meaningful workspaces too aggressively while still keeping the space graph tidy.
+Diagnostics do not apply display profiles, restart Dock, move spaces, or repair anything automatically. If external display health fails, rerun the matching `display_apply_*` command before entering the workspace mode again.
 
-## Why Space Creation Now Uses Explicit Post-Creation Relocation
+## Space And Label Rules
 
-A key issue was identified during monitor switching tests.
+### Labeled Spaces
 
-In the current environment, `yabai -m space --create` does not reliably create a new space directly on the intended target display, even after focusing the target display or a space on that display first.
+Workspace labels are structural ownership markers. Use:
 
-Because of this, the old assumption that display focus would control space creation destination is no longer used.
+- `find_or_create_labeled_space`
+- `prepare_labeled_space`
+- module cleanup wrappers around `cleanup_labeled_empty_spaces`
 
-The current strategy in `find_or_create_labeled_space` is:
+`prepare_labeled_space` clears the same label from other spaces before assigning it to the target space. This keeps label ownership unique across display transitions.
 
-1. create the new space
-2. identify the newly created space by UUID difference
-3. check which display it was actually created on
-4. explicitly move it to the target display if necessary
+`find_or_create_labeled_space` does not rely on display focus to control new-space placement. It creates the space, identifies it by UUID difference, checks the actual display, and explicitly moves it to the target display when needed.
 
-This change is the key fix that made external wide workspaces recover correctly after switching between solo mode and different external monitors.
+### Unlabeled Spaces
 
-## Why Label Ownership Is Normalized Explicitly
+`cleanup_unlabeled_empty_spaces` handles transient empty spaces that carry no structural label. This stays separate from labeled-space cleanup to avoid deleting meaningful workspaces too aggressively.
 
-A second issue observed during display switching was stale label carryover.
+`work_cleanup_empty_unlabeled_spaces` and `work_recover_light` are explicit manual recovery tools. They are not hidden inside normal workspace entry.
 
-When a workspace was recreated on a different display, the same label could still remain attached to an older space. This produced ambiguous label ownership and made workspace state harder to reason about.
+### Primary-App Absence
 
-`prepare_labeled_space` now clears the same label from any other space before assigning it to the target space.
+Some workspaces require a primary app, such as Code, Zotero, Thunderbird, Word, or PowerPoint. If the primary app is unavailable, the workspace function destroys an existing empty labeled space with the same label and returns without creating a new workspace.
 
-This keeps workspace labels unique, explicit, and stable across display transitions.
+This keeps status output accurate and reduces stale structural residue.
 
-## Why ChatGPT Uses Last-Caller Ownership
+## Query, Parsing, And Window Movement
 
-`ChatGPT` is used in multiple workspace modules as a helper window. Because it is currently treated as a shared single-instance application, simultaneous persistent ownership by multiple modules is not feasible.
+### Query Boundary
 
-The chosen rule is simple:
+Use shared bounded helpers for yabai and JSON parsing:
+
+- `ws_yabai`
+- `ws_jq`
+- `ws_query_windows`
+- `ws_find_window`
+- `ws_find_windows`
+- `workspace_select_app_window`
+
+Workspace functions should avoid direct `jq` pipelines where these helpers cover the behavior.
+
+`ws_yabai` separates read-only query timeout from non-query operation timeout. Queries can wait longer; focus/destroy operations fail faster so mode switches do not appear stuck on one space operation.
+
+If read-only queries repeatedly time out, recovery is explicit:
+
+```fish
+yabai --restart-service
+work_reload
+```
+
+### Window Movement
+
+`ws_window` is the wrapper for direct `yabai -m window ...` operations. It uses bounded timeouts and caches window IDs that time out under:
+
+```text
+/tmp/workspace-ws-window-bad
+```
+
+Move helpers move caller-provided IDs only. They do not rediscover other same-app windows during movement, because stale yabai IDs can cause repeated stalls.
+
+Useful move helpers:
+
+- `ws_move_app_to_space`
+- `ws_move_app_pair_to_space`
+- `ws_move_windows_to_space`
+
+Layout geometry remains explicit in module functions or narrow module-specific helpers. There is no generic layout engine.
+
+## Diagnostics And Recovery
+
+### Diagnostics
+
+Primary read-only commands:
+
+- `work_diagnostics`
+- `work_status`
+- `work_mode_status`
+- `work_check`
+- `work_command_check`
+
+`work_diagnostics` reports display health, labeled spaces, empty labeled spaces, duplicate labels, empty unlabeled spaces, and bad-window cache summary.
+
+`work_command_check` validates function availability after `work_reload`. It does not move windows, switch displays, or validate app presence.
+
+### Bad Window Cache
+
+`work_bad_windows --summary` reports total, active, expired, present-in-yabai, missing-from-yabai, and TTL counts.
+
+Detailed filters:
+
+- `work_bad_windows --active`
+- `work_bad_windows --expired`
+- `work_bad_windows --present`
+- `work_bad_windows --missing`
+
+Targeted cleanup:
+
+- `work_clear_bad_windows --expired`
+- `work_clear_bad_windows --missing`
+- `work_clear_bad_windows --present`
+- `work_clear_bad_windows --active`
+
+No bad-window cleanup runs automatically from workspace mode entry, display profile application, or light recovery.
+
+State meanings:
+
+- `active`: newer than `WORKSPACE_BAD_WINDOW_TTL_SECONDS`
+- `expired`: old enough that selectors no longer need to skip it for performance protection
+- `present_in_yabai=true`: still exists in the current yabai graph and may need app-level investigation
+- `present_in_yabai=false`: likely stale and usually safe to clear explicitly
+
+### Light Recovery
+
+`work_recover_light` is intentionally conservative. It runs diagnostics, empty labeled-space cleanup, empty unlabeled-space cleanup, and diagnostics again.
+
+It does not:
+
+- move application windows
+- apply grid layouts
+- switch display profiles
+- restart Dock or yabai
+
+## Mode And Cleanup Model
+
+The active mode vocabulary is:
+
+- `solo`
+- `wide`
+- `tall`
+
+Aggregate entries such as `gtd_tall`, `gtd_wide`, `coding_tall`, `coding_wide`, `office_tall`, and `office_wide` own mode-level labeled cleanup. During child module calls, they set:
+
+```fish
+WORKSPACE_SKIP_LABELED_CLEANUP=1
+```
+
+This prevents repeated labeled-space scans and destroy attempts while preserving standalone module behavior.
+
+Common cleanup wrappers are intentionally thin and mode-named:
+
+- `*_cleanup_solo_spaces`
+- `*_cleanup_wide_spaces`
+- `*_cleanup_tall_spaces`
+
+## GTD Ownership Rules
+
+### ChatGPT
+
+`ChatGPT` is shared by multiple workflows. The current global rule is:
 
 **the last invoked module owns the `ChatGPT` window**
 
-This rule keeps the system deterministic and avoids hidden precedence logic between modules. It also reflects the fact that `ChatGPT` is usually needed in the current foreground workflow rather than in every module at once.
+This keeps behavior deterministic without hidden precedence rules.
 
-## Why Primary-App Absence Destroys Stale Empty Spaces
+GTD review captures a movable `ChatGPT` window. If ChatGPT exists but yabai does not expose a movable window, review activates ChatGPT once and refreshes the window snapshot.
 
-Some workspaces are defined around a required primary application:
+In `gtd_solo_all`, review runs after meeting so GTD review is the final SOLO owner for ChatGPT.
 
-- Word for office writing
-- PowerPoint for office slides
-- Zotero for research
-- Code for coding editor
-- Thunderbird for GTD mail
+### Notes And Dia
 
-If the primary application is unavailable, retaining an empty labeled space usually provides no value and instead creates stale structural residue. For that reason, workspace functions destroy an existing empty labeled space with the same label before returning.
+`Notes` is owned by `gtd_review_*`.
 
-This policy keeps workspace status views accurate and reduces manual cleanup.
+`Dia` is owned by `gtd_support_*`.
 
-## Why WhatsApp Is Best-Effort in gtd_chat
+This avoids moving a single Notes window back and forth between support and review during aggregate entries.
 
-The GTD chat workspace is primarily defined by a stable four-window layout:
+### GTD Support Dia Layout
+
+All GTD support modes collect every non-minimized Dia window that yabai reports as movable through `gtd_support_find_dia_windows`.
+
+If Dia exists but no movable Dia window is exposed, the helper activates Dia once, refreshes the window snapshot, and fails closed with a warning if Dia remains non-movable.
+
+`gtd_support_layout_dia_windows` applies mode-specific layouts:
+
+- solo: one full-screen; multiple Dia windows use a compact top/bottom or two-column grid
+- wide: one full-screen; two or three use horizontal columns; four or more use a two-row grid
+- tall: one bottom half; two top/bottom; three with two on top and one on bottom; four or more use a two-column grid
+
+This multi-window policy is deliberately scoped to GTD support. Meeting and review workspaces keep app-specific selection rules until real failures justify broadening multi-window ownership.
+
+### GTD Meeting
+
+Outlook selection goes through `gtd_find_outlook_window`, which returns only movable Outlook windows and can prefer a target-space Outlook window when one exists.
+
+If Outlook exists but no movable Outlook window is available, meeting commands warn instead of pretending Outlook was moved.
+
+`gtd_reopen_outlook` is a light manual recovery command: it clears Outlook bad-window cache entries, activates/reopens Outlook, and prints Outlook window diagnostics.
+
+`gtd_meeting_tall` and `gtd_meeting_wide` retry captured Zoom/Teams moves when the first move does not place the captured window on the target space.
+
+Expected meeting behavior:
+
+- Microsoft Outlook, zoom.us, and Microsoft Teams remain together in GTD meeting spaces
+- Outlook-specific recovery stays in `gtd_find_outlook_window` and `gtd_reopen_outlook`
+
+### GTD Chat
+
+The core GTD chat layout is:
 
 - Keybase
 - 钉钉
 - WeChat
 - Messages
 
-`WhatsApp` is useful when available, but its window behavior can be less stable in some sessions. To avoid making the entire chat workspace fragile, `WhatsApp` is treated as best-effort rather than a strict layout dependency.
+WhatsApp is best-effort. Its window behavior is less stable in some sessions, so it should not make the whole chat workspace fragile.
 
-This keeps `gtd_chat` robust while still allowing optional inclusion of `WhatsApp` where possible.
+## Abstraction Policy
 
-## GTD Notes Ownership
+Keep module-level workspace behavior explicit and readable.
 
-`Notes` is owned by `gtd_review_*`.
+Add shared helpers only when they remove stable repeated mechanics without hiding app ownership, query failure handling, or layout geometry.
 
-`gtd_support_*` only manages `Dia`. This avoids moving a single `Notes` window back and forth between `gtd_support_*` and `gtd_review_*` when running aggregate entries such as `gtd_tall`, `gtd_wide`, `work_tall`, or `work_wide`.
+Current accepted helper layers:
 
-The current GTD support rule is:
+- display resolution helpers
+- bounded yabai/query/parser helpers
+- labeled/unlabeled cleanup helpers
+- simple window selection helpers
+- caller-provided window move helpers
+- narrow GTD support Dia helpers
 
-- `gtd_support_tall`: all matching `Dia` windows move to the support workspace; one window is full-size, two split top/bottom, three use two on top and one on bottom, and four or more use a two-column grid
-- `gtd_support_wide`: `Dia` full-size on the support workspace
+Current non-goals:
 
-## Display Mode Entries
+- no generic workflow engine
+- no generic layout DSL
+- no hidden automatic display/Dock/yabai repair
+- no config-driven replacement of app-specific recovery logic
 
-The workspace system currently has three top-level display/work modes:
+## Validation
 
-- `display_apply_solo; work_solo`: single internal display
-- `display_apply_wide_left; work_wide`: internal display plus wide external display
-- `display_apply_tall_left; work_tall`: internal display plus tall external display
-
-As of Phase 4, `work_solo` arranges the current first batch of solo workspaces:
-
-- `coding_solo`
-- `research_solo`
-- `gtd_solo_all`
-
-The current first-batch module solo entries are:
-
-- `coding_solo`: `Code` left 2/3, visible `ChatGPT` right 1/3, plus `coding_control`
-- `research_solo`: `Zotero` left 2/3, visible `ChatGPT` right 1/3
-- `gtd_support_solo`: `Dia` full screen
-- `gtd_review_solo`: `Finder`, `Preview`, visible `ChatGPT`, and `Notes`
-- `gtd_mail_solo`: `Thunderbird` full screen
-- `gtd_meeting_solo`: `Zoom`, `Teams`, and `Outlook`
-
-Office solo entries are intentionally deferred.
-
-## Three-Mode Cleanup
-
-Phase 5 extends cleanup and status handling to the three active display/work modes:
-
-- `solo`
-- `wide`
-- `tall`
-
-Each module family that currently has solo entries now has a matching cleanup helper:
-
-- `coding_cleanup_solo_spaces`
-- `research_cleanup_solo_spaces`
-- `gtd_cleanup_solo_spaces`
-
-Wide and tall entries clean empty solo spaces in addition to the opposite external mode. Solo entries already clean empty wide and tall spaces. Cleanup remains conservative: only empty labeled spaces are destroyed.
-
-Mode status output now includes a solo section for each family, including office, even though office solo entries are still deferred.
-
-## Cleanup Abstraction
-
-Phase 6 starts with the lowest-risk abstraction: labeled empty-space cleanup.
-
-The shared helper is:
-
-- `cleanup_labeled_empty_spaces`
-
-It destroys empty spaces whose labels match a caller-provided regular expression. Module-specific cleanup functions remain as thin wrappers, for example:
-
-- `coding_cleanup_wide_spaces`
-- `coding_cleanup_tall_spaces`
-- `coding_cleanup_solo_spaces`
-- `gtd_cleanup_wide_spaces`
-- `gtd_cleanup_tall_spaces`
-- `gtd_cleanup_solo_spaces`
-- `research_cleanup_wide_spaces`
-- `research_cleanup_tall_spaces`
-- `research_cleanup_solo_spaces`
-- `office_cleanup_wide_spaces`
-- `office_cleanup_tall_spaces`
-- `office_cleanup_solo_spaces`
-
-The second cleanup abstraction is:
-
-- `destroy_empty_labeled_space`
-
-It centralizes the repeated primary-app absence path. When a module's primary app is unavailable, the module can destroy the first empty space with that exact label before returning. This intentionally preserves the earlier conservative behavior: it does not delete occupied spaces and it does not delete every matching labeled space.
-
-The third abstraction is:
-
-- `ws_find_window`
-
-It centralizes simple exact-app window selection from `yabai -m query --windows` JSON. The helper supports the recurring filters used by editor/research workspaces:
-
-- non-minimized windows only
-- optional visible-window requirement
-- optional exact target space
-
-Phase 6 initially applies this only to `coding_editor_*` and `research_*`, where the old jq expressions were direct equivalents. GTD and office modules keep their local app-specific selection logic until those rules are reviewed separately.
-
-This helper now also covers the reviewed GTD and office selection rules. It supports the extra filters needed there:
-
-- app-name regular expressions for apps such as `DingTalk` / `钉钉` and `WhatsApp`
-- non-empty title preference for apps such as `Dia` and `Notes`
-- title-exclusion filters for apps such as `Zoom` and `Teams`
-
-The fourth abstraction is:
-
-- `ws_move_app_pair_to_space`
-
-It centralizes the common two-window move flow used by editor/research workspaces:
-
-- move the primary app window to the target space
-- move the helper app window to the target space when present
-- focus the target space
-
-It deliberately does not apply layout grids and does not perform final capture. Those stay in the module functions because the layout meaning differs between coding, research, solo, wide, and tall modes.
-
-The matching single-window abstraction is:
-
-- `ws_move_app_to_space`
-
-It is used where a workspace is centered around one movable app window, such as GTD mail and GTD support. Multi-window GTD modules still keep their explicit move order locally, but their window selection now uses `ws_find_window`.
-
-The matching multi-window abstraction is:
-
-- `ws_move_windows_to_space`
-
-It moves a caller-provided list of window ids to a target space and then refocuses the target space only when at least one valid window id was provided. This is used by GTD review, meeting, and calendar modules to keep their local selection/layout rules while avoiding repeated empty move/focus/sleep blocks.
-
-## Batch Cleanup Suppression
-
-Aggregate entries such as `gtd_tall`, `gtd_wide`, `coding_tall`, `coding_wide`, `office_tall`, and `office_wide` own their mode-level labeled cleanup. They clean opposite-mode empty labeled spaces before and after calling their child module functions.
-
-During those child module calls, the aggregate entry sets:
-
-- `WORKSPACE_SKIP_LABELED_CLEANUP=1`
-
-`cleanup_labeled_empty_spaces` treats that flag as a no-op. This keeps standalone module behavior unchanged while avoiding repeated labeled-space scans and destroy attempts inside aggregate runs such as `work_tall`.
-
-This keeps call sites readable while removing duplicated `yabai -m query --spaces | jq ... | yabai -m space --destroy` logic.
-
-Window capture and layout logic remains explicit in each workspace function for now. Window move helpers intentionally move only caller-provided window IDs; they do not rediscover other same-app windows during the move step because stale yabai window IDs can block for seconds.
-
-## Phase 7 Performance Closure
-
-Phase 7 focused on making repeated WIDE, TALL, and SOLO transitions fast and predictable when yabai reports stale or slow window IDs.
-
-The final rules from this phase are:
-
-- `ws_window` is the only supported wrapper for direct `yabai -m window ...` calls.
-- `ws_window` uses a bounded yabai timeout. The default is `1` second and can be overridden with `WORKSPACE_YABAI_TIMEOUT_SECONDS`.
-- Window IDs that time out or hit the alarm path are cached under `/tmp/workspace-ws-window-bad`.
-- Bad-window cache entries are kept for `600` seconds by default and can be overridden with `WORKSPACE_BAD_WINDOW_TTL_SECONDS`.
-- `ws_find_window` skips known bad window IDs, so later module captures do not repeatedly choose a stale ID.
-- Move helpers move only the window IDs captured by the caller. They do not perform a second `--not-space` discovery pass.
-- `WORKSPACE_DEBUG_WINDOW=1` remains the profiling switch for slow window actions and cache skips.
-
-The removed retry-discovery behavior was intentionally conservative for correctness, but it became harmful in practice: when yabai returned stale IDs, the retry pass often rediscovered another bad same-app window and multiplied the delay across aggregate commands such as `gtd_tall_all`, `work_tall`, and `work_solo`.
-
-The current tested performance target is:
-
-- aggregate commands should finish in a few seconds when the target applications already exist
-- a newly encountered stale window should add at most the configured timeout once
-- repeated commands should skip known bad windows until the cache expires
-
-Non-window yabai operations use a separate bounded wrapper:
-
-- `ws_yabai` is the supported wrapper for shared `yabai -m query`, `space`, and `display` calls.
-- `ws_query_windows` is the supported helper for module-level full-window captures.
-- `WORKSPACE_YABAI_COMMAND_TIMEOUT_SECONDS` controls this timeout and defaults to `15` seconds.
-- `WORKSPACE_DEBUG_YABAI=1` prints slow or failed shared yabai calls.
-- Workspace commands must fail closed when an initial yabai query cannot return reliable JSON. They should not treat an empty timeout result as "no matching apps" or as a valid empty space list.
-- External display resolution must also fail closed on query failure. It may fall back to the internal display only after a successful display query confirms that no external display is connected.
-- Labeled-space creation requires an explicit target display and must not silently default to display `1`.
-- Space creation must compare UUIDs only after a successful pre-create and post-create space snapshot.
-
-The latest local verification after Phase 7 showed:
-
-- `gtd_tall_all`: sub-second after bad-window filtering
-- `work_tall`: about 2.5 seconds
-- `work_solo`: about 1.6 seconds
-
-These timings depend on the live yabai/app state, but they confirm that the previous multi-minute outliers are no longer expected under normal repeated use.
-
-## Phase 8 Diagnostics Closure
-
-Phase 8 adds a read-only diagnostics layer so display transitions can be inspected before any recovery command is introduced.
-
-The new command is:
-
-- `work_diagnostics`
-
-It reports:
-
-- display summary and current focused display/space
-- all labeled workspace spaces grouped by label
-- empty labeled spaces
-- duplicate labels
-- empty unlabeled spaces
-- bad-window cache entries from `/tmp/workspace-ws-window-bad`
-
-`work_check` now runs:
-
-1. module reload
-2. `work_diagnostics`
-3. mode status for GTD, coding, office, and research
-
-`work_status` also starts with `work_diagnostics` before printing the fuller module status snapshots.
-
-Phase 8 intentionally does not add automatic recovery. The current rule is:
-
-- diagnose first
-- keep recovery manual until the output has been tested through real SOLO, WIDE, and TALL display transitions
-
-Recommended manual checks are:
+For fish syntax changes:
 
 ```fish
-work_reload
-work_diagnostics
-work_check
+fish -n path/to/file.fish
 ```
 
-After changing display state, run:
-
-```fish
-display_apply_solo
-work_solo
-work_diagnostics
-```
-
-or:
-
-```fish
-display_apply_tall_left
-work_tall
-work_diagnostics
-```
-
-The expected result is not necessarily zero empty spaces at all times. The useful signal is whether stale labels, duplicate labels, empty labeled spaces, and bad-window cache entries are visible and easy to interpret.
-
-## Phase 8.5 Light Recovery Closure
-
-Phase 8.5 adds manual recovery commands that act only on diagnostic artifacts:
-
-- `work_bad_windows`
-- `work_clear_bad_windows`
-- `work_cleanup_empty_labeled_spaces`
-- `work_cleanup_empty_unlabeled_spaces`
-- `work_recover_light`
-
-The recovery boundary is intentionally narrow:
-
-- bad-window cache cleanup is limited to `/tmp/workspace-ws-window-bad`
-- labeled-space cleanup is limited to empty spaces whose labels match known workspace label patterns
-- unlabeled-space cleanup keeps the current space protected
-- no command in this phase moves application windows
-- no command in this phase applies a layout or display profile
-
-This phase closes the loop from diagnosis to conservative manual repair:
-
-```fish
-work_diagnostics
-work_recover_light
-work_diagnostics
-```
-
-The recovery command is deliberately not called automatically by `work_check`. `work_check` remains a reporting tool, while `work_recover_light` is an explicit user action.
-
-## Phase 9 Documentation Closure
-
-Phase 9 consolidates user-facing documentation without changing runtime behavior.
-
-The current documentation split is:
-
-- `workspace/README.md`: operational commands for new-machine setup, daily use, diagnostics, recovery, modes, reloads, and status checks
-- `workspace/design-notes.md`: design rationale, phase history, rules, maintenance strategy, and future TODOs
-- `skhd/README.md`: concrete hotkey table and active binding source
-- `skhd/design-notes.md`: hotkey design rationale
-
-The Phase 9 documentation rules are:
-
-- put commands a user is expected to run in `README.md`
-- put reasoning and tradeoffs in `design-notes.md`
-- keep `skhd` docs aligned with the actual `skhdrc`
-- keep GTD ownership text consistent: `gtd_support_*` owns `Dia`, while `gtd_review_*` owns `Notes`
-- keep recovery documentation explicit that `work_recover_light` does not move windows or apply layouts
-- keep internal display UUID setup visible as a new-machine bootstrap step
-
-## Phase 10.1 Reload Source Closure
-
-Phase 10.1 reduces reload/source duplication without changing workspace layout behavior.
-
-The shared common-helper source list now lives in:
-
-- `workspace/common/source_workspace_common.fish`
-
-`work_reload` sources common helpers once, then loads display and module reloaders. While `work_reload` calls nested module reloaders, it sets:
-
-- `WORKSPACE_SKIP_COMMON_RELOAD=1`
-
-Module reloaders respect that flag and skip re-sourcing common helpers during nested reloads. When a module reloader such as `gtd_reload`, `coding_reload`, `office_reload`, or `research_reload` is run directly, it still sources common helpers itself.
-
-The active shell startup entry is now intentionally small:
-
-```fish
-source ~/.config/fish/functions/workspace/common/work_reload.fish
-work_reload
-```
-
-This keeps shell startup, full reload, and standalone module reload behavior consistent while avoiding repeated common-helper source blocks across files.
-
-## Phase 10.2 Status Output Closure
-
-Phase 10.2 standardizes status output without changing workspace layout behavior.
-
-The shared status helpers are:
-
-- `workspace_status_snapshot`
-- `workspace_mode_status_section`
-
-`workspace_status_snapshot` prints the common display and space fields:
-
-- display index, uuid, frame, focus, space count, spaces
-- space index, label, display, window count, windows
-
-`workspace_mode_status_section` prints a titled labeled-space section for a caller-provided label regex. Module mode-status functions now use it for solo, wide, tall, and internal sections.
-
-Standalone module status commands such as `gtd_status` and `coding_status` still print a full display/space snapshot plus their app-specific windows.
-
-`work_status` prints:
-
-1. `work_diagnostics`
-2. one shared workspace snapshot
-3. module app sections
-
-While `work_status` calls module status functions, it sets:
-
-- `WORKSPACE_SKIP_STATUS_SNAPSHOT=1`
-
-This prevents four repeated display/space snapshots in the combined output. The flag is restored after `work_status` finishes.
-
-## Phase 10.3 Cleanup Wrapper Closure
-
-Phase 10.3 standardizes cleanup wrapper patterns without changing layout behavior.
-
-The cleanup wrapper rule is:
-
-- module-specific cleanup functions remain thin wrappers around `cleanup_labeled_empty_spaces`
-- mode-specific wrappers use the same mode vocabulary: `solo`, `wide`, `tall`
-- cleanup remains conservative and only destroys empty labeled spaces
-- broad recovery cleanup is still explicit through `work_cleanup_empty_labeled_spaces` or `work_recover_light`
-
-The research label regex now uses:
-
-```text
-^research(_.*)?_<mode>$
-```
-
-This intentionally matches both current labels such as `research_wide` and possible future labels such as `research_notes_wide`, while avoiding looser matches like `researchfoo_wide`.
-
-The global workspace labeled cleanup pattern now includes:
-
-- `coding_.*_(solo|wide|tall)`
-- `coding_control`
-- `gtd_.*_(solo|wide|tall)`
-- `gtd_chat`
-- `gtd_calendar`
-- `office_.*_(solo|wide|tall)`
-- `research(_.*)?_(solo|wide|tall)`
-
-`office_cleanup_solo_spaces` exists for consistency with the mode/status vocabulary, even though office solo workspace entries are still deferred.
-
-## Phase 10.4 Layout Duplication Review
-
-Phase 10.4 reviews duplicated module layout code and intentionally does not extract a broad layout abstraction yet.
-
-The repeated structure across many workspace functions is:
-
-1. clean opposite-mode empty spaces
-2. find the primary required window
-3. resolve the target display
-4. find or create the labeled space
-5. prepare the labeled space
-6. move captured windows
-7. re-capture windows on the target space
-8. apply a mode-specific grid layout
-9. focus the target space and clean unlabeled empty spaces
-
-The strongest duplication candidates are:
-
-- `coding_editor_wide` / `coding_editor_tall`
-- `research_wide` / `research_tall`
-- `office_writing_wide` / `office_writing_tall`
-- `office_slides_wide` / `office_slides_tall`
-- `gtd_mail_wide` / `gtd_mail_tall`
-
-These pairs mostly differ by:
-
-- label
-- opposite-mode cleanup function
-- final grid geometry
-- short user-facing comments
-
-The higher-risk candidates are:
-
-- `gtd_review_wide` / `gtd_review_tall`
-- `gtd_meeting_wide` / `gtd_meeting_tall`
-- `gtd_support_wide` / `gtd_support_tall`
-- `coding_control`
-- `gtd_chat`
-- `gtd_calendar`
-
-These functions contain more workflow-specific window selection, optional-window handling, fixed internal-display behavior, title filters, or absolute positioning.
-
-Current decision:
-
-- keep layout functions explicit for now
-- do not introduce a generic "workspace layout engine"
-- only consider small helpers when they remove boilerplate without hiding app ownership or layout geometry
-
-Future low-risk helper candidates:
-
-- a helper for "required primary window missing: destroy empty labeled space and return"
-- a helper for "external two-window workspace with caller-provided grid specs"
-- a helper for "final on-space capture for primary/helper app pair"
-
-These should be introduced one at a time and only with before/after tests for the affected module pair.
-
-## Phase 11 Command Entry Check
-
-Phase 11 adds a read-only command availability check:
-
-- `work_command_check`
-
-It verifies that documented workspace commands, display commands, status commands, recovery commands, and hotkey entry points are loaded after `work_reload`.
-
-This check is intentionally limited to function availability. It does not execute layout commands, move windows, switch displays, or validate app presence.
-
-Recommended use:
+For command availability:
 
 ```fish
 work_reload
 work_command_check
 ```
 
-This protects against documentation and source-loading drift, especially after adding new entry points or changing reload/source structure.
-
-## Current Operational State
-
-The current workspace system has now reached a more stable post-fix state.
-
-The following points have been verified:
-
-- `coding_editor_wide`
-- `research_wide`
-- `gtd_meeting_wide`
-- `gtd_support_wide`
-- `gtd_review_wide`
-- `gtd_mail_wide`
-
-can all be correctly recreated on the external display after re-running the corresponding workspace commands.
-
-The key common-layer fixes from this round are now concentrated in:
-
-- `workspace/common/find_or_create_labeled_space.fish`
-- `workspace/common/prepare_labeled_space.fish`
-- `workspace/common/cleanup_unlabeled_empty_spaces.fish`
-
-At present, the major correctness issue has been resolved. The remaining issues are mostly cleanup and maintenance refinements rather than structural failures.
-
-## Maintenance Strategy
-
-The current maintenance strategy is:
-
-1. add reusable mechanics only in `workspace/common`
-2. keep module-level workspace behavior explicit and readable
-3. prefer small local fixes over broad hidden abstractions
-4. treat display profile changes and workspace recovery as separate layers
-5. use `*_reload` commands as the standard post-edit validation step
-6. use `*_mode_status` and `*_status` for regression checking
-7. use `work_check` as the lightweight full-system regression entry point after structural edits
-8. use `work_diagnostics` before recovery
-9. use `work_recover_light` only as an explicit manual recovery action
-
-The system is now considered structurally stable. Future changes should focus on incremental behavioral refinement rather than broad architectural rewrites.
-
-## Current Recommended Usage After Display Switching
-
-When switching to a solo internal-display configuration, the current recommended sequence is:
+For read-only health:
 
 ```fish
-display_apply_solo
-work_solo
 work_diagnostics
+work_display_health
+work_display_health tall
 ```
 
-When switching to a wide-left external monitor configuration, the current recommended sequence is:
-
-```fish
-display_apply_wide_left
-work_wide
-work_diagnostics
-```
-
-When switching to a tall-left external monitor configuration, the current recommended sequence is:
-
-```fish
-display_apply_tall_left
-work_tall
-work_diagnostics
-```
-
-If the user does not want to enter the full work mode immediately, the display and reload phase can be run first:
-
-```fish
-display_apply_wide_left
-```
-
-and then followed manually by any specific module entry such as:
-
-- `coding_wide`
-- `research_wide`
-- `gtd_meeting_wide`
-- `gtd_review_wide`
-
-This is the current recommended operational pattern.
-
-If diagnostics show only empty workspace spaces or bad-window cache entries, the conservative manual recovery command is:
-
-```fish
-work_recover_light
-```
-
-This command does not move windows, apply layouts, or switch display profiles.
-
-## Phase 12 GTD Meeting Stability
-
-Phase 12 closes the Outlook-specific GTD meeting issue where yabai can expose a `Microsoft Outlook` window that is not movable and has no AX reference.
-
-Rules added in this phase:
-
-- `ws_find_window --movable` filters candidate windows to `can-move=true`.
-- `gtd_find_outlook_window` only returns movable Outlook windows.
-- If Outlook exists but no movable Outlook window is available, meeting commands warn instead of pretending Outlook was moved.
-- `gtd_reopen_outlook` is a light manual recovery command: it clears Outlook bad-window cache entries, activates/reopens Outlook, and prints Outlook window diagnostics.
-- `gtd_apps` reports `can_move`, `can_resize`, `has_ax_reference`, and `bad_window_cached` so Outlook AX/yabai state can be diagnosed without ad hoc jq commands.
-
-## Phase 13 GTD Solo And Meeting Ownership
-
-Phase 13 tightens two GTD ownership rules that surfaced during SOLO and TALL transitions.
-
-Rules added in this phase:
-
-- `gtd_solo_all` runs `gtd_review_solo` after `gtd_meeting_solo` so review is the final SOLO owner for `ChatGPT`.
-- Shared app ownership goes through `workspace_select_app_window` and `workspace_refresh_app_window` when a module needs to activate an app once and re-check yabai state.
-- GTD review workspaces capture a movable `ChatGPT` window rather than only a currently visible one.
-- If `ChatGPT` exists but yabai does not expose a movable window, review workspaces activate ChatGPT once and refresh the window snapshot.
-- `gtd_find_outlook_window` can accept a target space and prefers a movable Outlook window already on that target space before falling back to any movable Outlook window.
-- GTD meeting workspaces refresh Outlook selection after the target space exists and perform one fallback move if Outlook is not found on the target space after the first move.
-
-The practical goal is:
-
-- `ChatGPT` belongs to GTD review in SOLO mode.
-- `Microsoft Outlook`, `zoom.us`, and `Microsoft Teams` remain together in GTD meeting spaces when switching back to TALL or WIDE.
-
-## Phase 14 Yabai Query Containment
-
-Phase 14 addresses a failure mode where `yabai -m query` can become unresponsive after display or Dock transitions.
-
-Rules added in this phase:
-
-- `ws_yabai` writes command output to a temporary file before printing it back to callers. This avoids leaving long-lived downstream `jq` processes attached to a stuck query pipeline.
-- `ws_yabai` separates read-only query timeout from non-query operation timeout. Queries default to a longer timeout, while focus/destroy operations fail faster so mode switches do not appear indefinitely stuck on one space operation.
-- `ws_jq` wraps `jq` with a bounded timeout for shared workspace parsing.
-- High-frequency helpers avoid direct `ws_yabai | jq` pipelines and instead query JSON first, then parse with `ws_jq`.
-- `workspace_select_app_window` reads stdin with fish `read -lz` instead of an external `cat`, avoiding a fish pipeline/command-substitution case where app selection could wait indefinitely for EOF.
-- Step timing is available through `workspace_run_step`, and selector-level tracing is separate from module-level tracing through `WORKSPACE_DEBUG_SELECT`.
-- If read-only queries time out repeatedly, runtime recovery is explicit: restart yabai with `yabai --restart-service`, then rerun `work_reload`.
-
-The goal is not to hide yabai service failure. Workspace commands should still fail closed when the query layer is unavailable, but they should avoid accumulating orphan query/parser processes.
+Do not run layout-changing workspace commands or display-changing commands during validation unless active window/display movement is explicitly intended.
 
 ## Roadmap And TODO
 
-The workspace system is currently considered structurally stable. Future work should be incremental, evidence-driven, and biased toward keeping the public entry commands stable.
-
-This section is the canonical place for both routine maintenance work and longer-term roadmap ideas:
-
-- `Maintenance Backlog`: near-term verification, cleanup, stability, and documentation work.
-- `Product/Design Roadmap`: larger design evolution that should wait until current behavior has more runtime evidence.
-
-### Recently Completed Maintenance
-
-The following recent maintenance tasks are considered done and should be preserved by future edits:
-
-- Workspace JSON parsing now goes through `ws_jq`, `ws_find_window`, `ws_find_windows`, or `workspace_select_app_window`; direct `jq` pipelines in workspace functions have been removed.
-- `workspace_select_app_window` reads stdin with fish `read -lz` to avoid a fish pipeline/command-substitution case where selector reads could wait indefinitely for EOF.
-- `gtd_meeting_tall` and `gtd_meeting_wide` retry Zoom/Teams moves when the first move does not place the captured window on the target space.
-- `gtd_support_tall` supports multiple `Dia` windows and lays them out as one full-space window, two top/bottom windows, three windows with two on top and one on bottom, or a two-column grid for four or more.
+The workspace system is currently structurally stable. Future work should be incremental, evidence-driven, and biased toward keeping public entry commands stable.
 
 ### Maintenance Backlog
-
-Maintenance work should be small, testable, and biased toward protecting current workflows. It should not introduce broad configuration or generic workflow-engine behavior.
 
 #### Now
 
 ##### Verify Current Workspace Behavior In Daily Use
 
-Run the current system normally for a few days and watch the workflows that were recently touched:
+Watch:
 
 - `work_solo`, `work_tall`, and `work_wide`
 - `gtd_meeting_*` for Outlook, Zoom, and Teams placement
-- `gtd_support_tall` for multiple Dia windows
-- ChatGPT ownership when moving between GTD review, coding, office, and research contexts
+- `gtd_support_*` for multiple Dia windows
+- ChatGPT ownership when moving between GTD review, coding, office, and research
+- bad-window cache summaries after repeated workspace transitions
 
-When a window does not move as expected, collect read-only evidence before changing code:
+Collect read-only evidence before changing code:
 
 - `gtd_apps`
-- `work_bad_windows`
+- `work_bad_windows --summary`
+- `work_bad_windows --expired`
 - `work_diagnostics`
 - `WORKSPACE_DEBUG_STEPS=1` for one rerun of the affected mode
 
-**Estimated effort:** ongoing observation
-**Affected files:** none unless a concrete issue is reproduced
-
 ##### Final Diff Review Before Commit
 
-The current workspace changes touch shared helpers, GTD behavior, display-role documentation, and diagnostics. Before committing, review the diff by behavior group:
+Review the current workspace diff by behavior group:
 
 - query, timeout, and selector helpers
+- display profile health and SKHD chaining
 - GTD meeting, review, and support behavior
-- top-level mode step timing
+- bad-window cache maintenance
 - README and design-note consistency
 
-Confirm no temporary debug output is enabled on default paths. `WORKSPACE_DEBUG_STEPS` and `WORKSPACE_DEBUG_SELECT` should remain opt-in only.
+Confirm default paths do not enable debug output. `WORKSPACE_DEBUG_STEPS`, `WORKSPACE_DEBUG_SELECT`, `WORKSPACE_DEBUG_WINDOW`, and `WORKSPACE_DEBUG_YABAI` should remain opt-in.
 
-**Estimated effort:** small
-**Affected files:** review only
+##### Preserve External Display Fail-Closed Behavior
 
-##### Strengthen Mode Health Checks
-
-Improve the post-switch inspection layer so display-role and Dock-related failures are easier to see after `display_apply_*; work_*`.
-
-Desired checks:
-
-- report the current display graph in a compact form
-- report `resolve_internal_display` and `resolve_external_display`
-- warn when an external mode is active but only one display is visible to yabai
-- warn when the external display is not at `origin:(0,0)` after an external display profile
-- optionally report Dock `orientation` and `autohide`
-
-This should remain read-only. Recovery should stay explicit.
-
-**Estimated effort:** small
-**Affected files:** `workspace/common/work_check.fish`, `workspace/common/work_diagnostics.fish`, possibly `workspace/common/work_mode_status.fish`
-
-##### Keep External Display Resolution Fail-Closed
-
-External task workspaces should not silently route to the internal display when yabai display queries fail or timeout.
-
-Current rule:
+Future edits to display helpers must preserve:
 
 - query failure returns nonzero
 - missing target display prevents labeled-space creation
-- fallback to internal is allowed only after a successful query confirms single-display operation
-
-Future edits to display helpers must preserve this rule.
-
-**Estimated effort:** ongoing guardrail
-**Affected files:** `workspace/common/resolve_external_display.fish`, `workspace/common/find_or_create_labeled_space.fish`
+- fallback to internal happens only after a successful query confirms single-display operation
 
 #### Next
 
 ##### Extract A Small Meeting Fallback Helper
 
-`gtd_meeting_tall` and `gtd_meeting_wide` now share the same fallback pattern for Zoom and Teams:
+`gtd_meeting_tall` and `gtd_meeting_wide` share the same fallback pattern for Zoom and Teams:
 
 - capture initial window id
 - move captured windows
 - query final target space
 - retry a missing app once with the initial id
 
-If this behavior remains stable, extract a small helper for retrying captured meeting windows so tall and wide do not drift.
+If this remains stable, extract a small helper so tall and wide do not drift. Keep Outlook recovery in Outlook-specific helpers.
 
-Keep Outlook recovery in `gtd_find_outlook_window`; do not hide Outlook-specific behavior inside a generic helper.
+##### Watch Meeting And Review Multi-Window Behavior
 
-**Estimated effort:** small
-**Affected files:** `workspace/gtd/tall/gtd_meeting_tall.fish`, `workspace/gtd/wide/gtd_meeting_wide.fish`, possible new helper under `workspace/gtd/internal/`
+Before changing meeting or review ownership, watch:
 
-##### Decide Whether Multi-Dia Support Should Extend Beyond Tall
+- whether multiple Outlook, Zoom, or Teams windows should move together
+- whether ChatGPT, Notes, Preview, or Finder should ever move as multi-window sets
+- whether moving all same-app windows would steal windows from another active context
 
-`gtd_support_tall` now handles multiple Dia windows. Leave `gtd_support_solo` and `gtd_support_wide` unchanged until there is evidence that multi-Dia layouts are useful there too.
-
-If extending support:
-
-- solo should probably use a compact grid only when multiple Dia windows exist
-- wide should choose between full-space single Dia and a horizontal/2-column layout
-- preserve the current rule that `gtd_support_*` owns Dia, not Notes
-
-**Estimated effort:** small to medium
-**Affected files:** `workspace/gtd/solo/gtd_support_solo.fish`, `workspace/gtd/wide/gtd_support_wide.fish`, README/design notes
+Do not generalize GTD support's Dia policy into broad multi-window ownership without concrete failures from real use.
 
 ##### Improve Diagnostic Summaries
 
-The current top-level workspace layer already includes:
-
-- `work_reload`
-- `work_status`
-- `work_mode_status`
-- `work_diagnostics`
-- `work_bad_windows`
-- `work_recover_light`
-- `work_solo`
-- `work_wide`
-- `work_tall`
-- `work_check`
-
-Future improvements may include:
+Possible improvements:
 
 - stronger summary output in `work_check`
-- a compact one-line health summary
+- compact one-line health summary
 - clearer grouping for display-mode mismatches
-- optional warnings when a configured internal display UUID is not present
-- read-only Dock `orientation` and `autohide` reporting
+- better separation of active vs historical warning signals
 
-The recovery mechanics themselves are intentionally conservative and should remain explicit rather than automatic.
+Recovery mechanics should remain explicit rather than automatic.
 
-**Estimated effort:** small to medium
-**Affected files:** `workspace/common/work_*.fish`
+### Watchlist
 
-#### Watchlist
+##### ChatGPT Ownership
 
-##### Refine ChatGPT Ownership Handling
-
-The current global rule is intentionally simple:
-
-**the last invoked module owns the `ChatGPT` window**
-
-This rule is acceptable for daily use, but future refinement may improve code clarity by making ChatGPT capture behavior more explicit.
-
-Possible directions:
-
-- define which workspace functions actively capture ChatGPT
-- define which functions only include ChatGPT opportunistically
-- introduce a small shared helper for optional ChatGPT capture
-
-This is not a correctness issue. It is a maintainability improvement.
-
-**Estimated effort:** small to medium
-**Affected files:** all workspace functions that currently capture `ChatGPT`
+The current last-caller rule is acceptable for daily use. Future refinement may make ChatGPT capture behavior more explicit by distinguishing active capture from opportunistic inclusion.
 
 ##### Outlook, Teams, And Bad-Window Cache Behavior
-
-Outlook and Teams can expose windows that are temporarily non-movable, hidden, or stale from yabai's perspective.
 
 Watch for:
 
@@ -928,107 +429,65 @@ Watch for:
 - expired bad-window cache entries that correspond to currently visible meeting windows
 - repeated need to rerun `gtd_meeting_tall` or `gtd_meeting_wide`
 
-When this appears, inspect with `gtd_apps` and `work_bad_windows` before changing code.
+Inspect with `gtd_apps`, `work_bad_windows --summary`, and filtered `work_bad_windows` output before changing code.
 
-**Estimated effort:** watchlist
-**Affected files:** `workspace/gtd/internal/gtd_find_outlook_window.fish`, `workspace/gtd/*/gtd_meeting_*.fish`, `workspace/common/ws_window.fish`
+##### WhatsApp Compatibility
 
-##### Improve WhatsApp Compatibility In `gtd_chat`
+`gtd_chat` treats WhatsApp as best-effort. If WhatsApp becomes important, improve diagnostics first, then decide whether it should become a stronger layout dependency.
 
-`gtd_chat` currently treats `WhatsApp` as best-effort rather than as a strict layout dependency.
+##### Residual Unlabeled Spaces
 
-Future improvements may include:
-
-- more robust window identification
-- better handling for non-standard or non-movable WhatsApp windows
-- a clearer separation between core chat layout and optional satellite windows
-
-The current four-window core remains:
-
-- `Keybase`
-- `钉钉`
-- `WeChat`
-- `Messages`
-
-**Estimated effort:** small
-**Affected files:** `workspace/gtd/internal/gtd_chat.fish`, related notes in documentation
-
-##### Residual Unlabeled Space Cases
-
-The major cleanup logic is good enough for normal usage, and `work_recover_light` can clean empty unlabeled spaces manually. Some display-transition scenarios may still produce transient unlabeled empty spaces.
-
-This no longer blocks normal workspace recovery. If it becomes frequent, improve diagnostics first, then decide whether cleanup should be triggered by a specific workflow command.
-
-**Estimated effort:** small
-**Affected files:** `workspace/common/cleanup_unlabeled_empty_spaces.fish`, `workspace/common/work_diagnostics.fish`
+`work_recover_light` can clean empty unlabeled spaces manually. If transient unlabeled spaces become frequent, improve diagnostics before adding cleanup to workflow commands.
 
 ##### Dock And Primary Display Behavior
 
-External display profiles now intentionally place the external display at `origin:(0,0)` so macOS Dock and primary-display behavior belong to the external monitor in WIDE and TALL modes.
-
-Watch for:
+External profiles intentionally place the external display at `origin:(0,0)` in WIDE and TALL modes. Watch for:
 
 - Dock not hiding or showing after display-profile changes
 - Dock appearing on the internal display after external mode entry
 - `resolve_external_display` returning the internal display while an external monitor is connected
 - yabai display queries timing out immediately after Dock or display changes
 
-If this becomes frequent, improve read-only diagnostics first. Runtime recovery should remain explicit, such as `killall Dock`, rather than hidden inside workspace entry commands.
-
-**Estimated effort:** small
-**Affected files:** `.config/displayprofiles/*`, `workspace/common/work_diagnostics.fish`, `workspace/common/resolve_external_display.fish`
+Runtime recovery should remain explicit, such as `killall Dock`, rather than hidden inside workspace entry commands.
 
 ### Product/Design Roadmap
 
-Roadmap items are larger design changes. They should not be mixed with routine maintenance tasks, and they should preserve existing public command entry points unless there is a deliberate migration plan.
+#### Configurable Workspace Definitions
 
-#### Later
+This is the next major-version direction, but it should wait until the current fish-based workspace version is confirmed stable in daily use.
 
-##### Configurable Workspace Definitions
+The goal is to make stable workspace definitions configurable without turning the system into a generic workflow engine. Public command entry points should remain stable. For example, users should still run `coding_control`, `gtd_meeting_tall`, or `work_tall`; those commands may internally use config later.
 
-The next major version goal is to make workspace app selection and window placement configurable without turning the workspace system into a generic workflow engine.
+Potential configuration target:
 
-The intended configuration target is:
+- workspace labels
+- target display role: internal, external, or fallback rules
+- app/window selectors
+- window positions
+- mode-specific cleanup hooks
 
-- which workspace labels exist
-- which display role a workspace targets: `internal`, `external`, or fallback rules
-- which apps/windows belong to a workspace
-- how each selected window should be positioned
-- which mode-specific cleanup hooks run before and after the workspace is entered
-
-The intended non-goals are:
-
-- do not configure display UUID resolution
-- do not configure bad-window cache mechanics
-- do not configure raw yabai timeout behavior
-- do not encode complex app recovery logic directly in JSON
-- do not replace existing fish entry commands such as `coding_control`, `gtd_meeting_tall`, or `work_tall`
-
-The preferred configuration file is:
+Potential first config file:
 
 ```text
 .config/fish/functions/workspace/config/workspaces.json
 ```
 
-JSON is preferred because the workspace system already depends on `jq`, and JSON can be validated without adding YAML or TOML dependencies.
-
-A representative configuration shape:
+The first config shape should stay deliberately small:
 
 ```json
 {
   "coding_control": {
     "label": "coding_control",
-    "target_display": "internal",
-    "layout": "float",
-    "apps": {
+    "display_role": "internal",
+    "space_layout": "float",
+    "required_windows": ["smartgit"],
+    "windows": {
       "smartgit": {
-        "match": {
-          "app": "SmartGit",
-          "movable": true
-        },
-        "position": [
-          { "move": "abs:300:60" },
-          { "resize": "abs:1200:1040" }
+        "app": "SmartGit",
+        "movable": true,
+        "positions": [
+          { "move_abs": [300, 60] },
+          { "resize_abs": [1200, 1040] }
         ]
       }
     }
@@ -1036,64 +495,73 @@ A representative configuration shape:
 }
 ```
 
-Recommended implementation phases:
+Non-goals:
 
-1. Add config file and read-only validation only.
-2. Migrate `coding_control` first because it has simple app selection and recent layout requirements.
-3. Migrate `gtd_meeting_*` next, while keeping Outlook recovery in fish helpers.
-4. Migrate simpler repeated wide/tall modules such as `office_*`, `research_*`, and `gtd_mail_*`.
-5. Leave `gtd_chat`, `gtd_review_*`, and ChatGPT ownership-sensitive workspaces until last.
+- do not configure display UUID resolution
+- do not configure bad-window cache mechanics
+- do not configure raw yabai timeout behavior
+- do not encode complex app recovery logic directly in JSON
+- do not replace public fish entry commands such as `coding_control`, `gtd_meeting_tall`, or `work_tall`
+- do not support arbitrary jq expressions, conditionals, loops, or fallback chains in JSON
+- do not migrate Outlook, ChatGPT, Dia, WhatsApp, or other special recovery behavior into config in the first version
 
-Required helper candidates:
+Recommended implementation stages:
 
-- `workspace_config_get <workspace_name>`
+1. **Schema and read-only validation**
+   Add `workspaces.json`, `workspace_config_check`, and `workspace_config_get <workspace>`.
+   This stage must not move windows, create spaces, or apply layouts.
+
+2. **Migrate `coding_control` first**
+   `coding_control` is the best pilot because it targets the internal display, has clear apps, uses absolute placement, and has little app-specific recovery logic.
+   Keep `coding_control` as the public entry point and call a configured runner internally.
+
+3. **Migrate simple repeated wide/tall modules**
+   Candidate modules:
+   - `gtd_mail_wide/tall`
+   - `research_wide/tall`
+   - `office_writing_wide/tall`
+   - `office_slides_wide/tall`
+   - `coding_editor_wide/tall`
+
+4. **Evaluate GTD meeting after the simple modules**
+   `gtd_meeting_*` may use configured final layout later, but Outlook recovery should remain in fish helpers such as `gtd_find_outlook_window` and `gtd_reopen_outlook`.
+
+5. **Leave complex ownership modules until last**
+   Keep these fish-first until there is strong evidence that config helps:
+   - `gtd_chat`
+   - `gtd_review_*`
+   - `gtd_support_*`
+   - ChatGPT ownership-sensitive workspaces
+
+Likely helper set:
+
 - `workspace_config_check`
-- `workspace_select_window <workspace_name> <app_key>`
-- `workspace_apply_position <window_id> <workspace_name> <app_key>`
-- `workspace_run_configured <workspace_name>`
+- `workspace_config_get <workspace>`
+- `workspace_select_configured_windows <workspace>`
+- `workspace_prepare_configured_space <workspace>`
+- `workspace_apply_configured_layout <workspace>`
+- `workspace_run_configured <workspace>`
 
-Key risks:
+Technical guardrails:
 
-- over-abstracting JSON until it becomes a second programming language
-- treating query failures as empty app lists and creating or deleting spaces incorrectly
-- hiding special app behavior such as Outlook, FlClash, WhatsApp, or ChatGPT ownership behind generic config
-- making layout debugging harder by spreading behavior across config and code
+- fail closed on missing config, invalid schema, jq failure, display query failure, or missing required windows
+- do not create spaces or move windows when config validation fails
+- keep selectors explainable: exact app, app regex, title exclusion, movable, visible, and non-empty title are enough for the first version
+- keep layouts simple: `grid`, `move_abs`, and `resize_abs` are enough for the first version
+- add `WORKSPACE_DEBUG_CONFIG=1` for selected workspace name, selector result, window id, and applied position
+- validate config independently from runtime movement
+- update README only for user-facing commands; keep design boundaries here
 
-The first migration should preserve the existing public commands. For example, `coding_control` should remain the user-facing entry point even if its app selectors and position rules come from JSON.
+#### Internal Fixed Workspaces For Office Or Research
 
-**Estimated effort:** medium to large
-**Affected files:** new `workspace/config/workspaces.json`, new config helpers under `workspace/common/`, and eventually selected module functions
+Office and research currently have wide/tall external task workspaces only. Future workflow evolution may justify internal fixed support spaces similar to `gtd_chat`, `gtd_calendar`, or `coding_control`.
 
-##### Consider Internal Fixed Workspaces For Office Or Research
+#### Continue Abstraction Cleanup Carefully
 
-At present:
+Good candidates remain:
 
-- `office` has only wide/tall external task workspaces
-- `research` has only wide/tall external task workspaces
+- required-primary-window absence helper
+- small meeting fallback helper
+- final on-space capture helper for simple primary/helper pairs
 
-This is acceptable under the current design. Future workflow evolution may justify internal fixed support spaces for these modules, similar to:
-
-- `gtd_chat`
-- `gtd_calendar`
-- `coding_control`
-
-This should only be done if a stable daily-use support pattern emerges.
-
-**Estimated effort:** medium
-**Affected files:** potential new `internal` workspace files for `office` and `research`
-
-##### Continue Abstraction Cleanup Carefully
-
-The current system is stable and usable. Any future abstraction work should remain conservative.
-
-Candidate abstractions may include shared helpers for:
-
-- application window capture
-- on-space final capture
-- empty labeled-space destruction
-- repeated optional-window logic
-
-This should be approached carefully. The current design already favors explicitness, and future abstraction should only be introduced when it produces clear maintenance benefits.
-
-**Estimated effort:** medium
-**Affected files:** `workspace/common/*` and most module workspace functions
+Avoid broad abstractions that hide app ownership, recovery rules, or layout geometry.

@@ -28,6 +28,7 @@ function source_workspace_common --description "Source shared workspace helper f
     source ~/.config/fish/functions/workspace/common/cleanup_unlabeled_empty_spaces.fish
     source ~/.config/fish/functions/workspace/common/workspace_status_snapshot.fish
     source ~/.config/fish/functions/workspace/common/workspace_mode_status_section.fish
+    source ~/.config/fish/functions/workspace/common/work_display_health.fish
 
     source ~/.config/fish/functions/workspace/common/resolve_target_display.fish
     source ~/.config/fish/functions/workspace/common/resolve_internal_display.fish

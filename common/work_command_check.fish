@@ -2,6 +2,7 @@ function work_command_check --description "Check that documented workspace comma
     set -l commands \
         work_reload \
         work_diagnostics \
+        work_display_health \
         work_check \
         work_status \
         work_mode_status \
@@ -20,6 +21,7 @@ function work_command_check --description "Check that documented workspace comma
         workspace_debug_step \
         workspace_run_step \
         display_reload \
+        display_verify_mode \
         display_apply_solo \
         display_apply_wide_left \
         display_apply_tall_left \
@@ -67,6 +69,8 @@ function work_command_check --description "Check that documented workspace comma
         gtd_tall_all \
         gtd_find_outlook_window \
         gtd_reopen_outlook \
+        gtd_support_find_dia_windows \
+        gtd_support_layout_dia_windows \
         gtd_chat \
         gtd_calendar \
         office_wide \

@@ -121,6 +121,13 @@ work_diagnostics
 
 The diagnostic output is read-only. It reports display state, labeled spaces, empty labeled spaces, duplicate labels, empty unlabeled spaces, and bad-window cache entries.
 
+It also includes display role health:
+
+- configured internal display UUID and resolved internal display index
+- resolved external display index and whether it is at `origin:(0,0)`
+- Dock `orientation` and `autohide`
+- warnings for display-role or Dock mismatches
+
 If a workspace command appears to hang after rebooting macOS, profile the shared yabai calls separately from window actions:
 
 ```fish
@@ -171,22 +178,27 @@ set -e WORKSPACE_DEBUG_SELECT
 Phase 8.5 adds conservative manual recovery commands:
 
 ```fish
-work_bad_windows
-work_clear_bad_windows
+work_bad_windows --summary
+work_bad_windows --expired
+work_bad_windows --missing
+work_clear_bad_windows --expired
 work_cleanup_empty_labeled_spaces
 work_cleanup_empty_unlabeled_spaces
 work_recover_light
+work_display_health
 ```
 
 The recovery rules are intentionally limited:
 
-- `work_bad_windows` only prints cached bad yabai window IDs.
-- `work_clear_bad_windows` only clears `/tmp/workspace-ws-window-bad`.
+- `work_bad_windows` only prints cached bad yabai window IDs and supports `--summary`, `--active`, `--expired`, `--present`, and `--missing`.
+- `work_clear_bad_windows` only clears `/tmp/workspace-ws-window-bad`; use `--expired`, `--missing`, `--present`, or `--active` for targeted cleanup, and no flag or `--all` for full cache cleanup.
 - `work_cleanup_empty_labeled_spaces` destroys only empty spaces with known workspace labels.
 - `work_cleanup_empty_unlabeled_spaces` destroys empty unlabeled spaces except the current protected space.
 - `work_recover_light` runs diagnostics, then the two empty-space cleanup commands, then diagnostics again.
 
 `work_recover_light` does not move windows, does not apply layouts, and does not switch display profiles.
+
+`work_display_health [solo|wide|tall]` is a read-only display-role check. It reports whether the configured internal display is present, whether the resolved external display is at `origin:(0,0)`, whether the external display shape matches the expected mode, and whether Dock `orientation`/`autohide` match the workspace assumptions.
 
 ## Mode Commands
 
@@ -203,7 +215,7 @@ display_apply_tall_left
 work_tall
 ```
 
-The `display_apply_*` commands apply the display profile and reload workspace functions. The `work_*` commands then arrange the intended workspaces for that display mode.
+The `display_apply_*` commands apply the display profile, reload workspace functions, wait briefly for the display graph to settle, and run the matching `work_display_health` check. The `work_*` commands then arrange the intended workspaces for that display mode.
 
 Module-level entries can also be run directly:
 
@@ -260,7 +272,7 @@ Window selection follows two shared patterns:
 - Use `workspace_select_app_window` for simple app-name selection, especially shared apps such as `ChatGPT` and `Microsoft Outlook`.
 - Use `ws_find_window` when a workspace needs title exclusion, app regex matching, non-empty title checks, or bad-window cache awareness.
 
-All workspace JSON parsing should go through `ws_jq`, `ws_find_window`, or `workspace_select_app_window`; direct `jq` pipelines are avoided inside workspace functions so parser timeouts remain bounded.
+All workspace JSON parsing should go through `ws_jq`, `ws_find_window`, `ws_find_windows`, or `workspace_select_app_window`; direct `jq` pipelines are avoided inside workspace functions so parser timeouts remain bounded.
 
 ## ChatGPT Ownership Rule
 
@@ -284,20 +296,30 @@ If a workspace depends on a required primary application, such as Word, PowerPoi
 
 This prevents old empty labeled spaces from persisting after application state changes.
 
-## GTD Chat Special Note
-
 ## GTD Support Dia Layout
 
-`gtd_support_tall` collects all non-minimized `Dia` windows, preferring windows with non-empty titles that are not `New Tab`.
+`gtd_support_solo`, `gtd_support_wide`, and `gtd_support_tall` collect all non-minimized `Dia` windows that yabai reports as movable. If Dia exists but no movable window is available, they activate Dia once, refresh the window snapshot, and warn if yabai still cannot expose a movable Dia window.
 
-Tall support layout:
+Solo support layout:
 
 - 1 Dia window: full space
 - 2 Dia windows: top half and bottom half
 - 3 Dia windows: two on the top half, one on the bottom half
 - 4 or more Dia windows: two-column grid, filled top to bottom
 
-`gtd_support_solo` and `gtd_support_wide` still use a single Dia window layout.
+Wide support layout:
+
+- 1 Dia window: full space
+- 2 Dia windows: left half and right half
+- 3 Dia windows: three columns
+- 4 or more Dia windows: two-row grid, filled left to right
+
+Tall support layout:
+
+- 1 Dia window: bottom half
+- 2 Dia windows: top half and bottom half
+- 3 Dia windows: two on the top half, one on the bottom half
+- 4 or more Dia windows: two-column grid, filled top to bottom
 
 ## GTD Chat Special Note
 
@@ -378,6 +400,7 @@ work_reload
 get_internal_display_uuid
 echo internal=(resolve_internal_display)
 echo external=(resolve_external_display)
+work_display_health
 ```
 
 Check the Dock settings:
@@ -400,7 +423,8 @@ Use this when working only on the built-in display.
 
 ```fish
 display_apply_solo
-work_solo
+and work_solo
+work_display_health solo
 work_diagnostics
 ```
 
@@ -424,7 +448,8 @@ Use this when the wide external monitor is connected on the left.
 
 ```fish
 display_apply_wide_left
-work_wide
+and work_wide
+work_display_health wide
 work_diagnostics
 ```
 
@@ -450,7 +475,8 @@ Use this when the tall external monitor is connected on the left.
 
 ```fish
 display_apply_tall_left
-work_tall
+and work_tall
+work_display_health tall
 work_diagnostics
 ```
 
@@ -478,9 +504,12 @@ After switching display mode, check the actual display graph if windows or the D
 yabai -m query --displays | jq -r '.[] | "index=\(.index) uuid=\(.uuid) focus=\(.[\"has-focus\"]) frame=(\(.frame.x),\(.frame.y),\(.frame.w),\(.frame.h)) spaces=\(.spaces)"'
 echo internal=(resolve_internal_display)
 echo external=(resolve_external_display)
+work_display_health tall
 ```
 
 For external modes, the external display should be the one at `origin:(0,0)`, while `internal` should still resolve to the built-in display UUID.
+
+Use `work_display_health wide` after `display_apply_wide_left`, and `work_display_health tall` after `display_apply_tall_left`. If it reports `external display is not at origin (0,0)`, rerun the matching `display_apply_*` command before entering the workspace mode again. The `display_apply_*` commands return nonzero when their post-apply health check still has warnings, so command chains and SKHD bindings should use `and` before `work_*`.
 
 If the Dock is configured correctly but does not hide or show from the expected edge, restart the Dock after applying the display profile:
 
@@ -493,6 +522,16 @@ If diagnostics show only empty workspace spaces or stale bad-window cache entrie
 ```fish
 work_recover_light
 ```
+
+If only bad-window cache entries are noisy, inspect and clean them explicitly:
+
+```fish
+work_bad_windows --summary
+work_bad_windows --expired
+work_clear_bad_windows --expired
+```
+
+`expired` means the cache entry is older than `WORKSPACE_BAD_WINDOW_TTL_SECONDS`, which defaults to `600`. `present_in_yabai=true` means yabai still reports that window ID, so inspect the app before clearing if the same ID repeatedly becomes bad again.
 
 If `gtd_meeting_*` warns that Outlook exists but is not movable, inspect the GTD app diagnostics:
 

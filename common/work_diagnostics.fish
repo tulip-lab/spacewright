@@ -28,6 +28,10 @@ function work_diagnostics --description "Show workspace diagnostics without chan
     }'
 
     echo
+    echo "===== DISPLAY ROLE HEALTH ====="
+    work_display_health
+
+    echo
     echo "===== CURRENT FOCUS ====="
     set -l current_display (ws_yabai -m query --displays --display 2>/dev/null | ws_jq -r '.index // empty')
     set -l current_space (ws_yabai -m query --spaces --space 2>/dev/null | ws_jq -r '.index // empty')
@@ -96,5 +100,5 @@ function work_diagnostics --description "Show workspace diagnostics without chan
     end
 
     echo
-    work_bad_windows
+    work_bad_windows --summary
 end

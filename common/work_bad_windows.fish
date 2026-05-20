@@ -1,4 +1,12 @@
 function work_bad_windows --description "Show cached bad yabai window IDs"
+    argparse h/help all summary active expired present missing -- $argv
+    or return 2
+
+    if set -q _flag_help
+        echo "usage: work_bad_windows [--summary] [--all] [--active] [--expired] [--present] [--missing]"
+        return 0
+    end
+
     set -l bad_window_dir /tmp/workspace-ws-window-bad
     set -l bad_window_ttl "$WORKSPACE_BAD_WINDOW_TTL_SECONDS"
 
@@ -28,6 +36,12 @@ function work_bad_windows --description "Show cached bad yabai window IDs"
     set -l live_window_ids (echo $windows_json | ws_jq -r '.[].id')
     set -l now (date +%s)
     set -l count 0
+    set -l filtered_count 0
+    set -l active_count 0
+    set -l expired_count 0
+    set -l present_count 0
+    set -l missing_count 0
+    set -l lines
 
     for file in $bad_files
         set -l window_id (basename "$file")
@@ -54,10 +68,61 @@ function work_bad_windows --description "Show cached bad yabai window IDs"
             set present true
         end
 
-        printf "window=%s age=%ss state=%s present_in_yabai=%s\n" "$window_id" "$age" "$state" "$present"
+        if test "$state" = active
+            set active_count (math $active_count + 1)
+        else
+            set expired_count (math $expired_count + 1)
+        end
+
+        if test "$present" = true
+            set present_count (math $present_count + 1)
+        else
+            set missing_count (math $missing_count + 1)
+        end
+
+        set -l include true
+
+        if set -q _flag_active; and not set -q _flag_expired
+            if test "$state" != active
+                set include false
+            end
+        else if set -q _flag_expired; and not set -q _flag_active
+            if test "$state" != expired
+                set include false
+            end
+        end
+
+        if set -q _flag_present; and not set -q _flag_missing
+            if test "$present" != true
+                set include false
+            end
+        else if set -q _flag_missing; and not set -q _flag_present
+            if test "$present" != false
+                set include false
+            end
+        end
+
+        if test "$include" = true
+            set filtered_count (math $filtered_count + 1)
+            set -a lines (printf "window=%s age=%ss state=%s present_in_yabai=%s" "$window_id" "$age" "$state" "$present")
+        end
     end
 
     if test "$count" -eq 0
         echo "none"
+        return 0
     end
+
+    if set -q _flag_summary
+        printf "total=%s active=%s expired=%s present_in_yabai=%s missing_from_yabai=%s ttl=%ss\n" \
+            "$count" "$active_count" "$expired_count" "$present_count" "$missing_count" "$bad_window_ttl"
+        return 0
+    end
+
+    if test "$filtered_count" -eq 0
+        echo "none"
+        return 0
+    end
+
+    printf "%s\n" $lines
 end
