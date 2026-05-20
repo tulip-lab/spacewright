@@ -1,4 +1,4 @@
-function ws_find_window --description "Find the first matching non-minimized window id from yabai window JSON"
+function ws_find_windows --description "Find matching non-minimized window ids from yabai window JSON"
     argparse 'space=' 'not-space=' 'app-regex=' 'exclude-title=' visible nonempty-title movable -- $argv
     or return 1
 
@@ -39,20 +39,13 @@ function ws_find_window --description "Find the first matching non-minimized win
         set exclude_title_json (printf '%s\n' $exclude_title_values | ws_jq -R . | ws_jq -s .)
     end
 
-    set -l bad_window_ttl "$WORKSPACE_BAD_WINDOW_TTL_SECONDS"
-
-    if test -z "$bad_window_ttl"
-        set bad_window_ttl 600
-    end
-
-    set -l bad_window_dir /tmp/workspace-ws-window-bad
     set -l windows_json
     read -lz windows_json
     if test -z "$windows_json"
         return 1
     end
 
-    set -l candidates (printf '%s\n' "$windows_json" | ws_jq -r \
+    printf '%s\n' "$windows_json" | ws_jq -r \
         --arg app "$app" \
         --arg app_regex "$app_regex" \
         --arg space "$space" \
@@ -83,25 +76,5 @@ function ws_find_window --description "Find the first matching non-minimized win
         | select(($space=="") or (.space==($space | tonumber)))
         | select(($not_space=="") or (.space!=($not_space | tonumber)))
         | .id
-    ')
-
-    for window_id in $candidates
-        set -l bad_window_file $bad_window_dir/$window_id
-
-        if test -f "$bad_window_file"
-            set -l now (date +%s)
-            set -l bad_at (cat "$bad_window_file" 2>/dev/null)
-
-            if string match -qr '^[0-9]+$' -- "$bad_at"
-                set -l age (math $now - $bad_at)
-
-                if test "$age" -lt "$bad_window_ttl"
-                    continue
-                end
-            end
-        end
-
-        echo $window_id
-        return 0
-    end
+    '
 end

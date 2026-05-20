@@ -14,7 +14,16 @@ function gtd_tall_all --description "Arrange all GTD tall workspaces including i
     #   wrapper does not repeat cleanup again.
     # -------------------------------------------------------------------------
 
-    gtd_tall
-    gtd_chat
-    gtd_calendar
+    set -l failed 0
+
+    workspace_run_step "GTD tall mode" gtd_tall
+    or set failed 1
+
+    workspace_run_step "GTD chat internal" gtd_chat
+    or set failed 1
+
+    workspace_run_step "GTD calendar internal" gtd_calendar
+    or set failed 1
+
+    return $failed
 end

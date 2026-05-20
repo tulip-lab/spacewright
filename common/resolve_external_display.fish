@@ -1,4 +1,4 @@
-function resolve_external_display --description "Resolve the preferred external display index, falling back to internal"
+function resolve_external_display --description "Resolve the preferred external display index"
     # -------------------------------------------------------------------------
     # Purpose:
     #   Return the preferred external display index.
@@ -6,8 +6,12 @@ function resolve_external_display --description "Resolve the preferred external 
     # Behavior:
     #   - Prefer the first display whose UUID differs from the configured
     #     internal display UUID.
-    #   - If no such display exists, fall back to the internal display index.
-    #   - If the internal UUID is not configured, fall back to display 1.
+    #   - If the display query succeeds but no external display exists, fall
+    #     back to the internal display index for single-display operation.
+    #   - If the display query fails, return nonzero instead of silently routing
+    #     external workspaces to the internal display.
+    #   - If the internal UUID is not configured, return nonzero. Set it with
+    #     set_internal_display_uuid before using external workspace modes.
     #
     # Usage:
     #   set target_display (resolve_external_display)
@@ -16,11 +20,17 @@ function resolve_external_display --description "Resolve the preferred external 
     set -l internal_uuid (get_internal_display_uuid 2>/dev/null)
 
     if test -z "$internal_uuid"
-        echo 1
-        return 0
+        echo "[WARN] resolve_external_display: internal display UUID is not configured" >&2
+        return 1
     end
 
-    set -l external_display (ws_yabai -m query --displays | jq -r --arg uuid "$internal_uuid" '
+    set -l displays_json (ws_yabai -m query --displays 2>/dev/null)
+    if test $status -ne 0 -o -z "$displays_json"
+        echo "[WARN] resolve_external_display: could not query displays" >&2
+        return 1
+    end
+
+    set -l external_display (echo $displays_json | ws_jq -r --arg uuid "$internal_uuid" '
         .[]
         | select(.uuid != $uuid)
         | .index

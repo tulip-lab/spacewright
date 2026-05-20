@@ -2,15 +2,25 @@ function cleanup_unlabeled_empty_spaces --description "Remove unlabeled empty sp
     set -l protected_space $argv[1]
 
     if test -z "$protected_space"
-        set protected_space (ws_yabai -m query --spaces --space 2>/dev/null | jq -r '.index')
+        set -l current_space_json (ws_yabai -m query --spaces --space 2>/dev/null)
+        if test $status -ne 0 -o -z "$current_space_json"
+            return 0
+        end
+
+        set protected_space (echo $current_space_json | ws_jq -r '.index')
     end
 
     if test -z "$protected_space"
         return 0
     end
 
+    set -l spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+    if test $status -ne 0 -o -z "$spaces_json"
+        return 0
+    end
+
     set -l cleanup_spaces (
-        ws_yabai -m query --spaces 2>/dev/null | jq -r \
+        echo $spaces_json | ws_jq -r \
             --argjson protected "$protected_space" \
             '.[]
              | select(.label=="")

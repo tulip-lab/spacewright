@@ -13,12 +13,14 @@ function detect_and_set_internal_display_uuid --description "Detect and set the 
     #   - If there are multiple displays, try to infer the internal display.
     #   - If inference is ambiguous, print candidate displays and return nonzero.
     #
-    # Inference strategy for multi-display setups:
-    #   1. Prefer the display whose frame origin is (0, 0).
-    #   2. If still ambiguous, prefer the focused display among candidates.
-    #   3. If still ambiguous, print all displays and ask for manual setting.
+    # Multi-display behavior:
+    #   - If the configured internal UUID is still connected, keep it.
+    #   - Otherwise, print all displays and ask for manual setting.
     #
     # Notes:
+    #   - External-display profiles may intentionally make the external monitor
+    #     the macOS primary display at origin (0, 0), so origin/focus are not safe
+    #     signals for detecting the built-in display.
     #   - This function is best-effort.
     #   - It should not be treated as a hard failure path for bootstrap.
     # -------------------------------------------------------------------------
@@ -45,7 +47,7 @@ function detect_and_set_internal_display_uuid --description "Detect and set the 
         return 1
     end
 
-    set -l display_count (echo $displays_json | jq 'length')
+    set -l display_count (echo $displays_json | ws_jq 'length')
 
     if test "$display_count" -eq 0
         echo "[WARN] No displays returned by yabai"
@@ -56,7 +58,7 @@ function detect_and_set_internal_display_uuid --description "Detect and set the 
     # Single-display case: use it directly
     # -------------------------------------------------------------------------
     if test "$display_count" -eq 1
-        set -l only_uuid (echo $displays_json | jq -r '.[0].uuid')
+        set -l only_uuid (echo $displays_json | ws_jq -r '.[0].uuid')
 
         if test -n "$only_uuid" -a "$only_uuid" != "null"
             set_internal_display_uuid $only_uuid
@@ -70,52 +72,24 @@ function detect_and_set_internal_display_uuid --description "Detect and set the 
 
     # -------------------------------------------------------------------------
     # Multi-display case:
-    # Try displays whose frame origin is (0, 0)
+    # Keep the existing configured internal UUID if it is still connected.
+    # Do not infer from origin or focus. External profiles may intentionally
+    # place the external display at origin (0, 0) so the Dock belongs there.
     # -------------------------------------------------------------------------
-    set -l zero_origin_matches (echo $displays_json | jq -r '
-        .[]
-        | select(.frame.x == 0 and .frame.y == 0)
-        | .uuid
-    ')
-
-    set -l zero_origin_count (count $zero_origin_matches)
-
-    if test "$zero_origin_count" -eq 1
-        set_internal_display_uuid $zero_origin_matches[1]
-        echo "[OK] Internal display UUID inferred from frame origin: $zero_origin_matches[1]"
-        return 0
-    end
-
-    if test "$zero_origin_count" -gt 1
-        set -l focused_zero_origin (echo $displays_json | jq -r '
+    set -l configured_uuid (get_internal_display_uuid 2>/dev/null)
+    if test -n "$configured_uuid"
+        set -l configured_match (echo $displays_json | ws_jq -r --arg uuid "$configured_uuid" '
             .[]
-            | select(.frame.x == 0 and .frame.y == 0)
-            | select(.["has-focus"] == true)
+            | select(.uuid == $uuid)
             | .uuid
         ' | head -n 1)
 
-        if test -n "$focused_zero_origin" -a "$focused_zero_origin" != "null"
-            set_internal_display_uuid $focused_zero_origin
-            echo "[OK] Internal display UUID inferred from zero-origin focused display: $focused_zero_origin"
+        if test -n "$configured_match" -a "$configured_match" != "null"
+            echo "[OK] Existing internal display UUID is connected: $configured_match"
             return 0
         end
-    end
 
-    # -------------------------------------------------------------------------
-    # Fallback:
-    # If there is exactly one focused display and no better rule worked,
-    # use it as a best-effort guess.
-    # -------------------------------------------------------------------------
-    set -l focused_matches (echo $displays_json | jq -r '
-        .[]
-        | select(.["has-focus"] == true)
-        | .uuid
-    ')
-
-    if test (count $focused_matches) -eq 1
-        set_internal_display_uuid $focused_matches[1]
-        echo "[OK] Internal display UUID inferred from focused display: $focused_matches[1]"
-        return 0
+        echo "[WARN] Configured internal display UUID is not currently connected: $configured_uuid"
     end
 
     # -------------------------------------------------------------------------
@@ -123,7 +97,7 @@ function detect_and_set_internal_display_uuid --description "Detect and set the 
     # -------------------------------------------------------------------------
     echo "[WARN] Could not confidently determine the internal display UUID"
     echo "[INFO] Candidate displays from yabai:"
-    echo $displays_json | jq -r '
+    echo $displays_json | ws_jq -r '
         .[]
         | [
             "index=\(.index)",

@@ -7,7 +7,8 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
     end
 
     if test -z "$target_display"
-        set target_display 1
+        echo "[WARN] find_or_create_labeled_space: missing target display for label '$label'" >&2
+        return 1
     end
 
     # -------------------------------------------------------------------------
@@ -19,7 +20,7 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
     end
 
     set -l existing_space_on_target (
-        echo $spaces_json | jq -r \
+        echo $spaces_json | ws_jq -r \
             --arg label "$label" \
             --argjson display "$target_display" \
             '.[]
@@ -36,7 +37,7 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
     # 2. Destroy empty same-label spaces stranded on other displays
     # -------------------------------------------------------------------------
     set -l stale_spaces (
-        echo $spaces_json | jq -r \
+        echo $spaces_json | ws_jq -r \
             --arg label "$label" \
             --argjson display "$target_display" \
             '.[]
@@ -57,7 +58,7 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
         return 1
     end
 
-    set -l before_uuids (echo $spaces_json | jq -r '.[].uuid')
+    set -l before_uuids (echo $spaces_json | ws_jq -r '.[].uuid')
     if test -z "$before_uuids"
         return 1
     end
@@ -80,7 +81,7 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
     end
 
     set -l new_space_uuid (
-        echo $spaces_json | jq -r '.[].uuid' \
+        echo $spaces_json | ws_jq -r '.[].uuid' \
         | while read -l u
             if not contains -- $u $before_uuids
                 echo $u
@@ -94,7 +95,7 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
     end
 
     set -l new_space_index (
-            echo $spaces_json | jq -r \
+            echo $spaces_json | ws_jq -r \
             --arg uuid "$new_space_uuid" \
             '.[]
              | select(.uuid==$uuid)
@@ -102,7 +103,7 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
     )
 
     set -l new_space_display (
-            echo $spaces_json | jq -r \
+            echo $spaces_json | ws_jq -r \
             --arg uuid "$new_space_uuid" \
             '.[]
              | select(.uuid==$uuid)
@@ -130,7 +131,7 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
     end
 
     set -l final_space_index (
-            echo $spaces_json | jq -r \
+            echo $spaces_json | ws_jq -r \
             --arg uuid "$new_space_uuid" \
             '.[]
              | select(.uuid==$uuid)

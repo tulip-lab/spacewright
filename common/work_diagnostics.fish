@@ -18,7 +18,7 @@ function work_diagnostics --description "Show workspace diagnostics without chan
     end
 
     echo "===== DISPLAY SUMMARY ====="
-    echo $displays_json | jq '.[] | {
+    echo $displays_json | ws_jq '.[] | {
         index,
         uuid,
         frame,
@@ -29,16 +29,16 @@ function work_diagnostics --description "Show workspace diagnostics without chan
 
     echo
     echo "===== CURRENT FOCUS ====="
-    set -l current_display (ws_yabai -m query --displays --display 2>/dev/null | jq -r '.index // empty')
-    set -l current_space (ws_yabai -m query --spaces --space 2>/dev/null | jq -r '.index // empty')
-    jq -n \
+    set -l current_display (ws_yabai -m query --displays --display 2>/dev/null | ws_jq -r '.index // empty')
+    set -l current_space (ws_yabai -m query --spaces --space 2>/dev/null | ws_jq -r '.index // empty')
+    ws_jq -n \
         --arg display "$current_display" \
         --arg space "$current_space" \
         '{display: ($display | tonumber?), space: ($space | tonumber?)}'
 
     echo
     echo "===== LABELED SPACE SUMMARY ====="
-    echo $spaces_json | jq '
+    echo $spaces_json | ws_jq '
         map(select(.label != ""))
         | group_by(.label)
         | .[]
@@ -56,20 +56,20 @@ function work_diagnostics --description "Show workspace diagnostics without chan
 
     echo
     echo "===== EMPTY LABELED SPACES ====="
-    if echo $spaces_json | jq -e 'any(.[]; .label != "" and (.windows | length) == 0)' >/dev/null
-        echo $spaces_json | jq '.[] | select(.label != "" and (.windows | length) == 0) | {index, label, display}'
+    if echo $spaces_json | ws_jq -e 'any(.[]; .label != "" and (.windows | length) == 0)' >/dev/null
+        echo $spaces_json | ws_jq '.[] | select(.label != "" and (.windows | length) == 0) | {index, label, display}'
     else
         echo "none"
     end
 
     echo
     echo "===== DUPLICATE LABELS ====="
-    if echo $spaces_json | jq -e '
+    if echo $spaces_json | ws_jq -e '
         map(select(.label != ""))
         | group_by(.label)
         | .[]
         | select(length > 1)' >/dev/null
-        echo $spaces_json | jq '
+        echo $spaces_json | ws_jq '
             map(select(.label != ""))
             | group_by(.label)
             | .[]
@@ -89,8 +89,8 @@ function work_diagnostics --description "Show workspace diagnostics without chan
 
     echo
     echo "===== EMPTY UNLABELED SPACES ====="
-    if echo $spaces_json | jq -e 'any(.[]; .label == "" and (.windows | length) == 0)' >/dev/null
-        echo $spaces_json | jq '.[] | select(.label == "" and (.windows | length) == 0) | {index, display}'
+    if echo $spaces_json | ws_jq -e 'any(.[]; .label == "" and (.windows | length) == 0)' >/dev/null
+        echo $spaces_json | ws_jq '.[] | select(.label == "" and (.windows | length) == 0) | {index, display}'
     else
         echo "none"
     end

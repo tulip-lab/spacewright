@@ -1,7 +1,15 @@
 function work_wide
-    coding_wide_all
-    research_wide
+    set -l failed 0
 
-    gtd_wide_all
+    workspace_run_step "coding wide all" coding_wide_all
+    or set failed 1
+
+    workspace_run_step "research wide" research_wide
+    or set failed 1
+
+    workspace_run_step "GTD wide all" gtd_wide_all
+    or set failed 1
 #    office_wide
+
+    return $failed
 end

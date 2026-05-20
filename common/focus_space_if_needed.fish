@@ -5,7 +5,12 @@ function focus_space_if_needed
     end
 
     set -l target_space $argv[1]
-    set -l current_space (ws_yabai -m query --spaces --space 2>/dev/null | jq -r '.index')
+    set -l current_space_json (ws_yabai -m query --spaces --space 2>/dev/null)
+    if test $status -ne 0 -o -z "$current_space_json"
+        return 1
+    end
+
+    set -l current_space (echo $current_space_json | ws_jq -r '.index')
 
     if test -z "$current_space"
         return 1

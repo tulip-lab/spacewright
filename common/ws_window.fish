@@ -60,7 +60,7 @@ function ws_window --description "Run a yabai window command only when the windo
             return 0
         end
 
-        set -l current_space (echo $current_window | jq -r '.space // empty')
+        set -l current_space (echo $current_window | ws_jq -r '.space // empty')
 
         if test "$current_space" = "$argv[2]"
             return 0
@@ -83,7 +83,7 @@ function ws_window --description "Run a yabai window command only when the windo
             return 0
         end
 
-        set -l current_frame (echo $current_window | jq -r '[.frame.x, .frame.y, .frame.w, .frame.h] | @tsv' 2>/dev/null)
+        set -l current_frame (echo $current_window | ws_jq -r '[.frame.x, .frame.y, .frame.w, .frame.h] | @tsv' 2>/dev/null)
 
         if test -n "$current_frame" -a -f "$cache_file"
             set -l cached (cat "$cache_file")
@@ -114,7 +114,7 @@ function ws_window --description "Run a yabai window command only when the windo
             set -l updated_frame
 
             if test $status -eq 0 -a -n "$updated_window"
-                set updated_frame (echo $updated_window | jq -r '[.frame.x, .frame.y, .frame.w, .frame.h] | @tsv' 2>/dev/null)
+                set updated_frame (echo $updated_window | ws_jq -r '[.frame.x, .frame.y, .frame.w, .frame.h] | @tsv' 2>/dev/null)
             end
 
             if test -n "$updated_frame"
@@ -144,7 +144,7 @@ function ws_window --description "Run a yabai window command only when the windo
         set -l updated_frame
 
         if test $status -eq 0 -a -n "$updated_window"
-            set updated_frame (echo $updated_window | jq -r '[.frame.x, .frame.y, .frame.w, .frame.h] | @tsv' 2>/dev/null)
+            set updated_frame (echo $updated_window | ws_jq -r '[.frame.x, .frame.y, .frame.w, .frame.h] | @tsv' 2>/dev/null)
         end
 
         if test -n "$updated_frame"

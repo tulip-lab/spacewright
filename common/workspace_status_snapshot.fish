@@ -12,7 +12,7 @@ function workspace_status_snapshot --description "Print common display and space
     end
 
     echo "===== DISPLAYS ====="
-    echo $displays_json | jq '.[] | {
+    echo $displays_json | ws_jq '.[] | {
         index,
         uuid,
         frame,
@@ -23,7 +23,7 @@ function workspace_status_snapshot --description "Print common display and space
 
     echo
     echo "===== SPACES ====="
-    echo $spaces_json | jq '.[] | {
+    echo $spaces_json | ws_jq '.[] | {
         index,
         label,
         display,

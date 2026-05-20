@@ -26,7 +26,7 @@ function coding_status --description "Show display, space and coding application
     echo "===== CODING APPS ====="
     set -l windows_json (ws_query_windows coding_status status); or return 1
 
-    echo $windows_json | jq '
+    echo $windows_json | ws_jq '
         .[]
         | select(
             .app=="Code"

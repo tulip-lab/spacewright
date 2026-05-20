@@ -21,6 +21,8 @@ Each module follows a consistent structure wherever applicable:
 
 The system is designed to keep workspace behavior predictable, composable, and portable across machines.
 
+This README is the daily-use and troubleshooting entry point. Ongoing maintenance tasks and longer-term design roadmap items live in `design-notes.md` under `Roadmap And TODO`.
+
 ## New Machine Bootstrap
 
 On a new Mac or after a macOS/yabai reset, configure the internal display UUID before relying on WIDE, TALL, or internal workspace commands.
@@ -34,7 +36,7 @@ get_internal_display_uuid
 work_diagnostics
 ```
 
-`detect_and_set_internal_display_uuid` uses `yabai` display metadata as the source of truth. It is safe when the topology is simple enough to infer the internal display. If it cannot determine the internal display confidently, inspect the current displays:
+`detect_and_set_internal_display_uuid` uses `yabai` display metadata as the source of truth. In multi-display setups, it preserves an existing connected internal UUID and avoids guessing from display origin or focus. This matters because external-display profiles may intentionally make the external monitor the macOS primary display at `origin:(0,0)` so the Dock belongs to the external screen. If it cannot determine the internal display confidently, inspect the current displays:
 
 ```fish
 yabai -m query --displays | jq -r '.[] | "index=\(.index) uuid=\(.uuid) focus=\(.[\"has-focus\"]) frame=(\(.frame.x),\(.frame.y),\(.frame.w),\(.frame.h)) spaces=\(.spaces)"'
@@ -54,7 +56,7 @@ get_internal_display_uuid
 
 The value is stored in the fish universal variable `WORKSPACE_INTERNAL_DISPLAY_UUID`, so it persists across future fish sessions for the same user.
 
-This setup matters because internal fixed workspaces such as `gtd_chat`, `gtd_calendar`, and `coding_control` must stay anchored to the internal display. External modes such as `work_wide` and `work_tall` also use the configured internal UUID to identify the external display.
+This setup matters because internal fixed workspaces such as `gtd_chat`, `gtd_calendar`, and `coding_control` must stay anchored to the internal display. External modes such as `work_wide` and `work_tall` also use the configured internal UUID to identify the external display. The macOS primary display is allowed to differ from the workspace internal display role.
 
 ## Common Helper Layer
 
@@ -70,6 +72,8 @@ They are responsible for:
 - resolving internal and external display roles
 - storing and reading the configured internal display UUID
 - best-effort detection of the internal display UUID
+- wrapping yabai and jq queries with bounded timeouts
+- selecting and refreshing shared app windows consistently
 
 Current core helpers include:
 
@@ -94,6 +98,15 @@ Current core helpers include:
 - `work_cleanup_empty_unlabeled_spaces`
 - `work_recover_light`
 - `work_command_check`
+- `ws_yabai`
+- `ws_jq`
+- `ws_query_windows`
+- `ws_find_window`
+- `ws_find_windows`
+- `workspace_select_app_window`
+- `workspace_refresh_app_window`
+- `workspace_debug_step`
+- `workspace_run_step`
 
 These helpers allow all module-level workspace functions to share the same lifecycle and display-selection logic.
 
@@ -120,7 +133,40 @@ set -e WORKSPACE_DEBUG_YABAI
 set -e WORKSPACE_DEBUG_WINDOW
 ```
 
-`WORKSPACE_YABAI_COMMAND_TIMEOUT_SECONDS` controls the timeout for shared yabai queries, display focus, and space operations. It defaults to `5` seconds. `WORKSPACE_YABAI_TIMEOUT_SECONDS` controls direct window operations through `ws_window` and defaults to `1` second.
+`WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS` controls the timeout for shared yabai queries and defaults to `15` seconds because display queries can briefly stall after display-profile changes or Dock/yabai restarts. `WORKSPACE_YABAI_OPERATION_TIMEOUT_SECONDS` controls non-query `ws_yabai` operations such as display focus, space focus, and space destroy; it defaults to `3` seconds so one stuck operation does not make a full mode switch look hung. `WORKSPACE_YABAI_COMMAND_TIMEOUT_SECONDS` remains a global override for both categories. `WORKSPACE_YABAI_TIMEOUT_SECONDS` controls direct window operations through `ws_window` and defaults to `1` second.
+
+If even read-only yabai queries such as `ws_yabai -m query --displays` or `ws_query_windows probe initial` hit the timeout, restart yabai before rerunning workspace commands:
+
+```fish
+yabai --restart-service
+work_reload
+```
+
+After restart, confirm the query layer is responsive:
+
+```fish
+set -gx WORKSPACE_DEBUG_YABAI 1
+time ws_yabai -m query --displays >/tmp/ws-displays.json
+time ws_query_windows probe initial >/tmp/ws-query-probe.json
+set -e WORKSPACE_DEBUG_YABAI
+rm -f /tmp/ws-displays.json /tmp/ws-query-probe.json
+```
+
+For a mode command that appears slow but still returns eventually, enable step logging for one run:
+
+```fish
+set -gx WORKSPACE_DEBUG_STEPS 1
+gtd_solo_all
+set -e WORKSPACE_DEBUG_STEPS
+```
+
+If a window selector itself appears slow, enable selector-level logging for one run:
+
+```fish
+set -gx WORKSPACE_DEBUG_SELECT 1
+gtd_solo_all
+set -e WORKSPACE_DEBUG_SELECT
+```
 
 Phase 8.5 adds conservative manual recovery commands:
 
@@ -209,6 +255,13 @@ All workspace modules follow these conventions:
 
 This separation keeps empty spaces under control without deleting meaningful structured workspaces too aggressively.
 
+Window selection follows two shared patterns:
+
+- Use `workspace_select_app_window` for simple app-name selection, especially shared apps such as `ChatGPT` and `Microsoft Outlook`.
+- Use `ws_find_window` when a workspace needs title exclusion, app regex matching, non-empty title checks, or bad-window cache awareness.
+
+All workspace JSON parsing should go through `ws_jq`, `ws_find_window`, or `workspace_select_app_window`; direct `jq` pipelines are avoided inside workspace functions so parser timeouts remain bounded.
+
 ## ChatGPT Ownership Rule
 
 `ChatGPT` is treated as a shared single-instance helper application across multiple modules.
@@ -230,6 +283,21 @@ If a workspace depends on a required primary application, such as Word, PowerPoi
 3. return without creating a new workspace
 
 This prevents old empty labeled spaces from persisting after application state changes.
+
+## GTD Chat Special Note
+
+## GTD Support Dia Layout
+
+`gtd_support_tall` collects all non-minimized `Dia` windows, preferring windows with non-empty titles that are not `New Tab`.
+
+Tall support layout:
+
+- 1 Dia window: full space
+- 2 Dia windows: top half and bottom half
+- 3 Dia windows: two on the top half, one on the bottom half
+- 4 or more Dia windows: two-column grid, filled top to bottom
+
+`gtd_support_solo` and `gtd_support_wide` still use a single Dia window layout.
 
 ## GTD Chat Special Note
 
@@ -295,7 +363,40 @@ work_command_check
 
 ## Recommended Daily Sequences
 
-Single internal display:
+Before using the mode commands, keep these machine-level assumptions true:
+
+- `WORKSPACE_INTERNAL_DISPLAY_UUID` is set to the built-in display UUID.
+- macOS Dock is configured with auto-hide enabled.
+- In external modes, the external display profile is allowed to be the macOS primary display at `origin:(0,0)`.
+- The workspace internal/external roles are resolved by UUID, not by macOS primary display or display origin.
+- `yabai`, `jq`, and `displayplacer` are available in `PATH`.
+
+Check the core display role setup:
+
+```fish
+work_reload
+get_internal_display_uuid
+echo internal=(resolve_internal_display)
+echo external=(resolve_external_display)
+```
+
+Check the Dock settings:
+
+```fish
+defaults read com.apple.dock orientation
+defaults read com.apple.dock autohide
+```
+
+Expected Dock values:
+
+```text
+left
+1
+```
+
+### Solo Internal Display
+
+Use this when working only on the built-in display.
 
 ```fish
 display_apply_solo
@@ -303,7 +404,23 @@ work_solo
 work_diagnostics
 ```
 
-Wide external display:
+Expected state:
+
+- only the internal display is enabled
+- the internal display is at `origin:(0,0)`
+- `resolve_internal_display` returns the active display
+- `resolve_external_display` falls back to the internal display because no external display is connected
+- internal fixed workspaces such as `gtd_chat`, `gtd_calendar`, and `coding_control` stay on the internal display
+
+Equivalent hotkey:
+
+```text
+Fn + Shift + 0
+```
+
+### Wide External Display
+
+Use this when the wide external monitor is connected on the left.
 
 ```fish
 display_apply_wide_left
@@ -311,12 +428,64 @@ work_wide
 work_diagnostics
 ```
 
-Tall external display:
+Expected state:
+
+- the wide external monitor is enabled and placed at `origin:(0,0)`
+- the internal display remains enabled to the right of the external monitor
+- the external monitor is the macOS primary display for Dock and menu-bar behavior
+- `resolve_internal_display` returns the built-in display
+- `resolve_external_display` returns the wide external display
+- wide task workspaces move to the external display
+- internal fixed workspaces remain on the internal display
+
+Equivalent hotkey:
+
+```text
+Option + Shift + 0
+```
+
+### Tall External Display
+
+Use this when the tall external monitor is connected on the left.
 
 ```fish
 display_apply_tall_left
 work_tall
 work_diagnostics
+```
+
+Expected state:
+
+- the tall external monitor is enabled and placed at `origin:(0,0)`
+- the internal display remains enabled to the right of the external monitor
+- the external monitor is the macOS primary display for Dock and menu-bar behavior
+- `resolve_internal_display` returns the built-in display
+- `resolve_external_display` returns the tall external display
+- tall task workspaces move to the external display
+- internal fixed workspaces remain on the internal display
+
+Equivalent hotkey:
+
+```text
+Control + Shift + 0
+```
+
+### Post-Switch Checks
+
+After switching display mode, check the actual display graph if windows or the Dock appear on the wrong screen:
+
+```fish
+yabai -m query --displays | jq -r '.[] | "index=\(.index) uuid=\(.uuid) focus=\(.[\"has-focus\"]) frame=(\(.frame.x),\(.frame.y),\(.frame.w),\(.frame.h)) spaces=\(.spaces)"'
+echo internal=(resolve_internal_display)
+echo external=(resolve_external_display)
+```
+
+For external modes, the external display should be the one at `origin:(0,0)`, while `internal` should still resolve to the built-in display UUID.
+
+If the Dock is configured correctly but does not hide or show from the expected edge, restart the Dock after applying the display profile:
+
+```fish
+killall Dock
 ```
 
 If diagnostics show only empty workspace spaces or stale bad-window cache entries, run:

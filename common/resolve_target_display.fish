@@ -17,7 +17,7 @@ function resolve_target_display --description "Resolve target display index from
         return 0
     end
 
-    set -l target_display (echo $displays_json | jq -r --arg uuid "$target_uuid" '.[] | select(.uuid==$uuid) | .index' | head -n 1)
+    set -l target_display (echo $displays_json | ws_jq -r --arg uuid "$target_uuid" '.[] | select(.uuid==$uuid) | .index' | head -n 1)
 
     if test -z "$target_display"
         echo $fallback_display

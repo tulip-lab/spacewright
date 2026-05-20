@@ -14,7 +14,7 @@ function gtd_labels --description "Show all current GTD space labels"
         return 1
     end
 
-    echo $spaces_json | jq '
+    echo $spaces_json | ws_jq '
         .[]
         | select(.label | test("^gtd_"))
         | {

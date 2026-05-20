@@ -58,12 +58,15 @@ function gtd_meeting_wide --description "Collect Outlook, Zoom and Teams onto th
     # -------------------------------------------------------------------------
     set -l windows_json (ws_query_windows "gtd_meeting_wide" initial); or return 1
 
-    set -l out (gtd_find_outlook_window gtd_meeting_wide)
+    set -l out (echo $windows_json | workspace_select_app_window --app "Microsoft Outlook" --movable)
     set -l outlook_status $status
 
     set -l zoom (echo $windows_json | ws_find_window "zoom.us" --exclude-title meeting --exclude-title video --exclude-title share --exclude-title screen --exclude-title mini)
 
     set -l teams (echo $windows_json | ws_find_window "Microsoft Teams" --exclude-title meeting --exclude-title video --exclude-title call --exclude-title share --exclude-title screen --exclude-title mini)
+
+    set -l zoom_initial $zoom
+    set -l teams_initial $teams
 
     if test -z "$out" -a -z "$zoom" -a -z "$teams"
         if test "$outlook_status" -eq 2
@@ -96,6 +99,13 @@ function gtd_meeting_wide --description "Collect Outlook, Zoom and Teams onto th
     ws_focus_space $target_space
     sleep 0.15
 
+    if test -z "$out"
+        set out (gtd_find_outlook_window gtd_meeting_wide $target_space)
+        if test $status -eq 2 -a -z "$zoom" -a -z "$teams"
+            return 1
+        end
+    end
+
     # -------------------------------------------------------------------------
     # 6. First-pass move
     # -------------------------------------------------------------------------
@@ -108,9 +118,30 @@ function gtd_meeting_wide --description "Collect Outlook, Zoom and Teams onto th
 
     set out (echo $windows_json_final | ws_find_window "Microsoft Outlook" --space $target_space --movable)
 
+    if test -z "$out"
+        set out (gtd_find_outlook_window gtd_meeting_wide $target_space)
+        if test -n "$out"
+            ws_move_windows_to_space $target_space $out
+            set windows_json_final (ws_query_windows "gtd_meeting_wide" final); or return 1
+            set out (echo $windows_json_final | ws_find_window "Microsoft Outlook" --space $target_space --movable)
+        end
+    end
+
     set zoom (echo $windows_json_final | ws_find_window "zoom.us" --space $target_space --exclude-title meeting --exclude-title video --exclude-title share --exclude-title screen --exclude-title mini)
 
     set teams (echo $windows_json_final | ws_find_window "Microsoft Teams" --space $target_space --exclude-title meeting --exclude-title video --exclude-title call --exclude-title share --exclude-title screen --exclude-title mini)
+
+    if test -z "$zoom" -a -n "$zoom_initial"
+        ws_move_windows_to_space $target_space $zoom_initial
+        set windows_json_final (ws_query_windows "gtd_meeting_wide" final_zoom_retry); or return 1
+        set zoom (echo $windows_json_final | ws_find_window "zoom.us" --space $target_space --exclude-title meeting --exclude-title video --exclude-title share --exclude-title screen --exclude-title mini)
+    end
+
+    if test -z "$teams" -a -n "$teams_initial"
+        ws_move_windows_to_space $target_space $teams_initial
+        set windows_json_final (ws_query_windows "gtd_meeting_wide" final_teams_retry); or return 1
+        set teams (echo $windows_json_final | ws_find_window "Microsoft Teams" --space $target_space --exclude-title meeting --exclude-title video --exclude-title call --exclude-title share --exclude-title screen --exclude-title mini)
+    end
 
     # -------------------------------------------------------------------------
     # 9. Apply final layout

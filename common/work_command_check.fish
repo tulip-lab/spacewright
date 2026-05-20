@@ -11,7 +11,14 @@ function work_command_check --description "Check that documented workspace comma
         work_cleanup_empty_unlabeled_spaces \
         work_recover_light \
         ws_yabai \
+        ws_jq \
         ws_query_windows \
+        ws_find_window \
+        ws_find_windows \
+        workspace_select_app_window \
+        workspace_refresh_app_window \
+        workspace_debug_step \
+        workspace_run_step \
         display_reload \
         display_apply_solo \
         display_apply_wide_left \

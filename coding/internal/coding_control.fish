@@ -49,42 +49,48 @@ function coding_control --description "Collect Warp, SmartGit, and FlClash onto 
     # -------------------------------------------------------------------------
     set -l windows_json (ws_query_windows "coding_control" initial); or return 1
 
-    set -l flclash_running (echo $windows_json | jq -r '
+    set -l flclash_running (echo $windows_json | ws_jq -r '
         .[]
         | select(.app=="FlClash" or .app=="Thaw")
         | select(.["is-minimized"]==false)
         | .id
     ')
 
-    set -l flclash_visible (echo $windows_json | jq -r '
-        .[]
-        | select(.app=="FlClash" or .app=="Thaw")
-        | select(.["is-minimized"]==false)
-        | select(.["is-visible"]==true)
-        | .id
-    ' | head -n 1)
+    set -l flclash_visible (echo $windows_json | ws_jq -r '
+        first(
+            .[]
+            | select(.app=="FlClash" or .app=="Thaw")
+            | select(.["is-minimized"]==false)
+            | select(.["is-visible"]==true)
+            | .id
+        ) // empty
+    ')
 
     if test -n "$flclash_running" -a -z "$flclash_visible"
-        open -a FlClash
+        perl -e 'alarm shift; exec @ARGV' 2 open -a FlClash >/dev/null 2>&1
         sleep 0.5
         set windows_json (ws_query_windows "coding_control" refresh); or return 1
     end
 
-    set -l warp (echo $windows_json | jq -r '
-        .[]
-        | select(.app=="Warp")
-        | select(.["is-minimized"]==false)
-        | .id
-    ' | head -n 1)
+    set -l warp (echo $windows_json | ws_jq -r '
+        first(
+            .[]
+            | select(.app=="Warp")
+            | select(.["is-minimized"]==false)
+            | .id
+        ) // empty
+    ')
 
-    set -l smartgit (echo $windows_json | jq -r '
-        .[]
-        | select(.app=="SmartGit")
-        | select(.["is-minimized"]==false)
-        | .id
-    ' | head -n 1)
+    set -l smartgit (echo $windows_json | ws_jq -r '
+        first(
+            .[]
+            | select(.app=="SmartGit")
+            | select(.["is-minimized"]==false)
+            | .id
+        ) // empty
+    ')
 
-    set -l flclash (echo $windows_json | jq -r '
+    set -l flclash (echo $windows_json | ws_jq -r '
         .[]
         | select(.app=="FlClash" or .app=="Thaw")
         | select(.["is-minimized"]==false)
@@ -134,23 +140,27 @@ function coding_control --description "Collect Warp, SmartGit, and FlClash onto 
     # -------------------------------------------------------------------------
     set -l windows_json_final (ws_query_windows "coding_control" final); or return 1
 
-    set warp (echo $windows_json_final | jq -r --argjson s $target_space '
-        .[]
-        | select(.app=="Warp")
-        | select(.space==$s)
-        | select(.["is-minimized"]==false)
-        | .id
-    ' | head -n 1)
+    set warp (echo $windows_json_final | ws_jq -r --argjson s $target_space '
+        first(
+            .[]
+            | select(.app=="Warp")
+            | select(.space==$s)
+            | select(.["is-minimized"]==false)
+            | .id
+        ) // empty
+    ')
 
-    set smartgit (echo $windows_json_final | jq -r --argjson s $target_space '
-        .[]
-        | select(.app=="SmartGit")
-        | select(.space==$s)
-        | select(.["is-minimized"]==false)
-        | .id
-    ' | head -n 1)
+    set smartgit (echo $windows_json_final | ws_jq -r --argjson s $target_space '
+        first(
+            .[]
+            | select(.app=="SmartGit")
+            | select(.space==$s)
+            | select(.["is-minimized"]==false)
+            | .id
+        ) // empty
+    ')
 
-    set flclash (echo $windows_json_final | jq -r --argjson s $target_space '
+    set flclash (echo $windows_json_final | ws_jq -r --argjson s $target_space '
         .[]
         | select(.app=="FlClash" or .app=="Thaw")
         | select(.space==$s)

@@ -13,7 +13,7 @@ function workspace_mode_status_section --description "Print labeled spaces match
         return 1
     end
 
-    echo $spaces_json | jq --arg pattern "$label_pattern" '
+    echo $spaces_json | ws_jq --arg pattern "$label_pattern" '
         .[]
         | select(.label | test($pattern))
         | {

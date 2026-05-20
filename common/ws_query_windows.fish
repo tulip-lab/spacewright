@@ -16,5 +16,11 @@ function ws_query_windows --description "Query yabai windows with timeout and fa
         return 1
     end
 
+    echo $windows_json | ws_jq -e 'type == "array"' >/dev/null 2>&1
+    if test $status -ne 0
+        echo "[WARN] $caller received invalid $phase windows JSON from yabai" >&2
+        return 1
+    end
+
     echo $windows_json
 end

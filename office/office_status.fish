@@ -20,7 +20,7 @@ function office_status --description "Show display, space and office application
     echo "===== OFFICE APPS ====="
     set -l windows_json (ws_query_windows office_status status); or return 1
 
-    echo $windows_json | jq '
+    echo $windows_json | ws_jq '
         .[]
         | select(
             .app=="Microsoft Word"

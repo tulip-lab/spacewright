@@ -16,12 +16,15 @@ function gtd_support_tall --description "Collect Dia onto the tall GTD support w
     #
     # Window selection rules:
     #   - Dia:
-    #       Prefer a non-minimized window whose title is not empty and does not
-    #       contain "New Tab".
-    #       If none is found, fall back to any non-minimized Dia window.
+    #       Prefer all non-minimized windows whose title is not empty and does
+    #       not contain "New Tab".
+    #       If none are found, fall back to all non-minimized Dia windows.
     #
     # Layout:
-    #   - Dia -> full space
+    #   - 1 Dia window  -> full space
+    #   - 2 Dia windows -> top half / bottom half
+    #   - 3 Dia windows -> two on the top half, one on the bottom half
+    #   - 4+ Dia windows -> two-column grid, filled top to bottom
     #
     # Implementation notes:
     #   - Before entering GTD support tall mode, empty GTD wide spaces are
@@ -47,13 +50,13 @@ function gtd_support_tall --description "Collect Dia onto the tall GTD support w
     set -l windows_json (ws_query_windows "gtd_support_tall" initial); or return 1
 
     # Dia: prefer non-empty title and not "New Tab"
-    set -l dia (echo $windows_json | ws_find_window "Dia" --nonempty-title --exclude-title "new tab")
+    set -l dia_windows (echo $windows_json | ws_find_windows "Dia" --nonempty-title --exclude-title "new tab")
 
-    if test -z "$dia"
-        set dia (echo $windows_json | ws_find_window "Dia")
+    if test (count $dia_windows) -eq 0
+        set dia_windows (echo $windows_json | ws_find_windows "Dia")
     end
 
-    if test -z "$dia"
+    if test (count $dia_windows) -eq 0
         destroy_empty_labeled_space $label
 
         return 0
@@ -83,27 +86,49 @@ function gtd_support_tall --description "Collect Dia onto the tall GTD support w
     sleep 0.15
 
     # -------------------------------------------------------------------------
-    # 5. Move captured Dia window
+    # 5. Move captured Dia windows
     # -------------------------------------------------------------------------
-    ws_move_app_to_space $target_space "Dia" $dia
+    ws_move_windows_to_space $target_space $dia_windows
 
     # -------------------------------------------------------------------------
     # 6. Final capture on target space
     # -------------------------------------------------------------------------
     set -l windows_json_final (ws_query_windows "gtd_support_tall" final); or return 1
 
-    set dia (echo $windows_json_final | ws_find_window "Dia" --space $target_space --nonempty-title --exclude-title "new tab")
+    set dia_windows (echo $windows_json_final | ws_find_windows "Dia" --space $target_space --nonempty-title --exclude-title "new tab")
 
-    if test -z "$dia"
-        set dia (echo $windows_json_final | ws_find_window "Dia" --space $target_space)
+    if test (count $dia_windows) -eq 0
+        set dia_windows (echo $windows_json_final | ws_find_windows "Dia" --space $target_space)
     end
 
     # -------------------------------------------------------------------------
     # 7. Apply final layout
-    #    Keep Dia full-size on the support workspace.
+    #    Keep one Dia full-size, split two vertically, and use a 2x2-style
+    #    layout for three or more windows.
     # -------------------------------------------------------------------------
-    if test -n "$dia"
-        ws_window $dia --grid 1:1:0:0:1:1
+    set -l dia_count (count $dia_windows)
+
+    if test "$dia_count" -eq 1
+        ws_window $dia_windows[1] --grid 1:1:0:0:1:1
+    else if test "$dia_count" -eq 2
+        ws_window $dia_windows[1] --grid 2:1:0:0:1:1
+        ws_window $dia_windows[2] --grid 2:1:0:1:1:1
+    else if test "$dia_count" -eq 3
+        ws_window $dia_windows[1] --grid 2:2:0:0:1:1
+        ws_window $dia_windows[2] --grid 2:2:1:0:1:1
+        ws_window $dia_windows[3] --grid 2:1:0:1:1:1
+    else if test "$dia_count" -ge 4
+        set -l rows (math "ceil($dia_count / 2)")
+        set -l i 1
+
+        for wid in $dia_windows
+            set -l zero_index (math "$i - 1")
+            set -l col (math "$zero_index % 2")
+            set -l row (math "floor($zero_index / 2)")
+
+            ws_window $wid --grid $rows:2:$col:$row:1:1
+            set i (math "$i + 1")
+        end
     end
 
     # -------------------------------------------------------------------------

@@ -5,7 +5,12 @@ function focus_display_if_needed
     end
 
     set -l target_display $argv[1]
-    set -l current_display (ws_yabai -m query --displays --display 2>/dev/null | jq -r '.index')
+    set -l current_display_json (ws_yabai -m query --displays --display 2>/dev/null)
+    if test $status -ne 0 -o -z "$current_display_json"
+        return 1
+    end
+
+    set -l current_display (echo $current_display_json | ws_jq -r '.index')
 
     if test -z "$current_display"
         return 1

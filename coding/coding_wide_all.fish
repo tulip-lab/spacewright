@@ -10,6 +10,13 @@ function coding_wide_all --description "Arrange all coding wide workspaces inclu
     #   this wrapper does not repeat cleanup again.
     # -------------------------------------------------------------------------
 
-    coding_wide
-    coding_control
+    set -l failed 0
+
+    workspace_run_step "coding wide mode" coding_wide
+    or set failed 1
+
+    workspace_run_step "coding control internal" coding_control
+    or set failed 1
+
+    return $failed
 end

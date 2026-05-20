@@ -45,11 +45,11 @@ function gtd_apps --description "Show all current GTD-related application window
         end
 
         if test (count $bad_window_ids) -gt 0
-            set bad_window_ids_json (printf '%s\n' $bad_window_ids | jq -R . | jq -s .)
+            set bad_window_ids_json (printf '%s\n' $bad_window_ids | ws_jq -R . | ws_jq -s .)
         end
     end
 
-    echo $windows_json | jq --argjson bad_window_ids "$bad_window_ids_json" '
+    echo $windows_json | ws_jq --argjson bad_window_ids "$bad_window_ids_json" '
         .[]
         | select(
             .app=="Thunderbird"

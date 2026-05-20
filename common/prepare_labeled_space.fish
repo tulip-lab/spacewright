@@ -16,8 +16,13 @@ function prepare_labeled_space --description "Normalize labeled space state"
     # This keeps label ownership explicit and stable.
     # -------------------------------------------------------------------------
     if test -n "$label"
+        set -l spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+        if test $status -ne 0 -o -z "$spaces_json"
+            return 1
+        end
+
         set -l other_spaces (
-            ws_yabai -m query --spaces | jq -r \
+            echo $spaces_json | ws_jq -r \
                 --arg label "$label" \
                 --argjson target "$target_space" \
                 '.[]

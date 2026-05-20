@@ -5,7 +5,12 @@ function destroy_empty_labeled_space --description "Destroy the first empty spac
         return 1
     end
 
-    set -l stale_space (ws_yabai -m query --spaces | jq -r --arg label "$label" '
+    set -l spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+    if test $status -ne 0 -o -z "$spaces_json"
+        return 1
+    end
+
+    set -l stale_space (echo $spaces_json | ws_jq -r --arg label "$label" '
         .[]
         | select(.label==$label)
         | select((.windows | length) == 0)

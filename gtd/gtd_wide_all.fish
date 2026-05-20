@@ -14,7 +14,16 @@ function gtd_wide_all --description "Arrange all GTD wide workspaces including i
     #   wrapper does not repeat cleanup again.
     # -------------------------------------------------------------------------
 
-    gtd_wide
-    gtd_chat
-    gtd_calendar
+    set -l failed 0
+
+    workspace_run_step "GTD wide mode" gtd_wide
+    or set failed 1
+
+    workspace_run_step "GTD chat internal" gtd_chat
+    or set failed 1
+
+    workspace_run_step "GTD calendar internal" gtd_calendar
+    or set failed 1
+
+    return $failed
 end

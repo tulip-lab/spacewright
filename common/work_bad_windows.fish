@@ -25,7 +25,7 @@ function work_bad_windows --description "Show cached bad yabai window IDs"
         set windows_json "[]"
     end
 
-    set -l live_window_ids (echo $windows_json | jq -r '.[].id')
+    set -l live_window_ids (echo $windows_json | ws_jq -r '.[].id')
     set -l now (date +%s)
     set -l count 0
 

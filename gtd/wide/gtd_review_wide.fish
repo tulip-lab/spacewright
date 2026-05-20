@@ -95,7 +95,7 @@ function gtd_review_wide --description "Collect review-related windows onto the 
     # -------------------------------------------------------------------------
     set -l finder (echo $windows_json | ws_find_window "Finder")
 
-    set -l chatgpt (echo $windows_json | ws_find_window "ChatGPT" --visible)
+    set -l chatgpt (workspace_refresh_app_window --app ChatGPT --caller gtd_review_wide --movable)
 
     # Notes: prefer non-empty title
     set -l notes (echo $windows_json | ws_find_window "Notes" --nonempty-title)
@@ -118,7 +118,7 @@ function gtd_review_wide --description "Collect review-related windows onto the 
 
     set preview (echo $windows_json_final | ws_find_window "Preview" --space $target_space)
 
-    set chatgpt (echo $windows_json_final | ws_find_window "ChatGPT" --space $target_space --visible)
+    set chatgpt (echo $windows_json_final | workspace_select_app_window --app ChatGPT --space $target_space --movable)
 
     set notes (echo $windows_json_final | ws_find_window "Notes" --space $target_space --nonempty-title)
 
