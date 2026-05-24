@@ -44,9 +44,11 @@ Display profile functions apply monitor geometry only:
 
 Mode entry is a two-step contract:
 
-- `display_apply_solo; and work_solo`
-- `display_apply_wide_left; and work_wide`
-- `display_apply_tall_left; and work_tall`
+- `display_apply_solo; work_solo`
+- `display_apply_wide_left; work_wide`
+- `display_apply_tall_left; work_tall`
+
+The whole-workspace hotkeys intentionally use `;` rather than `and` so `work_*` still runs if the display verification step reports a display mismatch.
 
 `display_apply_*` commands:
 
@@ -58,7 +60,7 @@ Mode entry is a two-step contract:
 
 `WORKSPACE_DISPLAY_SETTLE_SECONDS` controls the post-profile wait and defaults to `0.8`.
 
-SKHD top-level mode bindings use `display_apply_*; and work_*` so workspace movement does not run when display health fails.
+SKHD top-level mode bindings use `display_apply_*; work_*` so display health warnings do not block workspace mode entry.
 
 ### Display Health
 
@@ -119,6 +121,8 @@ Use shared bounded helpers for yabai and JSON parsing:
 - `ws_find_window`
 - `ws_find_windows`
 - `workspace_select_app_window`
+- `workspace_find_app_window`
+- `workspace_capture_app_window`
 
 Workspace functions should avoid direct `jq` pipelines where these helpers cover the behavior.
 
@@ -146,6 +150,11 @@ Useful move helpers:
 - `ws_move_app_to_space`
 - `ws_move_app_pair_to_space`
 - `ws_move_windows_to_space`
+- `workspace_capture_app_window`
+
+`workspace_find_app_window` is the default helper for simple app-name ownership. It selects a movable yabai window, can constrain to a target space, can activate the app and poll for a refreshed movable window, and clears recovered bad-window cache entries. Use this for ordinary single-window helper apps instead of hand-written `ws_find_window "<app>"` logic.
+
+`workspace_capture_app_window` builds on that finder: it finds a movable app window, moves it to the target space, then confirms the app is present on that space. This is the preferred path for shared helper apps such as ChatGPT in coding, research, office, and GTD review workspaces.
 
 Layout geometry remains explicit in module functions or narrow module-specific helpers. There is no generic layout engine.
 
@@ -235,7 +244,11 @@ Common cleanup wrappers are intentionally thin and mode-named:
 
 This keeps behavior deterministic without hidden precedence rules.
 
-GTD review captures a movable `ChatGPT` window. If ChatGPT exists but yabai does not expose a movable window, review activates ChatGPT once and refreshes the window snapshot.
+ChatGPT-owning workspaces capture a movable `ChatGPT` window through `workspace_capture_app_window`. If ChatGPT exists but yabai does not expose a movable window, the helper activates ChatGPT, polls for a refreshed movable window, retries the move once, and warns when yabai still cannot move it.
+
+`gtd_find_chatgpt_window` remains as a narrow compatibility wrapper around the shared helper. New modules should call `workspace_find_app_window` or `workspace_capture_app_window` directly unless ChatGPT develops GTD-specific selection rules.
+
+`coding_editor_solo` intentionally does not capture `ChatGPT`; solo coding uses the internal display for full-screen VS Code.
 
 In `gtd_solo_all`, review runs after meeting so GTD review is the final SOLO owner for ChatGPT.
 
@@ -269,12 +282,21 @@ If Outlook exists but no movable Outlook window is available, meeting commands w
 
 `gtd_reopen_outlook` is a light manual recovery command: it clears Outlook bad-window cache entries, activates/reopens Outlook, and prints Outlook window diagnostics.
 
-`gtd_meeting_tall` and `gtd_meeting_wide` retry captured Zoom/Teams moves when the first move does not place the captured window on the target space.
+Zoom selection goes through `gtd_find_zoom_window`, which requires a movable main window, excludes transient meeting/video/share/screen/mini windows, and clears recovered Zoom entries from the bad-window cache.
+
+Teams selection goes through `gtd_find_teams_window`, which recognizes both `Microsoft Teams` and `MSTeams`, requires a movable main window, excludes transient meeting/video/call/share/screen/mini windows, and clears recovered Teams entries from the bad-window cache.
+
+All `gtd_meeting_*` modes use `workspace_retarget_contaminated_space` before preparing the labeled space. If the existing meeting label points at a space that contains non-meeting apps, the label is cleared and a clean meeting space is selected instead of mixing the workflow into a contaminated space.
+
+`gtd_meeting_solo`, `gtd_meeting_tall`, and `gtd_meeting_wide` retry captured Zoom/Teams moves when the first move does not place the captured window on the target space.
 
 Expected meeting behavior:
 
 - Microsoft Outlook, zoom.us, and Microsoft Teams remain together in GTD meeting spaces
 - Outlook-specific recovery stays in `gtd_find_outlook_window` and `gtd_reopen_outlook`
+- Zoom-specific selection and bad-window recovery stays in `gtd_find_zoom_window`
+- Teams-specific selection and bad-window recovery stays in `gtd_find_teams_window`
+- `gtd_meeting_solo` uses a 1/3 + 2/3 layout: Zoom and Teams share the left third vertically, while Outlook owns the right two thirds.
 
 ### GTD Chat
 
@@ -425,9 +447,10 @@ The current last-caller rule is acceptable for daily use. Future refinement may 
 Watch for:
 
 - Outlook present but `can_move=false` or `has_ax_reference=false`
-- Teams selected but not moved after a first attempt
+- Zoom present but only transient meeting/video/share windows are selectable
+- Teams present under either `Microsoft Teams` or `MSTeams` but not moved after a first attempt
 - expired bad-window cache entries that correspond to currently visible meeting windows
-- repeated need to rerun `gtd_meeting_tall` or `gtd_meeting_wide`
+- repeated need to rerun `gtd_meeting_solo`, `gtd_meeting_tall`, or `gtd_meeting_wide`
 
 Inspect with `gtd_apps`, `work_bad_windows --summary`, and filtered `work_bad_windows` output before changing code.
 
@@ -500,10 +523,10 @@ Non-goals:
 - do not configure display UUID resolution
 - do not configure bad-window cache mechanics
 - do not configure raw yabai timeout behavior
-- do not encode complex app recovery logic directly in JSON
+- do not encode complex app recovery logic directly in JSON; config should name the app and policy, while fish helpers implement recovery
 - do not replace public fish entry commands such as `coding_control`, `gtd_meeting_tall`, or `work_tall`
 - do not support arbitrary jq expressions, conditionals, loops, or fallback chains in JSON
-- do not migrate Outlook, ChatGPT, Dia, WhatsApp, or other special recovery behavior into config in the first version
+- do not migrate Outlook, Dia, WhatsApp, or other special recovery behavior into config in the first version
 
 Recommended implementation stages:
 

@@ -13,9 +13,11 @@ function gtd_meeting_solo --description "Collect meeting apps onto the solo GTD 
     workspace_debug_step gtd_meeting_solo find-outlook-initial-done status=$outlook_status window=$out
 
     workspace_debug_step gtd_meeting_solo select-zoom-teams
-    set -l zoom (echo $windows_json | ws_find_window "zoom.us")
+    set -l zoom (gtd_find_zoom_window gtd_meeting_solo --no-refresh)
 
-    set -l teams (echo $windows_json | ws_find_window "Microsoft Teams")
+    set -l teams (gtd_find_teams_window gtd_meeting_solo --no-refresh)
+    set -l zoom_initial $zoom
+    set -l teams_initial $teams
 
     if test -z "$out" -a -z "$zoom" -a -z "$teams"
         if test "$outlook_status" -eq 2
@@ -35,6 +37,15 @@ function gtd_meeting_solo --description "Collect meeting apps onto the solo GTD 
     if test -z "$target_space"
         return 1
     end
+
+    workspace_debug_step gtd_meeting_solo check-target-space
+    set target_space (workspace_retarget_contaminated_space \
+        gtd_meeting_solo \
+        $label \
+        $target_space \
+        $target_display \
+        '^(Microsoft Outlook|zoom[.]us|Microsoft Teams|MSTeams)$')
+    or return 1
 
     workspace_debug_step gtd_meeting_solo prepare-space
     prepare_labeled_space $target_space $label float
@@ -74,21 +85,44 @@ function gtd_meeting_solo --description "Collect meeting apps onto the solo GTD 
         end
     end
 
-    set zoom (echo $windows_json_final | ws_find_window "zoom.us" --space $target_space)
+    set zoom (gtd_find_zoom_window gtd_meeting_solo $target_space --no-refresh)
 
-    set teams (echo $windows_json_final | ws_find_window "Microsoft Teams" --space $target_space)
+    set teams (gtd_find_teams_window gtd_meeting_solo $target_space --no-refresh)
 
-    workspace_debug_step gtd_meeting_solo layout
-    if test -n "$zoom"
-        ws_window $zoom --grid 2:2:0:0:1:1
+    if test -z "$zoom" -a -n "$zoom_initial"
+        workspace_debug_step gtd_meeting_solo fallback-zoom-move
+        ws_move_windows_to_space $target_space $zoom_initial
+        set windows_json_final (ws_query_windows "gtd_meeting_solo" final_zoom_retry); or return 1
+        set zoom (gtd_find_zoom_window gtd_meeting_solo $target_space --no-refresh)
+    end
+
+    if test -z "$teams"
+        workspace_debug_step gtd_meeting_solo fallback-teams-find
+        set teams (gtd_find_teams_window gtd_meeting_solo --no-refresh)
+    end
+
+    if test -z "$teams" -a -n "$teams_initial"
+        set teams $teams_initial
     end
 
     if test -n "$teams"
-        ws_window $teams --grid 2:2:0:1:1:1
+        workspace_debug_step gtd_meeting_solo fallback-teams-move
+        ws_move_windows_to_space $target_space $teams
+        set windows_json_final (ws_query_windows "gtd_meeting_solo" final_teams_retry); or return 1
+        set teams (gtd_find_teams_window gtd_meeting_solo $target_space --no-refresh)
+    end
+
+    workspace_debug_step gtd_meeting_solo layout
+    if test -n "$zoom"
+        ws_window $zoom --grid 2:3:0:0:1:1
+    end
+
+    if test -n "$teams"
+        ws_window $teams --grid 2:3:0:1:1:1
     end
 
     if test -n "$out"
-        ws_window $out --grid 1:2:1:0:1:1
+        ws_window $out --grid 2:3:1:0:2:2
     end
 
     workspace_debug_step gtd_meeting_solo cleanup-final

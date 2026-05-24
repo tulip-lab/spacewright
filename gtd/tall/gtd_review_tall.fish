@@ -78,6 +78,14 @@ function gtd_review_tall --description "Collect review-related windows onto the 
         return 1
     end
 
+    set target_space (workspace_retarget_contaminated_space \
+        gtd_review_tall \
+        $label \
+        $target_space \
+        $target_display \
+        '^(Finder|Preview|ChatGPT|Notes)$')
+    or return 1
+
     # -------------------------------------------------------------------------
     # 5. Normalize target space state
     # -------------------------------------------------------------------------
@@ -95,8 +103,6 @@ function gtd_review_tall --description "Collect review-related windows onto the 
     # -------------------------------------------------------------------------
     set -l finder (echo $windows_json | ws_find_window "Finder")
 
-    set -l chatgpt (workspace_refresh_app_window --app ChatGPT --caller gtd_review_tall --movable)
-
     # Notes: prefer non-empty title
     set -l notes (echo $windows_json | ws_find_window "Notes" --nonempty-title)
 
@@ -107,7 +113,8 @@ function gtd_review_tall --description "Collect review-related windows onto the 
     # -------------------------------------------------------------------------
     # 7. First-pass move
     # -------------------------------------------------------------------------
-    ws_move_windows_to_space $target_space $finder $preview $chatgpt $notes
+    ws_move_windows_to_space $target_space $finder $preview $notes
+    set -l chatgpt (workspace_capture_app_window --app ChatGPT --caller gtd_review_tall --space $target_space)
 
     # -------------------------------------------------------------------------
     # 8. Final capture on target space
@@ -118,7 +125,7 @@ function gtd_review_tall --description "Collect review-related windows onto the 
 
     set preview (echo $windows_json_final | ws_find_window "Preview" --space $target_space)
 
-    set chatgpt (echo $windows_json_final | workspace_select_app_window --app ChatGPT --space $target_space --movable)
+    set chatgpt (workspace_find_app_window --app ChatGPT --caller gtd_review_tall --space $target_space --no-refresh)
 
     set notes (echo $windows_json_final | ws_find_window "Notes" --space $target_space --nonempty-title)
 

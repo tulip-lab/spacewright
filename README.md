@@ -269,10 +269,11 @@ This separation keeps empty spaces under control without deleting meaningful str
 
 Window selection follows two shared patterns:
 
-- Use `workspace_select_app_window` for simple app-name selection, especially shared apps such as `ChatGPT` and `Microsoft Outlook`.
+- Use `workspace_capture_app_window` when a workspace owns a simple app by name and needs it moved to a target space.
+- Use `workspace_find_app_window` when a workspace only needs to select or confirm a movable app window.
 - Use `ws_find_window` when a workspace needs title exclusion, app regex matching, non-empty title checks, or bad-window cache awareness.
 
-All workspace JSON parsing should go through `ws_jq`, `ws_find_window`, `ws_find_windows`, or `workspace_select_app_window`; direct `jq` pipelines are avoided inside workspace functions so parser timeouts remain bounded.
+All workspace JSON parsing should go through `ws_jq`, `ws_find_window`, `ws_find_windows`, `workspace_select_app_window`, `workspace_find_app_window`, or `workspace_capture_app_window`; direct `jq` pipelines are avoided inside workspace functions so parser timeouts remain bounded.
 
 ## ChatGPT Ownership Rule
 
@@ -283,6 +284,10 @@ The global ownership rule is:
 **the last module invoked owns the `ChatGPT` window**
 
 If `ChatGPT` appears in more than one workspace design, the most recently executed module function may move it into that module’s workspace.
+
+`coding_editor_solo` is an exception: in solo mode, coding owns only VS Code and makes it full-screen on the internal display. It does not capture or place ChatGPT.
+
+ChatGPT-owning modes use `workspace_capture_app_window` to capture ChatGPT. If yabai reports ChatGPT but does not expose a movable window, the helper activates ChatGPT, polls for a movable window, retries the move once, and prints a warning if the window remains non-movable.
 
 This behavior is intentional and is the standard rule for the current workspace system.
 
@@ -423,7 +428,7 @@ Use this when working only on the built-in display.
 
 ```fish
 display_apply_solo
-and work_solo
+work_solo
 work_display_health solo
 work_diagnostics
 ```
@@ -448,7 +453,7 @@ Use this when the wide external monitor is connected on the left.
 
 ```fish
 display_apply_wide_left
-and work_wide
+work_wide
 work_display_health wide
 work_diagnostics
 ```
@@ -475,7 +480,7 @@ Use this when the tall external monitor is connected on the left.
 
 ```fish
 display_apply_tall_left
-and work_tall
+work_tall
 work_display_health tall
 work_diagnostics
 ```
@@ -509,7 +514,7 @@ work_display_health tall
 
 For external modes, the external display should be the one at `origin:(0,0)`, while `internal` should still resolve to the built-in display UUID.
 
-Use `work_display_health wide` after `display_apply_wide_left`, and `work_display_health tall` after `display_apply_tall_left`. If it reports `external display is not at origin (0,0)`, rerun the matching `display_apply_*` command before entering the workspace mode again. The `display_apply_*` commands return nonzero when their post-apply health check still has warnings, so command chains and SKHD bindings should use `and` before `work_*`.
+Use `work_display_health wide` after `display_apply_wide_left`, and `work_display_health tall` after `display_apply_tall_left`. If it reports `external display is not at origin (0,0)`, rerun the matching `display_apply_*` command. The `display_apply_*` commands return nonzero when their post-apply health check still has warnings, so SKHD bindings use `;` before `work_*` to keep workspace mode entry available even when display health warns.
 
 If the Dock is configured correctly but does not hide or show from the expected edge, restart the Dock after applying the display profile:
 
@@ -547,3 +552,9 @@ gtd_meeting_tall
 ```
 
 `gtd_reopen_outlook` does not quit Outlook. It clears Outlook entries from the workspace bad-window cache, asks Outlook to activate/reopen, then prints the current Outlook window diagnostics.
+
+Meeting commands use `gtd_find_zoom_window` for Zoom and `gtd_find_teams_window` for Teams. They require movable main windows, exclude transient meeting/video/share windows, and clear recovered window IDs from the bad-window cache. Teams recognizes both `Microsoft Teams` and `MSTeams`.
+
+All `gtd_meeting_*` modes also retarget contaminated labeled spaces before layout. If a previous meeting label points at a space mixed with non-meeting apps, the command clears that label and uses a clean meeting space.
+
+`gtd_meeting_solo` uses a 1/3 + 2/3 layout on the internal display: Zoom and Teams share the left third vertically, and Outlook uses the right two thirds.

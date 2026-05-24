@@ -57,9 +57,6 @@ function office_writing_wide --description "Collect Word and ChatGPT onto the wi
         return 0
     end
 
-    # ChatGPT is optional and does not decide whether this workspace should exist
-    set -l chatgpt_window (echo $windows_json | ws_find_window "ChatGPT")
-
     # 2. Resolve target display
     set -l target_display (resolve_external_display)
 
@@ -79,17 +76,15 @@ function office_writing_wide --description "Collect Word and ChatGPT onto the wi
     sleep 0.15
 
     # 5. Move captured windows
-    ws_move_app_pair_to_space \
-        $target_space \
-        "Microsoft Word" $word_window \
-        "ChatGPT" $chatgpt_window
+    ws_move_windows_to_space $target_space $word_window
+    set -l chatgpt_window (workspace_capture_app_window --app ChatGPT --caller office_writing_wide --space $target_space)
 
     # 6. Final capture on target space
     set -l windows_json_final (ws_query_windows "office_writing_wide" final); or return 1
 
     set word_window (echo $windows_json_final | ws_find_window "Microsoft Word" --space $target_space)
 
-    set chatgpt_window (echo $windows_json_final | ws_find_window "ChatGPT" --space $target_space)
+    set chatgpt_window (workspace_find_app_window --app ChatGPT --caller office_writing_wide --space $target_space --no-refresh)
 
     # 7. Apply final layout
     if test -n "$chatgpt_window"

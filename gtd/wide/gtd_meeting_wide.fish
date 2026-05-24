@@ -14,7 +14,7 @@ function gtd_meeting_wide --description "Collect Outlook, Zoom and Teams onto th
     # Managed apps:
     #   - Microsoft Outlook
     #   - zoom.us
-    #   - Microsoft Teams
+    #   - Microsoft Teams / MSTeams
     #
     # Window selection rules:
     #   - At least one of Outlook, Zoom, or Teams must be present. If none are
@@ -61,9 +61,9 @@ function gtd_meeting_wide --description "Collect Outlook, Zoom and Teams onto th
     set -l out (echo $windows_json | workspace_select_app_window --app "Microsoft Outlook" --movable)
     set -l outlook_status $status
 
-    set -l zoom (echo $windows_json | ws_find_window "zoom.us" --exclude-title meeting --exclude-title video --exclude-title share --exclude-title screen --exclude-title mini)
+    set -l zoom (gtd_find_zoom_window gtd_meeting_wide --no-refresh)
 
-    set -l teams (echo $windows_json | ws_find_window "Microsoft Teams" --exclude-title meeting --exclude-title video --exclude-title call --exclude-title share --exclude-title screen --exclude-title mini)
+    set -l teams (gtd_find_teams_window gtd_meeting_wide --no-refresh)
 
     set -l zoom_initial $zoom
     set -l teams_initial $teams
@@ -90,6 +90,14 @@ function gtd_meeting_wide --description "Collect Outlook, Zoom and Teams onto th
     # -------------------------------------------------------------------------
     # 4. Normalize target space state
     # -------------------------------------------------------------------------
+    set target_space (workspace_retarget_contaminated_space \
+        gtd_meeting_wide \
+        $label \
+        $target_space \
+        $target_display \
+        '^(Microsoft Outlook|zoom[.]us|Microsoft Teams|MSTeams)$')
+    or return 1
+
     prepare_labeled_space $target_space $label float
 
     ws_focus_display $target_display
@@ -127,20 +135,20 @@ function gtd_meeting_wide --description "Collect Outlook, Zoom and Teams onto th
         end
     end
 
-    set zoom (echo $windows_json_final | ws_find_window "zoom.us" --space $target_space --exclude-title meeting --exclude-title video --exclude-title share --exclude-title screen --exclude-title mini)
+    set zoom (gtd_find_zoom_window gtd_meeting_wide $target_space --no-refresh)
 
-    set teams (echo $windows_json_final | ws_find_window "Microsoft Teams" --space $target_space --exclude-title meeting --exclude-title video --exclude-title call --exclude-title share --exclude-title screen --exclude-title mini)
+    set teams (gtd_find_teams_window gtd_meeting_wide $target_space --no-refresh)
 
     if test -z "$zoom" -a -n "$zoom_initial"
         ws_move_windows_to_space $target_space $zoom_initial
         set windows_json_final (ws_query_windows "gtd_meeting_wide" final_zoom_retry); or return 1
-        set zoom (echo $windows_json_final | ws_find_window "zoom.us" --space $target_space --exclude-title meeting --exclude-title video --exclude-title share --exclude-title screen --exclude-title mini)
+        set zoom (gtd_find_zoom_window gtd_meeting_wide $target_space --no-refresh)
     end
 
     if test -z "$teams" -a -n "$teams_initial"
         ws_move_windows_to_space $target_space $teams_initial
         set windows_json_final (ws_query_windows "gtd_meeting_wide" final_teams_retry); or return 1
-        set teams (echo $windows_json_final | ws_find_window "Microsoft Teams" --space $target_space --exclude-title meeting --exclude-title video --exclude-title call --exclude-title share --exclude-title screen --exclude-title mini)
+        set teams (gtd_find_teams_window gtd_meeting_wide $target_space --no-refresh)
     end
 
     # -------------------------------------------------------------------------

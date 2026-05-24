@@ -56,9 +56,6 @@ function coding_editor_wide --description "Collect VS Code and ChatGPT onto the 
         return 0
     end
 
-    # ChatGPT is optional and does not decide whether this workspace should exist
-    set -l chatgpt_window (echo $windows_json | ws_find_window "ChatGPT")
-
     # -------------------------------------------------------------------------
     # 3. Resolve target display
     #    Prefer an external display; if none exists, fall back to internal.
@@ -89,10 +86,8 @@ function coding_editor_wide --description "Collect VS Code and ChatGPT onto the 
     # -------------------------------------------------------------------------
     # 6. Move captured windows
     # -------------------------------------------------------------------------
-    ws_move_app_pair_to_space \
-        $target_space \
-        "Code" $code_window \
-        "ChatGPT" $chatgpt_window
+    ws_move_windows_to_space $target_space $code_window
+    set -l chatgpt_window (workspace_capture_app_window --app ChatGPT --caller coding_editor_wide --space $target_space)
 
     # -------------------------------------------------------------------------
     # 7. Final capture on target space
@@ -101,7 +96,7 @@ function coding_editor_wide --description "Collect VS Code and ChatGPT onto the 
 
     set code_window (echo $windows_json_final | ws_find_window "Code" --space $target_space)
 
-    set chatgpt_window (echo $windows_json_final | ws_find_window "ChatGPT" --space $target_space)
+    set chatgpt_window (workspace_find_app_window --app ChatGPT --caller coding_editor_wide --space $target_space --no-refresh)
 
     # -------------------------------------------------------------------------
     # 8. Apply final layout

@@ -18,8 +18,11 @@ function work_command_check --description "Check that documented workspace comma
         ws_find_windows \
         workspace_select_app_window \
         workspace_refresh_app_window \
+        workspace_find_app_window \
+        workspace_capture_app_window \
         workspace_debug_step \
         workspace_run_step \
+        workspace_retarget_contaminated_space \
         display_reload \
         display_verify_mode \
         display_apply_solo \
@@ -68,6 +71,9 @@ function work_command_check --description "Check that documented workspace comma
         gtd_wide_all \
         gtd_tall_all \
         gtd_find_outlook_window \
+        gtd_find_chatgpt_window \
+        gtd_find_zoom_window \
+        gtd_find_teams_window \
         gtd_reopen_outlook \
         gtd_support_find_dia_windows \
         gtd_support_layout_dia_windows \

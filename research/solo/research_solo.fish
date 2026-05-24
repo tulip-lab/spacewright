@@ -13,8 +13,6 @@ function research_solo --description "Collect Zotero and ChatGPT onto the solo r
         return 0
     end
 
-    set -l chatgpt_window (echo $windows_json | ws_find_window "ChatGPT" --visible)
-
     set -l target_display (resolve_internal_display)
     set -l target_space (find_or_create_labeled_space $label $target_display)
 
@@ -29,17 +27,14 @@ function research_solo --description "Collect Zotero and ChatGPT onto the solo r
     ws_focus_space $target_space
     sleep 0.15
 
-    ws_move_app_pair_to_space \
-        $target_space \
-        "Zotero" $zotero_window \
-        "ChatGPT" $chatgpt_window \
-        --helper-visible
+    ws_move_windows_to_space $target_space $zotero_window
+    set -l chatgpt_window (workspace_capture_app_window --app ChatGPT --caller research_solo --space $target_space --visible)
 
     set -l windows_json_final (ws_query_windows "research_solo" final); or return 1
 
     set zotero_window (echo $windows_json_final | ws_find_window "Zotero" --space $target_space)
 
-    set chatgpt_window (echo $windows_json_final | ws_find_window "ChatGPT" --space $target_space --visible)
+    set chatgpt_window (workspace_find_app_window --app ChatGPT --caller research_solo --space $target_space --no-refresh --visible)
 
     if test -n "$zotero_window"
         ws_window $zotero_window --grid 1:3:0:0:2:1

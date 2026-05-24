@@ -71,16 +71,16 @@ function work_display_health --description "Show read-only workspace display rol
         '{
             expected_mode: (if $expected_mode == "" then null else $expected_mode end),
             internal_uuid_configured: ($internal_uuid != ""),
-            internal_display: ($internal_display | tonumber?),
-            external_display: ($external_display | tonumber?),
-            external_count: ($external_count | tonumber?),
-            display_count: ($display_count | tonumber?),
+            internal_display: (if $internal_display == "" then null else ($internal_display | tonumber) end),
+            external_display: (if $external_display == "" then null else ($external_display | tonumber) end),
+            external_count: (if $external_count == "" then 0 else ($external_count | tonumber) end),
+            display_count: (if $display_count == "" then 0 else ($display_count | tonumber) end),
             external_origin_ok: ($external_origin_ok == "true"),
             external_orientation: $external_orientation,
             dock_orientation: $dock_orientation,
             dock_autohide: (
                 if $dock_autohide == "unknown" then "unknown"
-                else ($dock_autohide | tonumber?)
+                else ($dock_autohide | tonumber)
                 end
             ),
             warnings: [

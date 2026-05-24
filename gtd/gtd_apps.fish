@@ -15,7 +15,7 @@ function gtd_apps --description "Show all current GTD-related application window
     #   - Reminders
     #   - Microsoft Outlook
     #   - zoom.us
-    #   - Microsoft Teams
+    #   - Microsoft Teams / MSTeams
     #   - WeChat
     #   - Keybase
     #   - DingTalk / 钉钉
@@ -58,6 +58,7 @@ function gtd_apps --description "Show all current GTD-related application window
             or .app=="Microsoft Outlook"
             or .app=="zoom.us"
             or .app=="Microsoft Teams"
+            or .app=="MSTeams"
             or .app=="WeChat"
             or .app=="Keybase"
             or .app=="DingTalk"

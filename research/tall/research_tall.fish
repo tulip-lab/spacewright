@@ -58,9 +58,6 @@ function research_tall --description "Collect Zotero and ChatGPT onto the tall r
         return 0
     end
 
-    # ChatGPT is optional and does not decide whether this workspace should exist
-    set -l chatgpt_window (echo $windows_json | ws_find_window "ChatGPT")
-
     # 2. Resolve target display
     set -l target_display (resolve_external_display)
 
@@ -82,17 +79,15 @@ function research_tall --description "Collect Zotero and ChatGPT onto the tall r
     sleep 0.15
 
     # 5. Move captured windows
-    ws_move_app_pair_to_space \
-        $target_space \
-        "Zotero" $zotero_window \
-        "ChatGPT" $chatgpt_window
+    ws_move_windows_to_space $target_space $zotero_window
+    set -l chatgpt_window (workspace_capture_app_window --app ChatGPT --caller research_tall --space $target_space)
 
     # 6. Final capture on target space
     set -l windows_json_final (ws_query_windows "research_tall" final); or return 1
 
     set zotero_window (echo $windows_json_final | ws_find_window "Zotero" --space $target_space)
 
-    set chatgpt_window (echo $windows_json_final | ws_find_window "ChatGPT" --space $target_space)
+    set chatgpt_window (workspace_find_app_window --app ChatGPT --caller research_tall --space $target_space --no-refresh)
 
     # 7. Apply final layout
     if test -n "$zotero_window"
