@@ -29,6 +29,8 @@ function gtd_apps --description "Show all current GTD-related application window
     # -------------------------------------------------------------------------
 
     set -l windows_json (ws_query_windows gtd_apps status); or return 1
+    set -l apps_json (workspace_app_names_json \
+        thunderbird calendar reminders outlook zoom teams wechat keybase dingtalk messages whatsapp chatgpt notes preview finder dia); or return 1
     set -l bad_window_ids_json '[]'
     set -l bad_window_dir /tmp/workspace-ws-window-bad
 
@@ -49,28 +51,9 @@ function gtd_apps --description "Show all current GTD-related application window
         end
     end
 
-    echo $windows_json | ws_jq --argjson bad_window_ids "$bad_window_ids_json" '
+    echo $windows_json | ws_jq --argjson apps "$apps_json" --argjson bad_window_ids "$bad_window_ids_json" '
         .[]
-        | select(
-            .app=="Thunderbird"
-            or .app=="Calendar"
-            or .app=="Reminders"
-            or .app=="Microsoft Outlook"
-            or .app=="zoom.us"
-            or .app=="Microsoft Teams"
-            or .app=="MSTeams"
-            or .app=="WeChat"
-            or .app=="Keybase"
-            or .app=="DingTalk"
-            or .app=="钉钉"
-            or .app=="Messages"
-            or .app=="WhatsApp"
-            or .app=="ChatGPT"
-            or .app=="Notes"
-            or .app=="Preview"
-            or .app=="Finder"
-            or .app=="Dia"
-        )
+        | select(.app as $app | $apps | index($app))
         | {
             id,
             app,

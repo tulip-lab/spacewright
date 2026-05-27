@@ -1,4 +1,13 @@
 function work_tall
+    argparse dry-run -- $argv
+    or return 1
+
+    if set -q _flag_dry_run
+        printf "dry_run=work_tall\n"
+        printf "commands=%s\n" coding_tall coding_control research_tall office_tall gtd_tall gtd_chat gtd_calendar
+        return 0
+    end
+
     set -l failed 0
 
     workspace_run_step "coding tall" coding_tall

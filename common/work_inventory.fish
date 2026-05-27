@@ -10,6 +10,7 @@ function work_inventory --description "Print a read-only workspace workflow inve
     printf "%-18s %s\n" "work_reload" "reload common, display, and module functions"
     printf "%-18s %s\n" "work_check" "reload plus diagnostics and module mode status"
     printf "%-18s %s\n" "work_doctor" "read-only system and config checks"
+    printf "%-18s %s\n" "work_smoke" "read-only helper wiring and dry-run checks"
     echo
 
     echo "===== MODULE ENTRIES ====="
@@ -49,9 +50,14 @@ function work_inventory --description "Print a read-only workspace workflow inve
     printf "%-32s %s\n" "ws_yabai" "bounded yabai command wrapper"
     printf "%-32s %s\n" "ws_jq" "bounded jq parser wrapper"
     printf "%-32s %s\n" "ws_query_windows" "bounded window query wrapper"
+    printf "%-32s %s\n" "workspace_app_name(s)/regex" "central workspace app-name registry"
     printf "%-32s %s\n" "ws_find_window/ws_find_windows" "structured window selectors"
     printf "%-32s %s\n" "workspace_find_app_window" "movable app-window selector with optional refresh"
     printf "%-32s %s\n" "workspace_capture_app_window" "find, move, and confirm app window on target space"
+    printf "%-32s %s\n" "workspace_apply_primary_helper_space" "required primary app plus optional helper workspace flow"
+    printf "%-32s %s\n" "workspace_run_mode_steps" "mode aggregate runner with shared cleanup suppression"
+    printf "%-32s %s\n" "workspace_run_cleanup_specs" "family:mode cleanup-spec dispatcher"
+    printf "%-32s %s\n" "workspace_print_app_status" "shared app status printer for module status commands"
     printf "%-32s %s\n" "workspace_prepare_labeled_space" "find/create, normalize, and focus a labeled space"
     printf "%-32s %s\n" "workspace_focus_labeled_space" "normalize and focus an existing labeled space"
     printf "%-32s %s\n" "find_or_create_labeled_space" "label-based space creation and reuse"
@@ -59,6 +65,7 @@ function work_inventory --description "Print a read-only workspace workflow inve
     printf "%-32s %s\n" "workspace_retarget_contaminated_space" "move labels away from mixed-owner spaces"
     printf "%-32s %s\n" "cleanup_labeled_empty_spaces" "module-scoped empty labeled-space cleanup"
     printf "%-32s %s\n" "cleanup_unlabeled_empty_spaces" "transient empty space cleanup"
+    printf "%-32s %s\n" "workspace_resolve_display_role" "primary/wide/tall display-role resolver"
     printf "%-32s %s\n" "resolve_workspace_primary_display" "configured primary workspace display role"
     printf "%-32s %s\n" "resolve_workspace_external_display" "current non-primary or fallback target display role"
     echo

@@ -1,4 +1,13 @@
 function work_wide
+    argparse dry-run -- $argv
+    or return 1
+
+    if set -q _flag_dry_run
+        printf "dry_run=work_wide\n"
+        printf "commands=%s\n" coding_wide coding_control research_wide office_wide gtd_wide gtd_chat gtd_calendar
+        return 0
+    end
+
     set -l failed 0
 
     workspace_run_step "coding wide" coding_wide

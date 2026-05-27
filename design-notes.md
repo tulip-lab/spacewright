@@ -15,6 +15,17 @@ The system is modular: GTD, coding, office, and research workflows can evolve in
 
 ## Current Architecture
 
+### Module Entry Files
+
+Public command names remain stable for shell and skhd use, but simple mode wrappers are grouped by module:
+
+- `coding/coding_entries.fish`
+- `research/research_entries.fish`
+- `office/office_entries.fish`
+- `gtd/gtd_entries.fish`
+
+Module reloaders source these grouped entry files, plus separate internal helpers when app-specific recovery or multi-window behavior needs its own implementation. This avoids one tiny file per solo/wide/tall wrapper while keeping the workflow boundary explicit.
+
 ### Display Roles
 
 Business-level workspace functions do not hardcode display UUIDs. The workspace primary display UUID is stored once and resolved through helpers:
@@ -149,7 +160,6 @@ Move helpers move caller-provided IDs only. They do not rediscover other same-ap
 
 Useful move helpers:
 
-- `ws_move_app_to_space`
 - `ws_move_windows_to_space`
 - `workspace_capture_app_window`
 
@@ -157,9 +167,21 @@ Useful move helpers:
 
 `workspace_capture_app_window` builds on that finder: it finds a movable app window, moves it to the target space, then confirms the app is present on that space. This is the preferred path for shared helper apps such as Codex in coding and ChatGPT in research, office, and GTD review workspaces.
 
-`workspace_prepare_labeled_space` and `workspace_focus_labeled_space` own the repeated labeled-space entry sequence: create or reuse the space when needed, normalize the label/layout, focus the target display, run optional mode cleanup, focus the target space, and return control to the caller. Module functions still own app selection, move rules, and layout grids.
+`workspace_app_name`, `workspace_app_names`, `workspace_app_names_json`, and `workspace_app_regex` are the central app-name registry. Entry wrappers should use app keys when possible; module-specific helpers can still use explicit names when the app has special selection behavior, but they should source those names through the registry.
 
-Layout geometry remains explicit in module functions or narrow module-specific helpers. There is no generic layout engine.
+`workspace_prepare_labeled_space` and `workspace_focus_labeled_space` own the repeated labeled-space entry sequence: create or reuse the space when needed, normalize the label/layout, focus the target display, run optional mode cleanup, focus the target space, and return control to the caller.
+
+`workspace_apply_primary_helper_space` owns the stable single-primary/single-helper workflow. Entry functions provide label, display role, app names, cleanup specs, and grid geometry. This keeps common movement mechanics centralized while leaving layout ownership visible at the call site.
+
+GTD-specific helpers deliberately stay module-local:
+
+- `gtd_apply_meeting_space` for Outlook, Zoom, and Teams selection/retry behavior
+- `gtd_apply_review_space` for Finder, Preview, ChatGPT, and Notes ownership
+- `gtd_apply_support_space` for multiple Dia windows and Dia-specific layout
+
+Layout geometry remains explicit in entry wrappers or narrow module-specific helpers. There is no broad generic layout engine.
+
+Dry-run is intentionally shallow: it reports declared workflow metadata and returns before yabai queries or mutation. Use `work_smoke` to verify dry-run coverage after structural edits.
 
 ## Diagnostics And Recovery
 
@@ -293,9 +315,9 @@ If Outlook exists but no movable Outlook window is available, meeting commands w
 
 `gtd_reopen_outlook` is a light manual recovery command: it clears Outlook bad-window cache entries, activates/reopens Outlook, and prints Outlook window diagnostics.
 
-Zoom selection goes through `gtd_find_zoom_window`, which requires a movable main window, excludes transient meeting/video/share/screen/mini windows, and clears recovered Zoom entries from the bad-window cache. Final meeting-layout verification calls it with `--target-only` so a Zoom window on another space does not count as successfully placed.
+Zoom selection goes through `gtd_find_zoom_window`, which wraps `gtd_find_meeting_window`. It requires a movable main window, excludes transient meeting/video/share/screen/mini windows, and clears recovered Zoom entries from the bad-window cache. Final meeting-layout verification calls it with `--target-only` so a Zoom window on another space does not count as successfully placed.
 
-Teams selection goes through `gtd_find_teams_window`, which recognizes both `Microsoft Teams` and `MSTeams`, requires a movable main window, excludes transient meeting/video/call/share/screen/mini windows, and clears recovered Teams entries from the bad-window cache. Final meeting-layout verification calls it with `--target-only` so a Teams window on another space triggers a retry instead of being treated as success.
+Teams selection goes through `gtd_find_teams_window`, which wraps `gtd_find_meeting_window`. It recognizes both `Microsoft Teams` and `MSTeams`, requires a movable main window, excludes transient meeting/video/call/share/screen/mini windows, and clears recovered Teams entries from the bad-window cache. Final meeting-layout verification calls it with `--target-only` so a Teams window on another space triggers a retry instead of being treated as success.
 
 All `gtd_meeting_*` modes use `workspace_retarget_contaminated_space` before preparing the labeled space. If the existing meeting label points at a space that contains non-meeting apps, the label is cleared and a clean meeting space is selected instead of mixing the workflow into a contaminated space.
 
@@ -305,8 +327,8 @@ Expected meeting behavior:
 
 - Microsoft Outlook, zoom.us, and Microsoft Teams remain together in GTD meeting spaces
 - Outlook-specific recovery stays in `gtd_find_outlook_window` and `gtd_reopen_outlook`
-- Zoom-specific selection and bad-window recovery stays in `gtd_find_zoom_window`
-- Teams-specific selection and bad-window recovery stays in `gtd_find_teams_window`
+- shared Zoom/Teams selection mechanics stay in `gtd_find_meeting_window`
+- Zoom-specific and Teams-specific wrapper policy stays in `gtd_find_zoom_window` and `gtd_find_teams_window`
 - `gtd_meeting_solo` uses a 1/3 + 2/3 layout: Zoom and Teams share the left third vertically, while Outlook owns the right two thirds.
 
 ### GTD Chat
@@ -550,13 +572,13 @@ Recommended implementation stages:
    `coding_control` is the best pilot because it targets the workspace primary display, has clear apps, uses absolute placement, and has little app-specific recovery logic.
    Keep `coding_control` as the public entry point and call a configured runner internally.
 
-3. **Migrate simple repeated wide/tall modules**
-   Candidate modules:
-   - `gtd_mail_wide/tall`
-   - `research_wide/tall`
-   - `office_writing_wide/tall`
-   - `office_slides_wide/tall`
-   - `coding_editor_wide/tall`
+3. **Migrate simple repeated entry groups**
+   Candidate command families:
+   - `gtd_mail_*`
+   - `research_*`
+   - `office_writing_*`
+   - `office_slides_*`
+   - `coding_editor_*`
 
 4. **Evaluate GTD meeting after the simple modules**
    `gtd_meeting_*` may use configured final layout later, but Outlook recovery should remain in fish helpers such as `gtd_find_outlook_window` and `gtd_reopen_outlook`.

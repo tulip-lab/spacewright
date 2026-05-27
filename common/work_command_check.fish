@@ -14,9 +14,14 @@ function work_command_check --description "Check that documented workspace comma
         work_recover_light \
         work_inventory \
         work_doctor \
+        work_smoke \
         ws_yabai \
         ws_jq \
         ws_query_windows \
+        workspace_app_name \
+        workspace_app_names \
+        workspace_app_names_json \
+        workspace_app_regex \
         ws_find_window \
         ws_find_windows \
         workspace_select_app_window \
@@ -25,9 +30,13 @@ function work_command_check --description "Check that documented workspace comma
         workspace_capture_app_window \
         workspace_debug_step \
         workspace_run_step \
+        workspace_run_cleanup_specs \
+        workspace_run_mode_steps \
         workspace_focus_labeled_space \
         workspace_prepare_labeled_space \
+        workspace_apply_primary_helper_space \
         workspace_retarget_contaminated_space \
+        workspace_print_app_status \
         display_reload \
         display_verify_mode \
         display_apply_solo \
@@ -39,6 +48,7 @@ function work_command_check --description "Check that documented workspace comma
         detect_and_set_workspace_primary_display_uuid \
         set_workspace_primary_display_uuid \
         get_workspace_primary_display_uuid \
+        workspace_resolve_display_role \
         resolve_workspace_primary_display \
         resolve_workspace_external_display \
         gtd_reload \
@@ -70,9 +80,13 @@ function work_command_check --description "Check that documented workspace comma
         gtd_meeting_tall \
         gtd_solo_all \
         gtd_find_outlook_window \
+        gtd_find_meeting_window \
         gtd_find_zoom_window \
         gtd_find_teams_window \
         gtd_reopen_outlook \
+        gtd_apply_meeting_space \
+        gtd_apply_support_space \
+        gtd_apply_review_space \
         gtd_support_find_dia_windows \
         gtd_support_layout_dia_windows \
         gtd_chat \

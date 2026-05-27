@@ -1,4 +1,15 @@
 function gtd_calendar --description "Collect Calendar and Reminders onto the workspace primary display and apply the standard GTD calendar layout"
+    argparse dry-run -- $argv
+    or return 1
+
+    if set -q _flag_dry_run
+        printf "dry_run=gtd_calendar\n"
+        printf "label=%s\n" gtd_calendar
+        printf "display=%s\n" primary
+        printf "apps=%s,%s\n" (workspace_app_name calendar) (workspace_app_name reminders)
+        return 0
+    end
+
     # -------------------------------------------------------------------------
     # Workspace:
     #   gtd_calendar
@@ -26,6 +37,8 @@ function gtd_calendar --description "Collect Calendar and Reminders onto the wor
     # -------------------------------------------------------------------------
 
     set -l label gtd_calendar
+    set -l calendar_app (workspace_app_name calendar)
+    set -l reminders_app (workspace_app_name reminders)
 
     # -------------------------------------------------------------------------
     # 1. First-pass window capture
@@ -33,9 +46,9 @@ function gtd_calendar --description "Collect Calendar and Reminders onto the wor
     # -------------------------------------------------------------------------
     set -l windows_json (ws_query_windows gtd_calendar initial); or return 1
 
-    set -l calendar (echo $windows_json | ws_find_window "Calendar")
+    set -l calendar (echo $windows_json | ws_find_window "$calendar_app")
 
-    set -l reminders (echo $windows_json | ws_find_window "Reminders")
+    set -l reminders (echo $windows_json | ws_find_window "$reminders_app")
 
     if test -z "$calendar" -a -z "$reminders"
         destroy_empty_labeled_space $label
@@ -60,9 +73,9 @@ function gtd_calendar --description "Collect Calendar and Reminders onto the wor
     # -------------------------------------------------------------------------
     set -l windows_json_final (ws_query_windows gtd_calendar final); or return 1
 
-    set calendar (echo $windows_json_final | ws_find_window "Calendar" --space $target_space)
+    set calendar (echo $windows_json_final | ws_find_window "$calendar_app" --space $target_space)
 
-    set reminders (echo $windows_json_final | ws_find_window "Reminders" --space $target_space)
+    set reminders (echo $windows_json_final | ws_find_window "$reminders_app" --space $target_space)
 
     # -------------------------------------------------------------------------
     # 7. Apply final layout

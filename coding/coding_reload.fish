@@ -5,10 +5,8 @@ function coding_reload --description "Reload all coding workspace functions and 
     #
     # Reload order:
     #   1. Common workspace helpers
-    #   2. Coding cleanup helpers
-    #   3. Concrete coding workspace functions
-    #   4. Aggregate entry functions
-    #   5. Status / inspection helpers
+    #   2. Coding entry and internal workspace functions
+    #   3. Status / inspection helpers
     # -------------------------------------------------------------------------
 
     # 1. Common workspace helpers
@@ -17,13 +15,8 @@ function coding_reload --description "Reload all coding workspace functions and 
         source_workspace_common
     end
 
-    # 2. Concrete coding workspace functions
-    source ~/.config/fish/functions/workspace/coding/solo/coding_editor_solo.fish
-    source ~/.config/fish/functions/workspace/coding/solo/coding_solo.fish
-    source ~/.config/fish/functions/workspace/coding/wide/coding_editor_wide.fish
-    source ~/.config/fish/functions/workspace/coding/wide/coding_wide.fish
-    source ~/.config/fish/functions/workspace/coding/tall/coding_editor_tall.fish
-    source ~/.config/fish/functions/workspace/coding/tall/coding_tall.fish
+    # 2. Coding entry and internal workspace functions
+    source ~/.config/fish/functions/workspace/coding/coding_entries.fish
     source ~/.config/fish/functions/workspace/coding/internal/coding_control.fish
 
     # 3. Status / inspection helpers

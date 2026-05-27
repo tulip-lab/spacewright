@@ -12,25 +12,26 @@ function gtd_support_find_dia_windows --description "Find all movable Dia window
         return 1
     end
 
-    set -l dia_windows (printf '%s\n' "$windows_json" | ws_find_windows "Dia" --movable)
+    set -l dia_app (workspace_app_name dia)
+    set -l dia_windows (printf '%s\n' "$windows_json" | ws_find_windows "$dia_app" --movable)
 
     if test (count $dia_windows) -gt 0
         printf "%s\n" $dia_windows
         return 0
     end
 
-    set -l dia_present (printf '%s\n' "$windows_json" | ws_find_windows "Dia")
+    set -l dia_present (printf '%s\n' "$windows_json" | ws_find_windows "$dia_app")
     if test (count $dia_present) -eq 0
         return 0
     end
 
-    perl -e 'alarm shift; exec @ARGV' 2 open -a Dia >/dev/null 2>&1
+    perl -e 'alarm shift; exec @ARGV' 2 open -a "$dia_app" >/dev/null 2>&1
     sleep 0.4
 
     set windows_json (ws_query_windows "$caller" dia_refresh)
     or return 1
 
-    set dia_windows (printf '%s\n' "$windows_json" | ws_find_windows "Dia" --movable)
+    set dia_windows (printf '%s\n' "$windows_json" | ws_find_windows "$dia_app" --movable)
 
     if test (count $dia_windows) -gt 0
         printf "%s\n" $dia_windows

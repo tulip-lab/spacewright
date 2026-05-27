@@ -1,4 +1,16 @@
 function gtd_chat --description "Fast GTD chat workspace layout on workspace primary display"
+    argparse dry-run -- $argv
+    or return 1
+
+    if set -q _flag_dry_run
+        set -l dingtalk_apps (string join '|' (workspace_app_names dingtalk))
+        printf "dry_run=gtd_chat\n"
+        printf "label=%s\n" gtd_chat
+        printf "display=%s\n" primary
+        printf "apps=%s,%s,%s,%s,%s\n" (workspace_app_name wechat) (workspace_app_name keybase) "$dingtalk_apps" (workspace_app_name messages) (workspace_app_name whatsapp)
+        return 0
+    end
+
     # -------------------------------------------------------------------------
     # Workspace:
     #   gtd_chat
@@ -33,20 +45,25 @@ function gtd_chat --description "Fast GTD chat workspace layout on workspace pri
     # -------------------------------------------------------------------------
 
     set -l label gtd_chat
+    set -l wechat_app (workspace_app_name wechat)
+    set -l keybase_app (workspace_app_name keybase)
+    set -l dingtalk_regex (workspace_app_regex dingtalk)
+    set -l messages_app (workspace_app_name messages)
+    set -l whatsapp_app (workspace_app_name whatsapp)
 
     # 1. first capture
     #    At least one chat app must exist before creating the workspace.
     set -l windows_json (ws_query_windows gtd_chat initial); or return 1
 
-    set -l wechat (echo $windows_json | ws_find_window "WeChat")
+    set -l wechat (echo $windows_json | ws_find_window "$wechat_app")
 
-    set -l keybase (echo $windows_json | ws_find_window "Keybase")
+    set -l keybase (echo $windows_json | ws_find_window "$keybase_app")
 
-    set -l dingtalk (echo $windows_json | ws_find_window --app-regex '^(钉钉|DingTalk)$')
+    set -l dingtalk (echo $windows_json | ws_find_window --app-regex "$dingtalk_regex")
 
-    set -l messages (echo $windows_json | ws_find_window "Messages")
+    set -l messages (echo $windows_json | ws_find_window "$messages_app")
 
-    set -l whatsapp (echo $windows_json | ws_find_window --app-regex 'WhatsApp$')
+    set -l whatsapp (echo $windows_json | ws_find_window "$whatsapp_app")
 
     if test -z "$wechat" -a -z "$keybase" -a -z "$dingtalk" -a -z "$messages" -a -z "$whatsapp"
         destroy_empty_labeled_space $label
@@ -72,15 +89,15 @@ function gtd_chat --description "Fast GTD chat workspace layout on workspace pri
     # 5. final capture on target space
     set -l windows_json_final (ws_query_windows gtd_chat final); or return 1
 
-    set wechat (echo $windows_json_final | ws_find_window "WeChat" --space $target_space)
+    set wechat (echo $windows_json_final | ws_find_window "$wechat_app" --space $target_space)
 
-    set keybase (echo $windows_json_final | ws_find_window "Keybase" --space $target_space)
+    set keybase (echo $windows_json_final | ws_find_window "$keybase_app" --space $target_space)
 
-    set dingtalk (echo $windows_json_final | ws_find_window --app-regex '^(钉钉|DingTalk)$' --space $target_space)
+    set dingtalk (echo $windows_json_final | ws_find_window --app-regex "$dingtalk_regex" --space $target_space)
 
-    set messages (echo $windows_json_final | ws_find_window "Messages" --space $target_space)
+    set messages (echo $windows_json_final | ws_find_window "$messages_app" --space $target_space)
 
-    set whatsapp (echo $windows_json_final | ws_find_window --app-regex 'WhatsApp$' --space $target_space)
+    set whatsapp (echo $windows_json_final | ws_find_window "$whatsapp_app" --space $target_space)
 
     # 7. final layout
     if test -n "$keybase"

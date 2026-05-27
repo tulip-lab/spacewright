@@ -7,7 +7,7 @@ function gtd_find_outlook_window --description "Find a movable Microsoft Outlook
         set caller gtd_meeting
     end
 
-    set -l find_args --app "Microsoft Outlook" --caller "$caller"
+    set -l find_args --app (workspace_app_name outlook) --caller "$caller"
 
     if test -n "$target_space"
         set -a find_args --space $target_space

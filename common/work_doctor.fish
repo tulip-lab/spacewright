@@ -98,6 +98,14 @@ function work_doctor --description "Run read-only workspace system checks"
         printf "%s\n" "$command_check_output"
     end
 
+    set -l smoke_output (work_smoke 2>&1)
+    if test $status -eq 0
+        __work_doctor_ok "work_smoke"
+    else
+        __work_doctor_fail "work_smoke failed"
+        printf "%s\n" "$smoke_output"
+    end
+
     echo
     echo "===== YABAI READ-ONLY QUERIES ====="
     set -l displays_json (ws_yabai -m query --displays 2>/dev/null)

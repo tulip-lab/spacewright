@@ -19,17 +19,8 @@ function workspace_focus_labeled_space --description "Normalize and focus an exi
     ws_focus_display $target_display
     sleep 0.15
 
-    for cleanup_command in $cleanup_commands
-        if string match -q '*:*' -- $cleanup_command
-            set -l cleanup_parts (string split -m1 ':' -- $cleanup_command)
-            workspace_cleanup_mode_spaces $cleanup_parts[1] $cleanup_parts[2]
-        else if functions -q $cleanup_command
-            $cleanup_command
-        else
-            echo "[WARN] workspace_focus_labeled_space: cleanup command not found: $cleanup_command" >&2
-            return 1
-        end
-    end
+    workspace_run_cleanup_specs $cleanup_commands
+    or return 1
 
     ws_focus_space $target_space
     sleep 0.15

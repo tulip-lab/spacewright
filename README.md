@@ -11,8 +11,9 @@ This workspace system is organized into four operational modules:
 
 Each module follows a consistent structure wherever applicable:
 
-- cleanup helpers
 - reload function
+- grouped public entry definitions in `<module>_entries.fish`
+- internal helpers for app-specific behavior
 - status helpers
 - mode-status helper
 - `tall` entry
@@ -92,19 +93,38 @@ Current core helpers include:
 - `ws_yabai`
 - `ws_jq`
 - `ws_query_windows`
+- `workspace_app_name`
+- `workspace_app_names`
+- `workspace_app_names_json`
+- `workspace_app_regex`
 - `workspace_find_app_window`
 - `workspace_capture_app_window`
+- `workspace_apply_primary_helper_space`
+- `workspace_run_mode_steps`
+- `workspace_run_cleanup_specs`
+- `workspace_print_app_status`
 - `workspace_prepare_labeled_space`
 - `workspace_focus_labeled_space`
 - `workspace_retarget_contaminated_space`
+- `workspace_resolve_display_role`
+
+Public module commands stay stable, but thin mode wrappers are grouped by module:
+
+- `coding/coding_entries.fish`
+- `research/research_entries.fish`
+- `office/office_entries.fish`
+- `gtd/gtd_entries.fish`
+
+This keeps the command surface readable while avoiding one tiny file per solo/wide/tall wrapper.
 
 ## Inventory And Doctor
 
-Two read-only inspection commands document and validate the workspace system without moving windows, changing spaces, or applying display profiles:
+Three read-only inspection commands document and validate the workspace system without moving windows, changing spaces, or applying display profiles:
 
 ```fish
 work_inventory
 work_doctor
+work_smoke
 ```
 
 `work_inventory` prints the current workflow map: top-level entries, module entries, managed apps, display entries, common helpers, and external dependencies.
@@ -116,12 +136,15 @@ work_doctor
 - fish syntax for workspace functions and display profile scripts
 - `work_reload`
 - `work_command_check`
+- `work_smoke`
 - read-only yabai display, space, and window queries
 - duplicate labels, empty labeled spaces, and empty unlabeled spaces
 - display role health
 - bad-window cache summary
 
 It returns nonzero only for failed checks. Warnings identify cleanup or environment follow-up without mutating state.
+
+`work_smoke` is the fast regression check after editing workspace code. It reloads functions, runs `work_command_check`, validates app registry keys, exercises representative `--dry-run` paths, and checks that retired helper commands are not loaded.
 
 Additional loaded entry/helper commands include:
 
@@ -430,6 +453,16 @@ work_command_check
 
 `work_command_check` verifies that documented workspace, display, status, recovery, and hotkey entry functions are loaded.
 
+Dry-run entry points:
+
+```fish
+work_wide --dry-run
+gtd_meeting_wide --dry-run
+research_tall --dry-run
+```
+
+Dry-run prints the intended command/app/layout metadata and does not query, move, focus, create, destroy, or relabel spaces.
+
 ## Recommended Daily Sequences
 
 Before using the mode commands, keep these machine-level assumptions true:
@@ -597,7 +630,7 @@ gtd_meeting_tall
 
 `gtd_reopen_outlook` does not quit Outlook. It clears Outlook entries from the workspace bad-window cache, asks Outlook to activate/reopen, then prints the current Outlook window diagnostics.
 
-Meeting commands use `gtd_find_zoom_window` for Zoom and `gtd_find_teams_window` for Teams. They require movable main windows, exclude transient meeting/video/share windows, and clear recovered window IDs from the bad-window cache. Teams recognizes both `Microsoft Teams` and `MSTeams`.
+Meeting commands use `gtd_find_zoom_window` for Zoom and `gtd_find_teams_window` for Teams. Both wrappers share `gtd_find_meeting_window`, which requires movable main windows, excludes transient meeting/video/share windows, and clears recovered window IDs from the bad-window cache. Teams recognizes both `Microsoft Teams` and `MSTeams`.
 
 All `gtd_meeting_*` modes also retarget contaminated labeled spaces before layout. If a previous meeting label points at a space mixed with non-meeting apps, the command clears that label and uses a clean meeting space.
 
