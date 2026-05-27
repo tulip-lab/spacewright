@@ -8,7 +8,7 @@ function coding_control --description "Collect Warp, SmartGit, and FlClash onto 
     #   control workspace and place them into a stable control layout.
     #
     # Target display:
-    #   Internal display only.
+    #   Workspace primary display only.
     #
     # Managed apps:
     #   - Warp
@@ -107,28 +107,15 @@ function coding_control --description "Collect Warp, SmartGit, and FlClash onto 
 
     # -------------------------------------------------------------------------
     # 2. Resolve target display
-    #    coding_control is always anchored to the internal display.
+    #    coding_control is always anchored to the workspace primary display.
     # -------------------------------------------------------------------------
-    set -l target_display (resolve_internal_display)
+    set -l target_display (resolve_workspace_primary_display)
 
     # -------------------------------------------------------------------------
-    # 3. Find or create target labeled space
+    # 3. Prepare target labeled space
     # -------------------------------------------------------------------------
-    set -l target_space (find_or_create_labeled_space $label $target_display)
-
-    if test -z "$target_space"
-        return 1
-    end
-
-    # -------------------------------------------------------------------------
-    # 4. Normalize target space state
-    # -------------------------------------------------------------------------
-    prepare_labeled_space $target_space $label float
-
-    ws_focus_display $target_display
-    sleep 0.15
-    ws_focus_space $target_space
-    sleep 0.15
+    set -l target_space (workspace_prepare_labeled_space $label $target_display float)
+    or return 1
 
     # -------------------------------------------------------------------------
     # 5. First-pass move

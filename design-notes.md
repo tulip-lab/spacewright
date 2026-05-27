@@ -17,22 +17,22 @@ The system is modular: GTD, coding, office, and research workflows can evolve in
 
 ### Display Roles
 
-Business-level workspace functions do not hardcode display UUIDs. The internal display UUID is stored once and resolved through helpers:
+Business-level workspace functions do not hardcode display UUIDs. The workspace primary display UUID is stored once and resolved through helpers:
 
-- `detect_and_set_internal_display_uuid`
-- `set_internal_display_uuid <internal-display-uuid>`
-- `get_internal_display_uuid`
-- `resolve_internal_display`
-- `resolve_external_display`
+- `detect_and_set_workspace_primary_display_uuid`
+- `set_workspace_primary_display_uuid <display-uuid>`
+- `get_workspace_primary_display_uuid`
+- `resolve_workspace_primary_display`
+- `resolve_workspace_external_display`
 
 Current display role rules:
 
-- internal fixed workspaces use `resolve_internal_display`
-- external task workspaces use `resolve_external_display`
+- fixed/control workspaces use `resolve_workspace_primary_display`
+- external task workspaces use `resolve_workspace_external_display`
 - external resolution must fail closed on query failure
-- fallback to internal is allowed only after a successful display query confirms single-display operation
+- fallback to the workspace primary display is allowed only after a successful display query confirms single-display operation
 
-The workspace internal display role is separate from the macOS primary display. External display profiles may put the external monitor at `origin:(0,0)` so Dock and menu-bar-primary behavior belong to the external screen, while internal fixed workspaces still resolve through `WORKSPACE_INTERNAL_DISPLAY_UUID`.
+The workspace primary display role is separate from the macOS primary display. On MacBook setups it is commonly the built-in display. On Mac mini single-display setups it is the only display. On Mac mini multi-display setups it should be explicitly configured once.
 
 ### Display Profiles And Workspace Entry
 
@@ -66,18 +66,18 @@ SKHD top-level mode bindings use `display_apply_*; work_*` so display health war
 
 `work_display_health [solo|wide|tall]` is the focused read-only display-role check. It reports:
 
-- configured internal display UUID
-- resolved internal/external display indexes
-- external display count
-- external display origin health
-- external display shape
+- configured workspace primary display UUID
+- resolved primary and target display indexes
+- secondary display count
+- target display origin and left-of-primary health
+- target display shape
 - Dock `orientation` and `autohide`
 
 Expected mode-specific state:
 
-- `solo`: no external display is visible
-- `wide`: external display is wider than tall and at `origin:(0,0)`
-- `tall`: external display is taller than wide and at `origin:(0,0)`
+- `solo`: no secondary display is visible
+- `wide`: target display is wider than tall and is left of the primary display when a secondary display is present
+- `tall`: target display is taller than wide and is left of the primary display when a secondary display is present
 
 `work_display_health <mode>` returns nonzero when warnings are present. Plain `work_display_health` remains a read-only report suitable for diagnostics.
 
@@ -123,6 +123,8 @@ Use shared bounded helpers for yabai and JSON parsing:
 - `workspace_select_app_window`
 - `workspace_find_app_window`
 - `workspace_capture_app_window`
+- `workspace_prepare_labeled_space`
+- `workspace_focus_labeled_space`
 
 Workspace functions should avoid direct `jq` pipelines where these helpers cover the behavior.
 
@@ -155,6 +157,8 @@ Useful move helpers:
 `workspace_find_app_window` is the default helper for simple app-name ownership. It selects a movable yabai window, can constrain to a target space, can activate the app and poll for a refreshed movable window, and clears recovered bad-window cache entries. Use this for ordinary single-window helper apps instead of hand-written `ws_find_window "<app>"` logic.
 
 `workspace_capture_app_window` builds on that finder: it finds a movable app window, moves it to the target space, then confirms the app is present on that space. This is the preferred path for shared helper apps such as Codex in coding and ChatGPT in research, office, and GTD review workspaces.
+
+`workspace_prepare_labeled_space` and `workspace_focus_labeled_space` own the repeated labeled-space entry sequence: create or reuse the space when needed, normalize the label/layout, focus the target display, run optional mode cleanup, focus the target space, and return control to the caller. Module functions still own app selection, move rules, and layout grids.
 
 Layout geometry remains explicit in module functions or narrow module-specific helpers. There is no generic layout engine.
 
@@ -478,8 +482,8 @@ Inspect with `gtd_apps`, `work_bad_windows --summary`, and filtered `work_bad_wi
 External profiles intentionally place the external display at `origin:(0,0)` in WIDE and TALL modes. Watch for:
 
 - Dock not hiding or showing after display-profile changes
-- Dock appearing on the internal display after external mode entry
-- `resolve_external_display` returning the internal display while an external monitor is connected
+- Dock appearing on the workspace primary display after external mode entry
+- `resolve_workspace_external_display` returning the workspace primary display while a secondary monitor is connected
 - yabai display queries timing out immediately after Dock or display changes
 
 Runtime recovery should remain explicit, such as `killall Dock`, rather than hidden inside workspace entry commands.
@@ -546,7 +550,7 @@ Recommended implementation stages:
    This stage must not move windows, create spaces, or apply layouts.
 
 2. **Migrate `coding_control` first**
-   `coding_control` is the best pilot because it targets the internal display, has clear apps, uses absolute placement, and has little app-specific recovery logic.
+   `coding_control` is the best pilot because it targets the workspace primary display, has clear apps, uses absolute placement, and has little app-specific recovery logic.
    Keep `coding_control` as the public entry point and call a configured runner internally.
 
 3. **Migrate simple repeated wide/tall modules**
@@ -588,7 +592,7 @@ Technical guardrails:
 
 #### Internal Fixed Workspaces For Office Or Research
 
-Office and research currently have wide/tall external task workspaces only. Future workflow evolution may justify internal fixed support spaces similar to `gtd_chat`, `gtd_calendar`, or `coding_control`.
+Office and research currently have wide/tall external task workspaces only. Future workflow evolution may justify primary-display fixed support spaces similar to `gtd_chat`, `gtd_calendar`, or `coding_control`.
 
 #### Continue Abstraction Cleanup Carefully
 

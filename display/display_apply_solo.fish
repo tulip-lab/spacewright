@@ -1,4 +1,4 @@
-function display_apply_solo --description "Apply solo internal-display layout and reload display/workspace functions"
+function display_apply_solo --description "Apply solo primary-display layout and reload display/workspace functions"
     display_solo
     or return $status
 

@@ -1,14 +1,14 @@
-function gtd_chat --description "Fast GTD chat workspace layout on internal display"
+function gtd_chat --description "Fast GTD chat workspace layout on workspace primary display"
     # -------------------------------------------------------------------------
     # Workspace:
     #   gtd_chat
     #
     # Purpose:
     #   Collect chat-related applications onto the GTD chat workspace on the
-    #   internal display and apply the standard chat layout.
+    #   workspace primary display and apply the standard chat layout.
     #
     # Target display:
-    #   Internal display only.
+    #   Workspace primary display only.
     #
     # Managed apps:
     #   - WeChat
@@ -55,21 +55,11 @@ function gtd_chat --description "Fast GTD chat workspace layout on internal disp
     end
 
     # 2. resolve target display
-    set -l target_display (resolve_internal_display)
+    set -l target_display (resolve_workspace_primary_display)
 
-    # 3. find or create target space
-    set -l target_space (find_or_create_labeled_space $label $target_display)
-    if test -z "$target_space"
-        return 1
-    end
-
-    # 4. normalize target space
-    prepare_labeled_space $target_space $label float
-
-    ws_focus_display $target_display
-    sleep 0.15
-    ws_focus_space $target_space
-    sleep 0.15
+    # 3. prepare target space
+    set -l target_space (workspace_prepare_labeled_space $label $target_display float)
+    or return 1
 
     # 4a. move stable chat apps
     ws_move_windows_to_space $target_space $wechat $keybase $dingtalk $messages

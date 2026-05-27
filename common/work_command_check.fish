@@ -24,6 +24,8 @@ function work_command_check --description "Check that documented workspace comma
         workspace_capture_app_window \
         workspace_debug_step \
         workspace_run_step \
+        workspace_focus_labeled_space \
+        workspace_prepare_labeled_space \
         workspace_retarget_contaminated_space \
         display_reload \
         display_verify_mode \
@@ -33,9 +35,11 @@ function work_command_check --description "Check that documented workspace comma
         work_solo \
         work_wide \
         work_tall \
-        detect_and_set_internal_display_uuid \
-        set_internal_display_uuid \
-        get_internal_display_uuid \
+        detect_and_set_workspace_primary_display_uuid \
+        set_workspace_primary_display_uuid \
+        get_workspace_primary_display_uuid \
+        resolve_workspace_primary_display \
+        resolve_workspace_external_display \
         gtd_reload \
         coding_reload \
         office_reload \

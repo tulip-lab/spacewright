@@ -9,7 +9,7 @@ function gtd_review_tall --description "Collect review-related windows onto the 
     #
     # Target display:
     #   Prefer an external display.
-    #   Fall back to the internal display if no external display is available.
+    #   Fall back to the workspace primary display if no external display is available.
     #
     # Managed apps:
     #   - Finder
@@ -74,7 +74,7 @@ function gtd_review_tall --description "Collect review-related windows onto the 
     # 3. Resolve target display
     #    Prefer an external display; if none exists, fall back to internal.
     # -------------------------------------------------------------------------
-    set -l target_display (resolve_external_display)
+    set -l target_display (resolve_workspace_external_display tall)
 
     # -------------------------------------------------------------------------
     # 4. Find or create target labeled space
@@ -96,14 +96,8 @@ function gtd_review_tall --description "Collect review-related windows onto the 
     # -------------------------------------------------------------------------
     # 5. Normalize target space state
     # -------------------------------------------------------------------------
-    prepare_labeled_space $target_space $label float
-
-    ws_focus_display $target_display
-    sleep 0.15
-    gtd_cleanup_wide_spaces
-    gtd_cleanup_solo_spaces
-    ws_focus_space $target_space
-    sleep 0.15
+    workspace_focus_labeled_space $label $target_space $target_display float gtd_cleanup_wide_spaces gtd_cleanup_solo_spaces
+    or return 1
 
     # -------------------------------------------------------------------------
     # 6. First-pass window capture

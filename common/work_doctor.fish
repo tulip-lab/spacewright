@@ -104,6 +104,20 @@ function work_doctor --description "Run read-only workspace system checks"
     if test $status -eq 0 -a -n "$displays_json"
         set -l display_count (echo $displays_json | ws_jq -r 'length')
         __work_doctor_ok "displays query count=$display_count"
+
+        set -l primary_uuid (get_workspace_primary_display_uuid 2>/dev/null)
+        if test -n "$primary_uuid"
+            set -l primary_present (echo $displays_json | ws_jq -r --arg uuid "$primary_uuid" 'any(.[]; .uuid==$uuid)')
+            if test "$primary_present" = "true"
+                __work_doctor_ok "workspace primary display present"
+            else
+                __work_doctor_fail "workspace primary display not connected: $primary_uuid"
+            end
+        else if test "$display_count" -eq 1
+            __work_doctor_ok "workspace primary display implicit from single display"
+        else
+            __work_doctor_fail "workspace primary display UUID is not configured"
+        end
     else
         __work_doctor_fail "could not query yabai displays"
     end

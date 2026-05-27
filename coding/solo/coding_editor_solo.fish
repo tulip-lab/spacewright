@@ -13,19 +13,9 @@ function coding_editor_solo --description "Collect VS Code and Codex onto the so
         return 0
     end
 
-    set -l target_display (resolve_internal_display)
-    set -l target_space (find_or_create_labeled_space $label $target_display)
-
-    if test -z "$target_space"
-        return 1
-    end
-
-    prepare_labeled_space $target_space $label float
-
-    ws_focus_display $target_display
-    sleep 0.15
-    ws_focus_space $target_space
-    sleep 0.15
+    set -l target_display (resolve_workspace_primary_display)
+    set -l target_space (workspace_prepare_labeled_space $label $target_display float)
+    or return 1
 
     ws_move_windows_to_space $target_space $code_window
     set -l codex_window (workspace_capture_app_window --app Codex --caller coding_editor_solo --space $target_space)

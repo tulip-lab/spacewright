@@ -9,7 +9,7 @@ function office_slides_wide --description "Collect PowerPoint and ChatGPT onto t
     #
     # Target display:
     #   Prefer an external display.
-    #   Fall back to the internal display if no external display is available.
+    #   Fall back to the workspace primary display if no external display is available.
     #
     # Managed apps:
     #   - Microsoft PowerPoint
@@ -58,22 +58,11 @@ function office_slides_wide --description "Collect PowerPoint and ChatGPT onto t
     end
 
     # 2. Resolve target display
-    set -l target_display (resolve_external_display)
+    set -l target_display (resolve_workspace_external_display wide)
 
-    # 3. Find or create target labeled space
-    set -l target_space (find_or_create_labeled_space $label $target_display)
-
-    if test -z "$target_space"
-        return 1
-    end
-
-    # 4. Normalize target space state
-    prepare_labeled_space $target_space $label float
-
-    ws_focus_display $target_display
-    sleep 0.15
-    ws_focus_space $target_space
-    sleep 0.15
+    # 3. Prepare target labeled space
+    set -l target_space (workspace_prepare_labeled_space $label $target_display float)
+    or return 1
 
     # 5. Move captured windows
     ws_move_windows_to_space $target_space $ppt_window

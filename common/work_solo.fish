@@ -1,4 +1,4 @@
-function work_solo --description "Arrange solo internal-display workspaces"
+function work_solo --description "Arrange solo primary-display workspaces"
     set -l failed 0
 
     workspace_run_step "coding solo" coding_solo

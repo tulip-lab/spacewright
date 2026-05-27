@@ -9,7 +9,7 @@ function gtd_meeting_wide --description "Collect Outlook, Zoom and Teams onto th
     #
     # Target display:
     #   Prefer an external display.
-    #   Fall back to the internal display if no external display is available.
+    #   Fall back to the workspace primary display if no external display is available.
     #
     # Managed apps:
     #   - Microsoft Outlook
@@ -49,7 +49,7 @@ function gtd_meeting_wide --description "Collect Outlook, Zoom and Teams onto th
     gtd_cleanup_solo_spaces
 
     set -l label gtd_meeting_wide
-    set -l target_display (resolve_external_display)
+    set -l target_display (resolve_workspace_external_display wide)
 
     # -------------------------------------------------------------------------
     # 2. First-pass window capture
@@ -98,14 +98,8 @@ function gtd_meeting_wide --description "Collect Outlook, Zoom and Teams onto th
         '^(Microsoft Outlook|zoom[.]us|Microsoft Teams|MSTeams)$')
     or return 1
 
-    prepare_labeled_space $target_space $label float
-
-    ws_focus_display $target_display
-    sleep 0.15
-    gtd_cleanup_tall_spaces
-    gtd_cleanup_solo_spaces
-    ws_focus_space $target_space
-    sleep 0.15
+    workspace_focus_labeled_space $label $target_space $target_display float gtd_cleanup_tall_spaces gtd_cleanup_solo_spaces
+    or return 1
 
     if test -z "$out"
         set out (gtd_find_outlook_window gtd_meeting_wide $target_space)

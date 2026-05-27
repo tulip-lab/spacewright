@@ -1,14 +1,14 @@
-function gtd_calendar --description "Collect Calendar and Reminders onto the internal display and apply the standard GTD calendar layout"
+function gtd_calendar --description "Collect Calendar and Reminders onto the workspace primary display and apply the standard GTD calendar layout"
     # -------------------------------------------------------------------------
     # Workspace:
     #   gtd_calendar
     #
     # Purpose:
-    #   Gather Calendar-related applications onto the internal display and place
+    #   Gather Calendar-related applications onto the workspace primary display and place
     #   them into a stable GTD calendar layout.
     #
     # Target display:
-    #   Internal display identified by UUID.
+    #   Workspace primary display identified by UUID.
     #
     # Managed apps:
     #   - Calendar
@@ -46,22 +46,9 @@ function gtd_calendar --description "Collect Calendar and Reminders onto the int
     # -------------------------------------------------------------------------
     # 2. Resolve target display and target space
     # -------------------------------------------------------------------------
-    set -l target_display (resolve_internal_display)
-    set -l target_space (find_or_create_labeled_space $label $target_display)
-
-    if test -z "$target_space"
-        return 1
-    end
-
-    # -------------------------------------------------------------------------
-    # 3. Normalize target space state
-    # -------------------------------------------------------------------------
-    prepare_labeled_space $target_space $label float
-
-    ws_focus_display $target_display
-    sleep 0.15
-    ws_focus_space $target_space
-    sleep 0.15
+    set -l target_display (resolve_workspace_primary_display)
+    set -l target_space (workspace_prepare_labeled_space $label $target_display float)
+    or return 1
 
     # -------------------------------------------------------------------------
     # 4. First-pass move

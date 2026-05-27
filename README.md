@@ -17,7 +17,7 @@ Each module follows a consistent structure wherever applicable:
 - mode-status helper
 - `tall` entry
 - `wide` entry
-- optional `internal` workspaces for module-specific fixed layouts
+- optional primary-display workspaces for module-specific fixed layouts
 
 The system is designed to keep workspace behavior predictable, composable, and portable across machines.
 
@@ -25,38 +25,40 @@ This README is the daily-use and troubleshooting entry point. Ongoing maintenanc
 
 ## New Machine Bootstrap
 
-On a new Mac or after a macOS/yabai reset, configure the internal display UUID before relying on WIDE, TALL, or internal workspace commands.
+On a new Mac or after a macOS/yabai reset, configure the workspace primary display UUID before relying on WIDE, TALL, or primary-display workspace commands.
 
 Recommended bootstrap:
 
 ```fish
 work_reload
-detect_and_set_internal_display_uuid
-get_internal_display_uuid
+detect_and_set_workspace_primary_display_uuid
+get_workspace_primary_display_uuid
 work_diagnostics
 ```
 
-`detect_and_set_internal_display_uuid` uses `yabai` display metadata as the source of truth. In multi-display setups, it preserves an existing connected internal UUID and avoids guessing from display origin or focus. This matters because external-display profiles may intentionally make the external monitor the macOS primary display at `origin:(0,0)` so the Dock belongs to the external screen. If it cannot determine the internal display confidently, inspect the current displays:
+The workspace primary display is where fixed/control workspaces such as `gtd_chat`, `gtd_calendar`, and `coding_control` belong. On a MacBook it is usually the built-in display. On a Mac mini with one display, it is that only display. On a Mac mini with multiple displays, set it explicitly once.
+
+`detect_and_set_workspace_primary_display_uuid` uses `yabai` display metadata as the source of truth. It keeps an existing connected primary UUID, automatically uses the only display in single-display setups, and can detect a MacBook built-in display through `displayplacer` when available. If it cannot determine the primary display confidently, inspect the current displays:
 
 ```fish
 yabai -m query --displays | jq -r '.[] | "index=\(.index) uuid=\(.uuid) focus=\(.[\"has-focus\"]) frame=(\(.frame.x),\(.frame.y),\(.frame.w),\(.frame.h)) spaces=\(.spaces)"'
 ```
 
-Then set the internal display manually:
+Then set the workspace primary display manually:
 
 ```fish
-set_internal_display_uuid <internal-display-uuid>
+set_workspace_primary_display_uuid <display-uuid>
 ```
 
 Confirm the stored value:
 
 ```fish
-get_internal_display_uuid
+get_workspace_primary_display_uuid
 ```
 
-The value is stored in the fish universal variable `WORKSPACE_INTERNAL_DISPLAY_UUID`, so it persists across future fish sessions for the same user.
+The value is stored in the fish universal variable `WORKSPACE_PRIMARY_DISPLAY_UUID`, so it persists across future fish sessions for the same user.
 
-This setup matters because internal fixed workspaces such as `gtd_chat`, `gtd_calendar`, and `coding_control` must stay anchored to the internal display. External modes such as `work_wide` and `work_tall` also use the configured internal UUID to identify the external display. The macOS primary display is allowed to differ from the workspace internal display role.
+This setup matters because fixed workspaces such as `gtd_chat`, `gtd_calendar`, and `coding_control` must stay anchored to the workspace primary display. External modes such as `work_wide` and `work_tall` use the configured primary UUID to identify a non-primary target display, falling back to the primary display when only one display exists. The macOS primary display is allowed to differ from the workspace primary display role.
 
 ## Common Helper Layer
 
@@ -69,9 +71,9 @@ They are responsible for:
 - resolving target displays
 - focusing displays and spaces safely
 - cleaning unlabeled empty spaces
-- resolving internal and external display roles
-- storing and reading the configured internal display UUID
-- best-effort detection of the internal display UUID
+- resolving primary and external target display roles
+- storing and reading the configured workspace primary display UUID
+- best-effort detection of the workspace primary display UUID
 - wrapping yabai and jq queries with bounded timeouts
 - selecting and refreshing shared app windows consistently
 
@@ -84,8 +86,8 @@ Current core helpers include:
 - `workspace_mode_status_section`
 - `cleanup_unlabeled_empty_spaces`
 - `resolve_target_display`
-- `resolve_internal_display`
-- `resolve_external_display`
+- `resolve_workspace_primary_display`
+- `resolve_workspace_external_display`
 - `ws_focus_display`
 - `ws_focus_space`
 - `ws_yabai`
@@ -93,6 +95,8 @@ Current core helpers include:
 - `ws_query_windows`
 - `workspace_find_app_window`
 - `workspace_capture_app_window`
+- `workspace_prepare_labeled_space`
+- `workspace_focus_labeled_space`
 - `workspace_retarget_contaminated_space`
 
 ## Inventory And Doctor
@@ -119,9 +123,12 @@ work_doctor
 - bad-window cache summary
 
 It returns nonzero only for failed checks. Warnings identify cleanup or environment follow-up without mutating state.
-- `set_internal_display_uuid`
-- `get_internal_display_uuid`
-- `detect_and_set_internal_display_uuid`
+
+Additional loaded entry/helper commands include:
+
+- `set_workspace_primary_display_uuid`
+- `get_workspace_primary_display_uuid`
+- `detect_and_set_workspace_primary_display_uuid`
 - `work_diagnostics`
 - `work_bad_windows`
 - `work_clear_bad_windows`
@@ -136,6 +143,8 @@ It returns nonzero only for failed checks. Warnings identify cleanup or environm
 - `ws_find_windows`
 - `workspace_select_app_window`
 - `workspace_refresh_app_window`
+- `workspace_prepare_labeled_space`
+- `workspace_focus_labeled_space`
 - `workspace_debug_step`
 - `workspace_run_step`
 
@@ -154,8 +163,8 @@ The diagnostic output is read-only. It reports display state, labeled spaces, em
 
 It also includes display role health:
 
-- configured internal display UUID and resolved internal display index
-- resolved external display index and whether it is at `origin:(0,0)`
+- configured workspace primary display UUID and resolved primary display index
+- resolved target display index and whether it is at `origin:(0,0)`
 - Dock `orientation` and `autohide`
 - warnings for display-role or Dock mismatches
 
@@ -233,7 +242,7 @@ The recovery rules are intentionally limited:
 
 `work_recover_light` does not move windows, does not apply layouts, and does not switch display profiles.
 
-`work_display_health [solo|wide|tall]` is a read-only display-role check. It reports whether the configured internal display is present, whether the resolved external display is at `origin:(0,0)`, whether the external display shape matches the expected mode, and whether Dock `orientation`/`autohide` match the workspace assumptions.
+`work_display_health [solo|wide|tall]` is a read-only display-role check. It reports whether the configured workspace primary display is present, which target display was resolved, whether the target display is at `origin:(0,0)`, whether the target is left of the primary display when two displays are present, whether the target display shape matches the expected mode, and whether Dock `orientation`/`autohide` match the workspace assumptions.
 
 ## Mode Commands
 
@@ -429,19 +438,19 @@ work_command_check
 
 Before using the mode commands, keep these machine-level assumptions true:
 
-- `WORKSPACE_INTERNAL_DISPLAY_UUID` is set to the built-in display UUID.
+- `WORKSPACE_PRIMARY_DISPLAY_UUID` is set to the display that should host fixed/control workspaces.
 - macOS Dock is configured with auto-hide enabled.
-- In external modes, the external display profile is allowed to be the macOS primary display at `origin:(0,0)`.
-- The workspace internal/external roles are resolved by UUID, not by macOS primary display or display origin.
+- In external modes, the external display profile may or may not become the macOS primary display.
+- Workspace primary/target roles are resolved by UUID, not by macOS primary display or display origin.
 - `yabai`, `jq`, and `displayplacer` are available in `PATH`.
 
 Check the core display role setup:
 
 ```fish
 work_reload
-get_internal_display_uuid
-echo internal=(resolve_internal_display)
-echo external=(resolve_external_display)
+get_workspace_primary_display_uuid
+echo primary=(resolve_workspace_primary_display)
+echo target=(resolve_workspace_external_display)
 work_display_health
 ```
 
@@ -459,9 +468,9 @@ left
 1
 ```
 
-### Solo Internal Display
+### Solo Primary Display
 
-Use this when working only on the built-in display.
+Use this when working only on the workspace primary display.
 
 ```fish
 display_apply_solo
@@ -472,11 +481,11 @@ work_diagnostics
 
 Expected state:
 
-- only the internal display is enabled
-- the internal display is at `origin:(0,0)`
-- `resolve_internal_display` returns the active display
-- `resolve_external_display` falls back to the internal display because no external display is connected
-- internal fixed workspaces such as `gtd_chat`, `gtd_calendar`, and `coding_control` stay on the internal display
+- only the primary display is enabled
+- the primary display is at `origin:(0,0)`
+- `resolve_workspace_primary_display` returns the active display
+- `resolve_workspace_external_display` falls back to the primary display because no non-primary display is connected
+- fixed workspaces such as `gtd_chat`, `gtd_calendar`, and `coding_control` stay on the primary display
 
 Equivalent hotkey:
 
@@ -497,13 +506,13 @@ work_diagnostics
 
 Expected state:
 
-- the wide external monitor is enabled and left of the internal display
-- the internal display remains enabled to the right of the external monitor
+- the wide external monitor is enabled and left of the workspace primary display
+- the workspace primary display remains enabled to the right of the external monitor
 - the external monitor may or may not be the macOS primary display depending on what macOS accepts from displayplacer
-- `resolve_internal_display` returns the built-in display
-- `resolve_external_display` returns the wide external display
+- `resolve_workspace_primary_display` returns the configured primary display
+- `resolve_workspace_external_display wide` returns the wide target display
 - wide task workspaces move to the external display
-- internal fixed workspaces remain on the internal display
+- fixed workspaces remain on the workspace primary display
 
 Equivalent hotkey:
 
@@ -524,13 +533,13 @@ work_diagnostics
 
 Expected state:
 
-- the tall external monitor is enabled and placed at `origin:(0,0)`
-- the internal display remains enabled to the right of the external monitor
-- the external monitor is the macOS primary display for Dock and menu-bar behavior
-- `resolve_internal_display` returns the built-in display
-- `resolve_external_display` returns the tall external display
+- the tall external monitor is enabled and left of the workspace primary display
+- the workspace primary display remains enabled to the right of the external monitor
+- the external monitor may or may not be the macOS primary display depending on what macOS accepts from displayplacer
+- `resolve_workspace_primary_display` returns the configured primary display
+- `resolve_workspace_external_display tall` returns the tall target display
 - tall task workspaces move to the external display
-- internal fixed workspaces remain on the internal display
+- fixed workspaces remain on the workspace primary display
 
 Equivalent hotkey:
 
@@ -544,14 +553,14 @@ After switching display mode, check the actual display graph if windows or the D
 
 ```fish
 yabai -m query --displays | jq -r '.[] | "index=\(.index) uuid=\(.uuid) focus=\(.[\"has-focus\"]) frame=(\(.frame.x),\(.frame.y),\(.frame.w),\(.frame.h)) spaces=\(.spaces)"'
-echo internal=(resolve_internal_display)
-echo external=(resolve_external_display)
+echo primary=(resolve_workspace_primary_display)
+echo target=(resolve_workspace_external_display)
 work_display_health tall
 ```
 
-For external modes, the external display should be the one at `origin:(0,0)`, while `internal` should still resolve to the built-in display UUID.
+For external modes, the target display should resolve to the non-primary display when one is connected. On single-display systems, target and primary intentionally resolve to the same display.
 
-Use `work_display_health wide` after `display_apply_wide_left`, and `work_display_health tall` after `display_apply_tall_left`. If it reports `external display is not at origin (0,0)`, rerun the matching `display_apply_*` command. The `display_apply_*` commands return nonzero when their post-apply health check still has warnings, so SKHD bindings use `;` before `work_*` to keep workspace mode entry available even when display health warns.
+Use `work_display_health wide` after `display_apply_wide_left`, and `work_display_health tall` after `display_apply_tall_left`. If it reports target display role warnings, rerun the matching `display_apply_*` command. The `display_apply_*` commands return nonzero when their post-apply health check still has warnings, so SKHD bindings use `;` before `work_*` to keep workspace mode entry available even when display health warns.
 
 If the Dock is configured correctly but does not hide or show from the expected edge, restart the Dock after applying the display profile:
 
@@ -596,6 +605,6 @@ Meeting commands use `gtd_find_zoom_window` for Zoom and `gtd_find_teams_window`
 
 All `gtd_meeting_*` modes also retarget contaminated labeled spaces before layout. If a previous meeting label points at a space mixed with non-meeting apps, the command clears that label and uses a clean meeting space.
 
-`gtd_meeting_solo` uses a 1/3 + 2/3 layout on the internal display: Zoom and Teams share the left third vertically, and Outlook uses the right two thirds.
+`gtd_meeting_solo` uses a 1/3 + 2/3 layout on the workspace primary display: Zoom and Teams share the left third vertically, and Outlook uses the right two thirds.
 
 `gtd_review_*` modes create or reuse the review workspace when at least one non-Finder review app is available: Preview, Notes, or ChatGPT. Finder is included in the layout when present, but Finder alone does not create a review workspace.

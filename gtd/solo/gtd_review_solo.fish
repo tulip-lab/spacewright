@@ -21,7 +21,7 @@ function gtd_review_solo --description "Collect review-related windows onto the 
 
     set -l finder (echo $windows_json | ws_find_window "Finder")
 
-    set -l target_display (resolve_internal_display)
+    set -l target_display (resolve_workspace_primary_display)
     set -l target_space (find_or_create_labeled_space $label $target_display)
 
     if test -z "$target_space"
@@ -36,12 +36,8 @@ function gtd_review_solo --description "Collect review-related windows onto the 
         '^(Finder|Preview|ChatGPT|Notes)$')
     or return 1
 
-    prepare_labeled_space $target_space $label float
-
-    ws_focus_display $target_display
-    sleep 0.15
-    ws_focus_space $target_space
-    sleep 0.15
+    workspace_focus_labeled_space $label $target_space $target_display float
+    or return 1
 
     ws_move_windows_to_space $target_space $finder $preview $notes
     set -l chatgpt (workspace_capture_app_window --app ChatGPT --caller gtd_review_solo --space $target_space)

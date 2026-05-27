@@ -9,7 +9,7 @@ function coding_editor_tall --description "Collect VS Code and Codex onto the ta
     #
     # Target display:
     #   Prefer an external display.
-    #   Fall back to the internal display if no external display is available.
+    #   Fall back to the workspace primary display if no external display is available.
     #
     # Managed apps:
     #   - Code
@@ -60,28 +60,13 @@ function coding_editor_tall --description "Collect VS Code and Codex onto the ta
     # 3. Resolve target display
     #    Prefer an external display; if none exists, fall back to internal.
     # -------------------------------------------------------------------------
-    set -l target_display (resolve_external_display)
+    set -l target_display (resolve_workspace_external_display tall)
 
     # -------------------------------------------------------------------------
-    # 4. Find or create target labeled space
+    # 4. Prepare target labeled space
     # -------------------------------------------------------------------------
-    set -l target_space (find_or_create_labeled_space $label $target_display)
-
-    if test -z "$target_space"
-        return 1
-    end
-
-    # -------------------------------------------------------------------------
-    # 5. Normalize target space state
-    # -------------------------------------------------------------------------
-    prepare_labeled_space $target_space $label float
-
-    ws_focus_display $target_display
-    sleep 0.15
-    coding_cleanup_wide_spaces
-    coding_cleanup_solo_spaces
-    ws_focus_space $target_space
-    sleep 0.15
+    set -l target_space (workspace_prepare_labeled_space $label $target_display float coding_cleanup_wide_spaces coding_cleanup_solo_spaces)
+    or return 1
 
     # -------------------------------------------------------------------------
     # 6. Move captured windows

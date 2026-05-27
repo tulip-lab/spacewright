@@ -30,7 +30,7 @@ function gtd_meeting_solo --description "Collect meeting apps onto the solo GTD 
     end
 
     workspace_debug_step gtd_meeting_solo resolve-display
-    set -l target_display (resolve_internal_display)
+    set -l target_display (resolve_workspace_primary_display)
     workspace_debug_step gtd_meeting_solo find-or-create-space
     set -l target_space (find_or_create_labeled_space $label $target_display)
 
@@ -48,13 +48,8 @@ function gtd_meeting_solo --description "Collect meeting apps onto the solo GTD 
     or return 1
 
     workspace_debug_step gtd_meeting_solo prepare-space
-    prepare_labeled_space $target_space $label float
-
-    workspace_debug_step gtd_meeting_solo focus-target
-    ws_focus_display $target_display
-    sleep 0.15
-    ws_focus_space $target_space
-    sleep 0.15
+    workspace_focus_labeled_space $label $target_space $target_display float
+    or return 1
 
     if test -z "$out"
         workspace_debug_step gtd_meeting_solo find-outlook-target
