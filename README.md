@@ -88,6 +88,37 @@ Current core helpers include:
 - `resolve_external_display`
 - `ws_focus_display`
 - `ws_focus_space`
+- `ws_yabai`
+- `ws_jq`
+- `ws_query_windows`
+- `workspace_find_app_window`
+- `workspace_capture_app_window`
+- `workspace_retarget_contaminated_space`
+
+## Inventory And Doctor
+
+Two read-only inspection commands document and validate the workspace system without moving windows, changing spaces, or applying display profiles:
+
+```fish
+work_inventory
+work_doctor
+```
+
+`work_inventory` prints the current workflow map: top-level entries, module entries, managed apps, display entries, common helpers, and external dependencies.
+
+`work_doctor` runs read-only system checks:
+
+- required tools: `fish`, `jq`, `yabai`, `displayplacer`, and `skhd`
+- Mackup/runtime entry paths
+- fish syntax for workspace functions and display profile scripts
+- `work_reload`
+- `work_command_check`
+- read-only yabai display, space, and window queries
+- duplicate labels, empty labeled spaces, and empty unlabeled spaces
+- display role health
+- bad-window cache summary
+
+It returns nonzero only for failed checks. Warnings identify cleanup or environment follow-up without mutating state.
 - `set_internal_display_uuid`
 - `get_internal_display_uuid`
 - `detect_and_set_internal_display_uuid`
@@ -178,6 +209,8 @@ set -e WORKSPACE_DEBUG_SELECT
 Phase 8.5 adds conservative manual recovery commands:
 
 ```fish
+work_inventory
+work_doctor
 work_bad_windows --summary
 work_bad_windows --expired
 work_bad_windows --missing
@@ -190,6 +223,8 @@ work_display_health
 
 The recovery rules are intentionally limited:
 
+- `work_inventory` prints the static workflow map and dependencies.
+- `work_doctor` runs read-only syntax, load, dependency, display, space, and cache checks.
 - `work_bad_windows` only prints cached bad yabai window IDs and supports `--summary`, `--active`, `--expired`, `--present`, and `--missing`.
 - `work_clear_bad_windows` only clears `/tmp/workspace-ws-window-bad`; use `--expired`, `--missing`, `--present`, or `--active` for targeted cleanup, and no flag or `--all` for full cache cleanup.
 - `work_cleanup_empty_labeled_spaces` destroys only empty spaces with known workspace labels.
@@ -215,7 +250,9 @@ display_apply_tall_left
 work_tall
 ```
 
-The `display_apply_*` commands apply the display profile, reload workspace functions, wait briefly for the display graph to settle, and run the matching `work_display_health` check. The `work_*` commands then arrange the intended workspaces for that display mode.
+The `display_apply_*` commands apply the display profile, reload workspace functions, wait briefly for the display graph to settle, and run the matching `work_display_health` check. External display profiles resolve the currently connected external display at runtime instead of depending on a fixed external display UUID. The `work_*` commands then arrange the intended workspaces for that display mode.
+
+`work_wide` arranges coding, research, office, and GTD wide workspaces. `work_tall` arranges the matching tall workspaces. Office workspaces are no-ops when Word or PowerPoint does not have an eligible window. GTD remains the last aggregate module so ChatGPT ownership is preserved for review workspaces in top-level external modes.
 
 Module-level entries can also be run directly:
 
@@ -285,7 +322,7 @@ The global ownership rule is:
 
 If `ChatGPT` appears in more than one workspace design, the most recently executed module function may move it into that module’s workspace.
 
-`coding_editor_solo` is an exception: in solo mode, coding owns only VS Code and makes it full-screen on the internal display. It does not capture or place ChatGPT.
+Coding editor modes use `Codex` as the helper application instead of `ChatGPT`. In `coding_editor_solo`, `coding_editor_wide`, and `coding_editor_tall`, Codex is optional; when it is unavailable, VS Code uses the full target workspace.
 
 ChatGPT-owning modes use `workspace_capture_app_window` to capture ChatGPT. If yabai reports ChatGPT but does not expose a movable window, the helper activates ChatGPT, polls for a movable window, retries the move once, and prints a warning if the window remains non-movable.
 
@@ -460,9 +497,9 @@ work_diagnostics
 
 Expected state:
 
-- the wide external monitor is enabled and placed at `origin:(0,0)`
+- the wide external monitor is enabled and left of the internal display
 - the internal display remains enabled to the right of the external monitor
-- the external monitor is the macOS primary display for Dock and menu-bar behavior
+- the external monitor may or may not be the macOS primary display depending on what macOS accepts from displayplacer
 - `resolve_internal_display` returns the built-in display
 - `resolve_external_display` returns the wide external display
 - wide task workspaces move to the external display
@@ -551,6 +588,8 @@ gtd_reopen_outlook
 gtd_meeting_tall
 ```
 
+`gtd_find_outlook_window` uses the shared movable app-window helper. If Outlook remains present but non-movable after activation and polling, restart yabai to rebuild its window graph.
+
 `gtd_reopen_outlook` does not quit Outlook. It clears Outlook entries from the workspace bad-window cache, asks Outlook to activate/reopen, then prints the current Outlook window diagnostics.
 
 Meeting commands use `gtd_find_zoom_window` for Zoom and `gtd_find_teams_window` for Teams. They require movable main windows, exclude transient meeting/video/share windows, and clear recovered window IDs from the bad-window cache. Teams recognizes both `Microsoft Teams` and `MSTeams`.
@@ -558,3 +597,5 @@ Meeting commands use `gtd_find_zoom_window` for Zoom and `gtd_find_teams_window`
 All `gtd_meeting_*` modes also retarget contaminated labeled spaces before layout. If a previous meeting label points at a space mixed with non-meeting apps, the command clears that label and uses a clean meeting space.
 
 `gtd_meeting_solo` uses a 1/3 + 2/3 layout on the internal display: Zoom and Teams share the left third vertically, and Outlook uses the right two thirds.
+
+`gtd_review_*` modes create or reuse the review workspace when at least one non-Finder review app is available: Preview, Notes, or ChatGPT. Finder is included in the layout when present, but Finder alone does not create a review workspace.

@@ -1,4 +1,4 @@
-function coding_editor_solo --description "Collect VS Code onto the solo coding editor workspace"
+function coding_editor_solo --description "Collect VS Code and Codex onto the solo coding editor workspace"
     coding_cleanup_wide_spaces
     coding_cleanup_tall_spaces
 
@@ -28,13 +28,23 @@ function coding_editor_solo --description "Collect VS Code onto the solo coding 
     sleep 0.15
 
     ws_move_windows_to_space $target_space $code_window
+    set -l codex_window (workspace_capture_app_window --app Codex --caller coding_editor_solo --space $target_space)
 
     set -l windows_json_final (ws_query_windows "coding_editor_solo" final); or return 1
 
     set code_window (echo $windows_json_final | ws_find_window "Code" --space $target_space)
+    set codex_window (workspace_find_app_window --app Codex --caller coding_editor_solo --space $target_space --no-refresh)
+
+    if test -n "$codex_window"
+        ws_window $codex_window --grid 1:3:0:0:1:1
+    end
 
     if test -n "$code_window"
-        ws_window $code_window --grid 1:1:0:0:1:1
+        if test -n "$codex_window"
+            ws_window $code_window --grid 1:3:1:0:2:1
+        else
+            ws_window $code_window --grid 1:1:0:0:1:1
+        end
     end
 
     coding_cleanup_wide_spaces

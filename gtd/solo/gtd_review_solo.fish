@@ -6,20 +6,20 @@ function gtd_review_solo --description "Collect review-related windows onto the 
     set -l windows_json (ws_query_windows "gtd_review_solo" initial); or return 1
 
     set -l preview (echo $windows_json | ws_find_window "Preview")
+    set -l chatgpt_initial (echo $windows_json | ws_find_window "ChatGPT")
+    set -l notes (echo $windows_json | ws_find_window "Notes" --nonempty-title)
 
-    if test -z "$preview"
+    if test -z "$notes"
+        set notes (echo $windows_json | ws_find_window "Notes")
+    end
+
+    if test -z "$preview" -a -z "$notes" -a -z "$chatgpt_initial"
         destroy_empty_labeled_space $label
 
         return 0
     end
 
     set -l finder (echo $windows_json | ws_find_window "Finder")
-
-    set -l notes (echo $windows_json | ws_find_window "Notes" --nonempty-title)
-
-    if test -z "$notes"
-        set notes (echo $windows_json | ws_find_window "Notes")
-    end
 
     set -l target_display (resolve_internal_display)
     set -l target_space (find_or_create_labeled_space $label $target_display)

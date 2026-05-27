@@ -18,9 +18,10 @@ function gtd_review_wide --description "Collect review-related windows onto the 
     #   - Notes
     #
     # Window selection rules:
-    #   - Preview:
-    #       Required primary window. If no non-minimized Preview window exists,
-    #       the workspace is not created.
+    #   - Preview / Notes / ChatGPT:
+    #       At least one must exist before the workspace is created. Preview is
+    #       no longer required because review work often starts from Notes or
+    #       ChatGPT before a PDF is open.
     #   - Notes:
     #       Prefer a non-minimized window whose title is not empty.
     #       If none is found, fall back to any non-minimized Notes window.
@@ -51,13 +52,19 @@ function gtd_review_wide --description "Collect review-related windows onto the 
     set -l label gtd_review_wide
 
     # -------------------------------------------------------------------------
-    # 2. Find Preview first; if not found, do not create the workspace
+    # 2. Require at least one non-Finder review app before creating workspace
     # -------------------------------------------------------------------------
     set -l windows_json (ws_query_windows "gtd_review_wide" initial); or return 1
 
     set -l preview (echo $windows_json | ws_find_window "Preview")
+    set -l chatgpt_initial (echo $windows_json | ws_find_window "ChatGPT")
+    set -l notes_initial (echo $windows_json | ws_find_window "Notes" --nonempty-title)
 
-    if test -z "$preview"
+    if test -z "$notes_initial"
+        set notes_initial (echo $windows_json | ws_find_window "Notes")
+    end
+
+    if test -z "$preview" -a -z "$notes_initial" -a -z "$chatgpt_initial"
         destroy_empty_labeled_space $label
 
         return 0
@@ -104,11 +111,7 @@ function gtd_review_wide --description "Collect review-related windows onto the 
     set -l finder (echo $windows_json | ws_find_window "Finder")
 
     # Notes: prefer non-empty title
-    set -l notes (echo $windows_json | ws_find_window "Notes" --nonempty-title)
-
-    if test -z "$notes"
-        set notes (echo $windows_json | ws_find_window "Notes")
-    end
+    set -l notes $notes_initial
 
     # -------------------------------------------------------------------------
     # 7. First-pass move

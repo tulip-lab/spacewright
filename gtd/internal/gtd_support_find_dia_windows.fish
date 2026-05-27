@@ -38,5 +38,6 @@ function gtd_support_find_dia_windows --description "Find all movable Dia window
     end
 
     echo "[WARN] $caller found Dia, but yabai did not expose a movable Dia window" >&2
+    echo "[HINT] If Dia stays non-movable, run: yabai --restart-service" >&2
     return 1
 end

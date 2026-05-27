@@ -135,20 +135,38 @@ function gtd_meeting_tall --description "Collect Outlook, Zoom and Teams onto th
         end
     end
 
-    set zoom (gtd_find_zoom_window gtd_meeting_tall $target_space --no-refresh)
+    set zoom (gtd_find_zoom_window gtd_meeting_tall $target_space --no-refresh --target-only)
 
-    set teams (gtd_find_teams_window gtd_meeting_tall $target_space --no-refresh)
+    set teams (gtd_find_teams_window gtd_meeting_tall $target_space --no-refresh --target-only)
 
     if test -z "$zoom" -a -n "$zoom_initial"
         ws_move_windows_to_space $target_space $zoom_initial
         set windows_json_final (ws_query_windows "gtd_meeting_tall" final_zoom_retry); or return 1
-        set zoom (gtd_find_zoom_window gtd_meeting_tall $target_space --no-refresh)
+        set zoom (gtd_find_zoom_window gtd_meeting_tall $target_space --no-refresh --target-only)
+    end
+
+    if test -z "$zoom"
+        set zoom (gtd_find_zoom_window gtd_meeting_tall --no-refresh)
+        if test -n "$zoom"
+            ws_move_windows_to_space $target_space $zoom
+            set windows_json_final (ws_query_windows "gtd_meeting_tall" final_zoom_find_retry); or return 1
+            set zoom (gtd_find_zoom_window gtd_meeting_tall $target_space --no-refresh --target-only)
+        end
     end
 
     if test -z "$teams" -a -n "$teams_initial"
         ws_move_windows_to_space $target_space $teams_initial
         set windows_json_final (ws_query_windows "gtd_meeting_tall" final_teams_retry); or return 1
-        set teams (gtd_find_teams_window gtd_meeting_tall $target_space --no-refresh)
+        set teams (gtd_find_teams_window gtd_meeting_tall $target_space --no-refresh --target-only)
+    end
+
+    if test -z "$teams"
+        set teams (gtd_find_teams_window gtd_meeting_tall --no-refresh)
+        if test -n "$teams"
+            ws_move_windows_to_space $target_space $teams
+            set windows_json_final (ws_query_windows "gtd_meeting_tall" final_teams_find_retry); or return 1
+            set teams (gtd_find_teams_window gtd_meeting_tall $target_space --no-refresh --target-only)
+        end
     end
 
     # -------------------------------------------------------------------------

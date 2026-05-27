@@ -1,13 +1,16 @@
 function gtd_find_zoom_window --description "Find a movable Zoom main window, clearing recovered bad-window cache entries"
     set -l caller $argv[1]
     set -l target_space ""
+    set -l target_only 0
 
     if test -z "$caller"
         set caller gtd_meeting
     end
 
     for arg in $argv[2..-1]
-        if test "$arg" != "--no-refresh" -a -z "$target_space"
+        if test "$arg" = "--target-only"
+            set target_only 1
+        else if test "$arg" != "--no-refresh" -a -z "$target_space"
             set target_space $arg
         end
     end
@@ -40,6 +43,10 @@ function gtd_find_zoom_window --description "Find a movable Zoom main window, cl
             workspace_debug_step $caller zoom-target-found $zoom
             rm -f "$bad_window_dir/$zoom" 2>/dev/null
             echo $zoom
+            return 0
+        end
+
+        if test "$target_only" -eq 1
             return 0
         end
     end

@@ -85,15 +85,15 @@ function gtd_meeting_solo --description "Collect meeting apps onto the solo GTD 
         end
     end
 
-    set zoom (gtd_find_zoom_window gtd_meeting_solo $target_space --no-refresh)
+    set zoom (gtd_find_zoom_window gtd_meeting_solo $target_space --no-refresh --target-only)
 
-    set teams (gtd_find_teams_window gtd_meeting_solo $target_space --no-refresh)
+    set teams (gtd_find_teams_window gtd_meeting_solo $target_space --no-refresh --target-only)
 
     if test -z "$zoom" -a -n "$zoom_initial"
         workspace_debug_step gtd_meeting_solo fallback-zoom-move
         ws_move_windows_to_space $target_space $zoom_initial
         set windows_json_final (ws_query_windows "gtd_meeting_solo" final_zoom_retry); or return 1
-        set zoom (gtd_find_zoom_window gtd_meeting_solo $target_space --no-refresh)
+        set zoom (gtd_find_zoom_window gtd_meeting_solo $target_space --no-refresh --target-only)
     end
 
     if test -z "$teams"
@@ -109,7 +109,7 @@ function gtd_meeting_solo --description "Collect meeting apps onto the solo GTD 
         workspace_debug_step gtd_meeting_solo fallback-teams-move
         ws_move_windows_to_space $target_space $teams
         set windows_json_final (ws_query_windows "gtd_meeting_solo" final_teams_retry); or return 1
-        set teams (gtd_find_teams_window gtd_meeting_solo $target_space --no-refresh)
+        set teams (gtd_find_teams_window gtd_meeting_solo $target_space --no-refresh --target-only)
     end
 
     workspace_debug_step gtd_meeting_solo layout

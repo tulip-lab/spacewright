@@ -1,4 +1,4 @@
-function coding_editor_wide --description "Collect VS Code and ChatGPT onto the wide coding editor workspace and apply the standard editor layout"
+function coding_editor_wide --description "Collect VS Code and Codex onto the wide coding editor workspace and apply the standard editor layout"
     # -------------------------------------------------------------------------
     # Workspace:
     #   coding_editor_wide
@@ -13,18 +13,18 @@ function coding_editor_wide --description "Collect VS Code and ChatGPT onto the 
     #
     # Managed apps:
     #   - Code
-    #   - ChatGPT
+    #   - Codex
     #
     # Window selection rules:
     #   - Code:
     #       Required primary window. If no non-minimized VS Code window exists,
     #       the workspace is not created.
-    #   - ChatGPT:
+    #   - Codex:
     #       Optional helper window. If present, it is moved into the workspace.
     #
     # Layout:
-    #   - ChatGPT -> left 1/3
-    #   - Code    -> right 2/3
+    #   - Codex -> left 1/3
+    #   - Code  -> right 2/3
     #
     # Notes:
     #   - Before entering coding wide mode, empty coding tall spaces are
@@ -87,7 +87,7 @@ function coding_editor_wide --description "Collect VS Code and ChatGPT onto the 
     # 6. Move captured windows
     # -------------------------------------------------------------------------
     ws_move_windows_to_space $target_space $code_window
-    set -l chatgpt_window (workspace_capture_app_window --app ChatGPT --caller coding_editor_wide --space $target_space)
+    set -l codex_window (workspace_capture_app_window --app Codex --caller coding_editor_wide --space $target_space)
 
     # -------------------------------------------------------------------------
     # 7. Final capture on target space
@@ -96,18 +96,22 @@ function coding_editor_wide --description "Collect VS Code and ChatGPT onto the 
 
     set code_window (echo $windows_json_final | ws_find_window "Code" --space $target_space)
 
-    set chatgpt_window (workspace_find_app_window --app ChatGPT --caller coding_editor_wide --space $target_space --no-refresh)
+    set codex_window (workspace_find_app_window --app Codex --caller coding_editor_wide --space $target_space --no-refresh)
 
     # -------------------------------------------------------------------------
     # 8. Apply final layout
-    #    Keep ChatGPT on the left 1/3 and VS Code on the right 2/3.
+    #    Keep Codex on the left 1/3 and VS Code on the right 2/3.
     # -------------------------------------------------------------------------
-    if test -n "$chatgpt_window"
-        ws_window $chatgpt_window --grid 1:3:0:0:1:1
+    if test -n "$codex_window"
+        ws_window $codex_window --grid 1:3:0:0:1:1
     end
 
     if test -n "$code_window"
-        ws_window $code_window --grid 1:3:1:0:2:1
+        if test -n "$codex_window"
+            ws_window $code_window --grid 1:3:1:0:2:1
+        else
+            ws_window $code_window --grid 1:1:0:0:1:1
+        end
     end
 
     # -------------------------------------------------------------------------

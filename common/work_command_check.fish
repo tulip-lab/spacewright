@@ -11,6 +11,8 @@ function work_command_check --description "Check that documented workspace comma
         work_cleanup_empty_labeled_spaces \
         work_cleanup_empty_unlabeled_spaces \
         work_recover_light \
+        work_inventory \
+        work_doctor \
         ws_yabai \
         ws_jq \
         ws_query_windows \

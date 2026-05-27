@@ -1,0 +1,71 @@
+function work_inventory --description "Print a read-only workspace workflow inventory"
+    echo "===== WORKSPACE INVENTORY ====="
+    echo
+
+    echo "===== TOP-LEVEL ENTRIES ====="
+    printf "%-18s %s\n" "work_solo" "coding_solo, research_solo, gtd_solo_all"
+    printf "%-18s %s\n" "work_wide" "coding_wide_all, research_wide, office_wide, gtd_wide_all"
+    printf "%-18s %s\n" "work_tall" "coding_tall_all, research_tall, office_tall, gtd_tall_all"
+    printf "%-18s %s\n" "work_status" "diagnostics plus module status snapshots"
+    printf "%-18s %s\n" "work_reload" "reload common, display, and module functions"
+    printf "%-18s %s\n" "work_check" "reload plus diagnostics and module mode status"
+    printf "%-18s %s\n" "work_doctor" "read-only system and config checks"
+    echo
+
+    echo "===== MODULE ENTRIES ====="
+    printf "%-10s %-20s %s\n" "module" "entries" "managed apps"
+    printf "%-10s %-20s %s\n" "coding" "solo, wide, tall" "Code, Codex; internal coding_control"
+    printf "%-10s %-20s %s\n" "research" "solo, wide, tall" "Zotero, ChatGPT"
+    printf "%-10s %-20s %s\n" "gtd" "solo_all, wide_all, tall_all" "Dia, Finder, Preview, Notes, ChatGPT, Thunderbird, Outlook, Zoom, Teams; internal chat/calendar"
+    printf "%-10s %-20s %s\n" "office" "wide, tall" "Word, PowerPoint, ChatGPT"
+    echo
+
+    echo "===== WORKSPACE COMMAND MAP ====="
+    printf "%-24s %-12s %-12s %s\n" "workspace" "mode" "display role" "apps"
+    printf "%-24s %-12s %-12s %s\n" "coding_editor_solo" "solo" "internal" "Code, Codex"
+    printf "%-24s %-12s %-12s %s\n" "coding_editor_wide" "wide" "external" "Code, Codex"
+    printf "%-24s %-12s %-12s %s\n" "coding_editor_tall" "tall" "external" "Code, Codex"
+    printf "%-24s %-12s %-12s %s\n" "coding_control" "internal" "internal" "Warp, SmartGit, FlClash/Thaw"
+    printf "%-24s %-12s %-12s %s\n" "research_solo" "solo" "internal" "Zotero, ChatGPT"
+    printf "%-24s %-12s %-12s %s\n" "research_wide" "wide" "external" "Zotero, ChatGPT"
+    printf "%-24s %-12s %-12s %s\n" "research_tall" "tall" "external" "Zotero, ChatGPT"
+    printf "%-24s %-12s %-12s %s\n" "gtd_support_*" "all" "mode target" "Dia"
+    printf "%-24s %-12s %-12s %s\n" "gtd_review_*" "all" "mode target" "Preview, Notes, ChatGPT, Finder"
+    printf "%-24s %-12s %-12s %s\n" "gtd_mail_*" "all" "mode target" "Thunderbird"
+    printf "%-24s %-12s %-12s %s\n" "gtd_meeting_*" "all" "mode target" "Outlook, Zoom, Teams"
+    printf "%-24s %-12s %-12s %s\n" "gtd_chat" "internal" "internal" "Messages/chat helper windows"
+    printf "%-24s %-12s %-12s %s\n" "gtd_calendar" "internal" "internal" "Calendar"
+    printf "%-24s %-12s %-12s %s\n" "office_writing_*" "wide/tall" "external" "Word, ChatGPT"
+    printf "%-24s %-12s %-12s %s\n" "office_slides_*" "wide/tall" "external" "PowerPoint, ChatGPT"
+    echo
+
+    echo "===== DISPLAY ENTRIES ====="
+    printf "%-24s %s\n" "display_apply_solo" "apply solo display profile, reload, verify solo health"
+    printf "%-24s %s\n" "display_apply_wide_left" "resolve current wide external display, reload, verify wide health"
+    printf "%-24s %s\n" "display_apply_tall_left" "resolve current tall external display, reload, verify tall health"
+    echo
+
+    echo "===== COMMON HELPERS ====="
+    printf "%-32s %s\n" "ws_yabai" "bounded yabai command wrapper"
+    printf "%-32s %s\n" "ws_jq" "bounded jq parser wrapper"
+    printf "%-32s %s\n" "ws_query_windows" "bounded window query wrapper"
+    printf "%-32s %s\n" "ws_find_window/ws_find_windows" "structured window selectors"
+    printf "%-32s %s\n" "workspace_find_app_window" "movable app-window selector with optional refresh"
+    printf "%-32s %s\n" "workspace_capture_app_window" "find, move, and confirm app window on target space"
+    printf "%-32s %s\n" "find_or_create_labeled_space" "label-based space creation and reuse"
+    printf "%-32s %s\n" "prepare_labeled_space" "unique label ownership and layout normalization"
+    printf "%-32s %s\n" "workspace_retarget_contaminated_space" "move labels away from mixed-owner spaces"
+    printf "%-32s %s\n" "cleanup_labeled_empty_spaces" "module-scoped empty labeled-space cleanup"
+    printf "%-32s %s\n" "cleanup_unlabeled_empty_spaces" "transient empty space cleanup"
+    printf "%-32s %s\n" "resolve_internal_display" "configured built-in display role"
+    printf "%-32s %s\n" "resolve_external_display" "current external display role"
+    echo
+
+    echo "===== DEPENDENCIES ====="
+    printf "%-18s %s\n" "fish" "function runtime and syntax validation"
+    printf "%-18s %s\n" "yabai" "display, space, and window query/move layer"
+    printf "%-18s %s\n" "jq" "JSON parsing"
+    printf "%-18s %s\n" "displayplacer" "display profile application"
+    printf "%-18s %s\n" "skhd" "keyboard entry layer"
+    printf "%-18s %s\n" "macOS Spaces" "space labels and window placement"
+end

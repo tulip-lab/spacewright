@@ -19,6 +19,7 @@ function work_display_health --description "Show read-only workspace display rol
     set -l external_display
     set -l external_count 0
     set -l external_origin_ok false
+    set -l external_left_ok false
     set -l external_orientation unknown
     set -l display_count (echo $displays_json | ws_jq -r 'length')
 
@@ -38,6 +39,16 @@ function work_display_health --description "Show read-only workspace display rol
         if test -n "$external_display"
             set external_origin_ok (echo $displays_json | ws_jq -r --argjson display "$external_display" '
                 first(.[] | select(.index==$display) | (.frame.x == 0 and .frame.y == 0)) // false
+            ')
+
+            set external_left_ok (echo $displays_json | ws_jq -r \
+                --arg uuid "$internal_uuid" \
+                --argjson display "$external_display" '
+                (first(.[] | select(.uuid==$uuid)) // null) as $internal
+                | (first(.[] | select(.index==$display)) // null) as $external
+                | if $internal == null or $external == null then false
+                  else ($external.frame.x < $internal.frame.x)
+                  end
             ')
 
             set external_orientation (echo $displays_json | ws_jq -r --argjson display "$external_display" '
@@ -65,6 +76,7 @@ function work_display_health --description "Show read-only workspace display rol
         --arg external_count "$external_count" \
         --arg display_count "$display_count" \
         --arg external_origin_ok "$external_origin_ok" \
+        --arg external_left_ok "$external_left_ok" \
         --arg external_orientation "$external_orientation" \
         --arg dock_orientation "$dock_orientation" \
         --arg dock_autohide "$dock_autohide" \
@@ -76,6 +88,7 @@ function work_display_health --description "Show read-only workspace display rol
             external_count: (if $external_count == "" then 0 else ($external_count | tonumber) end),
             display_count: (if $display_count == "" then 0 else ($display_count | tonumber) end),
             external_origin_ok: ($external_origin_ok == "true"),
+            external_left_ok: ($external_left_ok == "true"),
             external_orientation: $external_orientation,
             dock_orientation: $dock_orientation,
             dock_autohide: (
@@ -89,7 +102,7 @@ function work_display_health --description "Show read-only workspace display rol
                 if ($display_count | tonumber) > 1 and $external_display == "" then "multiple displays are visible but no external display resolved" else empty end,
                 if $expected_mode == "solo" and ($external_count | tonumber) > 0 then "solo mode expected no external display" else empty end,
                 if ($expected_mode == "wide" or $expected_mode == "tall") and $external_display == "" then "external mode expected an external display" else empty end,
-                if $external_display != "" and $external_origin_ok != "true" then "external display is not at origin (0,0)" else empty end,
+                if ($expected_mode == "wide" or $expected_mode == "tall") and $external_display != "" and $external_left_ok != "true" then "external display is not left of the internal display" else empty end,
                 if $expected_mode == "wide" and $external_orientation != "wide" then "wide mode expected a wide external display" else empty end,
                 if $expected_mode == "tall" and $external_orientation != "tall" then "tall mode expected a tall external display" else empty end,
                 if $dock_autohide != "1" then "Dock autohide is not enabled" else empty end,
@@ -97,8 +110,8 @@ function work_display_health --description "Show read-only workspace display rol
             ],
             suggested_next_checks: [
                 if $expected_mode == "solo" and ($external_count | tonumber) > 0 then "display_apply_solo" else empty end,
-                if $expected_mode == "wide" and ($external_display == "" or $external_origin_ok != "true" or $external_orientation != "wide") then "display_apply_wide_left" else empty end,
-                if $expected_mode == "tall" and ($external_display == "" or $external_origin_ok != "true" or $external_orientation != "tall") then "display_apply_tall_left" else empty end,
+                if $expected_mode == "wide" and ($external_display == "" or $external_left_ok != "true" or $external_orientation != "wide") then "display_apply_wide_left" else empty end,
+                if $expected_mode == "tall" and ($external_display == "" or $external_left_ok != "true" or $external_orientation != "tall") then "display_apply_tall_left" else empty end,
                 if $dock_autohide != "1" or $dock_orientation != "left" then "check macOS Dock settings, then killall Dock if needed" else empty end
             ]
         }')

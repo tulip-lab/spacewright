@@ -8,7 +8,7 @@ function coding_status --description "Show display, space and coding application
     #
     # Covered coding apps:
     #   - Code
-    #   - ChatGPT
+    #   - Codex
     #   - Warp
     #   - SmartGit
     #   - FlClash / Thaw
@@ -30,7 +30,7 @@ function coding_status --description "Show display, space and coding application
         .[]
         | select(
             .app=="Code"
-            or .app=="ChatGPT"
+            or .app=="Codex"
             or .app=="Warp"
             or .app=="SmartGit"
             or .app=="FlClash"

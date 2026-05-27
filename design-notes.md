@@ -154,7 +154,7 @@ Useful move helpers:
 
 `workspace_find_app_window` is the default helper for simple app-name ownership. It selects a movable yabai window, can constrain to a target space, can activate the app and poll for a refreshed movable window, and clears recovered bad-window cache entries. Use this for ordinary single-window helper apps instead of hand-written `ws_find_window "<app>"` logic.
 
-`workspace_capture_app_window` builds on that finder: it finds a movable app window, moves it to the target space, then confirms the app is present on that space. This is the preferred path for shared helper apps such as ChatGPT in coding, research, office, and GTD review workspaces.
+`workspace_capture_app_window` builds on that finder: it finds a movable app window, moves it to the target space, then confirms the app is present on that space. This is the preferred path for shared helper apps such as Codex in coding and ChatGPT in research, office, and GTD review workspaces.
 
 Layout geometry remains explicit in module functions or narrow module-specific helpers. There is no generic layout engine.
 
@@ -164,11 +164,17 @@ Layout geometry remains explicit in module functions or narrow module-specific h
 
 Primary read-only commands:
 
+- `work_inventory`
+- `work_doctor`
 - `work_diagnostics`
 - `work_status`
 - `work_mode_status`
 - `work_check`
 - `work_command_check`
+
+`work_inventory` is the static workflow map. It records the top-level entries, module entries, managed apps, display entries, common helpers, and dependency boundaries in command output so the active system can be inspected without reading every function file.
+
+`work_doctor` is the read-only validation entry. It checks required tools, Mackup/runtime paths, fish syntax, function reload, command availability, read-only yabai queries, display role health, duplicate labels, empty spaces, and bad-window cache summary. It must not move windows, switch spaces, apply display profiles, restart services, or cleanup state.
 
 `work_diagnostics` reports display health, labeled spaces, empty labeled spaces, duplicate labels, empty unlabeled spaces, and bad-window cache summary.
 
@@ -248,7 +254,7 @@ ChatGPT-owning workspaces capture a movable `ChatGPT` window through `workspace_
 
 `gtd_find_chatgpt_window` remains as a narrow compatibility wrapper around the shared helper. New modules should call `workspace_find_app_window` or `workspace_capture_app_window` directly unless ChatGPT develops GTD-specific selection rules.
 
-`coding_editor_solo` intentionally does not capture `ChatGPT`; solo coding uses the internal display for full-screen VS Code.
+Coding editor modes use `Codex` instead of `ChatGPT` as the optional helper app. If Codex is not available, VS Code uses the full coding editor workspace.
 
 In `gtd_solo_all`, review runs after meeting so GTD review is the final SOLO owner for ChatGPT.
 
@@ -256,13 +262,15 @@ In `gtd_solo_all`, review runs after meeting so GTD review is the final SOLO own
 
 `Notes` is owned by `gtd_review_*`.
 
+`gtd_review_*` no longer requires Preview as the primary app. A review workspace is eligible when Preview, Notes, or ChatGPT is present. Finder is still included when available, but Finder alone is intentionally not enough to create a review workspace because Finder is commonly present outside review work.
+
 `Dia` is owned by `gtd_support_*`.
 
 This avoids moving a single Notes window back and forth between support and review during aggregate entries.
 
 ### GTD Support Dia Layout
 
-All GTD support modes collect every non-minimized Dia window that yabai reports as movable through `gtd_support_find_dia_windows`.
+All GTD support modes collect every non-minimized Dia window that yabai reports as movable through `gtd_support_find_dia_windows`. If Dia is present but no movable Dia window is available after activation, the helper warns and suggests restarting yabai because the yabai window graph may be stale.
 
 If Dia exists but no movable Dia window is exposed, the helper activates Dia once, refreshes the window snapshot, and fails closed with a warning if Dia remains non-movable.
 
@@ -280,11 +288,13 @@ Outlook selection goes through `gtd_find_outlook_window`, which returns only mov
 
 If Outlook exists but no movable Outlook window is available, meeting commands warn instead of pretending Outlook was moved.
 
+`gtd_find_outlook_window` uses the shared movable app-window helper for Outlook capture. If Outlook exists but yabai does not expose a movable AX window after activation and polling, it warns and suggests restarting yabai because the yabai window graph may contain a stale Outlook reference.
+
 `gtd_reopen_outlook` is a light manual recovery command: it clears Outlook bad-window cache entries, activates/reopens Outlook, and prints Outlook window diagnostics.
 
-Zoom selection goes through `gtd_find_zoom_window`, which requires a movable main window, excludes transient meeting/video/share/screen/mini windows, and clears recovered Zoom entries from the bad-window cache.
+Zoom selection goes through `gtd_find_zoom_window`, which requires a movable main window, excludes transient meeting/video/share/screen/mini windows, and clears recovered Zoom entries from the bad-window cache. Final meeting-layout verification calls it with `--target-only` so a Zoom window on another space does not count as successfully placed.
 
-Teams selection goes through `gtd_find_teams_window`, which recognizes both `Microsoft Teams` and `MSTeams`, requires a movable main window, excludes transient meeting/video/call/share/screen/mini windows, and clears recovered Teams entries from the bad-window cache.
+Teams selection goes through `gtd_find_teams_window`, which recognizes both `Microsoft Teams` and `MSTeams`, requires a movable main window, excludes transient meeting/video/call/share/screen/mini windows, and clears recovered Teams entries from the bad-window cache. Final meeting-layout verification calls it with `--target-only` so a Teams window on another space triggers a retry instead of being treated as success.
 
 All `gtd_meeting_*` modes use `workspace_retarget_contaminated_space` before preparing the labeled space. If the existing meeting label points at a space that contains non-meeting apps, the label is cleared and a clean meeting space is selected instead of mixing the workflow into a contaminated space.
 
@@ -369,9 +379,10 @@ The workspace system is currently structurally stable. Future work should be inc
 Watch:
 
 - `work_solo`, `work_tall`, and `work_wide`
+- `office_wide` and `office_tall` through the top-level external-display entries
 - `gtd_meeting_*` for Outlook, Zoom, and Teams placement
 - `gtd_support_*` for multiple Dia windows
-- ChatGPT ownership when moving between GTD review, coding, office, and research
+- ChatGPT ownership when moving between GTD review, office, and research
 - bad-window cache summaries after repeated workspace transitions
 
 Collect read-only evidence before changing code:

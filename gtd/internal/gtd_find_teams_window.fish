@@ -2,6 +2,7 @@ function gtd_find_teams_window --description "Find a movable Microsoft Teams win
     set -l caller $argv[1]
     set -l target_space ""
     set -l mode ""
+    set -l target_only 0
 
     if test -z "$caller"
         set caller gtd_meeting
@@ -10,6 +11,8 @@ function gtd_find_teams_window --description "Find a movable Microsoft Teams win
     for arg in $argv[2..-1]
         if test "$arg" = "--no-refresh"
             set mode --no-refresh
+        else if test "$arg" = "--target-only"
+            set target_only 1
         else if test -z "$target_space"
             set target_space $arg
         end
@@ -44,6 +47,10 @@ function gtd_find_teams_window --description "Find a movable Microsoft Teams win
             workspace_debug_step $caller teams-target-found $teams
             rm -f "$bad_window_dir/$teams" 2>/dev/null
             echo $teams
+            return 0
+        end
+
+        if test "$target_only" -eq 1
             return 0
         end
     end
