@@ -1,7 +1,6 @@
 function gtd_review_solo --description "Collect review-related windows onto the solo GTD review workspace"
-    gtd_cleanup_wide_spaces
-    gtd_cleanup_tall_spaces
-
+    workspace_cleanup_mode_spaces gtd wide
+    workspace_cleanup_mode_spaces gtd tall
     set -l label gtd_review_solo
     set -l windows_json (ws_query_windows "gtd_review_solo" initial); or return 1
 
@@ -72,8 +71,8 @@ function gtd_review_solo --description "Collect review-related windows onto the 
         ws_window $notes --grid 2:2:1:1:1:1
     end
 
-    gtd_cleanup_wide_spaces
-    gtd_cleanup_tall_spaces
+    workspace_cleanup_mode_spaces gtd wide
+    workspace_cleanup_mode_spaces gtd tall
     ws_focus_space $target_space
     cleanup_unlabeled_empty_spaces $target_space
 end

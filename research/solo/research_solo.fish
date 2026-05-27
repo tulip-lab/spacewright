@@ -1,7 +1,6 @@
 function research_solo --description "Collect Zotero and ChatGPT onto the solo research workspace"
-    research_cleanup_wide_spaces
-    research_cleanup_tall_spaces
-
+    workspace_cleanup_mode_spaces research wide
+    workspace_cleanup_mode_spaces research tall
     set -l label research_solo
     set -l windows_json (ws_query_windows "research_solo" initial); or return 1
 
@@ -34,8 +33,8 @@ function research_solo --description "Collect Zotero and ChatGPT onto the solo r
         ws_window $chatgpt_window --grid 1:3:2:0:1:1
     end
 
-    research_cleanup_wide_spaces
-    research_cleanup_tall_spaces
+    workspace_cleanup_mode_spaces research wide
+    workspace_cleanup_mode_spaces research tall
     ws_focus_space $target_space
     cleanup_unlabeled_empty_spaces $target_space
 end

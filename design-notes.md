@@ -38,9 +38,9 @@ The workspace primary display role is separate from the macOS primary display. O
 
 Display profile functions apply monitor geometry only:
 
-- `display_wide_left`
-- `display_tall_left`
-- `display_solo`
+- `display_apply_wide_left`
+- `display_apply_tall_left`
+- `display_apply_solo`
 
 Mode entry is a two-step contract:
 
@@ -101,7 +101,7 @@ Workspace labels are structural ownership markers. Use:
 
 `cleanup_unlabeled_empty_spaces` handles transient empty spaces that carry no structural label. This stays separate from labeled-space cleanup to avoid deleting meaningful workspaces too aggressively.
 
-`work_cleanup_empty_unlabeled_spaces` and `work_recover_light` are explicit manual recovery tools. They are not hidden inside normal workspace entry.
+`cleanup_unlabeled_empty_spaces` and `work_recover_light` are explicit manual recovery tools. They are not hidden inside normal workspace entry.
 
 ### Primary-App Absence
 
@@ -240,9 +240,9 @@ This prevents repeated labeled-space scans and destroy attempts while preserving
 
 Common cleanup wrappers are intentionally thin and mode-named:
 
-- `*_cleanup_solo_spaces`
-- `*_cleanup_wide_spaces`
-- `*_cleanup_tall_spaces`
+- ``workspace_cleanup_mode_spaces <family> solo``
+- ``workspace_cleanup_mode_spaces <family> wide``
+- ``workspace_cleanup_mode_spaces <family> tall``
 
 ## GTD Ownership Rules
 

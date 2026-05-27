@@ -1,5 +1,5 @@
 function display_apply_tall_left --description "Apply tall-left display layout and reload display/workspace functions"
-    display_tall_left
+    ~/.config/displayprofiles/display-primary-plus-tall-left.fish
     or return $status
 
     display_reload

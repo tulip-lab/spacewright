@@ -20,7 +20,10 @@ function workspace_focus_labeled_space --description "Normalize and focus an exi
     sleep 0.15
 
     for cleanup_command in $cleanup_commands
-        if functions -q $cleanup_command
+        if string match -q '*:*' -- $cleanup_command
+            set -l cleanup_parts (string split -m1 ':' -- $cleanup_command)
+            workspace_cleanup_mode_spaces $cleanup_parts[1] $cleanup_parts[2]
+        else if functions -q $cleanup_command
             $cleanup_command
         else
             echo "[WARN] workspace_focus_labeled_space: cleanup command not found: $cleanup_command" >&2

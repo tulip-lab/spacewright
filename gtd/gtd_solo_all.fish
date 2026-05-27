@@ -1,10 +1,10 @@
 function gtd_solo_all --description "Arrange GTD solo workspaces including internal fixed workspaces"
     set -l failed 0
 
-    workspace_run_step "cleanup GTD wide spaces" gtd_cleanup_wide_spaces
+    workspace_run_step "cleanup GTD wide spaces" workspace_cleanup_mode_spaces gtd wide
     or set failed 1
 
-    workspace_run_step "cleanup GTD tall spaces" gtd_cleanup_tall_spaces
+    workspace_run_step "cleanup GTD tall spaces" workspace_cleanup_mode_spaces gtd tall
     or set failed 1
 
     set -l old_skip_labeled_cleanup "$WORKSPACE_SKIP_LABELED_CLEANUP"
@@ -34,10 +34,10 @@ function gtd_solo_all --description "Arrange GTD solo workspaces including inter
         set -e WORKSPACE_SKIP_LABELED_CLEANUP
     end
 
-    workspace_run_step "final cleanup GTD wide spaces" gtd_cleanup_wide_spaces
+    workspace_run_step "final cleanup GTD wide spaces" workspace_cleanup_mode_spaces gtd wide
     or set failed 1
 
-    workspace_run_step "final cleanup GTD tall spaces" gtd_cleanup_tall_spaces
+    workspace_run_step "final cleanup GTD tall spaces" workspace_cleanup_mode_spaces gtd tall
     or set failed 1
 
     return $failed

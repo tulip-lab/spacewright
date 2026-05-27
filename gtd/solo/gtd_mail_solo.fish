@@ -1,7 +1,6 @@
 function gtd_mail_solo --description "Collect Thunderbird onto the solo GTD mail workspace"
-    gtd_cleanup_wide_spaces
-    gtd_cleanup_tall_spaces
-
+    workspace_cleanup_mode_spaces gtd wide
+    workspace_cleanup_mode_spaces gtd tall
     set -l label gtd_mail_solo
     set -l windows_json (ws_query_windows "gtd_mail_solo" initial); or return 1
 
@@ -27,8 +26,8 @@ function gtd_mail_solo --description "Collect Thunderbird onto the solo GTD mail
         ws_window $tb --grid 1:1:0:0:1:1
     end
 
-    gtd_cleanup_wide_spaces
-    gtd_cleanup_tall_spaces
+    workspace_cleanup_mode_spaces gtd wide
+    workspace_cleanup_mode_spaces gtd tall
     ws_focus_space $target_space
     cleanup_unlabeled_empty_spaces $target_space
 end

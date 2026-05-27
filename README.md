@@ -132,8 +132,8 @@ Additional loaded entry/helper commands include:
 - `work_diagnostics`
 - `work_bad_windows`
 - `work_clear_bad_windows`
-- `work_cleanup_empty_labeled_spaces`
-- `work_cleanup_empty_unlabeled_spaces`
+- `workspace_cleanup_known_labeled_spaces`
+- `cleanup_unlabeled_empty_spaces`
 - `work_recover_light`
 - `work_command_check`
 - `ws_yabai`
@@ -224,8 +224,8 @@ work_bad_windows --summary
 work_bad_windows --expired
 work_bad_windows --missing
 work_clear_bad_windows --expired
-work_cleanup_empty_labeled_spaces
-work_cleanup_empty_unlabeled_spaces
+workspace_cleanup_known_labeled_spaces
+cleanup_unlabeled_empty_spaces
 work_recover_light
 work_display_health
 ```
@@ -236,8 +236,8 @@ The recovery rules are intentionally limited:
 - `work_doctor` runs read-only syntax, load, dependency, display, space, and cache checks.
 - `work_bad_windows` only prints cached bad yabai window IDs and supports `--summary`, `--active`, `--expired`, `--present`, and `--missing`.
 - `work_clear_bad_windows` only clears `/tmp/workspace-ws-window-bad`; use `--expired`, `--missing`, `--present`, or `--active` for targeted cleanup, and no flag or `--all` for full cache cleanup.
-- `work_cleanup_empty_labeled_spaces` destroys only empty spaces with known workspace labels.
-- `work_cleanup_empty_unlabeled_spaces` destroys empty unlabeled spaces except the current protected space.
+- `workspace_cleanup_known_labeled_spaces` destroys only empty spaces with known workspace labels.
+- `cleanup_unlabeled_empty_spaces` destroys empty unlabeled spaces except the current protected space.
 - `work_recover_light` runs diagnostics, then the two empty-space cleanup commands, then diagnostics again.
 
 `work_recover_light` does not move windows, does not apply layouts, and does not switch display profiles.

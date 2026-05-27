@@ -1,5 +1,5 @@
 function display_apply_wide_left --description "Apply wide-left display layout and reload display/workspace functions"
-    display_wide_left
+    ~/.config/displayprofiles/display-primary-plus-wide-left.fish
     or return $status
 
     display_reload

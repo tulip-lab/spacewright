@@ -37,8 +37,7 @@ function office_writing_tall --description "Collect Word and ChatGPT onto the ta
     #   - It clears unlabeled empty spaces on the target display at the end.
     # -------------------------------------------------------------------------
 
-    office_cleanup_wide_spaces
-
+    workspace_cleanup_mode_spaces office wide
     set -l label office_writing_tall
 
     # 1. Find Word first; if not found, do not create the workspace

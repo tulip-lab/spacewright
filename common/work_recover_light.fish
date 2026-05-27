@@ -4,11 +4,11 @@ function work_recover_light --description "Run conservative workspace recovery w
 
     echo
     echo "===== CLEAN EMPTY LABELED SPACES ====="
-    work_cleanup_empty_labeled_spaces
+    workspace_cleanup_known_labeled_spaces
 
     echo
     echo "===== CLEAN EMPTY UNLABELED SPACES ====="
-    work_cleanup_empty_unlabeled_spaces
+    cleanup_unlabeled_empty_spaces
 
     echo
     echo "===== AFTER RECOVERY ====="

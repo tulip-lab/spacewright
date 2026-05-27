@@ -46,9 +46,8 @@ function gtd_review_tall --description "Collect review-related windows onto the 
     # -------------------------------------------------------------------------
     # 1. Cleanup GTD wide spaces before entering tall mode
     # -------------------------------------------------------------------------
-    gtd_cleanup_wide_spaces
-    gtd_cleanup_solo_spaces
-
+    workspace_cleanup_mode_spaces gtd wide
+    workspace_cleanup_mode_spaces gtd solo
     set -l label gtd_review_tall
 
     # -------------------------------------------------------------------------
@@ -96,7 +95,7 @@ function gtd_review_tall --description "Collect review-related windows onto the 
     # -------------------------------------------------------------------------
     # 5. Normalize target space state
     # -------------------------------------------------------------------------
-    workspace_focus_labeled_space $label $target_space $target_display float gtd_cleanup_wide_spaces gtd_cleanup_solo_spaces
+    workspace_focus_labeled_space $label $target_space $target_display float gtd:wide gtd:solo
     or return 1
 
     # -------------------------------------------------------------------------
@@ -155,7 +154,7 @@ function gtd_review_tall --description "Collect review-related windows onto the 
     # 11. Final focus and cleanup
     # -------------------------------------------------------------------------
     ws_focus_space $target_space
-    gtd_cleanup_wide_spaces
-    gtd_cleanup_solo_spaces
+    workspace_cleanup_mode_spaces gtd wide
+    workspace_cleanup_mode_spaces gtd solo
     cleanup_unlabeled_empty_spaces $target_space
 end

@@ -1,7 +1,6 @@
 function coding_solo --description "Arrange coding solo workspaces and internal coding controls"
-    coding_cleanup_wide_spaces
-    coding_cleanup_tall_spaces
-
+    workspace_cleanup_mode_spaces coding wide
+    workspace_cleanup_mode_spaces coding tall
     set -l old_skip_labeled_cleanup "$WORKSPACE_SKIP_LABELED_CLEANUP"
     set -gx WORKSPACE_SKIP_LABELED_CLEANUP 1
 
@@ -14,6 +13,6 @@ function coding_solo --description "Arrange coding solo workspaces and internal 
         set -e WORKSPACE_SKIP_LABELED_CLEANUP
     end
 
-    coding_cleanup_wide_spaces
-    coding_cleanup_tall_spaces
+    workspace_cleanup_mode_spaces coding wide
+    workspace_cleanup_mode_spaces coding tall
 end

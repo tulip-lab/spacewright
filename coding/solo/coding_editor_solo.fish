@@ -1,7 +1,6 @@
 function coding_editor_solo --description "Collect VS Code and Codex onto the solo coding editor workspace"
-    coding_cleanup_wide_spaces
-    coding_cleanup_tall_spaces
-
+    workspace_cleanup_mode_spaces coding wide
+    workspace_cleanup_mode_spaces coding tall
     set -l label coding_editor_solo
     set -l windows_json (ws_query_windows "coding_editor_solo" initial); or return 1
 
@@ -37,8 +36,8 @@ function coding_editor_solo --description "Collect VS Code and Codex onto the so
         end
     end
 
-    coding_cleanup_wide_spaces
-    coding_cleanup_tall_spaces
+    workspace_cleanup_mode_spaces coding wide
+    workspace_cleanup_mode_spaces coding tall
     ws_focus_space $target_space
     cleanup_unlabeled_empty_spaces $target_space
 end

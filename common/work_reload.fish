@@ -25,8 +25,6 @@ function work_reload --description "Reload all workspace display/common/module f
     source ~/.config/fish/functions/workspace/common/work_diagnostics.fish
     source ~/.config/fish/functions/workspace/common/work_bad_windows.fish
     source ~/.config/fish/functions/workspace/common/work_clear_bad_windows.fish
-    source ~/.config/fish/functions/workspace/common/work_cleanup_empty_labeled_spaces.fish
-    source ~/.config/fish/functions/workspace/common/work_cleanup_empty_unlabeled_spaces.fish
     source ~/.config/fish/functions/workspace/common/work_recover_light.fish
     source ~/.config/fish/functions/workspace/common/work_command_check.fish
     source ~/.config/fish/functions/workspace/common/work_inventory.fish

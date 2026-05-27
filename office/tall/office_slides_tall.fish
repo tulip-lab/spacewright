@@ -37,8 +37,7 @@ function office_slides_tall --description "Collect PowerPoint and ChatGPT onto t
     #   - It clears unlabeled empty spaces on the target display at the end.
     # -------------------------------------------------------------------------
 
-    office_cleanup_wide_spaces
-
+    workspace_cleanup_mode_spaces office wide
     set -l label office_slides_tall
 
     # 1. Find PowerPoint first; if not found, do not create the workspace

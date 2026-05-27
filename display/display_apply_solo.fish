@@ -1,5 +1,5 @@
 function display_apply_solo --description "Apply solo primary-display layout and reload display/workspace functions"
-    display_solo
+    ~/.config/displayprofiles/display-solo-primary.fish
     or return $status
 
     display_reload

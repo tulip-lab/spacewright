@@ -8,8 +8,9 @@ function work_command_check --description "Check that documented workspace comma
         work_mode_status \
         work_bad_windows \
         work_clear_bad_windows \
-        work_cleanup_empty_labeled_spaces \
-        work_cleanup_empty_unlabeled_spaces \
+        workspace_cleanup_mode_spaces \
+        workspace_cleanup_known_labeled_spaces \
+        cleanup_unlabeled_empty_spaces \
         work_recover_light \
         work_inventory \
         work_doctor \

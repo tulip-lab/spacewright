@@ -35,9 +35,8 @@ function gtd_support_wide --description "Collect Dia onto the wide GTD support w
     # -------------------------------------------------------------------------
     # 1. Cleanup GTD tall spaces before entering wide mode
     # -------------------------------------------------------------------------
-    gtd_cleanup_tall_spaces
-    gtd_cleanup_solo_spaces
-
+    workspace_cleanup_mode_spaces gtd tall
+    workspace_cleanup_mode_spaces gtd solo
     set -l label gtd_support_wide
 
     # -------------------------------------------------------------------------
@@ -60,7 +59,7 @@ function gtd_support_wide --description "Collect Dia onto the wide GTD support w
     # -------------------------------------------------------------------------
     # 3. Prepare target labeled space
     # -------------------------------------------------------------------------
-    set -l target_space (workspace_prepare_labeled_space $label $target_display float gtd_cleanup_tall_spaces gtd_cleanup_solo_spaces)
+    set -l target_space (workspace_prepare_labeled_space $label $target_display float gtd:tall gtd:solo)
     or return 1
 
     # -------------------------------------------------------------------------
@@ -85,7 +84,7 @@ function gtd_support_wide --description "Collect Dia onto the wide GTD support w
     # 8. Final focus and cleanup
     # -------------------------------------------------------------------------
     ws_focus_space $target_space
-    gtd_cleanup_tall_spaces
-    gtd_cleanup_solo_spaces
+    workspace_cleanup_mode_spaces gtd tall
+    workspace_cleanup_mode_spaces gtd solo
     cleanup_unlabeled_empty_spaces $target_space
 end

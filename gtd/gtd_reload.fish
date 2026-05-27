@@ -17,10 +17,7 @@ function gtd_reload --description "Reload all GTD workspace functions and helper
         source_workspace_common
     end
 
-    # 2. GTD cleanup / metadata helpers
-    source ~/.config/fish/functions/workspace/gtd/gtd_cleanup_wide_spaces.fish
-    source ~/.config/fish/functions/workspace/gtd/gtd_cleanup_tall_spaces.fish
-    source ~/.config/fish/functions/workspace/gtd/gtd_cleanup_solo_spaces.fish
+    # 2. GTD metadata helpers
     source ~/.config/fish/functions/workspace/gtd/gtd_reset_labels.fish
     source ~/.config/fish/functions/workspace/gtd/gtd_labels.fish
     source ~/.config/fish/functions/workspace/gtd/gtd_apps.fish

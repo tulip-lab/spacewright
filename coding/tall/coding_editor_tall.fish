@@ -38,9 +38,8 @@ function coding_editor_tall --description "Collect VS Code and Codex onto the ta
     # -------------------------------------------------------------------------
     # 1. Cleanup coding wide spaces before entering tall mode
     # -------------------------------------------------------------------------
-    coding_cleanup_wide_spaces
-    coding_cleanup_solo_spaces
-
+    workspace_cleanup_mode_spaces coding wide
+    workspace_cleanup_mode_spaces coding solo
     set -l label coding_editor_tall
 
     # -------------------------------------------------------------------------
@@ -65,7 +64,7 @@ function coding_editor_tall --description "Collect VS Code and Codex onto the ta
     # -------------------------------------------------------------------------
     # 4. Prepare target labeled space
     # -------------------------------------------------------------------------
-    set -l target_space (workspace_prepare_labeled_space $label $target_display float coding_cleanup_wide_spaces coding_cleanup_solo_spaces)
+    set -l target_space (workspace_prepare_labeled_space $label $target_display float coding:wide coding:solo)
     or return 1
 
     # -------------------------------------------------------------------------
@@ -103,7 +102,7 @@ function coding_editor_tall --description "Collect VS Code and Codex onto the ta
     # 9. Final focus and cleanup
     # -------------------------------------------------------------------------
     ws_focus_space $target_space
-    coding_cleanup_wide_spaces
-    coding_cleanup_solo_spaces
+    workspace_cleanup_mode_spaces coding wide
+    workspace_cleanup_mode_spaces coding solo
     cleanup_unlabeled_empty_spaces $target_space
 end

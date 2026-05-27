@@ -38,9 +38,8 @@ function coding_editor_wide --description "Collect VS Code and Codex onto the wi
     # -------------------------------------------------------------------------
     # 1. Cleanup coding tall spaces before entering wide mode
     # -------------------------------------------------------------------------
-    coding_cleanup_tall_spaces
-    coding_cleanup_solo_spaces
-
+    workspace_cleanup_mode_spaces coding tall
+    workspace_cleanup_mode_spaces coding solo
     set -l label coding_editor_wide
 
     # -------------------------------------------------------------------------
@@ -65,7 +64,7 @@ function coding_editor_wide --description "Collect VS Code and Codex onto the wi
     # -------------------------------------------------------------------------
     # 4. Prepare target labeled space
     # -------------------------------------------------------------------------
-    set -l target_space (workspace_prepare_labeled_space $label $target_display float coding_cleanup_tall_spaces coding_cleanup_solo_spaces)
+    set -l target_space (workspace_prepare_labeled_space $label $target_display float coding:tall coding:solo)
     or return 1
 
     # -------------------------------------------------------------------------
@@ -103,7 +102,7 @@ function coding_editor_wide --description "Collect VS Code and Codex onto the wi
     # 9. Final focus and cleanup
     # -------------------------------------------------------------------------
     ws_focus_space $target_space
-    coding_cleanup_tall_spaces
-    coding_cleanup_solo_spaces
+    workspace_cleanup_mode_spaces coding tall
+    workspace_cleanup_mode_spaces coding solo
     cleanup_unlabeled_empty_spaces $target_space
 end

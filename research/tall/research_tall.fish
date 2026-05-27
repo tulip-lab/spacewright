@@ -37,9 +37,8 @@ function research_tall --description "Collect Zotero and ChatGPT onto the tall r
     #   - It clears unlabeled empty spaces on the target display at the end.
     # -------------------------------------------------------------------------
 
-    research_cleanup_wide_spaces
-    research_cleanup_solo_spaces
-
+    workspace_cleanup_mode_spaces research wide
+    workspace_cleanup_mode_spaces research solo
     set -l label research_tall
 
     # 1. Find Zotero first; if not found, do not create the workspace
@@ -62,7 +61,7 @@ function research_tall --description "Collect Zotero and ChatGPT onto the tall r
     set -l target_display (resolve_workspace_external_display tall)
 
     # 3. Prepare target labeled space
-    set -l target_space (workspace_prepare_labeled_space $label $target_display float research_cleanup_wide_spaces research_cleanup_solo_spaces)
+    set -l target_space (workspace_prepare_labeled_space $label $target_display float research:wide research:solo)
     or return 1
 
     # 5. Move captured windows
@@ -87,7 +86,7 @@ function research_tall --description "Collect Zotero and ChatGPT onto the tall r
 
     # 8. Final focus and cleanup
     ws_focus_space $target_space
-    research_cleanup_wide_spaces
-    research_cleanup_solo_spaces
+    workspace_cleanup_mode_spaces research wide
+    workspace_cleanup_mode_spaces research solo
     cleanup_unlabeled_empty_spaces $target_space
 end

@@ -16,17 +16,12 @@ function research_reload --description "Reload all research workspace functions 
         source_workspace_common
     end
 
-    # 2. Research cleanup helpers
-    source ~/.config/fish/functions/workspace/research/research_cleanup_wide_spaces.fish
-    source ~/.config/fish/functions/workspace/research/research_cleanup_tall_spaces.fish
-    source ~/.config/fish/functions/workspace/research/research_cleanup_solo_spaces.fish
-
-    # 3. Concrete research workspace functions
+    # 2. Concrete research workspace functions
     source ~/.config/fish/functions/workspace/research/solo/research_solo.fish
     source ~/.config/fish/functions/workspace/research/wide/research_wide.fish
     source ~/.config/fish/functions/workspace/research/tall/research_tall.fish
 
-    # 4. Status / inspection helpers
+    # 3. Status / inspection helpers
     source ~/.config/fish/functions/workspace/research/research_status.fish
     source ~/.config/fish/functions/workspace/research/research_mode_status.fish
 end

@@ -38,9 +38,8 @@ function gtd_support_tall --description "Collect Dia onto the tall GTD support w
     # -------------------------------------------------------------------------
     # 1. Cleanup GTD wide spaces before entering tall mode
     # -------------------------------------------------------------------------
-    gtd_cleanup_wide_spaces
-    gtd_cleanup_solo_spaces
-
+    workspace_cleanup_mode_spaces gtd wide
+    workspace_cleanup_mode_spaces gtd solo
     set -l label gtd_support_tall
 
     # -------------------------------------------------------------------------
@@ -63,7 +62,7 @@ function gtd_support_tall --description "Collect Dia onto the tall GTD support w
     # -------------------------------------------------------------------------
     # 3. Prepare target labeled space
     # -------------------------------------------------------------------------
-    set -l target_space (workspace_prepare_labeled_space $label $target_display float gtd_cleanup_wide_spaces gtd_cleanup_solo_spaces)
+    set -l target_space (workspace_prepare_labeled_space $label $target_display float gtd:wide gtd:solo)
     or return 1
 
     # -------------------------------------------------------------------------
@@ -89,7 +88,7 @@ function gtd_support_tall --description "Collect Dia onto the tall GTD support w
     # 8. Final focus and cleanup
     # -------------------------------------------------------------------------
     ws_focus_space $target_space
-    gtd_cleanup_wide_spaces
-    gtd_cleanup_solo_spaces
+    workspace_cleanup_mode_spaces gtd wide
+    workspace_cleanup_mode_spaces gtd solo
     cleanup_unlabeled_empty_spaces $target_space
 end

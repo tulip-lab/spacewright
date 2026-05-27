@@ -1,7 +1,6 @@
 function gtd_support_solo --description "Collect Dia onto the solo GTD support workspace"
-    gtd_cleanup_wide_spaces
-    gtd_cleanup_tall_spaces
-
+    workspace_cleanup_mode_spaces gtd wide
+    workspace_cleanup_mode_spaces gtd tall
     set -l label gtd_support_solo
     set -l windows_json (ws_query_windows "gtd_support_solo" initial); or return 1
 
@@ -25,8 +24,8 @@ function gtd_support_solo --description "Collect Dia onto the solo GTD support w
     set dia_windows (printf '%s\n' "$windows_json_final" | ws_find_windows "Dia" --space $target_space)
     gtd_support_layout_dia_windows solo $dia_windows
 
-    gtd_cleanup_wide_spaces
-    gtd_cleanup_tall_spaces
+    workspace_cleanup_mode_spaces gtd wide
+    workspace_cleanup_mode_spaces gtd tall
     ws_focus_space $target_space
     cleanup_unlabeled_empty_spaces $target_space
 end

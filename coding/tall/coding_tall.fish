@@ -12,9 +12,8 @@ function coding_tall --description "Arrange all coding tall workspaces and clean
     #   - coding_editor_tall
     # -------------------------------------------------------------------------
 
-    coding_cleanup_wide_spaces
-    coding_cleanup_solo_spaces
-
+    workspace_cleanup_mode_spaces coding wide
+    workspace_cleanup_mode_spaces coding solo
     set -l old_skip_labeled_cleanup "$WORKSPACE_SKIP_LABELED_CLEANUP"
     set -gx WORKSPACE_SKIP_LABELED_CLEANUP 1
 
@@ -26,6 +25,6 @@ function coding_tall --description "Arrange all coding tall workspaces and clean
         set -e WORKSPACE_SKIP_LABELED_CLEANUP
     end
 
-    coding_cleanup_wide_spaces
-    coding_cleanup_solo_spaces
+    workspace_cleanup_mode_spaces coding wide
+    workspace_cleanup_mode_spaces coding solo
 end

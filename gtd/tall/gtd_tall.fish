@@ -15,9 +15,8 @@ function gtd_tall --description "Arrange all GTD tall workspaces and clean oppos
     #   - gtd_review_tall
     # -------------------------------------------------------------------------
 
-    gtd_cleanup_wide_spaces
-    gtd_cleanup_solo_spaces
-
+    workspace_cleanup_mode_spaces gtd wide
+    workspace_cleanup_mode_spaces gtd solo
     set -l old_skip_labeled_cleanup "$WORKSPACE_SKIP_LABELED_CLEANUP"
     set -gx WORKSPACE_SKIP_LABELED_CLEANUP 1
 
@@ -33,6 +32,6 @@ function gtd_tall --description "Arrange all GTD tall workspaces and clean oppos
         set -e WORKSPACE_SKIP_LABELED_CLEANUP
     end
 
-    gtd_cleanup_wide_spaces
-    gtd_cleanup_solo_spaces
+    workspace_cleanup_mode_spaces gtd wide
+    workspace_cleanup_mode_spaces gtd solo
 end

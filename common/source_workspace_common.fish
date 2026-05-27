@@ -17,6 +17,7 @@ function source_workspace_common --description "Source shared workspace helper f
     source ~/.config/fish/functions/workspace/common/workspace_retarget_contaminated_space.fish
     source ~/.config/fish/functions/workspace/common/workspace_focus_labeled_space.fish
     source ~/.config/fish/functions/workspace/common/workspace_prepare_labeled_space.fish
+    source ~/.config/fish/functions/workspace/common/workspace_cleanup_spaces.fish
     source ~/.config/fish/functions/workspace/common/ws_move_app_to_space.fish
     source ~/.config/fish/functions/workspace/common/ws_move_app_pair_to_space.fish
     source ~/.config/fish/functions/workspace/common/ws_move_windows_to_space.fish

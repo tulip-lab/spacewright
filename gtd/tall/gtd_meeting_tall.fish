@@ -45,9 +45,8 @@ function gtd_meeting_tall --description "Collect Outlook, Zoom and Teams onto th
     # -------------------------------------------------------------------------
     # 1. Cleanup GTD wide spaces before entering tall mode
     # -------------------------------------------------------------------------
-    gtd_cleanup_wide_spaces
-    gtd_cleanup_solo_spaces
-
+    workspace_cleanup_mode_spaces gtd wide
+    workspace_cleanup_mode_spaces gtd solo
     set -l label gtd_meeting_tall
     set -l target_display (resolve_workspace_external_display tall)
 
@@ -98,7 +97,7 @@ function gtd_meeting_tall --description "Collect Outlook, Zoom and Teams onto th
         '^(Microsoft Outlook|zoom[.]us|Microsoft Teams|MSTeams)$')
     or return 1
 
-    workspace_focus_labeled_space $label $target_space $target_display float gtd_cleanup_wide_spaces gtd_cleanup_solo_spaces
+    workspace_focus_labeled_space $label $target_space $target_display float gtd:wide gtd:solo
     or return 1
 
     if test -z "$out"
@@ -184,7 +183,7 @@ function gtd_meeting_tall --description "Collect Outlook, Zoom and Teams onto th
     # 10. Final focus and cleanup
     # -------------------------------------------------------------------------
     ws_focus_space $target_space
-    gtd_cleanup_wide_spaces
-    gtd_cleanup_solo_spaces
+    workspace_cleanup_mode_spaces gtd wide
+    workspace_cleanup_mode_spaces gtd solo
     cleanup_unlabeled_empty_spaces $target_space
 end

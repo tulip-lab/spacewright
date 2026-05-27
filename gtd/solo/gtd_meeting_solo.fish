@@ -1,8 +1,7 @@
 function gtd_meeting_solo --description "Collect meeting apps onto the solo GTD meeting workspace"
     workspace_debug_step gtd_meeting_solo cleanup
-    gtd_cleanup_wide_spaces
-    gtd_cleanup_tall_spaces
-
+    workspace_cleanup_mode_spaces gtd wide
+    workspace_cleanup_mode_spaces gtd tall
     set -l label gtd_meeting_solo
     workspace_debug_step gtd_meeting_solo query-initial
     set -l windows_json (ws_query_windows "gtd_meeting_solo" initial); or return 1
@@ -121,8 +120,8 @@ function gtd_meeting_solo --description "Collect meeting apps onto the solo GTD 
     end
 
     workspace_debug_step gtd_meeting_solo cleanup-final
-    gtd_cleanup_wide_spaces
-    gtd_cleanup_tall_spaces
+    workspace_cleanup_mode_spaces gtd wide
+    workspace_cleanup_mode_spaces gtd tall
     ws_focus_space $target_space
     cleanup_unlabeled_empty_spaces $target_space
 end
