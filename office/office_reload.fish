@@ -27,5 +27,4 @@ function office_reload --description "Reload all office workspace functions and 
 
     # 3. Status / inspection helpers
     source ~/.config/fish/functions/workspace/office/office_status.fish
-    source ~/.config/fish/functions/workspace/office/office_mode_status.fish
 end

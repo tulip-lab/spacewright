@@ -4,8 +4,8 @@ function work_inventory --description "Print a read-only workspace workflow inve
 
     echo "===== TOP-LEVEL ENTRIES ====="
     printf "%-18s %s\n" "work_solo" "coding_solo, research_solo, gtd_solo_all"
-    printf "%-18s %s\n" "work_wide" "coding_wide_all, research_wide, office_wide, gtd_wide_all"
-    printf "%-18s %s\n" "work_tall" "coding_tall_all, research_tall, office_tall, gtd_tall_all"
+    printf "%-18s %s\n" "work_wide" "coding_wide, coding_control, research_wide, office_wide, gtd_wide, gtd_chat, gtd_calendar"
+    printf "%-18s %s\n" "work_tall" "coding_tall, coding_control, research_tall, office_tall, gtd_tall, gtd_chat, gtd_calendar"
     printf "%-18s %s\n" "work_status" "diagnostics plus module status snapshots"
     printf "%-18s %s\n" "work_reload" "reload common, display, and module functions"
     printf "%-18s %s\n" "work_check" "reload plus diagnostics and module mode status"
@@ -16,7 +16,7 @@ function work_inventory --description "Print a read-only workspace workflow inve
     printf "%-10s %-20s %s\n" "module" "entries" "managed apps"
     printf "%-10s %-20s %s\n" "coding" "solo, wide, tall" "Code, Codex; primary-display coding_control"
     printf "%-10s %-20s %s\n" "research" "solo, wide, tall" "Zotero, ChatGPT"
-    printf "%-10s %-20s %s\n" "gtd" "solo_all, wide_all, tall_all" "Dia, Finder, Preview, Notes, ChatGPT, Thunderbird, Outlook, Zoom, Teams; primary-display chat/calendar"
+    printf "%-10s %-20s %s\n" "gtd" "solo_all, wide, tall" "Dia, Finder, Preview, Notes, ChatGPT, Thunderbird, Outlook, Zoom, Teams; primary-display chat/calendar"
     printf "%-10s %-20s %s\n" "office" "wide, tall" "Word, PowerPoint, ChatGPT"
     echo
 

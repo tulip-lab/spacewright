@@ -49,15 +49,9 @@ function work_command_check --description "Check that documented workspace comma
         coding_status \
         office_status \
         research_status \
-        gtd_mode_status \
-        coding_mode_status \
-        office_mode_status \
-        research_mode_status \
         coding_solo \
         coding_wide \
         coding_tall \
-        coding_wide_all \
-        coding_tall_all \
         coding_control \
         research_solo \
         research_wide \
@@ -75,10 +69,7 @@ function work_command_check --description "Check that documented workspace comma
         gtd_meeting_wide \
         gtd_meeting_tall \
         gtd_solo_all \
-        gtd_wide_all \
-        gtd_tall_all \
         gtd_find_outlook_window \
-        gtd_find_chatgpt_window \
         gtd_find_zoom_window \
         gtd_find_teams_window \
         gtd_reopen_outlook \

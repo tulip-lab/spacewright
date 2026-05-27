@@ -23,5 +23,4 @@ function research_reload --description "Reload all research workspace functions 
 
     # 3. Status / inspection helpers
     source ~/.config/fish/functions/workspace/research/research_status.fish
-    source ~/.config/fish/functions/workspace/research/research_mode_status.fish
 end

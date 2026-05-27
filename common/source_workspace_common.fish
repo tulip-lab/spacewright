@@ -1,6 +1,4 @@
 function source_workspace_common --description "Source shared workspace helper functions"
-    source ~/.config/fish/functions/workspace/common/focus_display_if_needed.fish
-    source ~/.config/fish/functions/workspace/common/focus_space_if_needed.fish
     source ~/.config/fish/functions/workspace/common/ws_focus_display.fish
     source ~/.config/fish/functions/workspace/common/ws_focus_space.fish
     source ~/.config/fish/functions/workspace/common/ws_yabai.fish
@@ -19,7 +17,6 @@ function source_workspace_common --description "Source shared workspace helper f
     source ~/.config/fish/functions/workspace/common/workspace_prepare_labeled_space.fish
     source ~/.config/fish/functions/workspace/common/workspace_cleanup_spaces.fish
     source ~/.config/fish/functions/workspace/common/ws_move_app_to_space.fish
-    source ~/.config/fish/functions/workspace/common/ws_move_app_pair_to_space.fish
     source ~/.config/fish/functions/workspace/common/ws_move_windows_to_space.fish
     source ~/.config/fish/functions/workspace/common/ws_window.fish
 
@@ -36,7 +33,6 @@ function source_workspace_common --description "Source shared workspace helper f
     source ~/.config/fish/functions/workspace/common/workspace_mode_status_section.fish
     source ~/.config/fish/functions/workspace/common/work_display_health.fish
 
-    source ~/.config/fish/functions/workspace/common/resolve_target_display.fish
     source ~/.config/fish/functions/workspace/common/resolve_workspace_primary_display.fish
     source ~/.config/fish/functions/workspace/common/resolve_workspace_external_display.fish
 end

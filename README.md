@@ -85,7 +85,6 @@ Current core helpers include:
 - `workspace_status_snapshot`
 - `workspace_mode_status_section`
 - `cleanup_unlabeled_empty_spaces`
-- `resolve_target_display`
 - `resolve_workspace_primary_display`
 - `resolve_workspace_external_display`
 - `ws_focus_display`
@@ -414,13 +413,10 @@ office_status
 research_status
 ```
 
-Mode-level inspection commands are:
+Mode-level inspection is unified in:
 
 ```fish
-gtd_mode_status
-coding_mode_status
-office_mode_status
-research_mode_status
+work_mode_status
 ```
 
 These commands are intended for day-to-day maintenance and regression checking after changes to workspace behavior.

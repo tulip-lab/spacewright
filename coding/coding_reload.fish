@@ -26,11 +26,6 @@ function coding_reload --description "Reload all coding workspace functions and 
     source ~/.config/fish/functions/workspace/coding/tall/coding_tall.fish
     source ~/.config/fish/functions/workspace/coding/internal/coding_control.fish
 
-    # 3. Aggregate entry functions
-    source ~/.config/fish/functions/workspace/coding/coding_wide_all.fish
-    source ~/.config/fish/functions/workspace/coding/coding_tall_all.fish
-
-    # 4. Status / inspection helpers
+    # 3. Status / inspection helpers
     source ~/.config/fish/functions/workspace/coding/coding_status.fish
-    source ~/.config/fish/functions/workspace/coding/coding_mode_status.fish
 end

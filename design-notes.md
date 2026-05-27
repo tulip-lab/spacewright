@@ -150,7 +150,6 @@ Move helpers move caller-provided IDs only. They do not rediscover other same-ap
 Useful move helpers:
 
 - `ws_move_app_to_space`
-- `ws_move_app_pair_to_space`
 - `ws_move_windows_to_space`
 - `workspace_capture_app_window`
 
@@ -255,8 +254,6 @@ Common cleanup wrappers are intentionally thin and mode-named:
 This keeps behavior deterministic without hidden precedence rules.
 
 ChatGPT-owning workspaces capture a movable `ChatGPT` window through `workspace_capture_app_window`. If ChatGPT exists but yabai does not expose a movable window, the helper activates ChatGPT, polls for a refreshed movable window, retries the move once, and warns when yabai still cannot move it.
-
-`gtd_find_chatgpt_window` remains as a narrow compatibility wrapper around the shared helper. New modules should call `workspace_find_app_window` or `workspace_capture_app_window` directly unless ChatGPT develops GTD-specific selection rules.
 
 Coding editor modes use `Codex` instead of `ChatGPT` as the optional helper app. If Codex is not available, VS Code uses the full coding editor workspace.
 
