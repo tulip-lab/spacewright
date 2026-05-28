@@ -103,6 +103,7 @@ Current core helpers include:
 - `workspace_run_mode_steps`
 - `workspace_run_cleanup_specs`
 - `workspace_print_app_status`
+- `workspace_simple_module_status`
 - `workspace_prepare_labeled_space`
 - `workspace_focus_labeled_space`
 - `workspace_retarget_contaminated_space`
@@ -116,6 +117,12 @@ Public module commands stay stable, but thin mode wrappers are grouped by module
 - `gtd/gtd_entries.fish`
 
 This keeps the command surface readable while avoiding one tiny file per solo/wide/tall wrapper.
+
+The simple `coding_status`, `office_status`, and `research_status` wrappers are grouped in `common/work_module_status_entries.fish`; `gtd_status` remains module-local because it delegates to `gtd_apps`.
+
+Display-role commands such as `set_workspace_primary_display_uuid`, `resolve_workspace_primary_display`, and `workspace_resolve_display_role` are grouped in `common/workspace_display_roles.fish`.
+
+Runner helpers are grouped in `common/workspace_runners.fish`, and labeled-space entry helpers are grouped in `common/workspace_labeled_space_entry.fish`.
 
 ## Inventory And Doctor
 

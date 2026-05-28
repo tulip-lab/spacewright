@@ -26,6 +26,17 @@ Public command names remain stable for shell and skhd use, but simple mode wrapp
 
 Module reloaders source these grouped entry files, plus separate internal helpers when app-specific recovery or multi-window behavior needs its own implementation. This avoids one tiny file per solo/wide/tall wrapper while keeping the workflow boundary explicit.
 
+Top-level and common wrappers follow the same grouping rule:
+
+- `common/work_entries.fish` defines `work_solo`, `work_wide`, and `work_tall`
+- `display/display_entries.fish` defines `display_apply_*` entries and their shared profile runner
+- `common/work_module_status_entries.fish` defines simple coding, office, and research status wrappers
+- `common/workspace_display_roles.fish` defines primary display UUID storage and display-role resolvers
+- `common/workspace_runners.fish` defines step, cleanup-spec, and mode-step runners
+- `common/workspace_labeled_space_entry.fish` defines labeled-space entry/focus wrappers
+
+Keep public command names stable for shell and skhd callers. Prefer grouping tiny same-layer wrappers by responsibility over creating one file for every public function.
+
 ### Display Roles
 
 Business-level workspace functions do not hardcode display UUIDs. The workspace primary display UUID is stored once and resolved through helpers:

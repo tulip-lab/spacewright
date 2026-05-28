@@ -6,7 +6,6 @@ function coding_reload --description "Reload all coding workspace functions and 
     # Reload order:
     #   1. Common workspace helpers
     #   2. Coding entry and internal workspace functions
-    #   3. Status / inspection helpers
     # -------------------------------------------------------------------------
 
     # 1. Common workspace helpers
@@ -19,6 +18,4 @@ function coding_reload --description "Reload all coding workspace functions and 
     source ~/.config/fish/functions/workspace/coding/coding_entries.fish
     source ~/.config/fish/functions/workspace/coding/internal/coding_control.fish
 
-    # 3. Status / inspection helpers
-    source ~/.config/fish/functions/workspace/coding/coding_status.fish
 end

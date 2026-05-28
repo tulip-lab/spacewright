@@ -37,7 +37,9 @@ function work_command_check --description "Check that documented workspace comma
         workspace_apply_primary_helper_space \
         workspace_retarget_contaminated_space \
         workspace_print_app_status \
+        workspace_simple_module_status \
         display_reload \
+        display_apply_profile_mode \
         display_verify_mode \
         display_apply_solo \
         display_apply_wide_left \

@@ -6,7 +6,6 @@ function office_reload --description "Reload all office workspace functions and 
     # Reload order:
     #   1. Common workspace helpers
     #   2. Office entry functions
-    #   3. Status / inspection helpers
     # -------------------------------------------------------------------------
 
     # 1. Common workspace helpers
@@ -18,6 +17,4 @@ function office_reload --description "Reload all office workspace functions and 
     # 2. Office entry functions
     source ~/.config/fish/functions/workspace/office/office_entries.fish
 
-    # 3. Status / inspection helpers
-    source ~/.config/fish/functions/workspace/office/office_status.fish
 end
