@@ -522,46 +522,196 @@ Runtime recovery should remain explicit, such as `killall Dock`, rather than hid
 
 #### Configurable Workspace Definitions
 
-This is the next major-version direction, but it should wait until the current fish-based workspace version is confirmed stable in daily use.
+This is the next major-version direction. The current fish-based implementation should remain the stable runtime until the configured runner has read-only checks, dry-run output, and at least one migrated workspace passing daily use.
 
-The goal is to make stable workspace definitions configurable without turning the system into a generic workflow engine. Public command entry points should remain stable. For example, users should still run `coding_control`, `gtd_meeting_tall`, or `work_tall`; those commands may internally use config later.
+The goal is to move app, space, and layout facts into data while keeping behavior, recovery, and safety in fish helpers. This should reduce repeated module code without turning the workspace system into a generic workflow engine.
 
-Potential configuration target:
+Public command entry points should remain recognizable. Users should still run `coding_control`, `gtd_meeting_tall`, `work_wide`, or skhd bindings; those commands may internally call a configured runner later. During migration, a thin fish wrapper may still exist for each public command, but it should only name a configured workspace or mode.
 
-- workspace labels
-- target display role: internal, external, or fallback rules
-- app/window selectors
-- window positions
-- mode-specific cleanup hooks
+##### Configuration Boundary
 
-Potential first config file:
+The configuration layer should own stable facts:
+
+- app aliases and accepted macOS app names
+- workspace ids and labels
+- target display role: `primary`, `external`, `wide`, `tall`, or `auto_external`
+- space layout such as `float`
+- required and optional window roles
+- selector policy for each window role
+- layout actions for each window role
+- mode composition, such as which workspace ids belong to `gtd_wide`
+- simple cleanup policy by family and mode
+
+The fish runtime should continue to own behavior:
+
+- display UUID discovery and primary-display persistence
+- display profile application
+- yabai and jq invocation, timeout handling, and retries
+- app-specific recovery, such as Outlook reopen behavior
+- bad-window cache mechanics
+- labeled-space creation, retargeting, and cleanup mechanics
+- actual window movement, confirmation, and diagnostics
+
+Do not put shell commands, raw jq filters, loops, conditionals, or arbitrary fallback chains in JSON.
+
+##### File Layout
+
+Start with one config file to avoid spreading data too early:
 
 ```text
 .config/fish/functions/workspace/config/workspaces.json
 ```
 
-The first config shape should stay deliberately small:
+Keep the schema documented here first. Add a separate JSON schema file only if validation grows beyond a small jq/fish checker.
+
+If the single file becomes hard to review later, split in this order:
+
+1. `apps.json`
+2. `layouts.json`
+3. `workspaces.json`
+4. `modes.json`
+
+##### Version 1 Shape
+
+The first runtime-compatible shape should stay deliberately small:
 
 ```json
 {
-  "coding_control": {
-    "label": "coding_control",
-    "display_role": "internal",
-    "space_layout": "float",
-    "required_windows": ["smartgit"],
-    "windows": {
-      "smartgit": {
-        "app": "SmartGit",
-        "movable": true,
-        "positions": [
-          { "move_abs": [300, 60] },
-          { "resize_abs": [1200, 1040] }
-        ]
+  "version": 1,
+  "apps": {
+    "vscode": {
+      "names": ["Code", "Visual Studio Code"]
+    },
+    "codex": {
+      "names": ["Codex"]
+    }
+  },
+  "layouts": {
+    "wide_primary_left_helper_right": [
+      {
+        "role": "primary",
+        "grid": "1:3:0:0:2:1"
+      },
+      {
+        "role": "helper",
+        "grid": "1:3:2:0:1:1"
+      }
+    ],
+    "single_full": [
+      {
+        "role": "primary",
+        "grid": "1:1:0:0:1:1"
       }
     }
+  },
+  "workspaces": {
+    "coding_editor_wide": {
+      "label": "coding_editor_wide",
+      "display_role": "wide",
+      "space_layout": "float",
+      "windows": [
+        {
+          "role": "primary",
+          "app_key": "vscode",
+          "required": true,
+          "movable": true
+        },
+        {
+          "role": "helper",
+          "app_key": "codex",
+          "required": false,
+          "movable": true
+        }
+      ],
+      "layout_ref": "wide_primary_left_helper_right",
+      "fallback_layout_ref": "single_full",
+      "cleanup": {
+        "family": "coding",
+        "opposite_modes": ["solo", "tall"]
+      }
+    }
+  },
+  "modes": {
+    "coding_wide": ["coding_editor_wide"],
+    "work_wide": ["gtd_wide", "coding_wide", "office_wide", "research_wide"]
   }
 }
 ```
+
+Prefer `grid` layouts for external WIDE/TALL workspaces because external monitors vary by size. Keep pixel-level `move_abs` and `resize_abs` as an escape hatch for primary-display fixed workspaces such as `coding_control`, and migrate those only after fractional/grid layouts have proven insufficient.
+
+Selectors should remain explainable:
+
+- exact app name through `app_key`
+- optional app name regex only when exact names are not enough
+- optional title include or exclude strings
+- `movable`
+- visible windows only
+- non-empty title when needed
+
+Each workspace should have a single explicit label. Config should never infer labels from command names at runtime.
+
+##### Runtime Runner
+
+The configured runner should be a deterministic adapter from data to existing helpers. Recommended phases:
+
+1. Load and validate the config version.
+2. Resolve the requested workspace or mode id.
+3. Resolve the target display role through existing display-role helpers.
+4. Query current windows once, then run configured selectors against that snapshot.
+5. Fail closed when required windows are missing.
+6. Prepare the labeled space only after config and required-window checks pass.
+7. Move selected windows to the labeled space and re-query to confirm final ownership.
+8. Apply layout actions.
+9. Run configured cleanup specs.
+10. Print concise status or debug output.
+
+The runner should support:
+
+- `workspace_config_check`
+- `workspace_config_get <workspace>`
+- `workspace_config_plan <workspace-or-mode>`
+- `workspace_run_configured <workspace>`
+- `workspace_run_configured_mode <mode>`
+- `--dry-run` for every configured movement path
+
+`workspace_config_plan` and `--dry-run` must not create spaces, move windows, apply display profiles, or destroy spaces. They should print the display role, label, matched windows, missing required windows, layout actions, and cleanup actions that would run.
+
+##### Migration Stages
+
+1. **Schema and read-only validation**
+   Add `workspaces.json`, `workspace_config_check`, `workspace_config_get`, and `workspace_config_plan`.
+   Include config validation in `work_smoke` and `work_doctor`.
+
+2. **Read-only inventory comparison**
+   Add `work_inventory` output for configured apps, workspaces, modes, and unmigrated fish-only entries.
+   This should make drift visible before behavior changes.
+
+3. **Migrate the simplest repeated entry first**
+   Start with one primary/helper workspace that already uses shared helpers and grid layouts, such as `coding_editor_wide` or `gtd_mail_wide`.
+   Keep the public command name unchanged.
+
+4. **Migrate simple families by pattern**
+   Candidate command families:
+   - `coding_editor_*`
+   - `gtd_mail_*`
+   - `office_writing_*`
+   - `office_slides_*`
+   - `research_*`
+
+5. **Migrate absolute-layout primary workspaces**
+   Move `coding_control` after the grid-based pilot is stable.
+   Use this stage to decide whether `move_abs` and `resize_abs` are still needed or whether a ratio-based frame layout is enough.
+
+6. **Evaluate GTD meeting after simple modules**
+   `gtd_meeting_*` may use configured final layout later, but Outlook and meeting-app recovery should remain in fish helpers such as `gtd_find_outlook_window`, `gtd_find_meeting_window`, and `gtd_reopen_outlook`.
+
+7. **Leave ownership-sensitive modules until last**
+   Keep these fish-first until there is strong evidence that config reduces complexity:
+   - `gtd_chat`
+   - `gtd_review_*`
+   - `gtd_support_*`
+   - any shared-app workspace where the last invoked module owns an app window
 
 Non-goals:
 
@@ -573,50 +723,27 @@ Non-goals:
 - do not support arbitrary jq expressions, conditionals, loops, or fallback chains in JSON
 - do not migrate Outlook, Dia, WhatsApp, or other special recovery behavior into config in the first version
 
-Recommended implementation stages:
-
-1. **Schema and read-only validation**
-   Add `workspaces.json`, `workspace_config_check`, and `workspace_config_get <workspace>`.
-   This stage must not move windows, create spaces, or apply layouts.
-
-2. **Migrate `coding_control` first**
-   `coding_control` is the best pilot because it targets the workspace primary display, has clear apps, uses absolute placement, and has little app-specific recovery logic.
-   Keep `coding_control` as the public entry point and call a configured runner internally.
-
-3. **Migrate simple repeated entry groups**
-   Candidate command families:
-   - `gtd_mail_*`
-   - `research_*`
-   - `office_writing_*`
-   - `office_slides_*`
-   - `coding_editor_*`
-
-4. **Evaluate GTD meeting after the simple modules**
-   `gtd_meeting_*` may use configured final layout later, but Outlook recovery should remain in fish helpers such as `gtd_find_outlook_window` and `gtd_reopen_outlook`.
-
-5. **Leave complex ownership modules until last**
-   Keep these fish-first until there is strong evidence that config helps:
-   - `gtd_chat`
-   - `gtd_review_*`
-   - `gtd_support_*`
-   - ChatGPT ownership-sensitive workspaces
-
 Likely helper set:
 
 - `workspace_config_check`
 - `workspace_config_get <workspace>`
+- `workspace_config_plan <workspace-or-mode>`
 - `workspace_select_configured_windows <workspace>`
 - `workspace_prepare_configured_space <workspace>`
 - `workspace_apply_configured_layout <workspace>`
 - `workspace_run_configured <workspace>`
+- `workspace_run_configured_mode <mode>`
 
 Technical guardrails:
 
 - fail closed on missing config, invalid schema, jq failure, display query failure, or missing required windows
 - do not create spaces or move windows when config validation fails
-- keep selectors explainable: exact app, app regex, title exclusion, movable, visible, and non-empty title are enough for the first version
-- keep layouts simple: `grid`, `move_abs`, and `resize_abs` are enough for the first version
+- keep selectors explainable; exact app, app regex, title exclusion, movable, visible, and non-empty title are enough for the first version
+- keep layouts simple; `grid`, `move_abs`, and `resize_abs` are enough for the first version
+- prefer shared layout refs over copy-pasted geometry
+- make every configured command runnable with `--dry-run`
 - add `WORKSPACE_DEBUG_CONFIG=1` for selected workspace name, selector result, window id, and applied position
+- keep an emergency bypass such as `WORKSPACE_CONFIG_DISABLE=1` during migration
 - validate config independently from runtime movement
 - update README only for user-facing commands; keep design boundaries here
 

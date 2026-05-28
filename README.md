@@ -24,6 +24,8 @@ The system is designed to keep workspace behavior predictable, composable, and p
 
 This README is the daily-use and troubleshooting entry point. Ongoing maintenance tasks and longer-term design roadmap items live in `design-notes.md` under `Roadmap And TODO`.
 
+The next-version plan is to move stable app, space, and window-position facts into a checked JSON configuration layer while keeping public commands and fish runtime safety helpers intact. The detailed plan is documented in `design-notes.md` under `Configurable Workspace Definitions`; it is not active runtime behavior yet.
+
 ## New Machine Bootstrap
 
 On a new Mac or after a macOS/yabai reset, configure the workspace primary display UUID before relying on WIDE, TALL, or primary-display workspace commands.
