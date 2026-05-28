@@ -29,11 +29,14 @@ Module reloaders source these grouped entry files, plus separate internal helper
 Top-level and common wrappers follow the same grouping rule:
 
 - `common/work_entries.fish` defines `work_solo`, `work_wide`, and `work_tall`
-- `display/display_entries.fish` defines `display_apply_*` entries and their shared profile runner
-- `common/work_module_status_entries.fish` defines simple coding, office, and research status wrappers
+- `display/display_entries.fish` defines `display_reload`, `display_verify_mode`, `display_apply_*` entries, and their shared profile runner
+- `common/workspace_status_helpers.fish` defines status snapshots, mode status, simple module status wrappers, `work_status`, `work_mode_status`, and `work_check`
 - `common/workspace_display_roles.fish` defines primary display UUID storage and display-role resolvers
 - `common/workspace_runners.fish` defines step, cleanup-spec, and mode-step runners
-- `common/workspace_labeled_space_entry.fish` defines labeled-space entry/focus wrappers
+- `common/workspace_module_reloads.fish` defines `gtd_reload`, `coding_reload`, `office_reload`, and `research_reload`
+- `common/workspace_labeled_spaces.fish` defines labeled-space lifecycle and entry/focus helpers
+- `common/workspace_app_windows.fish` defines shared app-window selection, refresh, find, and capture helpers
+- `common/ws_core.fish` defines the core yabai/jq query and focus wrappers
 
 Keep public command names stable for shell and skhd callers. Prefer grouping tiny same-layer wrappers by responsibility over creating one file for every public function.
 

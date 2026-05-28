@@ -8,31 +8,25 @@ function work_reload --description "Reload all workspace display/common/module f
     # -------------------------------------------------------------------------
     # Display layer
     # -------------------------------------------------------------------------
-    source ~/.config/fish/functions/workspace/display/display_reload.fish
+    source ~/.config/fish/functions/workspace/display/display_entries.fish
 
     # -------------------------------------------------------------------------
     # Module reloaders
     # -------------------------------------------------------------------------
-    source ~/.config/fish/functions/workspace/gtd/gtd_reload.fish
-    source ~/.config/fish/functions/workspace/coding/coding_reload.fish
-    source ~/.config/fish/functions/workspace/office/office_reload.fish
-    source ~/.config/fish/functions/workspace/research/research_reload.fish
+    source ~/.config/fish/functions/workspace/common/workspace_module_reloads.fish
 
     # -------------------------------------------------------------------------
     # Top-level work entry points
     # -------------------------------------------------------------------------
-    source ~/.config/fish/functions/workspace/common/work_status.fish
+    source ~/.config/fish/functions/workspace/common/workspace_status_helpers.fish
     source ~/.config/fish/functions/workspace/common/work_diagnostics.fish
     source ~/.config/fish/functions/workspace/common/work_bad_windows.fish
     source ~/.config/fish/functions/workspace/common/work_clear_bad_windows.fish
-    source ~/.config/fish/functions/workspace/common/work_recover_light.fish
     source ~/.config/fish/functions/workspace/common/work_command_check.fish
     source ~/.config/fish/functions/workspace/common/work_inventory.fish
     source ~/.config/fish/functions/workspace/common/work_doctor.fish
     source ~/.config/fish/functions/workspace/common/work_smoke.fish
-    source ~/.config/fish/functions/workspace/common/work_mode_status.fish
     source ~/.config/fish/functions/workspace/common/work_entries.fish
-    source ~/.config/fish/functions/workspace/common/work_check.fish
 
     # -------------------------------------------------------------------------
     # Reload nested modules

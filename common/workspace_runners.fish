@@ -1,3 +1,9 @@
+function workspace_debug_step --description "Print a workspace debug step when WORKSPACE_DEBUG_STEPS=1"
+    if test "$WORKSPACE_DEBUG_STEPS" = "1"
+        echo "[step] $argv" >&2
+    end
+end
+
 function workspace_run_step --description "Run a workspace step with visible timing"
     if test (count $argv) -lt 2
         echo "usage: workspace_run_step <label> <command> [args...]" >&2

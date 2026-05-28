@@ -120,11 +120,11 @@ Public module commands stay stable, but thin mode wrappers are grouped by module
 
 This keeps the command surface readable while avoiding one tiny file per solo/wide/tall wrapper.
 
-The simple `coding_status`, `office_status`, and `research_status` wrappers are grouped in `common/work_module_status_entries.fish`; `gtd_status` remains module-local because it delegates to `gtd_apps`.
+Status helpers, `work_status`, `work_mode_status`, `work_check`, and the simple `coding_status`, `office_status`, and `research_status` wrappers are grouped in `common/workspace_status_helpers.fish`; `gtd_status` remains module-local because it delegates to `gtd_apps`.
 
 Display-role commands such as `set_workspace_primary_display_uuid`, `resolve_workspace_primary_display`, and `workspace_resolve_display_role` are grouped in `common/workspace_display_roles.fish`.
 
-Runner helpers are grouped in `common/workspace_runners.fish`, and labeled-space entry helpers are grouped in `common/workspace_labeled_space_entry.fish`.
+Runner helpers are grouped in `common/workspace_runners.fish`, app-window lifecycle helpers are grouped in `common/workspace_app_windows.fish`, labeled-space lifecycle helpers are grouped in `common/workspace_labeled_spaces.fish`, and core yabai/jq query helpers are grouped in `common/ws_core.fish`.
 
 ## Inventory And Doctor
 
@@ -427,7 +427,7 @@ office_reload
 research_reload
 ```
 
-These reload commands source both module-local functions and the shared helper functions in `workspace/common`.
+These reload commands are defined together in `common/workspace_module_reloads.fish`; they source both module-local functions and the shared helper functions in `workspace/common`.
 
 ## Status Commands
 
