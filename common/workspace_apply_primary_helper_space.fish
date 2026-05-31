@@ -11,6 +11,7 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
         'primary-grid=' \
         'primary-alone-grid=' \
         'helper-grid=' \
+        primary-space-fallback \
         helper-visible \
         dry-run \
         -- $argv
@@ -27,7 +28,7 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
     end
 
     if not set -q _flag_label; or not set -q _flag_display; or not set -q _flag_primary_app; or not set -q _flag_primary_grid
-        echo "usage: workspace_apply_primary_helper_space --label <label> --display <primary|wide|tall> --primary-app <app>|--primary-app-key <key> --primary-grid <grid> [--helper-app <app>|--helper-app-key <key> --helper-grid <grid>] [--dry-run] [cleanup-spec ...]" >&2
+        echo "usage: workspace_apply_primary_helper_space --label <label> --display <primary|wide|tall> --primary-app <app>|--primary-app-key <key> --primary-grid <grid> [--primary-space-fallback] [--helper-app <app>|--helper-app-key <key> --helper-grid <grid>] [--dry-run] [cleanup-spec ...]" >&2
         return 2
     end
 
@@ -60,6 +61,9 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
         if set -q _flag_helper_grid
             printf "helper_grid=%s\n" "$_flag_helper_grid"
         end
+        if set -q _flag_primary_space_fallback
+            printf "primary_space_fallback=%s\n" true
+        end
         printf "cleanup=%s\n" "$cleanup_specs"
         return 0
     end
@@ -67,21 +71,158 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
     workspace_run_cleanup_specs $cleanup_specs
     or return 1
 
-    set -l windows_json (ws_query_windows $caller initial); or return 1
-    set -l primary_window (echo $windows_json | ws_find_window "$_flag_primary_app")
+    set -l primary_space_fallback_used 0
+    set -l target_display
+    set -l target_space
 
-    if test -z "$primary_window"
-        destroy_empty_labeled_space $label
-        return 0
+    set -l primary_find_args --caller $caller
+    if set -q _flag_primary_space_fallback
+        set -a primary_find_args --quiet-unmovable
     end
 
-    set -l target_display (workspace_resolve_display_role $_flag_display)
-    or return $status
+    set -l primary_window
+    if set -q _flag_primary_app_key
+        set -a primary_find_args --app-key $_flag_primary_app_key
+        set primary_window (workspace_find_app_key_window $primary_find_args)
+    else
+        set -a primary_find_args --app "$_flag_primary_app"
+        set primary_window (workspace_find_app_window $primary_find_args)
+    end
+    set -l primary_find_status $status
 
-    set -l target_space (workspace_prepare_labeled_space $label $target_display $layout $cleanup_specs)
-    or return 1
+    if test "$primary_find_status" -eq 1
+        return 1
+    end
 
-    ws_move_windows_to_space $target_space $primary_window
+    if test -z "$primary_window"
+        if test "$primary_find_status" -eq 2
+            if set -q _flag_primary_space_fallback; and set -q _flag_primary_app_key
+                set target_display (workspace_resolve_display_role $_flag_display)
+                or return $status
+
+                set -l primary_apps_json (workspace_app_names_json $_flag_primary_app_key)
+                or return 1
+
+                set -l windows_json_fallback (ws_query_windows $caller primary_space_fallback)
+                or return 1
+
+                set -l primary_fallback_info (echo $windows_json_fallback | ws_jq -r --argjson apps "$primary_apps_json" '
+                    first(
+                        .[]
+                        | select(.app as $app | $apps | index($app))
+                        | select(.["is-minimized"]==false)
+                        | [.id, .space, .display]
+                        | @tsv
+                    ) // empty
+                ')
+
+                if test -z "$primary_fallback_info"
+                    return 1
+                end
+
+                set -l primary_fallback_parts (string split \t -- "$primary_fallback_info")
+                set primary_window $primary_fallback_parts[1]
+                set target_space $primary_fallback_parts[2]
+                set -l source_display $primary_fallback_parts[3]
+
+                if test -z "$primary_window" -o -z "$target_space" -o -z "$source_display"
+                    return 1
+                end
+
+                set -l spaces_json_fallback (ws_yabai -m query --spaces 2>/dev/null)
+                if test $status -ne 0 -o -z "$spaces_json_fallback"
+                    return 1
+                end
+
+                set -l target_space_uuid (echo $spaces_json_fallback | ws_jq -r --argjson s $target_space '
+                    first(.[] | select(.index==$s) | .uuid) // empty
+                ')
+
+                if test -z "$target_space_uuid"
+                    return 1
+                end
+
+                if test "$source_display" != "$target_display"
+                    workspace_debug_step $caller primary-space-fallback-move-space "$target_space" display=$target_display
+                    ws_yabai -m space $target_space --display $target_display >/dev/null 2>&1
+                    sleep 0.8
+
+                    set spaces_json_fallback (ws_yabai -m query --spaces 2>/dev/null)
+                    if test $status -ne 0 -o -z "$spaces_json_fallback"
+                        return 1
+                    end
+
+                    set target_space (echo $spaces_json_fallback | ws_jq -r --arg uuid "$target_space_uuid" '
+                        first(.[] | select(.uuid==$uuid) | .index) // empty
+                    ')
+
+                    if test -z "$target_space"
+                        return 1
+                    end
+                end
+
+                workspace_focus_labeled_space $label $target_space $target_display $layout $cleanup_specs
+                or return 1
+
+                set primary_space_fallback_used 1
+            else
+                return 1
+            end
+        end
+
+        if test -z "$primary_window"
+            destroy_empty_labeled_space $label
+            return 0
+        end
+    end
+
+    if test "$primary_space_fallback_used" -ne 1
+        set target_display (workspace_resolve_display_role $_flag_display)
+        or return $status
+
+        set target_space (workspace_prepare_labeled_space $label $target_display $layout $cleanup_specs)
+        or return 1
+
+        ws_move_windows_to_space $target_space $primary_window
+    end
+
+    set -l primary_target_find_args $primary_find_args --space $target_space --no-refresh
+
+    if set -q _flag_primary_app_key
+        set primary_window (workspace_find_app_key_window $primary_target_find_args)
+    else
+        set primary_window (workspace_find_app_window $primary_target_find_args)
+    end
+
+    if test -z "$primary_window" -a "$primary_space_fallback_used" -ne 1
+        workspace_debug_step $caller primary-move-missing "$_flag_primary_app" target_space=$target_space
+
+        if set -q _flag_primary_app_key
+            set primary_window (workspace_find_app_key_window $primary_find_args)
+        else
+            set primary_window (workspace_find_app_window $primary_find_args)
+        end
+        set primary_find_status $status
+
+        if test "$primary_find_status" -eq 1
+            return 1
+        end
+
+        if test -n "$primary_window"
+            ws_move_windows_to_space $target_space $primary_window
+
+            if set -q _flag_primary_app_key
+                set primary_window (workspace_find_app_key_window $primary_target_find_args)
+            else
+                set primary_window (workspace_find_app_window $primary_target_find_args)
+            end
+        end
+
+        if test -z "$primary_window"
+            echo "[WARN] $caller could not move $_flag_primary_app to space $target_space" >&2
+            return 1
+        end
+    end
 
     set -l helper_window
     if set -q _flag_helper_app
@@ -94,7 +235,24 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
     end
 
     set -l windows_json_final (ws_query_windows $caller final); or return 1
-    set primary_window (echo $windows_json_final | ws_find_window "$_flag_primary_app" --space $target_space)
+    if test "$primary_space_fallback_used" -eq 1
+        set -l primary_apps_json (workspace_app_names_json $_flag_primary_app_key)
+        or return 1
+
+        set primary_window (echo $windows_json_final | ws_jq -r --argjson apps "$primary_apps_json" --argjson s $target_space '
+            first(
+                .[]
+                | select(.app as $app | $apps | index($app))
+                | select(.space==$s)
+                | select(.["is-minimized"]==false)
+                | .id
+            ) // empty
+        ')
+    else if set -q _flag_primary_app_key
+        set primary_window (workspace_find_app_key_window $primary_target_find_args)
+    else
+        set primary_window (echo $windows_json_final | ws_find_window "$_flag_primary_app" --space $target_space)
+    end
 
     if set -q _flag_helper_app
         set -l final_helper_args --app "$_flag_helper_app" --caller $caller --space $target_space --no-refresh
@@ -115,7 +273,15 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
             set primary_grid $_flag_primary_alone_grid
         end
 
-        ws_window $primary_window --grid $primary_grid
+        if test "$primary_space_fallback_used" -eq 1
+            workspace_apply_app_key_grid_bounds \
+                --app-key $_flag_primary_app_key \
+                --display $target_display \
+                --grid $primary_grid \
+                --caller $caller
+        else
+            ws_window $primary_window --grid $primary_grid
+        end
     end
 
     ws_focus_space $target_space

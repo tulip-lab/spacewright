@@ -53,6 +53,8 @@ function work_inventory --description "Print a read-only workspace workflow inve
     printf "%-32s %s\n" "workspace_app_name(s)/regex" "central workspace app-name registry"
     printf "%-32s %s\n" "ws_find_window/ws_find_windows" "structured window selectors"
     printf "%-32s %s\n" "workspace_find_app_window" "movable app-window selector with optional refresh"
+    printf "%-32s %s\n" "workspace_find_app_key_window" "movable app-window selector across registered app aliases"
+    printf "%-32s %s\n" "workspace_apply_app_key_grid_bounds" "AppleScript bounds fallback for non-yabai-resizable app windows"
     printf "%-32s %s\n" "workspace_capture_app_window" "find, move, and confirm app window on target space"
     printf "%-32s %s\n" "workspace_apply_primary_helper_space" "required primary app plus optional helper workspace flow"
     printf "%-32s %s\n" "workspace_run_mode_steps" "mode aggregate runner with shared cleanup suppression"

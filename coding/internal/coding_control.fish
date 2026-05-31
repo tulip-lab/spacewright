@@ -49,6 +49,7 @@ function coding_control --description "Collect Warp, SmartGit, and FlClash onto 
     # Notes:
     #   - The function is re-runnable.
     #   - It reuses an existing labeled space when possible.
+    #   - It retargets the label when the existing space has non-control windows.
     #   - It moves only the initially captured window IDs.
     #   - It clears unlabeled empty spaces on the target display at the end.
     # -------------------------------------------------------------------------
@@ -58,6 +59,8 @@ function coding_control --description "Collect Warp, SmartGit, and FlClash onto 
     set -l smartgit_app (workspace_app_name smartgit)
     set -l flclash_app (workspace_app_name flclash)
     set -l flclash_apps_json (workspace_app_names_json flclash thaw)
+    set -l control_app_regex (workspace_app_regex warp smartgit flclash thaw)
+    or return 1
 
     # -------------------------------------------------------------------------
     # 1. Find candidate windows first
@@ -129,7 +132,20 @@ function coding_control --description "Collect Warp, SmartGit, and FlClash onto 
     # -------------------------------------------------------------------------
     # 3. Prepare target labeled space
     # -------------------------------------------------------------------------
-    set -l target_space (workspace_prepare_labeled_space $label $target_display float)
+    set -l target_space (find_or_create_labeled_space $label $target_display)
+    if test -z "$target_space"
+        return 1
+    end
+
+    set target_space (workspace_retarget_contaminated_space \
+        $label \
+        $label \
+        $target_space \
+        $target_display \
+        "$control_app_regex")
+    or return 1
+
+    workspace_focus_labeled_space $label $target_space $target_display float
     or return 1
 
     # -------------------------------------------------------------------------

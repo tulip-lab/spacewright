@@ -26,6 +26,15 @@ This README is the daily-use and troubleshooting entry point. Ongoing maintenanc
 
 The next-version plan is to move stable app, space, and window-position facts into a checked JSON configuration layer while keeping public commands and fish runtime safety helpers intact. The detailed plan is documented in `design-notes.md` under `Configurable Workspace Definitions`; it is not active runtime behavior yet.
 
+Next-version implementation should start with read-only configuration support before any behavior migration:
+
+1. add `workspaces.json`, `workspace_config_check`, `workspace_config_get`, and `workspace_config_plan`
+2. include config validation in `work_smoke`, `work_doctor`, and `work_inventory`
+3. migrate one simple primary/helper pilot such as `coding_editor_wide`
+4. expand only after the pilot is stable in daily use
+
+GTD meeting, review, support, and other ownership-sensitive workspaces should remain fish-first until the configured runner proves useful on simple repeated layouts.
+
 ## New Machine Bootstrap
 
 On a new Mac or after a macOS/yabai reset, configure the workspace primary display UUID before relying on WIDE, TALL, or primary-display workspace commands.
@@ -100,6 +109,8 @@ Current core helpers include:
 - `workspace_app_names_json`
 - `workspace_app_regex`
 - `workspace_find_app_window`
+- `workspace_find_app_key_window`
+- `workspace_apply_app_key_grid_bounds`
 - `workspace_capture_app_window`
 - `workspace_apply_primary_helper_space`
 - `workspace_run_mode_steps`
@@ -350,6 +361,12 @@ Window selection follows two shared patterns:
 - Use `workspace_find_app_window` when a workspace only needs to select or confirm a movable app window.
 - Use `ws_find_window` when a workspace needs title exclusion, app regex matching, non-empty title checks, or bad-window cache awareness.
 
+Primary/helper workspaces such as `gtd_mail_wide` select the required primary app through `workspace_find_app_key_window`, so all registered app names for that key are considered. They confirm the primary window lands on the target space after moving and retry the move once before failing with a warning.
+
+When yabai reports an app window but does not expose it as movable, `workspace_find_app_window` focuses that window's current space, activates the app, and re-queries before failing. This handles apps such as Thunderbird that may initially appear without an AX reference.
+
+`gtd_mail_*` also enables primary-space fallback for Thunderbird. If Thunderbird remains present but not movable, the command uses Thunderbird's current space as the mail workspace, moves that space to the target display, labels it as the requested mail workspace, and applies the requested grid by setting Thunderbird's largest scriptable window bounds through AppleScript.
+
 All workspace JSON parsing should go through `ws_jq`, `ws_find_window`, `ws_find_windows`, `workspace_select_app_window`, `workspace_find_app_window`, or `workspace_capture_app_window`; direct `jq` pipelines are avoided inside workspace functions so parser timeouts remain bounded.
 
 ## ChatGPT Ownership Rule
@@ -378,6 +395,8 @@ If a workspace depends on a required primary application, such as Word, PowerPoi
 
 This prevents old empty labeled spaces from persisting after application state changes.
 
+Some fixed or ownership-sensitive workspaces also retarget contaminated labeled spaces before layout. For example, `coding_control` only owns Warp, SmartGit, and FlClash/Thaw; if the existing `coding_control` label points at a space containing Finder or another unrelated app, the command clears that label and uses a clean control space.
+
 ## GTD Support Dia Layout
 
 `gtd_support_solo`, `gtd_support_wide`, and `gtd_support_tall` collect all non-minimized `Dia` windows that yabai reports as movable. If Dia exists but no movable window is available, they activate Dia once, refresh the window snapshot, and warn if yabai still cannot expose a movable Dia window.
@@ -391,10 +410,10 @@ Solo support layout:
 
 Wide support layout:
 
-- 1 Dia window: full space
+- 1 Dia window: left half
 - 2 Dia windows: left half and right half
-- 3 Dia windows: three columns
-- 4 or more Dia windows: two-row grid, filled left to right
+- 3 Dia windows: two stacked in the left half, one full-height in the right half
+- 4 or more Dia windows: two-column grid, filled top to bottom within each half
 
 Tall support layout:
 
@@ -415,6 +434,8 @@ Tall support layout:
 `WhatsApp` is treated as best-effort. If it can be detected and moved reliably, it may be included. If it cannot be moved cleanly, the workspace still counts as valid without it.
 
 So `WhatsApp` is not a strict success condition for `gtd_chat`.
+
+`gtd_chat` retargets contaminated labeled spaces before layout. If the existing `gtd_chat` label points at a space containing non-chat apps such as Thunderbird or Codex, the command clears that label and uses a clean chat space.
 
 ## Reload Commands
 
@@ -639,7 +660,7 @@ gtd_meeting_tall
 
 `gtd_reopen_outlook` does not quit Outlook. It clears Outlook entries from the workspace bad-window cache, asks Outlook to activate/reopen, then prints the current Outlook window diagnostics.
 
-Meeting commands use `gtd_find_zoom_window` for Zoom and `gtd_find_teams_window` for Teams. Both wrappers share `gtd_find_meeting_window`, which requires movable main windows, excludes transient meeting/video/share windows, and clears recovered window IDs from the bad-window cache. Teams recognizes both `Microsoft Teams` and `MSTeams`.
+Meeting commands use `gtd_find_zoom_windows` for Zoom and `gtd_find_teams_windows` for Teams. Both wrappers share `gtd_find_meeting_windows`, which captures movable main and active meeting/video/call/share/screen windows while excluding mini windows. The singular wrappers, `gtd_find_zoom_window` and `gtd_find_teams_window`, return the primary window for layout compatibility. Teams recognizes both `Microsoft Teams` and `MSTeams`.
 
 All `gtd_meeting_*` modes also retarget contaminated labeled spaces before layout. If a previous meeting label points at a space mixed with non-meeting apps, the command clears that label and uses a clean meeting space.
 

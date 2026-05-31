@@ -11,7 +11,7 @@ function workspace_app_names --description "Print known yabai app names for a wo
         case zotero
             printf "%s\n" Zotero
         case thunderbird
-            printf "%s\n" Thunderbird
+            printf "%s\n" Thunderbird thunderbird
         case word
             printf "%s\n" "Microsoft Word"
         case powerpoint

@@ -27,6 +27,8 @@ function work_command_check --description "Check that documented workspace comma
         workspace_select_app_window \
         workspace_refresh_app_window \
         workspace_find_app_window \
+        workspace_find_app_key_window \
+        workspace_apply_app_key_grid_bounds \
         workspace_capture_app_window \
         workspace_debug_step \
         workspace_run_step \
@@ -83,8 +85,11 @@ function work_command_check --description "Check that documented workspace comma
         gtd_solo_all \
         gtd_find_outlook_window \
         gtd_find_meeting_window \
+        gtd_find_meeting_windows \
         gtd_find_zoom_window \
+        gtd_find_zoom_windows \
         gtd_find_teams_window \
+        gtd_find_teams_windows \
         gtd_reopen_outlook \
         gtd_apply_meeting_space \
         gtd_apply_support_space \

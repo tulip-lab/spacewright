@@ -39,6 +39,7 @@ function gtd_chat --description "Fast GTD chat workspace layout on workspace pri
     # Notes:
     #   - The function is re-runnable.
     #   - It reuses an existing labeled space when possible.
+    #   - It retargets the label when the existing space has non-chat windows.
     #   - It moves only the initially captured window IDs.
     #   - WhatsApp is treated as optional and move failures are tolerated.
     #   - It clears unlabeled empty spaces on the target display at the end.
@@ -50,6 +51,8 @@ function gtd_chat --description "Fast GTD chat workspace layout on workspace pri
     set -l dingtalk_regex (workspace_app_regex dingtalk)
     set -l messages_app (workspace_app_name messages)
     set -l whatsapp_app (workspace_app_name whatsapp)
+    set -l chat_app_regex (workspace_app_regex wechat keybase dingtalk messages whatsapp)
+    or return 1
 
     # 1. first capture
     #    At least one chat app must exist before creating the workspace.
@@ -75,7 +78,20 @@ function gtd_chat --description "Fast GTD chat workspace layout on workspace pri
     set -l target_display (resolve_workspace_primary_display)
 
     # 3. prepare target space
-    set -l target_space (workspace_prepare_labeled_space $label $target_display float)
+    set -l target_space (find_or_create_labeled_space $label $target_display)
+    if test -z "$target_space"
+        return 1
+    end
+
+    set target_space (workspace_retarget_contaminated_space \
+        $label \
+        $label \
+        $target_space \
+        $target_display \
+        "$chat_app_regex")
+    or return 1
+
+    workspace_focus_labeled_space $label $target_space $target_display float
     or return 1
 
     # 4a. move stable chat apps

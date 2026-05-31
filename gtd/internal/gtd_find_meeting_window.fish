@@ -1,9 +1,9 @@
-function gtd_find_meeting_window --description "Find a movable GTD meeting helper window by workspace app key"
+function gtd_find_meeting_windows --description "Find all movable GTD meeting helper windows by workspace app key"
     set -l app_key $argv[1]
     set -l debug_name $argv[2]
     set -l warning_name $argv[3]
     set -l refresh_policy $argv[4]
-    set -l exclude_titles (string split ',' -- $argv[5])
+    set -l secondary_titles (string split ',' -- $argv[5])
     set -l caller $argv[6]
     set -l target_space ""
     set -l no_refresh 0
@@ -28,34 +28,44 @@ function gtd_find_meeting_window --description "Find a movable GTD meeting helpe
     or return 1
     set -l app_name (workspace_app_name $app_key)
     or return 1
-    set -l exclude_titles_json (printf "%s\n" $exclude_titles | ws_jq -R . | ws_jq -s .)
+    set -l secondary_titles_json '[]'
+    if test (count $secondary_titles) -gt 0
+        set secondary_titles_json (printf "%s\n" $secondary_titles | ws_jq -R . | ws_jq -s .)
+    end
 
     set -l candidate_filter '
-        first(
+        [
             .[]
             | select(.app as $app | $apps | index($app))
             | select(.["is-minimized"]==false)
             | select(($target_space=="") or (.space==($target_space | tonumber)))
             | select(.["can-move"]==true)
-            | select((.title // "" | ascii_downcase) as $title
-                | (any($exclude_titles[]; . as $needle | $title | contains($needle | ascii_downcase)) | not))
-            | .id
-        ) // empty
+            | (.title // "" | ascii_downcase) as $title
+            | select($title | contains("mini") | not)
+            | {
+                id,
+                rank: (if any($secondary_titles[]; . as $needle | $title | contains($needle | ascii_downcase)) then 1 else 0 end)
+            }
+        ]
+        | sort_by(.rank)
+        | .[].id
     '
 
     if test -n "$target_space"
         workspace_debug_step $caller "$debug_name-target-query"
         set -l windows_json (ws_query_windows "$caller" "$debug_name"_target); or return 1
-        set -l window_id (echo $windows_json | ws_jq -r \
+        set -l window_ids (echo $windows_json | ws_jq -r \
             --argjson apps "$apps_json" \
-            --argjson exclude_titles "$exclude_titles_json" \
+            --argjson secondary_titles "$secondary_titles_json" \
             --arg target_space "$target_space" \
             "$candidate_filter")
 
-        if test -n "$window_id"
-            workspace_debug_step $caller "$debug_name-target-found" $window_id
-            rm -f "$bad_window_dir/$window_id" 2>/dev/null
-            echo $window_id
+        if test (count $window_ids) -gt 0
+            workspace_debug_step $caller "$debug_name-target-found" $window_ids
+            for window_id in $window_ids
+                rm -f "$bad_window_dir/$window_id" 2>/dev/null
+            end
+            printf "%s\n" $window_ids
             return 0
         end
 
@@ -66,16 +76,18 @@ function gtd_find_meeting_window --description "Find a movable GTD meeting helpe
 
     workspace_debug_step $caller "$debug_name-any-query"
     set -l windows_json (ws_query_windows "$caller" "$debug_name"_any); or return 1
-    set -l window_id (echo $windows_json | ws_jq -r \
+    set -l window_ids (echo $windows_json | ws_jq -r \
         --argjson apps "$apps_json" \
-        --argjson exclude_titles "$exclude_titles_json" \
+        --argjson secondary_titles "$secondary_titles_json" \
         --arg target_space "" \
         "$candidate_filter")
 
-    if test -n "$window_id"
-        workspace_debug_step $caller "$debug_name-any-found" $window_id
-        rm -f "$bad_window_dir/$window_id" 2>/dev/null
-        echo $window_id
+    if test (count $window_ids) -gt 0
+        workspace_debug_step $caller "$debug_name-any-found" $window_ids
+        for window_id in $window_ids
+            rm -f "$bad_window_dir/$window_id" 2>/dev/null
+        end
+        printf "%s\n" $window_ids
         return 0
     end
 
@@ -102,16 +114,18 @@ function gtd_find_meeting_window --description "Find a movable GTD meeting helpe
 
     workspace_debug_step $caller "$debug_name-after-refresh-query"
     set windows_json (ws_query_windows "$caller" "$debug_name"_after_refresh); or return 1
-    set window_id (echo $windows_json | ws_jq -r \
+    set window_ids (echo $windows_json | ws_jq -r \
         --argjson apps "$apps_json" \
-        --argjson exclude_titles "$exclude_titles_json" \
+        --argjson secondary_titles "$secondary_titles_json" \
         --arg target_space "" \
         "$candidate_filter")
 
-    if test -n "$window_id"
-        workspace_debug_step $caller "$debug_name-after-refresh-found" $window_id
-        rm -f "$bad_window_dir/$window_id" 2>/dev/null
-        echo $window_id
+    if test (count $window_ids) -gt 0
+        workspace_debug_step $caller "$debug_name-after-refresh-found" $window_ids
+        for window_id in $window_ids
+            rm -f "$bad_window_dir/$window_id" 2>/dev/null
+        end
+        printf "%s\n" $window_ids
         return 0
     end
 
@@ -120,10 +134,43 @@ function gtd_find_meeting_window --description "Find a movable GTD meeting helpe
     return 2
 end
 
-function gtd_find_zoom_window --description "Find a movable Zoom main window, clearing recovered bad-window cache entries"
-    gtd_find_meeting_window zoom zoom Zoom none meeting,video,share,screen,mini $argv
+function gtd_find_meeting_window --description "Find the primary movable GTD meeting helper window by workspace app key"
+    set -l window_ids (gtd_find_meeting_windows $argv)
+    set -l find_status $status
+
+    if test (count $window_ids) -gt 0
+        echo $window_ids[1]
+    end
+
+    return $find_status
 end
 
-function gtd_find_teams_window --description "Find a movable Microsoft Teams window, clearing recovered bad-window cache entries"
-    gtd_find_meeting_window teams teams "Microsoft Teams" refresh meeting,video,call,share,screen,mini $argv
+function gtd_find_zoom_windows --description "Find movable Zoom windows, including active meeting/video/share windows"
+    gtd_find_meeting_windows zoom zoom Zoom none meeting,video,share,screen $argv
+end
+
+function gtd_find_zoom_window --description "Find the primary movable Zoom window, clearing recovered bad-window cache entries"
+    set -l window_ids (gtd_find_zoom_windows $argv)
+    set -l find_status $status
+
+    if test (count $window_ids) -gt 0
+        echo $window_ids[1]
+    end
+
+    return $find_status
+end
+
+function gtd_find_teams_windows --description "Find movable Microsoft Teams windows, including active meeting/video/call/share windows"
+    gtd_find_meeting_windows teams teams "Microsoft Teams" refresh meeting,video,call,share,screen $argv
+end
+
+function gtd_find_teams_window --description "Find the primary movable Microsoft Teams window, clearing recovered bad-window cache entries"
+    set -l window_ids (gtd_find_teams_windows $argv)
+    set -l find_status $status
+
+    if test (count $window_ids) -gt 0
+        echo $window_ids[1]
+    end
+
+    return $find_status
 end

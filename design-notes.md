@@ -185,7 +185,11 @@ Useful move helpers:
 
 `workspace_prepare_labeled_space` and `workspace_focus_labeled_space` own the repeated labeled-space entry sequence: create or reuse the space when needed, normalize the label/layout, focus the target display, run optional mode cleanup, focus the target space, and return control to the caller.
 
-`workspace_apply_primary_helper_space` owns the stable single-primary/single-helper workflow. Entry functions provide label, display role, app names, cleanup specs, and grid geometry. This keeps common movement mechanics centralized while leaving layout ownership visible at the call site.
+`workspace_retarget_contaminated_space` is used when preserving a label on a mixed workspace would keep unrelated apps inside the workflow. `coding_control`, `gtd_chat`, `gtd_meeting_*`, and `gtd_review_*` use it to clear the old label and continue on a clean labeled space when their current target contains non-owned windows.
+
+`workspace_apply_primary_helper_space` owns the stable single-primary/single-helper workflow. Entry functions provide label, display role, app keys, cleanup specs, and grid geometry. The helper selects the required primary app through `workspace_find_app_key_window`, tries every registered app name for that key, confirms the primary window lands on the target space after moving, retries once if it does not, and fails with a warning rather than silently arranging an empty target. When an app is present but yabai does not expose a movable window, `workspace_find_app_window` focuses the app's current space before activating and re-querying it. This keeps common movement mechanics centralized while leaving layout ownership visible at the call site.
+
+`--primary-space-fallback` is reserved for apps that can stay visible in yabai while lacking an AX-backed movable window. GTD mail enables this for Thunderbird: if Thunderbird remains non-movable, its current space becomes the mail workspace and is moved/labeled as the target. Because yabai cannot resize a window without a movable AX reference, the fallback applies the requested grid through `workspace_apply_app_key_grid_bounds`, which sets the largest scriptable app window's AppleScript bounds from the target display frame.
 
 GTD-specific helpers deliberately stay module-local:
 
@@ -314,7 +318,7 @@ If Dia exists but no movable Dia window is exposed, the helper activates Dia onc
 `gtd_support_layout_dia_windows` applies mode-specific layouts:
 
 - solo: one full-screen; multiple Dia windows use a compact top/bottom or two-column grid
-- wide: one full-screen; two or three use horizontal columns; four or more use a two-row grid
+- wide: always uses left and right halves; the first half of the Dia windows stack top-to-bottom in the left half, and the remaining windows stack top-to-bottom in the right half
 - tall: one bottom half; two top/bottom; three with two on top and one on bottom; four or more use a two-column grid
 
 This multi-window policy is deliberately scoped to GTD support. Meeting and review workspaces keep app-specific selection rules until real failures justify broadening multi-window ownership.
@@ -329,20 +333,20 @@ If Outlook exists but no movable Outlook window is available, meeting commands w
 
 `gtd_reopen_outlook` is a light manual recovery command: it clears Outlook bad-window cache entries, activates/reopens Outlook, and prints Outlook window diagnostics.
 
-Zoom selection goes through `gtd_find_zoom_window`, which wraps `gtd_find_meeting_window`. It requires a movable main window, excludes transient meeting/video/share/screen/mini windows, and clears recovered Zoom entries from the bad-window cache. Final meeting-layout verification calls it with `--target-only` so a Zoom window on another space does not count as successfully placed.
+Zoom selection goes through `gtd_find_zoom_windows`, with `gtd_find_zoom_window` retained as the primary-window compatibility wrapper. Meeting capture includes movable Zoom main, meeting, video, share, and screen windows, while excluding mini windows. The first returned window is used for the standard grid layout; additional Zoom meeting windows are moved to the same space without forcing a grid.
 
-Teams selection goes through `gtd_find_teams_window`, which wraps `gtd_find_meeting_window`. It recognizes both `Microsoft Teams` and `MSTeams`, requires a movable main window, excludes transient meeting/video/call/share/screen/mini windows, and clears recovered Teams entries from the bad-window cache. Final meeting-layout verification calls it with `--target-only` so a Teams window on another space triggers a retry instead of being treated as success.
+Teams selection goes through `gtd_find_teams_windows`, with `gtd_find_teams_window` retained as the primary-window compatibility wrapper. It recognizes both `Microsoft Teams` and `MSTeams`, captures movable main, meeting, video, call, share, and screen windows, and excludes mini windows. The first returned window is used for the standard grid layout; additional Teams meeting windows are moved to the same space without forcing a grid.
 
 All `gtd_meeting_*` modes use `workspace_retarget_contaminated_space` before preparing the labeled space. If the existing meeting label points at a space that contains non-meeting apps, the label is cleared and a clean meeting space is selected instead of mixing the workflow into a contaminated space.
 
-`gtd_meeting_solo`, `gtd_meeting_tall`, and `gtd_meeting_wide` retry captured Zoom/Teams moves when the first move does not place the captured window on the target space.
+`gtd_meeting_solo`, `gtd_meeting_tall`, and `gtd_meeting_wide` retry captured Zoom/Teams moves when the first move does not place the captured meeting-window set on the target space.
 
 Expected meeting behavior:
 
 - Microsoft Outlook, zoom.us, and Microsoft Teams remain together in GTD meeting spaces
 - Outlook-specific recovery stays in `gtd_find_outlook_window` and `gtd_reopen_outlook`
-- shared Zoom/Teams selection mechanics stay in `gtd_find_meeting_window`
-- Zoom-specific and Teams-specific wrapper policy stays in `gtd_find_zoom_window` and `gtd_find_teams_window`
+- shared Zoom/Teams selection mechanics stay in `gtd_find_meeting_windows`
+- Zoom-specific and Teams-specific wrapper policy stays in `gtd_find_zoom_windows` and `gtd_find_teams_windows`
 - `gtd_meeting_solo` uses a 1/3 + 2/3 layout: Zoom and Teams share the left third vertically, while Outlook owns the right two thirds.
 
 ### GTD Chat
@@ -355,6 +359,8 @@ The core GTD chat layout is:
 - Messages
 
 WhatsApp is best-effort. Its window behavior is less stable in some sessions, so it should not make the whole chat workspace fragile.
+
+`gtd_chat` uses `workspace_retarget_contaminated_space` before preparing the labeled space. If an old `gtd_chat` label points at a space that also contains non-chat apps, such as Thunderbird or Codex, the label is cleared and chat windows are moved to a clean chat space instead of preserving the mixed workspace.
 
 ## Abstraction Policy
 
@@ -522,6 +528,45 @@ External profiles intentionally place the external display at `origin:(0,0)` in 
 Runtime recovery should remain explicit, such as `killall Dock`, rather than hidden inside workspace entry commands.
 
 ### Product/Design Roadmap
+
+#### Agreed Next-Version Implementation Plan
+
+The next major workspace version should be implemented in documentation-first, read-only-first stages. The immediate goal is to make app, label, window-role, layout, and mode composition facts inspectable as data before using that data to move any windows.
+
+Implementation order:
+
+1. Add the initial configuration file and read-only helpers:
+   - `.config/fish/functions/workspace/config/workspaces.json`
+   - `workspace_config_check`
+   - `workspace_config_get <workspace>`
+   - `workspace_config_plan <workspace-or-mode>`
+2. Add configuration validation to existing safety commands:
+   - `work_smoke`
+   - `work_doctor`
+   - `work_inventory`
+3. Migrate a single simple pilot workspace while keeping its public command unchanged. Preferred first candidates are:
+   - `coding_editor_wide`
+   - `gtd_mail_wide`
+4. Expand by simple repeated families only after the pilot is stable in daily use:
+   - `coding_editor_*`
+   - `gtd_mail_*`
+   - `office_writing_*`
+   - `office_slides_*`
+   - `research_*`
+5. Keep ownership-sensitive and recovery-heavy workspaces fish-first until the configured runner has proven useful:
+   - `gtd_meeting_*`
+   - `gtd_review_*`
+   - `gtd_support_*`
+   - `gtd_chat`
+
+Acceptance gates before any configured workspace is allowed to mutate state:
+
+- `workspace_config_check` passes without warnings for the migrated workspace
+- `workspace_config_plan <workspace>` shows the intended display role, label, app matches, layout, and cleanup
+- `work_smoke` and `work_doctor` include the config check
+- the public fish command still supports `--dry-run`
+- `WORKSPACE_CONFIG_DISABLE=1` bypasses the configured path during migration
+- missing required windows fail closed before creating, moving, relabeling, or destroying spaces
 
 #### Configurable Workspace Definitions
 

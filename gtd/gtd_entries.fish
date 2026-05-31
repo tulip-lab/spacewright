@@ -60,6 +60,7 @@ function gtd_mail_solo --description "Collect Thunderbird onto the solo GTD mail
         --label gtd_mail_solo \
         --display primary \
         --primary-app-key thunderbird \
+        --primary-space-fallback \
         --primary-grid 1:1:0:0:1:1 \
         gtd:wide gtd:tall $argv
 end
@@ -69,6 +70,7 @@ function gtd_mail_wide --description "Collect Thunderbird onto the wide GTD mail
         --label gtd_mail_wide \
         --display wide \
         --primary-app-key thunderbird \
+        --primary-space-fallback \
         --primary-grid 1:5:2:0:3:1 \
         gtd:tall gtd:solo $argv
 end
@@ -78,6 +80,7 @@ function gtd_mail_tall --description "Collect Thunderbird onto the tall GTD mail
         --label gtd_mail_tall \
         --display tall \
         --primary-app-key thunderbird \
+        --primary-space-fallback \
         --primary-grid 2:1:0:1:1:1 \
         gtd:wide gtd:solo $argv
 end

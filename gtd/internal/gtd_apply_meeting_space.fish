@@ -40,13 +40,15 @@ function gtd_apply_meeting_space --description "Apply a GTD meeting workspace fo
     set -l windows_json (ws_query_windows $_flag_label initial); or return 1
     set -l outlook (echo $windows_json | workspace_select_app_window --app "$outlook_app" --movable)
     set -l outlook_status $status
-    set -l zoom (gtd_find_zoom_window $_flag_label --no-refresh)
-    set -l teams (gtd_find_teams_window $_flag_label --no-refresh)
-    set -l zoom_initial $zoom
-    set -l teams_initial $teams
+    set -l zoom_windows (gtd_find_zoom_windows $_flag_label --no-refresh)
+    set -l zoom_status $status
+    set -l teams_windows (gtd_find_teams_windows $_flag_label --no-refresh)
+    set -l teams_status $status
+    set -l zoom_initial $zoom_windows
+    set -l teams_initial $teams_windows
 
-    if test -z "$outlook" -a -z "$zoom" -a -z "$teams"
-        if test "$outlook_status" -eq 2
+    if test -z "$outlook" -a (count $zoom_windows) -eq 0 -a (count $teams_windows) -eq 0
+        if test "$outlook_status" -eq 2 -o "$zoom_status" -eq 2 -o "$teams_status" -eq 2
             return 1
         end
 
@@ -72,12 +74,12 @@ function gtd_apply_meeting_space --description "Apply a GTD meeting workspace fo
 
     if test -z "$outlook"
         set outlook (gtd_find_outlook_window $_flag_label $target_space)
-        if test $status -eq 2 -a -z "$zoom" -a -z "$teams"
+        if test $status -eq 2 -a (count $zoom_windows) -eq 0 -a (count $teams_windows) -eq 0
             return 1
         end
     end
 
-    ws_move_windows_to_space $target_space $outlook $zoom $teams
+    ws_move_windows_to_space $target_space $outlook $zoom_windows $teams_windows
 
     set -l windows_json_final (ws_query_windows $_flag_label final); or return 1
     set outlook (echo $windows_json_final | ws_find_window "$outlook_app" --space $target_space --movable)
@@ -91,36 +93,36 @@ function gtd_apply_meeting_space --description "Apply a GTD meeting workspace fo
         end
     end
 
-    set zoom (gtd_find_zoom_window $_flag_label $target_space --no-refresh --target-only)
-    set teams (gtd_find_teams_window $_flag_label $target_space --no-refresh --target-only)
+    set zoom_windows (gtd_find_zoom_windows $_flag_label $target_space --no-refresh --target-only)
+    set teams_windows (gtd_find_teams_windows $_flag_label $target_space --no-refresh --target-only)
 
-    if test -z "$zoom" -a -n "$zoom_initial"
+    if test (count $zoom_windows) -eq 0 -a (count $zoom_initial) -gt 0
         ws_move_windows_to_space $target_space $zoom_initial
         set windows_json_final (ws_query_windows $_flag_label final_zoom_retry); or return 1
-        set zoom (gtd_find_zoom_window $_flag_label $target_space --no-refresh --target-only)
+        set zoom_windows (gtd_find_zoom_windows $_flag_label $target_space --no-refresh --target-only)
     end
 
-    if test -z "$zoom"
-        set zoom (gtd_find_zoom_window $_flag_label --no-refresh)
-        if test -n "$zoom"
-            ws_move_windows_to_space $target_space $zoom
+    if test (count $zoom_windows) -eq 0
+        set zoom_windows (gtd_find_zoom_windows $_flag_label --no-refresh)
+        if test (count $zoom_windows) -gt 0
+            ws_move_windows_to_space $target_space $zoom_windows
             set windows_json_final (ws_query_windows $_flag_label final_zoom_find_retry); or return 1
-            set zoom (gtd_find_zoom_window $_flag_label $target_space --no-refresh --target-only)
+            set zoom_windows (gtd_find_zoom_windows $_flag_label $target_space --no-refresh --target-only)
         end
     end
 
-    if test -z "$teams" -a -n "$teams_initial"
+    if test (count $teams_windows) -eq 0 -a (count $teams_initial) -gt 0
         ws_move_windows_to_space $target_space $teams_initial
         set windows_json_final (ws_query_windows $_flag_label final_teams_retry); or return 1
-        set teams (gtd_find_teams_window $_flag_label $target_space --no-refresh --target-only)
+        set teams_windows (gtd_find_teams_windows $_flag_label $target_space --no-refresh --target-only)
     end
 
-    if test -z "$teams"
-        set teams (gtd_find_teams_window $_flag_label --no-refresh)
-        if test -n "$teams"
-            ws_move_windows_to_space $target_space $teams
+    if test (count $teams_windows) -eq 0
+        set teams_windows (gtd_find_teams_windows $_flag_label --no-refresh)
+        if test (count $teams_windows) -gt 0
+            ws_move_windows_to_space $target_space $teams_windows
             set windows_json_final (ws_query_windows $_flag_label final_teams_find_retry); or return 1
-            set teams (gtd_find_teams_window $_flag_label $target_space --no-refresh --target-only)
+            set teams_windows (gtd_find_teams_windows $_flag_label $target_space --no-refresh --target-only)
         end
     end
 
@@ -128,12 +130,12 @@ function gtd_apply_meeting_space --description "Apply a GTD meeting workspace fo
         ws_window $outlook --grid $_flag_outlook_grid
     end
 
-    if test -n "$zoom" -a -n "$_flag_zoom_grid"
-        ws_window $zoom --grid $_flag_zoom_grid
+    if test (count $zoom_windows) -gt 0 -a -n "$_flag_zoom_grid"
+        ws_window $zoom_windows[1] --grid $_flag_zoom_grid
     end
 
-    if test -n "$teams" -a -n "$_flag_teams_grid"
-        ws_window $teams --grid $_flag_teams_grid
+    if test (count $teams_windows) -gt 0 -a -n "$_flag_teams_grid"
+        ws_window $teams_windows[1] --grid $_flag_teams_grid
     end
 
     ws_focus_space $target_space

@@ -34,27 +34,21 @@ function gtd_support_layout_dia_windows --description "Apply GTD support Dia lay
                 end
             end
         case wide
-            if test "$dia_count" -eq 1
-                ws_window $dia_windows[1] --grid 1:1:0:0:1:1
-            else if test "$dia_count" -le 3
-                set -l i 0
+            set -l left_count (math "ceil($dia_count / 2)")
+            set -l right_count (math "$dia_count - $left_count")
+            set -l i 1
 
-                for wid in $dia_windows
-                    ws_window $wid --grid 1:$dia_count:$i:0:1:1
-                    set i (math "$i + 1")
-                end
-            else
-                set -l cols (math "ceil($dia_count / 2)")
-                set -l i 1
+            while test "$i" -le "$left_count"
+                ws_window $dia_windows[$i] --grid $left_count:2:0:(math "$i - 1"):1:1
+                set i (math "$i + 1")
+            end
 
-                for wid in $dia_windows
-                    set -l zero_index (math "$i - 1")
-                    set -l col (math "$zero_index % $cols")
-                    set -l row (math "floor($zero_index / $cols)")
+            set i 1
+            while test "$i" -le "$right_count"
+                set -l window_index (math "$left_count + $i")
 
-                    ws_window $wid --grid 2:$cols:$col:$row:1:1
-                    set i (math "$i + 1")
-                end
+                ws_window $dia_windows[$window_index] --grid $right_count:2:1:(math "$i - 1"):1:1
+                set i (math "$i + 1")
             end
         case tall
             if test "$dia_count" -eq 1
