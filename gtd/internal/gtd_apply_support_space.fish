@@ -39,6 +39,18 @@ function gtd_apply_support_space --description "Apply a GTD support workspace fo
     ws_move_windows_to_space $target_space $dia_windows
 
     set -l windows_json_final (ws_query_windows $_flag_label final); or return 1
+    workspace_debug_step $_flag_label support-window-reconcile
+
+    set -l dia_all_windows (printf '%s\n' "$windows_json_final" | ws_find_windows (workspace_app_name dia) --movable)
+    if test (count $dia_all_windows) -gt 0
+        for wid in $dia_all_windows
+            rm -f /tmp/workspace-ws-window-bad/$wid 2>/dev/null
+        end
+
+        ws_move_windows_to_space $target_space $dia_all_windows
+        set windows_json_final (ws_query_windows $_flag_label final_dia_reconcile); or return 1
+    end
+
     set dia_windows (printf '%s\n' "$windows_json_final" | ws_find_windows (workspace_app_name dia) --space $target_space)
     gtd_support_layout_dia_windows $_flag_dia_layout $dia_windows
 

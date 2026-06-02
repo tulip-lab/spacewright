@@ -36,6 +36,8 @@ function gtd_apply_meeting_space --description "Apply a GTD meeting workspace fo
     or return $status
 
     set -l outlook_app (workspace_app_name outlook)
+    set -l zoom_apps_json (workspace_app_names_json zoom)
+    or return 1
 
     set -l windows_json (ws_query_windows $_flag_label initial); or return 1
     set -l outlook (echo $windows_json | workspace_select_app_window --app "$outlook_app" --movable)
@@ -47,7 +49,49 @@ function gtd_apply_meeting_space --description "Apply a GTD meeting workspace fo
     set -l zoom_initial $zoom_windows
     set -l teams_initial $teams_windows
 
-    if test -z "$outlook" -a (count $zoom_windows) -eq 0 -a (count $teams_windows) -eq 0
+    set -l zoom_space_fallback_used 0
+    set -l zoom_fallback_window
+    set -l zoom_fallback_space
+    set -l zoom_fallback_display
+
+    if test (count $zoom_windows) -eq 0
+        set zoom_windows (gtd_find_zoom_windows $_flag_label --quiet-unmovable)
+        set zoom_status $status
+        if test "$zoom_status" -eq 1
+            return 1
+        end
+
+        set zoom_initial $zoom_windows
+
+        if test (count $zoom_windows) -eq 0 -a "$zoom_status" -eq 2
+            set -l zoom_fallback_info (workspace_app_key_space_fallback_info \
+                --app-key zoom \
+                --caller $_flag_label \
+                --phase zoom_space_fallback)
+            set -l zoom_fallback_status $status
+
+            if test "$zoom_fallback_status" -eq 1
+                return 1
+            end
+
+            if test -z "$zoom_fallback_info"
+                echo "[WARN] $_flag_label found Zoom, but could not identify a Zoom space fallback" >&2
+                return 1
+            end
+
+            set -l zoom_fallback_parts (string split \t -- "$zoom_fallback_info")
+            set zoom_fallback_window $zoom_fallback_parts[1]
+            set zoom_fallback_space $zoom_fallback_parts[2]
+            set zoom_fallback_display $zoom_fallback_parts[3]
+
+            if test -z "$zoom_fallback_window" -o -z "$zoom_fallback_space" -o -z "$zoom_fallback_display"
+                echo "[WARN] $_flag_label found Zoom, but its fallback space metadata was incomplete" >&2
+                return 1
+            end
+        end
+    end
+
+    if test -z "$outlook" -a (count $zoom_windows) -eq 0 -a -z "$zoom_fallback_window" -a (count $teams_windows) -eq 0
         if test "$outlook_status" -eq 2 -o "$zoom_status" -eq 2 -o "$teams_status" -eq 2
             return 1
         end
@@ -56,21 +100,39 @@ function gtd_apply_meeting_space --description "Apply a GTD meeting workspace fo
         return 0
     end
 
-    set -l target_space (find_or_create_labeled_space $_flag_label $target_display)
-    if test -z "$target_space"
-        return 1
+    set -l target_space
+
+    if test -n "$zoom_fallback_space"
+        set zoom_space_fallback_used 1
+        set target_space $zoom_fallback_space
+        set zoom_windows $zoom_fallback_window
+
+        set target_space (workspace_focus_space_fallback \
+            --label $_flag_label \
+            --space $target_space \
+            --source-display $zoom_fallback_display \
+            --target-display $target_display \
+            --layout float \
+            --phase zoom-space-fallback \
+            $cleanup_specs)
+        or return 1
+    else
+        set target_space (find_or_create_labeled_space $_flag_label $target_display)
+        if test -z "$target_space"
+            return 1
+        end
+
+        set target_space (workspace_retarget_contaminated_space \
+            $_flag_label \
+            $_flag_label \
+            $target_space \
+            $target_display \
+            (workspace_app_regex outlook zoom teams))
+        or return 1
+
+        workspace_focus_labeled_space $_flag_label $target_space $target_display float $cleanup_specs
+        or return 1
     end
-
-    set target_space (workspace_retarget_contaminated_space \
-        $_flag_label \
-        $_flag_label \
-        $target_space \
-        $target_display \
-        (workspace_app_regex outlook zoom teams))
-    or return 1
-
-    workspace_focus_labeled_space $_flag_label $target_space $target_display float $cleanup_specs
-    or return 1
 
     if test -z "$outlook"
         set outlook (gtd_find_outlook_window $_flag_label $target_space)
@@ -79,7 +141,11 @@ function gtd_apply_meeting_space --description "Apply a GTD meeting workspace fo
         end
     end
 
-    ws_move_windows_to_space $target_space $outlook $zoom_windows $teams_windows
+    if test "$zoom_space_fallback_used" -eq 1
+        ws_move_windows_to_space $target_space $outlook $teams_windows
+    else
+        ws_move_windows_to_space $target_space $outlook $zoom_windows $teams_windows
+    end
 
     set -l windows_json_final (ws_query_windows $_flag_label final); or return 1
     set outlook (echo $windows_json_final | ws_find_window "$outlook_app" --space $target_space --movable)
@@ -93,21 +159,33 @@ function gtd_apply_meeting_space --description "Apply a GTD meeting workspace fo
         end
     end
 
-    set zoom_windows (gtd_find_zoom_windows $_flag_label $target_space --no-refresh --target-only)
-    set teams_windows (gtd_find_teams_windows $_flag_label $target_space --no-refresh --target-only)
-
-    if test (count $zoom_windows) -eq 0 -a (count $zoom_initial) -gt 0
-        ws_move_windows_to_space $target_space $zoom_initial
-        set windows_json_final (ws_query_windows $_flag_label final_zoom_retry); or return 1
+    if test "$zoom_space_fallback_used" -eq 1
+        set zoom_windows (echo $windows_json_final | ws_jq -r --argjson apps "$zoom_apps_json" --argjson s $target_space '
+            .[]
+            | select(.app as $app | $apps | index($app))
+            | select(.space==$s)
+            | select(.["is-minimized"]==false)
+            | .id
+        ')
+    else
         set zoom_windows (gtd_find_zoom_windows $_flag_label $target_space --no-refresh --target-only)
     end
+    set teams_windows (gtd_find_teams_windows $_flag_label $target_space --no-refresh --target-only)
 
-    if test (count $zoom_windows) -eq 0
-        set zoom_windows (gtd_find_zoom_windows $_flag_label --no-refresh)
-        if test (count $zoom_windows) -gt 0
-            ws_move_windows_to_space $target_space $zoom_windows
-            set windows_json_final (ws_query_windows $_flag_label final_zoom_find_retry); or return 1
+    if test "$zoom_space_fallback_used" -ne 1
+        if test (count $zoom_windows) -eq 0 -a (count $zoom_initial) -gt 0
+            ws_move_windows_to_space $target_space $zoom_initial
+            set windows_json_final (ws_query_windows $_flag_label final_zoom_retry); or return 1
             set zoom_windows (gtd_find_zoom_windows $_flag_label $target_space --no-refresh --target-only)
+        end
+
+        if test (count $zoom_windows) -eq 0
+            set zoom_windows (gtd_find_zoom_windows $_flag_label)
+            if test (count $zoom_windows) -gt 0
+                ws_move_windows_to_space $target_space $zoom_windows
+                set windows_json_final (ws_query_windows $_flag_label final_zoom_find_retry); or return 1
+                set zoom_windows (gtd_find_zoom_windows $_flag_label $target_space --no-refresh --target-only)
+            end
         end
     end
 
@@ -126,12 +204,46 @@ function gtd_apply_meeting_space --description "Apply a GTD meeting workspace fo
         end
     end
 
+    workspace_debug_step $_flag_label meeting-window-reconcile
+
+    if test "$zoom_space_fallback_used" -ne 1
+        set -l zoom_all_windows (gtd_find_zoom_windows $_flag_label --no-refresh)
+        if test $status -eq 1
+            return 1
+        end
+
+        if test (count $zoom_all_windows) -gt 0
+            ws_move_windows_to_space $target_space $zoom_all_windows
+            set windows_json_final (ws_query_windows $_flag_label final_zoom_all_reconcile); or return 1
+            set zoom_windows (gtd_find_zoom_windows $_flag_label $target_space --no-refresh --target-only)
+        end
+    end
+
+    set -l teams_all_windows (gtd_find_teams_windows $_flag_label --no-refresh)
+    if test $status -eq 1
+        return 1
+    end
+
+    if test (count $teams_all_windows) -gt 0
+        ws_move_windows_to_space $target_space $teams_all_windows
+        set windows_json_final (ws_query_windows $_flag_label final_teams_all_reconcile); or return 1
+        set teams_windows (gtd_find_teams_windows $_flag_label $target_space --no-refresh --target-only)
+    end
+
     if test -n "$outlook" -a -n "$_flag_outlook_grid"
         ws_window $outlook --grid $_flag_outlook_grid
     end
 
     if test (count $zoom_windows) -gt 0 -a -n "$_flag_zoom_grid"
-        ws_window $zoom_windows[1] --grid $_flag_zoom_grid
+        if test "$zoom_space_fallback_used" -eq 1
+            workspace_apply_app_key_grid_bounds \
+                --app-key zoom \
+                --display $target_display \
+                --grid $_flag_zoom_grid \
+                --caller $_flag_label
+        else
+            ws_window $zoom_windows[1] --grid $_flag_zoom_grid
+        end
     end
 
     if test (count $teams_windows) -gt 0 -a -n "$_flag_teams_grid"

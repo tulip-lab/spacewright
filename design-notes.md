@@ -148,8 +148,10 @@ Use shared bounded helpers for yabai and JSON parsing:
 - `workspace_select_app_window`
 - `workspace_find_app_window`
 - `workspace_capture_app_window`
+- `workspace_app_key_space_fallback_info`
 - `workspace_prepare_labeled_space`
 - `workspace_focus_labeled_space`
+- `workspace_focus_space_fallback`
 
 Workspace functions should avoid direct `jq` pipelines where these helpers cover the behavior.
 
@@ -177,19 +179,23 @@ Useful move helpers:
 - `ws_move_windows_to_space`
 - `workspace_capture_app_window`
 
-`workspace_find_app_window` is the default helper for simple app-name ownership. It selects a movable yabai window, can constrain to a target space, can activate the app and poll for a refreshed movable window, and clears recovered bad-window cache entries. Use this for ordinary single-window helper apps instead of hand-written `ws_find_window "<app>"` logic.
+`workspace_find_app_window` is the default helper for simple app-name ownership. It selects a movable yabai window, can constrain to a target space, can activate the app and poll for a refreshed movable window, and clears recovered bad-window cache entries. Use this for ordinary single-window helper apps instead of hand-written `ws_find_window "<app>"` logic. When a caller is confirming that a window landed on a specific target space, combine `--space` with `--target-only` so the finder cannot satisfy the check with the same app on another space.
 
 `workspace_capture_app_window` builds on that finder: it finds a movable app window, moves it to the target space, then confirms the app is present on that space. This is the preferred path for shared helper apps such as Codex in coding and ChatGPT in research, office, and GTD review workspaces.
 
 `workspace_app_name`, `workspace_app_names`, `workspace_app_names_json`, and `workspace_app_regex` are the central app-name registry. Entry wrappers should use app keys when possible; module-specific helpers can still use explicit names when the app has special selection behavior, but they should source those names through the registry.
 
+Fixed primary-display workspaces such as `coding_control`, `gtd_chat`, and `gtd_calendar` use app-key finders for ordinary app windows, then retry once when a final target-space check misses. Module-specific selectors stay local only for real special cases such as Dia multi-window layout or Zoom/Teams meeting-window title policy.
+
 `workspace_prepare_labeled_space` and `workspace_focus_labeled_space` own the repeated labeled-space entry sequence: create or reuse the space when needed, normalize the label/layout, focus the target display, run optional mode cleanup, focus the target space, and return control to the caller.
 
-`workspace_retarget_contaminated_space` is used when preserving a label on a mixed workspace would keep unrelated apps inside the workflow. `coding_control`, `gtd_chat`, `gtd_meeting_*`, and `gtd_review_*` use it to clear the old label and continue on a clean labeled space when their current target contains non-owned windows.
+When an app-key window is present but remains non-movable, `workspace_app_key_space_fallback_info` identifies that app's current window, space, and display using the central app-name registry. `workspace_focus_space_fallback` then moves that space to the requested display by UUID, normalizes the label/layout, and focuses it. Thunderbird mail fallback, Zoom meeting fallback, Preview/Notes review fallback, DingTalk chat fallback, and Calendar fallback all use this shared current-space fallback path.
+
+`workspace_retarget_contaminated_space` is used when preserving a label on a mixed workspace would keep unrelated apps inside the workflow. `coding_control`, `gtd_chat`, `gtd_meeting_*`, and `gtd_review_*` use it to clear the old label and continue on a clean labeled space when their current target contains non-owned windows. `coding_control` treats KeePassXC/KeePassX as an owned control app alongside Warp, SmartGit, and FlClash/Thaw.
 
 `workspace_apply_primary_helper_space` owns the stable single-primary/single-helper workflow. Entry functions provide label, display role, app keys, cleanup specs, and grid geometry. The helper selects the required primary app through `workspace_find_app_key_window`, tries every registered app name for that key, confirms the primary window lands on the target space after moving, retries once if it does not, and fails with a warning rather than silently arranging an empty target. When an app is present but yabai does not expose a movable window, `workspace_find_app_window` focuses the app's current space before activating and re-querying it. This keeps common movement mechanics centralized while leaving layout ownership visible at the call site.
 
-`--primary-space-fallback` is reserved for apps that can stay visible in yabai while lacking an AX-backed movable window. GTD mail enables this for Thunderbird: if Thunderbird remains non-movable, its current space becomes the mail workspace and is moved/labeled as the target. Because yabai cannot resize a window without a movable AX reference, the fallback applies the requested grid through `workspace_apply_app_key_grid_bounds`, which sets the largest scriptable app window's AppleScript bounds from the target display frame.
+`--primary-space-fallback` is reserved for apps that can stay visible in yabai while lacking an AX-backed movable window. GTD mail enables this for Thunderbird: if Thunderbird remains non-movable, its current space becomes the mail workspace and is moved/labeled as the target through the shared current-space fallback helpers. Because yabai cannot resize a window without a movable AX reference, the fallback applies the requested grid through `workspace_apply_app_key_grid_bounds`, which first sets the largest scriptable app window's AppleScript bounds from the target display frame, then falls back to System Events position/size when the app-specific AppleScript path fails.
 
 GTD-specific helpers deliberately stay module-local:
 
@@ -303,7 +309,9 @@ In `gtd_solo_all`, review runs after meeting so GTD review is the final SOLO own
 
 `Notes` is owned by `gtd_review_*`.
 
-`gtd_review_*` no longer requires Preview as the primary app. A review workspace is eligible when Preview, Notes, or ChatGPT is present. Finder is still included when available, but Finder alone is intentionally not enough to create a review workspace because Finder is commonly present outside review work.
+`gtd_review_*` no longer requires Preview as the primary app. A review workspace is eligible when Preview, Notes, or ChatGPT is present. Finder is still included when available, but Finder alone is intentionally not enough to create a review workspace because Finder is commonly present outside review work. When review owns Finder or Preview, all movable windows for that app are moved to the review space and receive the app's review grid.
+
+When Notes is present but not exposed as a movable yabai window, `gtd_review_*` treats the current Notes space as the review target and moves Finder, movable Preview windows, and ChatGPT there. When Preview itself is present but not movable, the review target is focused and Preview bounds are applied through `workspace_apply_app_key_grid_bounds` instead of a yabai move. If Preview is already on the target display but a different Space, review temporarily bounces Preview through another display before returning it to the focused review Space. This mirrors the mail workspace's primary-space fallback: the non-movable app's space is moved to the requested display if it owns the target, the review label is normalized, and non-movable app bounds are applied through the shared bounds helper. Review passes `--all-windows` for non-movable Preview and Notes bounds so the fallback does not only affect the largest scriptable window.
 
 `Dia` is owned by `gtd_support_*`.
 
@@ -314,6 +322,8 @@ This avoids moving a single Notes window back and forth between support and revi
 All GTD support modes collect every non-minimized Dia window that yabai reports as movable through `gtd_support_find_dia_windows`. If Dia is present but no movable Dia window is available after activation, the helper warns and suggests restarting yabai because the yabai window graph may be stale.
 
 If Dia exists but no movable Dia window is exposed, the helper activates Dia once, refreshes the window snapshot, and fails closed with a warning if Dia remains non-movable.
+
+After the first support move, `gtd_apply_support_space` re-queries all currently movable Dia windows and moves the whole set to the support target before applying layout. This keeps late-appearing Dia browser/tab windows with the support workspace.
 
 `gtd_support_layout_dia_windows` applies mode-specific layouts:
 
@@ -333,13 +343,17 @@ If Outlook exists but no movable Outlook window is available, meeting commands w
 
 `gtd_reopen_outlook` is a light manual recovery command: it clears Outlook bad-window cache entries, activates/reopens Outlook, and prints Outlook window diagnostics.
 
-Zoom selection goes through `gtd_find_zoom_windows`, with `gtd_find_zoom_window` retained as the primary-window compatibility wrapper. Meeting capture includes movable Zoom main, meeting, video, share, and screen windows, while excluding mini windows. The first returned window is used for the standard grid layout; additional Zoom meeting windows are moved to the same space without forcing a grid.
+Zoom selection goes through `gtd_find_zoom_windows`, with `gtd_find_zoom_window` retained as the primary-window compatibility wrapper. Meeting capture includes movable Zoom main, meeting, video, share, and screen windows, while excluding mini windows. If Zoom is present but yabai has not exposed a movable window, the fallback path can activate Zoom once and re-query before giving up. The first returned window is used for the standard grid layout; additional Zoom meeting windows are moved to the same space without forcing a grid.
+
+When Zoom remains present but non-movable after activation, `gtd_meeting_*` treats the current Zoom space as the meeting target. The Zoom space is moved to the requested display if needed, labeled as the meeting workspace, and Outlook/Teams are moved there. This is the only reliable way to keep Zoom with the meeting when yabai has no movable AX reference for Zoom.
 
 Teams selection goes through `gtd_find_teams_windows`, with `gtd_find_teams_window` retained as the primary-window compatibility wrapper. It recognizes both `Microsoft Teams` and `MSTeams`, captures movable main, meeting, video, call, share, and screen windows, and excludes mini windows. The first returned window is used for the standard grid layout; additional Teams meeting windows are moved to the same space without forcing a grid.
 
 All `gtd_meeting_*` modes use `workspace_retarget_contaminated_space` before preparing the labeled space. If the existing meeting label points at a space that contains non-meeting apps, the label is cleared and a clean meeting space is selected instead of mixing the workflow into a contaminated space.
 
-`gtd_meeting_solo`, `gtd_meeting_tall`, and `gtd_meeting_wide` retry captured Zoom/Teams moves when the first move does not place the captured meeting-window set on the target space.
+`gtd_meeting_solo`, `gtd_meeting_tall`, and `gtd_meeting_wide` retry captured Zoom/Teams moves when the first move does not place the captured meeting-window set on the target space. Zoom can also refresh once when no movable Zoom window was captured initially.
+
+After the targeted retry paths, all `gtd_meeting_*` modes run a final Zoom/Teams reconciliation pass. That pass re-queries every currently movable Zoom and Teams window and moves the whole set to the meeting target, even when one window for that app is already on the target space. This keeps late-appearing video/call windows with the meeting workspace.
 
 Expected meeting behavior:
 
@@ -361,6 +375,10 @@ The core GTD chat layout is:
 WhatsApp is best-effort. Its window behavior is less stable in some sessions, so it should not make the whole chat workspace fragile.
 
 `gtd_chat` uses `workspace_retarget_contaminated_space` before preparing the labeled space. If an old `gtd_chat` label points at a space that also contains non-chat apps, such as Thunderbird or Codex, the label is cleared and chat windows are moved to a clean chat space instead of preserving the mixed workspace.
+
+`WeChat`, `Keybase`, `DingTalk`, and `Messages` are selected through `workspace_find_app_key_window` and retried once if they are missing from the final target space. This avoids silently skipping a movable chat window because of a stale bad-window cache entry, and gives DingTalk one activation/re-query path before reporting that yabai still cannot move it.
+
+When DingTalk remains present but non-movable after activation, `gtd_chat` treats the current DingTalk space as the chat target. The DingTalk space is moved to the workspace primary display if needed, labeled as `gtd_chat`, and WeChat, Keybase, Messages, and WhatsApp are moved there. DingTalk bounds use `workspace_apply_app_key_grid_bounds` in that fallback path because yabai cannot grid an unmovable window.
 
 ## Abstraction Policy
 
@@ -469,12 +487,12 @@ Future edits to display helpers must preserve:
 
 If this remains stable, extract a small helper so tall and wide do not drift. Keep Outlook recovery in Outlook-specific helpers.
 
-##### Watch Meeting And Review Multi-Window Behavior
+##### Watch Remaining Multi-Window Behavior
 
-Before changing meeting or review ownership, watch:
+Review already moves all movable Finder and Preview windows together because real failures showed stray windows were being left behind. Before broadening other ownership, watch:
 
 - whether multiple Outlook, Zoom, or Teams windows should move together
-- whether ChatGPT, Notes, Preview, or Finder should ever move as multi-window sets
+- whether ChatGPT or Notes should ever move as multi-window sets beyond the existing non-movable bounds fallback
 - whether moving all same-app windows would steal windows from another active context
 
 Do not generalize GTD support's Dia policy into broad multi-window ownership without concrete failures from real use.

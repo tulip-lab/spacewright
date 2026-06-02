@@ -140,11 +140,11 @@ function workspace_refresh_app_window --description "Find an app window, activat
 end
 
 function workspace_find_app_window --description "Find a movable app window, activating the app once if needed"
-    argparse 'app=' 'caller=' 'space=' 'attempts=' 'wait=' no-refresh visible quiet-unmovable -- $argv
+    argparse 'app=' 'caller=' 'space=' 'attempts=' 'wait=' no-refresh target-only visible quiet-unmovable -- $argv
     or return 1
 
     if not set -q _flag_app
-        echo "usage: workspace_find_app_window --app <app-name> [--caller <name>] [--space <space>] [--no-refresh] [--visible]" >&2
+        echo "usage: workspace_find_app_window --app <app-name> [--caller <name>] [--space <space>] [--no-refresh] [--target-only] [--visible]" >&2
         return 1
     end
 
@@ -182,6 +182,11 @@ function workspace_find_app_window --description "Find a movable app window, act
             workspace_debug_step $caller find-$app_key-target-found $window_id
             rm -f "$bad_window_dir/$window_id" 2>/dev/null
             echo $window_id
+            return 0
+        end
+
+        if set -q _flag_target_only
+            workspace_debug_step $caller find-$app_key-target-missing
             return 0
         end
     end
@@ -271,11 +276,11 @@ function workspace_find_app_window --description "Find a movable app window, act
 end
 
 function workspace_find_app_key_window --description "Find a movable app window using all registered names for an app key"
-    argparse 'app-key=' 'caller=' 'space=' 'attempts=' 'wait=' no-refresh visible quiet-unmovable -- $argv
+    argparse 'app-key=' 'caller=' 'space=' 'attempts=' 'wait=' no-refresh target-only visible quiet-unmovable -- $argv
     or return 1
 
     if not set -q _flag_app_key
-        echo "usage: workspace_find_app_key_window --app-key <key> [--caller <name>] [--space <space>] [--no-refresh] [--visible]" >&2
+        echo "usage: workspace_find_app_key_window --app-key <key> [--caller <name>] [--space <space>] [--no-refresh] [--target-only] [--visible]" >&2
         return 1
     end
 
@@ -316,6 +321,10 @@ function workspace_find_app_key_window --description "Find a movable app window 
 
         if set -q _flag_no_refresh
             set -a find_args --no-refresh
+        end
+
+        if set -q _flag_target_only
+            set -a find_args --target-only
         end
 
         if set -q _flag_visible
@@ -362,6 +371,10 @@ function workspace_find_app_key_window --description "Find a movable app window 
                         set -a retry_find_args --visible
                     end
 
+                    if set -q _flag_target_only
+                        set -a retry_find_args --target-only
+                    end
+
                     if set -q _flag_quiet_unmovable
                         set -a retry_find_args --quiet-unmovable
                     end
@@ -392,6 +405,10 @@ function workspace_find_app_key_window --description "Find a movable app window 
                 set -a final_find_args --visible
             end
 
+            if set -q _flag_target_only
+                set -a final_find_args --target-only
+            end
+
             if set -q _flag_quiet_unmovable
                 set -a final_find_args --quiet-unmovable
             end
@@ -415,12 +432,68 @@ function workspace_find_app_key_window --description "Find a movable app window 
     return 0
 end
 
-function workspace_apply_app_key_grid_bounds --description "Apply a grid by setting the largest scriptable app window bounds"
-    argparse 'app-key=' 'display=' 'grid=' 'caller=' -- $argv
+function workspace_app_key_space_fallback_info --description "Return a present app-key window id, space and display for space fallback"
+    argparse 'app-key=' 'caller=' 'phase=' -- $argv
+    or return 1
+
+    if not set -q _flag_app_key
+        echo "usage: workspace_app_key_space_fallback_info --app-key <key> [--caller <name>] [--phase <query-phase>]" >&2
+        return 2
+    end
+
+    set -l caller workspace_app_key_space_fallback_info
+    if set -q _flag_caller
+        set caller $_flag_caller
+    end
+
+    set -l phase app_key_space_fallback
+    if set -q _flag_phase
+        set phase $_flag_phase
+    end
+
+    set -l apps_json (workspace_app_names_json $_flag_app_key)
+    or return 1
+
+    set -l windows_json (ws_query_windows $caller $phase)
+    or return 1
+
+    set -l fallback_info (echo $windows_json | ws_jq -r --argjson apps "$apps_json" '
+        first(
+            .[]
+            | select(.app as $app | $apps | index($app))
+            | select(.["is-minimized"]==false)
+            | [.id, .space, .display]
+            | @tsv
+        ) // empty
+    ')
+    set -l jq_status $status
+
+    if test "$jq_status" -ne 0
+        return $jq_status
+    end
+
+    if test -z "$fallback_info"
+        return 2
+    end
+
+    set -l fallback_parts (string split \t -- "$fallback_info")
+    set -l window_id $fallback_parts[1]
+    set -l target_space $fallback_parts[2]
+    set -l source_display $fallback_parts[3]
+
+    if test -z "$window_id" -o -z "$target_space" -o -z "$source_display"
+        return 2
+    end
+
+    printf "%s\t%s\t%s\n" "$window_id" "$target_space" "$source_display"
+end
+
+function workspace_apply_app_key_grid_bounds --description "Apply a grid by setting scriptable app window bounds"
+    argparse 'app-key=' 'display=' 'grid=' 'caller=' all-windows -- $argv
     or return 1
 
     if not set -q _flag_app_key; or not set -q _flag_display; or not set -q _flag_grid
-        echo "usage: workspace_apply_app_key_grid_bounds --app-key <key> --display <display-index> --grid <rows:cols:x:y:w:h> [--caller <name>]" >&2
+        echo "usage: workspace_apply_app_key_grid_bounds --app-key <key> --display <display-index> --grid <rows:cols:x:y:w:h> [--caller <name>] [--all-windows]" >&2
         return 2
     end
 
@@ -469,8 +542,104 @@ function workspace_apply_app_key_grid_bounds --description "Apply a grid by sett
     set -l app_names (workspace_app_names $_flag_app_key)
     or return 1
 
+    set -l osascript_timeout "$WORKSPACE_OSASCRIPT_TIMEOUT_SECONDS"
+    if test -z "$osascript_timeout"
+        set osascript_timeout 3
+    end
+
     for app_name in $app_names
-        osascript \
+        if set -q _flag_all_windows
+            perl -e '
+                my $timeout = shift;
+                my $pid = fork();
+                die "fork failed\n" unless defined $pid;
+                if ($pid == 0) {
+                    exec @ARGV;
+                    exit 127;
+                }
+                local $SIG{ALRM} = sub {
+                    kill "TERM", $pid;
+                    sleep 1;
+                    kill "KILL", $pid;
+                    exit 124;
+                };
+                alarm $timeout;
+                waitpid $pid, 0;
+                exit(($? >> 8) || ($? & 127));
+            ' $osascript_timeout osascript \
+                -e "tell application \"$app_name\"" \
+                -e "set didApply to false" \
+                -e "repeat with targetWindow in windows" \
+                -e "try" \
+                -e "set bounds of targetWindow to {$left, $top, $right, $bottom}" \
+                -e "set didApply to true" \
+                -e "end try" \
+                -e "end repeat" \
+                -e "if didApply is false then error \"no scriptable window\"" \
+                -e "end tell" >/dev/null 2>&1
+
+            if test $status -eq 0
+                return 0
+            end
+
+            perl -e '
+                my $timeout = shift;
+                my $pid = fork();
+                die "fork failed\n" unless defined $pid;
+                if ($pid == 0) {
+                    exec @ARGV;
+                    exit 127;
+                }
+                local $SIG{ALRM} = sub {
+                    kill "TERM", $pid;
+                    sleep 1;
+                    kill "KILL", $pid;
+                    exit 124;
+                };
+                alarm $timeout;
+                waitpid $pid, 0;
+                exit(($? >> 8) || ($? & 127));
+            ' $osascript_timeout osascript \
+                -e "tell application \"System Events\"" \
+                -e "if not (exists process \"$app_name\") then error \"process not found\"" \
+                -e "tell process \"$app_name\"" \
+                -e "set didApply to false" \
+                -e "repeat with targetWindow in windows" \
+                -e "try" \
+                -e "set position of targetWindow to {$left, $top}" \
+                -e "set size of targetWindow to {$width, $height}" \
+                -e "set didApply to true" \
+                -e "end try" \
+                -e "end repeat" \
+                -e "if didApply is false then error \"no accessibility window\"" \
+                -e "end tell" \
+                -e "end tell" >/dev/null 2>&1
+
+            if test $status -eq 0
+                return 0
+            end
+
+            continue
+        end
+
+        perl -e '
+            my $timeout = shift;
+            my $pid = fork();
+            die "fork failed\n" unless defined $pid;
+            if ($pid == 0) {
+                exec @ARGV;
+                exit 127;
+            }
+            local $SIG{ALRM} = sub {
+                kill "TERM", $pid;
+                sleep 1;
+                kill "KILL", $pid;
+                exit 124;
+            };
+            alarm $timeout;
+            waitpid $pid, 0;
+            exit(($? >> 8) || ($? & 127));
+        ' $osascript_timeout osascript \
             -e "tell application \"$app_name\"" \
             -e "set targetWindow to missing value" \
             -e "set targetArea to -1" \
@@ -486,6 +655,49 @@ function workspace_apply_app_key_grid_bounds --description "Apply a grid by sett
             -e "end repeat" \
             -e "if targetWindow is missing value or targetArea <= 0 then error \"no scriptable window\"" \
             -e "set bounds of targetWindow to {$left, $top, $right, $bottom}" \
+            -e "end tell" >/dev/null 2>&1
+
+        if test $status -eq 0
+            return 0
+        end
+
+        perl -e '
+            my $timeout = shift;
+            my $pid = fork();
+            die "fork failed\n" unless defined $pid;
+            if ($pid == 0) {
+                exec @ARGV;
+                exit 127;
+            }
+            local $SIG{ALRM} = sub {
+                kill "TERM", $pid;
+                sleep 1;
+                kill "KILL", $pid;
+                exit 124;
+            };
+            alarm $timeout;
+            waitpid $pid, 0;
+            exit(($? >> 8) || ($? & 127));
+        ' $osascript_timeout osascript \
+            -e "tell application \"System Events\"" \
+            -e "if not (exists process \"$app_name\") then error \"process not found\"" \
+            -e "tell process \"$app_name\"" \
+            -e "set targetWindow to missing value" \
+            -e "set targetArea to -1" \
+            -e "repeat with candidateWindow in windows" \
+            -e "try" \
+            -e "set candidateSize to size of candidateWindow" \
+            -e "set candidateArea to (item 1 of candidateSize) * (item 2 of candidateSize)" \
+            -e "if candidateArea > targetArea then" \
+            -e "set targetArea to candidateArea" \
+            -e "set targetWindow to candidateWindow" \
+            -e "end if" \
+            -e "end try" \
+            -e "end repeat" \
+            -e "if targetWindow is missing value or targetArea <= 0 then error \"no accessibility window\"" \
+            -e "set position of targetWindow to {$left, $top}" \
+            -e "set size of targetWindow to {$width, $height}" \
+            -e "end tell" \
             -e "end tell" >/dev/null 2>&1
 
         if test $status -eq 0
@@ -529,7 +741,7 @@ function workspace_capture_app_window --description "Move a movable app window t
         return 2
     end
 
-    set -l target_window (workspace_find_app_window $find_args --space $_flag_space --no-refresh)
+    set -l target_window (workspace_find_app_window $find_args --space $_flag_space --no-refresh --target-only)
     if test -n "$target_window"
         echo $target_window
         return 0
@@ -544,7 +756,7 @@ function workspace_capture_app_window --description "Move a movable app window t
 
     if test -n "$window_id"
         ws_move_windows_to_space $_flag_space $window_id
-        set target_window (workspace_find_app_window $find_args --space $_flag_space --no-refresh)
+        set target_window (workspace_find_app_window $find_args --space $_flag_space --no-refresh --target-only)
 
         if test -n "$target_window"
             echo $target_window

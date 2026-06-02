@@ -17,7 +17,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
 
     set -l app_keys \
         code codex chatgpt zotero thunderbird word powerpoint outlook zoom teams dia finder preview notes \
-        calendar reminders wechat keybase messages dingtalk whatsapp warp smartgit flclash thaw
+        calendar reminders wechat keybase messages dingtalk whatsapp warp smartgit keepassx flclash thaw
 
     for key in $app_keys
         workspace_app_name $key >/dev/null

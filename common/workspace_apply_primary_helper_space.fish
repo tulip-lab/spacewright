@@ -100,21 +100,15 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
                 set target_display (workspace_resolve_display_role $_flag_display)
                 or return $status
 
-                set -l primary_apps_json (workspace_app_names_json $_flag_primary_app_key)
-                or return 1
+                set -l primary_fallback_info (workspace_app_key_space_fallback_info \
+                    --app-key $_flag_primary_app_key \
+                    --caller $caller \
+                    --phase primary_space_fallback)
+                set -l primary_fallback_status $status
 
-                set -l windows_json_fallback (ws_query_windows $caller primary_space_fallback)
-                or return 1
-
-                set -l primary_fallback_info (echo $windows_json_fallback | ws_jq -r --argjson apps "$primary_apps_json" '
-                    first(
-                        .[]
-                        | select(.app as $app | $apps | index($app))
-                        | select(.["is-minimized"]==false)
-                        | [.id, .space, .display]
-                        | @tsv
-                    ) // empty
-                ')
+                if test "$primary_fallback_status" -eq 1
+                    return 1
+                end
 
                 if test -z "$primary_fallback_info"
                     return 1
@@ -129,39 +123,15 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
                     return 1
                 end
 
-                set -l spaces_json_fallback (ws_yabai -m query --spaces 2>/dev/null)
-                if test $status -ne 0 -o -z "$spaces_json_fallback"
-                    return 1
-                end
-
-                set -l target_space_uuid (echo $spaces_json_fallback | ws_jq -r --argjson s $target_space '
-                    first(.[] | select(.index==$s) | .uuid) // empty
-                ')
-
-                if test -z "$target_space_uuid"
-                    return 1
-                end
-
-                if test "$source_display" != "$target_display"
-                    workspace_debug_step $caller primary-space-fallback-move-space "$target_space" display=$target_display
-                    ws_yabai -m space $target_space --display $target_display >/dev/null 2>&1
-                    sleep 0.8
-
-                    set spaces_json_fallback (ws_yabai -m query --spaces 2>/dev/null)
-                    if test $status -ne 0 -o -z "$spaces_json_fallback"
-                        return 1
-                    end
-
-                    set target_space (echo $spaces_json_fallback | ws_jq -r --arg uuid "$target_space_uuid" '
-                        first(.[] | select(.uuid==$uuid) | .index) // empty
-                    ')
-
-                    if test -z "$target_space"
-                        return 1
-                    end
-                end
-
-                workspace_focus_labeled_space $label $target_space $target_display $layout $cleanup_specs
+                set target_space (workspace_focus_space_fallback \
+                    --label $label \
+                    --caller $caller \
+                    --space $target_space \
+                    --source-display $source_display \
+                    --target-display $target_display \
+                    --layout $layout \
+                    --phase primary-space-fallback \
+                    $cleanup_specs)
                 or return 1
 
                 set primary_space_fallback_used 1
@@ -186,7 +156,7 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
         ws_move_windows_to_space $target_space $primary_window
     end
 
-    set -l primary_target_find_args $primary_find_args --space $target_space --no-refresh
+    set -l primary_target_find_args $primary_find_args --space $target_space --no-refresh --target-only
 
     if set -q _flag_primary_app_key
         set primary_window (workspace_find_app_key_window $primary_target_find_args)
@@ -255,7 +225,7 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
     end
 
     if set -q _flag_helper_app
-        set -l final_helper_args --app "$_flag_helper_app" --caller $caller --space $target_space --no-refresh
+        set -l final_helper_args --app "$_flag_helper_app" --caller $caller --space $target_space --no-refresh --target-only
         if set -q _flag_helper_visible
             set -a final_helper_args --visible
         end

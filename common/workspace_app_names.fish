@@ -48,6 +48,8 @@ function workspace_app_names --description "Print known yabai app names for a wo
             printf "%s\n" Warp
         case smartgit
             printf "%s\n" SmartGit
+        case keepassx
+            printf "%s\n" KeePassXC KeePassX
         case flclash
             printf "%s\n" FlClash
         case thaw

@@ -1,4 +1,4 @@
-function coding_control --description "Collect Warp, SmartGit, and FlClash onto the internal coding control workspace and apply the standard control layout"
+function coding_control --description "Collect Warp, SmartGit, KeePassXC, and FlClash onto the internal coding control workspace and apply the standard control layout"
     argparse dry-run -- $argv
     or return 1
 
@@ -6,7 +6,7 @@ function coding_control --description "Collect Warp, SmartGit, and FlClash onto 
         printf "dry_run=coding_control\n"
         printf "label=%s\n" coding_control
         printf "display=%s\n" primary
-        printf "apps=%s,%s,%s|%s\n" (workspace_app_name warp) (workspace_app_name smartgit) (workspace_app_name flclash) (workspace_app_name thaw)
+        printf "apps=%s,%s,%s,%s|%s\n" (workspace_app_name warp) (workspace_app_name smartgit) (workspace_app_name keepassx) (workspace_app_name flclash) (workspace_app_name thaw)
         return 0
     end
 
@@ -24,6 +24,7 @@ function coding_control --description "Collect Warp, SmartGit, and FlClash onto 
     # Managed apps:
     #   - Warp
     #   - SmartGit
+    #   - KeePassXC
     #   - FlClash
     #
     # Window selection rules:
@@ -31,6 +32,8 @@ function coding_control --description "Collect Warp, SmartGit, and FlClash onto 
     #       Optional. Use the first non-minimized Warp window if available.
     #   - SmartGit:
     #       Optional. Use the first non-minimized SmartGit window if available.
+    #   - KeePassXC:
+    #       Optional. Use the first non-minimized KeePassXC/KeePassX window if available.
     #   - FlClash:
     #       Optional. If running but hidden, activate it before capture.
     #       Use visible non-minimized FlClash/Thaw windows if available.
@@ -39,27 +42,27 @@ function coding_control --description "Collect Warp, SmartGit, and FlClash onto 
     #   The workspace is only created if at least one of the following exists:
     #     - Warp
     #     - SmartGit
+    #     - KeePassXC
     #     - FlClash
     #
     # Layout:
     #   - Warp     -> upper 2/3 of the screen
     #   - SmartGit -> fixed absolute position and size
+    #   - KeePassXC -> moved to the same control space without forcing bounds
     #   - FlClash  -> lower 1/3 of the screen
     #
     # Notes:
     #   - The function is re-runnable.
     #   - It reuses an existing labeled space when possible.
     #   - It retargets the label when the existing space has non-control windows.
-    #   - It moves only the initially captured window IDs.
+    #   - It retries standard app-key windows once if they do not land on target.
     #   - It clears unlabeled empty spaces on the target display at the end.
     # -------------------------------------------------------------------------
 
     set -l label coding_control
-    set -l warp_app (workspace_app_name warp)
-    set -l smartgit_app (workspace_app_name smartgit)
     set -l flclash_app (workspace_app_name flclash)
     set -l flclash_apps_json (workspace_app_names_json flclash thaw)
-    set -l control_app_regex (workspace_app_regex warp smartgit flclash thaw)
+    set -l control_app_regex (workspace_app_regex warp smartgit keepassx flclash thaw)
     or return 1
 
     # -------------------------------------------------------------------------
@@ -90,23 +93,23 @@ function coding_control --description "Collect Warp, SmartGit, and FlClash onto 
         set windows_json (ws_query_windows "coding_control" refresh); or return 1
     end
 
-    set -l warp (echo $windows_json | ws_jq -r --arg app "$warp_app" '
-        first(
-            .[]
-            | select(.app==$app)
-            | select(.["is-minimized"]==false)
-            | .id
-        ) // empty
-    ')
+    set -l warp (workspace_find_app_key_window --app-key warp --caller $label)
+    set -l warp_status $status
+    if test "$warp_status" -eq 1
+        return 1
+    end
 
-    set -l smartgit (echo $windows_json | ws_jq -r --arg app "$smartgit_app" '
-        first(
-            .[]
-            | select(.app==$app)
-            | select(.["is-minimized"]==false)
-            | .id
-        ) // empty
-    ')
+    set -l smartgit (workspace_find_app_key_window --app-key smartgit --caller $label)
+    set -l smartgit_status $status
+    if test "$smartgit_status" -eq 1
+        return 1
+    end
+
+    set -l keepassx (workspace_find_app_key_window --app-key keepassx --caller $label)
+    set -l keepassx_status $status
+    if test "$keepassx_status" -eq 1
+        return 1
+    end
 
     set -l flclash (echo $windows_json | ws_jq -r --argjson apps "$flclash_apps_json" '
         .[]
@@ -117,7 +120,11 @@ function coding_control --description "Collect Warp, SmartGit, and FlClash onto 
     ')
 
     # Do not create the workspace if neither helper window exists
-    if test -z "$warp" -a -z "$smartgit" -a -z "$flclash"
+    if test -z "$warp" -a -z "$smartgit" -a -z "$keepassx" -a -z "$flclash"
+        if test "$warp_status" -eq 2 -o "$smartgit_status" -eq 2 -o "$keepassx_status" -eq 2
+            return 1
+        end
+
         destroy_empty_labeled_space $label
 
         return 0
@@ -151,32 +158,59 @@ function coding_control --description "Collect Warp, SmartGit, and FlClash onto 
     # -------------------------------------------------------------------------
     # 5. First-pass move
     # -------------------------------------------------------------------------
-    ws_move_windows_to_space $target_space $warp $smartgit $flclash
+    set -l warp_initial $warp
+    set -l smartgit_initial $smartgit
+    set -l keepassx_initial $keepassx
+
+    ws_move_windows_to_space $target_space $warp $smartgit $keepassx $flclash
 
     # -------------------------------------------------------------------------
     # 6. Final capture on target space
     # -------------------------------------------------------------------------
     set -l windows_json_final (ws_query_windows "coding_control" final); or return 1
 
-    set warp (echo $windows_json_final | ws_jq -r --arg app "$warp_app" --argjson s $target_space '
-        first(
-            .[]
-            | select(.app==$app)
-            | select(.space==$s)
-            | select(.["is-minimized"]==false)
-            | .id
-        ) // empty
-    ')
+    set warp (workspace_find_app_key_window --app-key warp --caller $label --space $target_space --no-refresh --target-only)
+    set smartgit (workspace_find_app_key_window --app-key smartgit --caller $label --space $target_space --no-refresh --target-only)
+    set keepassx (workspace_find_app_key_window --app-key keepassx --caller $label --space $target_space --no-refresh --target-only)
 
-    set smartgit (echo $windows_json_final | ws_jq -r --arg app "$smartgit_app" --argjson s $target_space '
-        first(
-            .[]
-            | select(.app==$app)
-            | select(.space==$s)
-            | select(.["is-minimized"]==false)
-            | .id
-        ) // empty
-    ')
+    if test -z "$warp" -a -n "$warp_initial"
+        set warp (workspace_find_app_key_window --app-key warp --caller $label)
+        set warp_status $status
+        if test "$warp_status" -eq 1
+            return 1
+        end
+
+        if test -n "$warp"
+            ws_move_windows_to_space $target_space $warp
+            set warp (workspace_find_app_key_window --app-key warp --caller $label --space $target_space --no-refresh --target-only)
+        end
+    end
+
+    if test -z "$smartgit" -a -n "$smartgit_initial"
+        set smartgit (workspace_find_app_key_window --app-key smartgit --caller $label)
+        set smartgit_status $status
+        if test "$smartgit_status" -eq 1
+            return 1
+        end
+
+        if test -n "$smartgit"
+            ws_move_windows_to_space $target_space $smartgit
+            set smartgit (workspace_find_app_key_window --app-key smartgit --caller $label --space $target_space --no-refresh --target-only)
+        end
+    end
+
+    if test -z "$keepassx" -a -n "$keepassx_initial"
+        set keepassx (workspace_find_app_key_window --app-key keepassx --caller $label)
+        set keepassx_status $status
+        if test "$keepassx_status" -eq 1
+            return 1
+        end
+
+        if test -n "$keepassx"
+            ws_move_windows_to_space $target_space $keepassx
+            set keepassx (workspace_find_app_key_window --app-key keepassx --caller $label --space $target_space --no-refresh --target-only)
+        end
+    end
 
     set flclash (echo $windows_json_final | ws_jq -r --argjson apps "$flclash_apps_json" --argjson s $target_space '
         .[]

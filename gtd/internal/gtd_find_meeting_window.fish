@@ -8,6 +8,7 @@ function gtd_find_meeting_windows --description "Find all movable GTD meeting he
     set -l target_space ""
     set -l no_refresh 0
     set -l target_only 0
+    set -l quiet_unmovable 0
 
     if test -z "$caller"
         set caller gtd_meeting
@@ -18,6 +19,8 @@ function gtd_find_meeting_windows --description "Find all movable GTD meeting he
             set no_refresh 1
         else if test "$arg" = "--target-only"
             set target_only 1
+        else if test "$arg" = "--quiet-unmovable"
+            set quiet_unmovable 1
         else if test -z "$target_space"
             set target_space $arg
         end
@@ -130,7 +133,9 @@ function gtd_find_meeting_windows --description "Find all movable GTD meeting he
     end
 
     workspace_debug_step $caller "$debug_name-refresh-unmovable"
-    echo "[WARN] $caller found $warning_name, but yabai did not expose a movable $warning_name window" >&2
+    if test "$quiet_unmovable" -ne 1
+        echo "[WARN] $caller found $warning_name, but yabai did not expose a movable $warning_name window" >&2
+    end
     return 2
 end
 
@@ -146,7 +151,7 @@ function gtd_find_meeting_window --description "Find the primary movable GTD mee
 end
 
 function gtd_find_zoom_windows --description "Find movable Zoom windows, including active meeting/video/share windows"
-    gtd_find_meeting_windows zoom zoom Zoom none meeting,video,share,screen $argv
+    gtd_find_meeting_windows zoom zoom Zoom refresh meeting,video,share,screen $argv
 end
 
 function gtd_find_zoom_window --description "Find the primary movable Zoom window, clearing recovered bad-window cache entries"
