@@ -54,15 +54,7 @@ function gtd_calendar --description "Collect Calendar and Reminders onto the wor
     set -l calendar_fallback_space
     set -l calendar_fallback_display
 
-    set -l calendar_initial_info (echo $windows_json | ws_jq -r --argjson apps "$calendar_apps_json" '
-        first(
-            .[]
-            | select(.app as $app | $apps | index($app))
-            | select(.["is-minimized"]==false)
-            | [.id, .space, .display, .["can-move"]]
-            | @tsv
-        ) // empty
-    ')
+    set -l calendar_initial_info (echo $windows_json | workspace_app_key_window_info --app-key calendar)
     if test $status -ne 0
         return 1
     end
@@ -147,6 +139,13 @@ function gtd_calendar --description "Collect Calendar and Reminders onto the wor
             --target-display $target_display \
             --layout float \
             --phase calendar-space-fallback)
+        or return 1
+
+        workspace_evict_non_owned_windows_from_space \
+            --caller $label \
+            --space $target_space \
+            --target-display $target_display \
+            --allowed-app-regex (workspace_app_regex calendar reminders)
         or return 1
     else
         set target_space (workspace_prepare_labeled_space $label $target_display float)

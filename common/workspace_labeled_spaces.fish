@@ -125,6 +125,26 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
     return 1
 end
 
+function workspace_create_unlabeled_space_on_display --description "Create an unlabeled holding space on the target display"
+    set -l target_display $argv[1]
+
+    if test -z "$target_display"
+        echo "usage: workspace_create_unlabeled_space_on_display <target-display>" >&2
+        return 2
+    end
+
+    set -l temp_label "__workspace_holding_"(date +%s)"_"$fish_pid
+    set -l target_space (find_or_create_labeled_space $temp_label $target_display)
+    if test -z "$target_space"
+        return 1
+    end
+
+    ws_yabai -m space $target_space --label "" >/dev/null 2>&1
+    or return 1
+
+    echo $target_space
+end
+
 function prepare_labeled_space --description "Normalize labeled space state"
     set -l target_space $argv[1]
     set -l label $argv[2]

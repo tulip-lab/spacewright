@@ -38,8 +38,6 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
     set -l preview_app (workspace_app_name preview)
     set -l chatgpt_app (workspace_app_name chatgpt)
     set -l notes_app (workspace_app_name notes)
-    set -l preview_apps_json (workspace_app_names_json preview)
-    or return 1
     set -l notes_apps_json (workspace_app_names_json notes)
     or return 1
 
@@ -57,16 +55,7 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
         set preview $preview_movable_windows[1]
     end
 
-    set -l preview_initial_info (echo $windows_json | ws_jq -r --argjson apps "$preview_apps_json" '
-        first(
-            .[]
-            | select(.app as $app | $apps | index($app))
-            | select(.["is-minimized"]==false)
-            | select(.["can-move"]!=true)
-            | [.id, .space, .display, .["can-move"]]
-            | @tsv
-        ) // empty
-    ')
+    set -l preview_initial_info (echo $windows_json | workspace_app_key_window_info --app-key preview --unmovable)
     if test $status -ne 0
         return 1
     end
@@ -160,6 +149,8 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
     set -l finder_windows (echo $windows_json | ws_find_windows "$finder_app" --movable)
     set -l target_display (workspace_resolve_display_role $_flag_display)
     or return $status
+    set -l review_app_regex (workspace_app_regex finder preview chatgpt notes)
+    or return 1
 
     set -l target_space
 
@@ -177,6 +168,13 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
             --phase notes-space-fallback \
             $cleanup_specs)
         or return 1
+
+        workspace_evict_non_owned_windows_from_space \
+            --caller $_flag_label \
+            --space $target_space \
+            --target-display $target_display \
+            --allowed-app-regex "$review_app_regex"
+        or return 1
     else if test -n "$preview_fallback_space"
         set target_space $preview_fallback_space
         set preview $preview_fallback_window
@@ -190,6 +188,13 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
             --phase preview-space-fallback \
             $cleanup_specs)
         or return 1
+
+        workspace_evict_non_owned_windows_from_space \
+            --caller $_flag_label \
+            --space $target_space \
+            --target-display $target_display \
+            --allowed-app-regex "$review_app_regex"
+        or return 1
     else
         set target_space (find_or_create_labeled_space $_flag_label $target_display)
         if test -z "$target_space"
@@ -201,7 +206,7 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
             $_flag_label \
             $target_space \
             $target_display \
-            (workspace_app_regex finder preview chatgpt notes))
+            "$review_app_regex")
         or return 1
 
         workspace_focus_labeled_space $_flag_label $target_space $target_display float $cleanup_specs

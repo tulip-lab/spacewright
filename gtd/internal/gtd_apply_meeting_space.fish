@@ -116,6 +116,13 @@ function gtd_apply_meeting_space --description "Apply a GTD meeting workspace fo
             --phase zoom-space-fallback \
             $cleanup_specs)
         or return 1
+
+        workspace_evict_non_owned_windows_from_space \
+            --caller $_flag_label \
+            --space $target_space \
+            --target-display $target_display \
+            --allowed-app-regex (workspace_app_regex outlook zoom teams)
+        or return 1
     else
         set target_space (find_or_create_labeled_space $_flag_label $target_display)
         if test -z "$target_space"

@@ -28,13 +28,17 @@ function work_command_check --description "Check that documented workspace comma
         workspace_refresh_app_window \
         workspace_find_app_window \
         workspace_find_app_key_window \
+        workspace_app_key_window_info \
         workspace_app_key_space_fallback_info \
         workspace_apply_app_key_grid_bounds \
         workspace_capture_app_window \
+        workspace_space_non_owned_windows \
+        workspace_evict_non_owned_windows_from_space \
         workspace_debug_step \
         workspace_run_step \
         workspace_run_cleanup_specs \
         workspace_run_mode_steps \
+        workspace_create_unlabeled_space_on_display \
         workspace_focus_labeled_space \
         workspace_focus_space_fallback \
         workspace_prepare_labeled_space \

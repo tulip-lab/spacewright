@@ -37,6 +37,156 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         echo "OK      app registry"
     end
 
+    set -l fallback_windows_fixture '[
+        {"id": 11, "app": "Notes", "space": 6, "can-move": false, "is-minimized": false},
+        {"id": 12, "app": "Preview", "space": 6, "can-move": true, "is-minimized": false},
+        {"id": 13, "app": "Microsoft Word", "space": 6, "can-move": true, "is-minimized": false},
+        {"id": 14, "app": "Finder", "space": 7, "can-move": true, "is-minimized": false},
+        {"id": 15, "app": "Microsoft PowerPoint", "space": 6, "can-move": false, "is-minimized": false}
+    ]'
+    set -l non_owned_movable (echo $fallback_windows_fixture | workspace_space_non_owned_windows \
+        --space 6 \
+        --allowed-app-regex (workspace_app_regex finder preview chatgpt notes) \
+        --movable)
+    if test $status -eq 0 -a (string join , $non_owned_movable) = "13"
+        echo "OK      fallback ownership selector"
+    else
+        echo "FAIL    fallback ownership selector"
+        set failed 1
+    end
+
+    set -l fallback_eviction_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_moved ""
+        set -g __work_smoke_focused ""
+
+        function ws_query_windows
+            printf "%s\n" "[
+                {\"id\": 11, \"app\": \"Notes\", \"space\": 6, \"can-move\": false, \"is-minimized\": false},
+                {\"id\": 12, \"app\": \"Preview\", \"space\": 6, \"can-move\": true, \"is-minimized\": false},
+                {\"id\": 13, \"app\": \"Microsoft Word\", \"space\": 6, \"can-move\": true, \"is-minimized\": false},
+                {\"id\": 14, \"app\": \"Finder\", \"space\": 7, \"can-move\": true, \"is-minimized\": false}
+            ]"
+        end
+
+        function workspace_create_unlabeled_space_on_display
+            echo 21
+        end
+
+        function ws_move_windows_to_space
+            set -g __work_smoke_moved (string join , $argv)
+        end
+
+        function ws_focus_space
+            set -g __work_smoke_focused $argv[1]
+        end
+
+        function workspace_debug_step
+        end
+
+        workspace_evict_non_owned_windows_from_space \
+            --caller work_smoke \
+            --space 6 \
+            --target-display 2 \
+            --allowed-app-regex (workspace_app_regex finder preview chatgpt notes)
+        or exit 1
+
+        test "$__work_smoke_moved" = "21,13"
+        or exit 2
+
+        test "$__work_smoke_focused" = "6"
+        or exit 3
+    '
+    fish -lc "$fallback_eviction_smoke" >/tmp/work-fallback-eviction-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      fallback ownership eviction"
+    else
+        echo "FAIL    fallback ownership eviction"
+        cat /tmp/work-fallback-eviction-smoke.out
+        set failed 1
+    end
+
+    set -l review_fallback_eviction_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_review_evicted 0
+        set -g __work_smoke_review_eviction_args ""
+
+        function workspace_run_cleanup_specs
+        end
+
+        function ws_query_windows
+            printf "%s\n" "[
+                {\"id\": 11, \"app\": \"Notes\", \"space\": 6, \"display\": 2, \"can-move\": false, \"is-minimized\": false, \"title\": \"Notes\"},
+                {\"id\": 12, \"app\": \"Preview\", \"space\": 7, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Preview\"},
+                {\"id\": 13, \"app\": \"Microsoft Word\", \"space\": 6, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"draft\"},
+                {\"id\": 14, \"app\": \"Finder\", \"space\": 7, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Finder\"}
+            ]"
+        end
+
+        function workspace_find_app_key_window
+            if contains -- "--app-key" $argv
+                set -l key_index (math (contains --index -- "--app-key" $argv) + 1)
+                if test "$argv[$key_index]" = notes
+                    return 2
+                end
+            end
+        end
+
+        function workspace_resolve_display_role
+            echo 2
+        end
+
+        function workspace_focus_space_fallback
+            argparse "label=" "space=" "source-display=" "target-display=" "layout=" "phase=" -- $argv
+            echo $_flag_space
+        end
+
+        function workspace_evict_non_owned_windows_from_space
+            set -g __work_smoke_review_evicted 1
+            set -g __work_smoke_review_eviction_args (string join " " -- $argv)
+        end
+
+        function ws_move_windows_to_space
+        end
+
+        function workspace_capture_app_window
+        end
+
+        function workspace_find_app_window
+        end
+
+        function ws_focus_space
+        end
+
+        function workspace_apply_app_key_grid_bounds
+        end
+
+        function cleanup_unlabeled_empty_spaces
+        end
+
+        gtd_apply_review_space --label gtd_review_wide --display wide
+        or exit 1
+
+        test "$__work_smoke_review_evicted" = 1
+        or exit 2
+
+        string match -q "*--space 6*" -- "$__work_smoke_review_eviction_args"
+        or exit 3
+
+        string match -q "*--allowed-app-regex*" -- "$__work_smoke_review_eviction_args"
+        or exit 4
+    '
+    fish -lc "$review_fallback_eviction_smoke" >/tmp/work-review-fallback-eviction-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      review fallback ownership eviction"
+    else
+        echo "FAIL    review fallback ownership eviction"
+        cat /tmp/work-review-fallback-eviction-smoke.out
+        set failed 1
+    end
+
     set -l dry_run_commands \
         "work_solo --dry-run" \
         "work_wide --dry-run" \

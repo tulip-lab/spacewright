@@ -134,6 +134,20 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
                     $cleanup_specs)
                 or return 1
 
+                set -l primary_fallback_allowed_app_regex (workspace_app_regex $_flag_primary_app_key)
+                or return 1
+                if set -q _flag_helper_app_key
+                    set primary_fallback_allowed_app_regex (workspace_app_regex $_flag_primary_app_key $_flag_helper_app_key)
+                    or return 1
+                end
+
+                workspace_evict_non_owned_windows_from_space \
+                    --caller $caller \
+                    --space $target_space \
+                    --target-display $target_display \
+                    --allowed-app-regex "$primary_fallback_allowed_app_regex"
+                or return 1
+
                 set primary_space_fallback_used 1
             else
                 return 1

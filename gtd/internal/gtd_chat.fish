@@ -77,15 +77,7 @@ function gtd_chat --description "Fast GTD chat workspace layout on workspace pri
     set -l dingtalk_fallback_space
     set -l dingtalk_fallback_display
 
-    set -l dingtalk_initial_info (echo $windows_json | ws_jq -r --argjson apps "$dingtalk_apps_json" '
-        first(
-            .[]
-            | select(.app as $app | $apps | index($app))
-            | select(.["is-minimized"]==false)
-            | [.id, .space, .display, .["can-move"]]
-            | @tsv
-        ) // empty
-    ')
+    set -l dingtalk_initial_info (echo $windows_json | workspace_app_key_window_info --app-key dingtalk)
     if test $status -ne 0
         return 1
     end
@@ -172,6 +164,13 @@ function gtd_chat --description "Fast GTD chat workspace layout on workspace pri
             --target-display $target_display \
             --layout float \
             --phase dingtalk-space-fallback)
+        or return 1
+
+        workspace_evict_non_owned_windows_from_space \
+            --caller $label \
+            --space $target_space \
+            --target-display $target_display \
+            --allowed-app-regex "$chat_app_regex"
         or return 1
     else
         set target_space (find_or_create_labeled_space $label $target_display)

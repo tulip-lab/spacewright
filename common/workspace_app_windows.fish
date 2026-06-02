@@ -432,6 +432,51 @@ function workspace_find_app_key_window --description "Find a movable app window 
     return 0
 end
 
+function workspace_app_key_window_info --description "Return first non-minimized app-key window metadata from yabai window JSON on stdin"
+    argparse 'app-key=' movable unmovable -- $argv
+    or return 1
+
+    if not set -q _flag_app_key
+        echo "usage: workspace_app_key_window_info --app-key <key> [--movable|--unmovable]" >&2
+        return 2
+    end
+
+    set -l windows_json
+    read -lz windows_json
+    if test -z "$windows_json"
+        return 1
+    end
+
+    set -l apps_json (workspace_app_names_json $_flag_app_key)
+    or return 1
+
+    set -l movable_filter ""
+    if set -q _flag_movable
+        set movable_filter movable
+    else if set -q _flag_unmovable
+        set movable_filter unmovable
+    end
+
+    echo $windows_json | ws_jq -r --argjson apps "$apps_json" --arg movable_filter "$movable_filter" '
+        first(
+            .[]
+            | select(.app as $app | $apps | index($app))
+            | select(.["is-minimized"]==false)
+            | select(
+                if $movable_filter == "movable" then
+                    .["can-move"]==true
+                elif $movable_filter == "unmovable" then
+                    .["can-move"]!=true
+                else
+                    true
+                end
+            )
+            | [.id, .space, .display, .["can-move"]]
+            | @tsv
+        ) // empty
+    '
+end
+
 function workspace_app_key_space_fallback_info --description "Return a present app-key window id, space and display for space fallback"
     argparse 'app-key=' 'caller=' 'phase=' -- $argv
     or return 1
