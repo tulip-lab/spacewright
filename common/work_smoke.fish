@@ -187,6 +187,93 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
+    set -l dia_fullscreen_fixture '[
+        {"id": 31, "app": "Dia", "space": 8, "can-move": true, "is-minimized": false, "is-native-fullscreen": true},
+        {"id": 32, "app": "Dia", "space": 8, "can-move": true, "is-minimized": false, "is-native-fullscreen": false}
+    ]'
+    set -l dia_non_fullscreen (echo $dia_fullscreen_fixture | ws_find_windows Dia --movable --not-native-fullscreen)
+    if test $status -eq 0 -a (string join , $dia_non_fullscreen) = "32"
+        echo "OK      Dia native-fullscreen selector"
+    else
+        echo "FAIL    Dia native-fullscreen selector"
+        set failed 1
+    end
+
+    set -l support_retarget_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_support_retargeted 0
+        set -g __work_smoke_support_moved ""
+
+        function workspace_run_cleanup_specs
+        end
+
+        function ws_query_windows
+            set -l phase $argv[2]
+
+            if test "$phase" = initial
+                printf "%s\n" "[
+                    {\"id\": 31, \"app\": \"Dia\", \"space\": 3, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"is-native-fullscreen\": false},
+                    {\"id\": 96, \"app\": \"Finder\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"is-native-fullscreen\": false}
+                ]"
+            else
+                printf "%s\n" "[
+                    {\"id\": 31, \"app\": \"Dia\", \"space\": 21, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"is-native-fullscreen\": false}
+                ]"
+            end
+        end
+
+        function workspace_resolve_display_role
+            echo 2
+        end
+
+        function find_or_create_labeled_space
+            echo 8
+        end
+
+        function workspace_prepare_labeled_space
+            echo 8
+        end
+
+        function workspace_retarget_contaminated_space
+            set -g __work_smoke_support_retargeted 1
+            echo 21
+        end
+
+        function workspace_focus_labeled_space
+        end
+
+        function ws_move_windows_to_space
+            set -g __work_smoke_support_moved (string join , -- $argv)
+        end
+
+        function ws_window
+        end
+
+        function ws_focus_space
+        end
+
+        function cleanup_unlabeled_empty_spaces
+        end
+
+        gtd_apply_support_space --label gtd_support_wide --display wide --dia-layout wide
+        or exit 1
+
+        test "$__work_smoke_support_retargeted" = 1
+        or exit 2
+
+        test "$__work_smoke_support_moved" = "21,31"
+        or exit 3
+    '
+    fish -lc "$support_retarget_smoke" >/tmp/work-support-retarget-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      support contaminated-space retarget"
+    else
+        echo "FAIL    support contaminated-space retarget"
+        cat /tmp/work-support-retarget-smoke.out
+        set failed 1
+    end
+
     set -l dry_run_commands \
         "work_solo --dry-run" \
         "work_wide --dry-run" \

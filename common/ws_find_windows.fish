@@ -1,5 +1,5 @@
 function ws_find_windows --description "Find matching non-minimized window ids from yabai window JSON"
-    argparse 'space=' 'not-space=' 'app-regex=' 'exclude-title=' visible nonempty-title movable -- $argv
+    argparse 'space=' 'not-space=' 'app-regex=' 'exclude-title=' visible nonempty-title movable not-native-fullscreen -- $argv
     or return 1
 
     set -l app $argv[1]
@@ -14,6 +14,7 @@ function ws_find_windows --description "Find matching non-minimized window ids f
     set -l visible 0
     set -l nonempty_title 0
     set -l movable 0
+    set -l not_native_fullscreen 0
 
     if set -q _flag_visible
         set visible 1
@@ -25,6 +26,10 @@ function ws_find_windows --description "Find matching non-minimized window ids f
 
     if set -q _flag_movable
         set movable 1
+    end
+
+    if set -q _flag_not_native_fullscreen
+        set not_native_fullscreen 1
     end
 
     set -l exclude_title_json '[]'
@@ -53,6 +58,7 @@ function ws_find_windows --description "Find matching non-minimized window ids f
         --arg visible "$visible" \
         --arg nonempty_title "$nonempty_title" \
         --arg movable "$movable" \
+        --arg not_native_fullscreen "$not_native_fullscreen" \
         --argjson exclude_title "$exclude_title_json" '
         .[]
         | select(
@@ -66,6 +72,7 @@ function ws_find_windows --description "Find matching non-minimized window ids f
         | select(($visible!="1") or (.["is-visible"]==true))
         | select(($nonempty_title!="1") or (.title != null and .title != ""))
         | select(($movable!="1") or (.["can-move"]==true))
+        | select(($not_native_fullscreen!="1") or (.["is-native-fullscreen"]!=true))
         | . as $window
         | select(
             ($exclude_title | length == 0) or all($exclude_title[];

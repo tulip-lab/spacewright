@@ -33,7 +33,20 @@ function gtd_apply_support_space --description "Apply a GTD support workspace fo
     set -l target_display (workspace_resolve_display_role $_flag_display)
     or return $status
 
-    set -l target_space (workspace_prepare_labeled_space $_flag_label $target_display float $cleanup_specs)
+    set -l target_space (find_or_create_labeled_space $_flag_label $target_display)
+    if test -z "$target_space"
+        return 1
+    end
+
+    set target_space (workspace_retarget_contaminated_space \
+        $_flag_label \
+        $_flag_label \
+        $target_space \
+        $target_display \
+        (workspace_app_regex dia))
+    or return 1
+
+    workspace_focus_labeled_space $_flag_label $target_space $target_display float $cleanup_specs
     or return 1
 
     ws_move_windows_to_space $target_space $dia_windows
@@ -41,7 +54,7 @@ function gtd_apply_support_space --description "Apply a GTD support workspace fo
     set -l windows_json_final (ws_query_windows $_flag_label final); or return 1
     workspace_debug_step $_flag_label support-window-reconcile
 
-    set -l dia_all_windows (printf '%s\n' "$windows_json_final" | ws_find_windows (workspace_app_name dia) --movable)
+    set -l dia_all_windows (printf '%s\n' "$windows_json_final" | ws_find_windows (workspace_app_name dia) --movable --not-native-fullscreen)
     if test (count $dia_all_windows) -gt 0
         for wid in $dia_all_windows
             rm -f /tmp/workspace-ws-window-bad/$wid 2>/dev/null
@@ -51,7 +64,7 @@ function gtd_apply_support_space --description "Apply a GTD support workspace fo
         set windows_json_final (ws_query_windows $_flag_label final_dia_reconcile); or return 1
     end
 
-    set dia_windows (printf '%s\n' "$windows_json_final" | ws_find_windows (workspace_app_name dia) --space $target_space)
+    set dia_windows (printf '%s\n' "$windows_json_final" | ws_find_windows (workspace_app_name dia) --space $target_space --movable --not-native-fullscreen)
     gtd_support_layout_dia_windows $_flag_dia_layout $dia_windows
 
     ws_focus_space $target_space

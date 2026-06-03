@@ -411,9 +411,11 @@ Some fixed or ownership-sensitive workspaces also retarget contaminated labeled 
 
 ## GTD Support Dia Layout
 
-`gtd_support_solo`, `gtd_support_wide`, and `gtd_support_tall` collect all non-minimized `Dia` windows that yabai reports as movable. If Dia exists but no movable window is available, they activate Dia once, refresh the window snapshot, and warn if yabai still cannot expose a movable Dia window.
+`gtd_support_solo`, `gtd_support_wide`, and `gtd_support_tall` collect all non-minimized, non-native-fullscreen `Dia` windows that yabai reports as movable. Native fullscreen Dia windows are intentionally skipped so support layout commands do not interfere with browser video fullscreen state. After leaving fullscreen, rerun the support command to collect that Dia window back into the support workspace.
 
-Before applying the final Dia layout, support commands re-query every currently movable Dia window and move the whole set to the support target. This catches Dia browser or tab windows that appear after the initial support-window capture.
+If a previous support label points at a space mixed with non-Dia apps, support clears that label and uses a clean support space before moving Dia windows. If Dia exists but no non-fullscreen movable window is available, support activates Dia once, refreshes the window snapshot, and warns if yabai still cannot expose a movable non-fullscreen Dia window.
+
+Before applying the final Dia layout, support commands re-query every currently movable non-native-fullscreen Dia window and move the whole set to the support target. This catches Dia browser or tab windows that appear after the initial support-window capture without touching native fullscreen video windows.
 
 Solo support layout:
 

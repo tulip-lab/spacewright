@@ -322,11 +322,11 @@ This avoids moving a single Notes window back and forth between support and revi
 
 ### GTD Support Dia Layout
 
-All GTD support modes collect every non-minimized Dia window that yabai reports as movable through `gtd_support_find_dia_windows`. If Dia is present but no movable Dia window is available after activation, the helper warns and suggests restarting yabai because the yabai window graph may be stale.
+All GTD support modes collect every non-minimized, non-native-fullscreen Dia window that yabai reports as movable through `gtd_support_find_dia_windows`. Native fullscreen Dia windows are skipped so support layout does not move or grid a browser video fullscreen window. After the user leaves fullscreen, the next support run can collect that Dia window again.
 
-If Dia exists but no movable Dia window is exposed, the helper activates Dia once, refreshes the window snapshot, and fails closed with a warning if Dia remains non-movable.
+If a previous support label points at a space mixed with non-Dia apps, `gtd_apply_support_space` retargets the label to a clean support space before moving Dia windows. If Dia exists but no non-fullscreen movable Dia window is exposed, the helper activates Dia once, refreshes the window snapshot, and fails closed with a warning if Dia remains non-movable.
 
-After the first support move, `gtd_apply_support_space` re-queries all currently movable Dia windows and moves the whole set to the support target before applying layout. This keeps late-appearing Dia browser/tab windows with the support workspace.
+After the first support move, `gtd_apply_support_space` re-queries all currently movable non-native-fullscreen Dia windows and moves the whole set to the support target before applying layout. This keeps late-appearing Dia browser/tab windows with the support workspace without interfering with native fullscreen windows.
 
 `gtd_support_layout_dia_windows` applies mode-specific layouts:
 

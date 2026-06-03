@@ -13,7 +13,7 @@ function gtd_support_find_dia_windows --description "Find all movable Dia window
     end
 
     set -l dia_app (workspace_app_name dia)
-    set -l dia_windows (printf '%s\n' "$windows_json" | ws_find_windows "$dia_app" --movable)
+    set -l dia_windows (printf '%s\n' "$windows_json" | ws_find_windows "$dia_app" --movable --not-native-fullscreen)
 
     if test (count $dia_windows) -gt 0
         for wid in $dia_windows
@@ -24,7 +24,7 @@ function gtd_support_find_dia_windows --description "Find all movable Dia window
         return 0
     end
 
-    set -l dia_present (printf '%s\n' "$windows_json" | ws_find_windows "$dia_app")
+    set -l dia_present (printf '%s\n' "$windows_json" | ws_find_windows "$dia_app" --not-native-fullscreen)
     if test (count $dia_present) -eq 0
         return 0
     end
@@ -35,7 +35,7 @@ function gtd_support_find_dia_windows --description "Find all movable Dia window
     set windows_json (ws_query_windows "$caller" dia_refresh)
     or return 1
 
-    set dia_windows (printf '%s\n' "$windows_json" | ws_find_windows "$dia_app" --movable)
+    set dia_windows (printf '%s\n' "$windows_json" | ws_find_windows "$dia_app" --movable --not-native-fullscreen)
 
     if test (count $dia_windows) -gt 0
         for wid in $dia_windows
