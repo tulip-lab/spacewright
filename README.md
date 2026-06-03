@@ -144,7 +144,7 @@ Status helpers, `work_status`, `work_mode_status`, `work_check`, and the simple 
 
 Display-role commands such as `set_workspace_primary_display_uuid`, `resolve_workspace_primary_display`, and `workspace_resolve_display_role` are grouped in `common/workspace_display_roles.fish`.
 
-Runner helpers are grouped in `common/workspace_runners.fish`, app-window lifecycle helpers are grouped in `common/workspace_app_windows.fish`, labeled-space lifecycle helpers are grouped in `common/workspace_labeled_spaces.fish`, and core yabai/jq query helpers are grouped in `common/ws_core.fish`.
+Runner helpers are grouped in `common/workspace_runners.fish`. App-window helpers are split across `common/workspace_app_window_selectors.fish`, `common/workspace_app_window_lifecycle.fish`, `common/workspace_app_space_fallback.fish`, and `common/workspace_app_bounds.fish`. Labeled-space helpers are split across `common/workspace_labeled_space_lifecycle.fish`, `common/workspace_labeled_space_focus.fish`, and `common/workspace_space_fallback.fish`. Core yabai/jq query helpers are grouped in `common/ws_core.fish`.
 
 ## Inventory And Doctor
 

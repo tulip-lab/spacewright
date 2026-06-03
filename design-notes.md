@@ -34,8 +34,13 @@ Top-level and common wrappers follow the same grouping rule:
 - `common/workspace_display_roles.fish` defines primary display UUID storage and display-role resolvers
 - `common/workspace_runners.fish` defines step, cleanup-spec, and mode-step runners
 - `common/workspace_module_reloads.fish` defines `gtd_reload`, `coding_reload`, `office_reload`, and `research_reload`
-- `common/workspace_labeled_spaces.fish` defines labeled-space lifecycle and entry/focus helpers
-- `common/workspace_app_windows.fish` defines shared app-window selection, refresh, find, and capture helpers
+- `common/workspace_labeled_space_lifecycle.fish` defines labeled-space creation, label normalization, and empty-label helpers
+- `common/workspace_labeled_space_focus.fish` defines labeled-space focus and prepare helpers
+- `common/workspace_space_fallback.fish` defines fallback-space movement by UUID
+- `common/workspace_app_window_selectors.fish` defines shared app-window and app-key window selectors
+- `common/workspace_app_window_lifecycle.fish` defines refresh, find, and capture helpers
+- `common/workspace_app_space_fallback.fish` defines fallback metadata for present app-key windows
+- `common/workspace_app_bounds.fish` defines AppleScript bounds fallback helpers
 - `common/ws_core.fish` defines the core yabai/jq query and focus wrappers
 
 Keep public command names stable for shell and skhd callers. Prefer grouping tiny same-layer wrappers by responsibility over creating one file for every public function.
