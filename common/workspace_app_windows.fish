@@ -477,6 +477,78 @@ function workspace_app_key_window_info --description "Return first non-minimized
     '
 end
 
+function workspace_app_key_windows --description "Return matching app-key window ids from yabai window JSON"
+    argparse 'app-key=' 'space=' 'not-space=' movable unmovable visible nonempty-title not-native-fullscreen -- $argv
+    or return 1
+
+    if not set -q _flag_app_key
+        echo "usage: workspace_app_key_windows --app-key <key> [--space <space>] [--not-space <space>] [--movable|--unmovable] [--visible] [--nonempty-title] [--not-native-fullscreen]" >&2
+        return 2
+    end
+
+    set -l windows_json
+    read -lz windows_json
+    if test -z "$windows_json"
+        return 1
+    end
+
+    set -l apps_json (workspace_app_names_json $_flag_app_key)
+    or return 1
+
+    set -l space "$_flag_space"
+    set -l not_space "$_flag_not_space"
+    set -l movable_filter ""
+    set -l visible 0
+    set -l nonempty_title 0
+    set -l not_native_fullscreen 0
+
+    if set -q _flag_movable
+        set movable_filter movable
+    else if set -q _flag_unmovable
+        set movable_filter unmovable
+    end
+
+    if set -q _flag_visible
+        set visible 1
+    end
+
+    if set -q _flag_nonempty_title
+        set nonempty_title 1
+    end
+
+    if set -q _flag_not_native_fullscreen
+        set not_native_fullscreen 1
+    end
+
+    echo $windows_json | ws_jq -r \
+        --argjson apps "$apps_json" \
+        --arg space "$space" \
+        --arg not_space "$not_space" \
+        --arg movable_filter "$movable_filter" \
+        --arg visible "$visible" \
+        --arg nonempty_title "$nonempty_title" \
+        --arg not_native_fullscreen "$not_native_fullscreen" '
+        .[]
+        | select(.app as $app | $apps | index($app))
+        | select(.["is-minimized"]==false)
+        | select(($visible!="1") or (.["is-visible"]==true))
+        | select(($nonempty_title!="1") or (.title != null and .title != ""))
+        | select(($not_native_fullscreen!="1") or (.["is-native-fullscreen"]!=true))
+        | select(
+            if $movable_filter == "movable" then
+                .["can-move"]==true
+            elif $movable_filter == "unmovable" then
+                .["can-move"]!=true
+            else
+                true
+            end
+        )
+        | select(($space=="") or (.space==($space | tonumber)))
+        | select(($not_space=="") or (.space!=($not_space | tonumber)))
+        | .id
+    '
+end
+
 function workspace_app_key_space_fallback_info --description "Return a present app-key window id, space and display for space fallback"
     argparse 'app-key=' 'caller=' 'phase=' -- $argv
     or return 1

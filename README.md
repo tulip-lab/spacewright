@@ -111,6 +111,7 @@ Current core helpers include:
 - `workspace_find_app_window`
 - `workspace_find_app_key_window`
 - `workspace_app_key_window_info`
+- `workspace_app_key_windows`
 - `workspace_app_key_space_fallback_info`
 - `workspace_apply_app_key_grid_bounds`
 - `workspace_capture_app_window`
@@ -170,7 +171,7 @@ work_smoke
 
 It returns nonzero only for failed checks. Warnings identify cleanup or environment follow-up without mutating state.
 
-`work_smoke` is the fast regression check after editing workspace code. It reloads functions, runs `work_command_check`, validates app registry keys, exercises representative `--dry-run` paths, and checks that retired helper commands are not loaded.
+`work_smoke` is the fast regression check after editing workspace code. It reloads functions, runs `work_command_check`, validates app registry keys, exercises every current `solo`, `wide`, and `tall` workspace CLI entry through `--dry-run`, and checks that retired helper commands are not loaded.
 
 Additional loaded entry/helper commands include:
 
@@ -379,7 +380,7 @@ When yabai reports an app window but does not expose it as movable, `workspace_f
 
 `gtd_mail_*` also enables primary-space fallback for Thunderbird. If Thunderbird remains present but not movable, the command uses Thunderbird's current space as the mail workspace, moves that space to the target display, labels it as the requested mail workspace, moves movable non-mail/helper windows from that fallback space into an unlabeled holding space, and applies the requested grid by setting Thunderbird's largest scriptable window bounds through AppleScript.
 
-All workspace JSON parsing should go through `ws_jq`, `ws_find_window`, `ws_find_windows`, `workspace_select_app_window`, `workspace_find_app_window`, `workspace_find_app_key_window`, `workspace_app_key_window_info`, or `workspace_capture_app_window`; direct `jq` pipelines are avoided inside workspace functions so parser timeouts remain bounded.
+All workspace JSON parsing should go through `ws_jq`, `ws_find_window`, `ws_find_windows`, `workspace_select_app_window`, `workspace_find_app_window`, `workspace_find_app_key_window`, `workspace_app_key_window_info`, `workspace_app_key_windows`, or `workspace_capture_app_window`; direct `jq` pipelines are avoided inside workspace functions so parser timeouts remain bounded.
 
 ## ChatGPT Ownership Rule
 
@@ -690,7 +691,7 @@ All `gtd_meeting_*` modes also retarget contaminated labeled spaces before layou
 
 `gtd_meeting_solo` uses a 1/3 + 2/3 layout on the workspace primary display: Zoom and Teams share the left third vertically, and Outlook uses the right two thirds.
 
-`gtd_review_*` modes create or reuse the review workspace when at least one non-Finder review app is available: Preview, Notes, or ChatGPT. Finder is included in the layout when present, but Finder alone does not create a review workspace. When Finder or Preview is owned by review, all movable windows for that app are moved to the review space and laid out together.
+`gtd_review_*` modes create or reuse the review workspace when at least one non-Finder review app is available: Preview, Notes, or ChatGPT. Finder is included in the layout when present, but Finder alone does not create a review workspace. Review first collects existing Finder, Preview, Notes, and ChatGPT windows from the initial yabai snapshot instead of activating optional apps. When Finder or Preview is owned by review, all movable windows for that app are moved to the review space, reconciled once from the final snapshot if they are still on another Space, and laid out together.
 
 If Notes is present but yabai does not expose a movable Notes window, `gtd_review_*` uses the current Notes space as the review target and moves the other review windows there. If Preview is present but not movable, the review target is focused and Preview bounds are applied through app AppleScript, then System Events if needed, instead of `yabai` grid commands. In either review fallback, movable non-review windows from that fallback space are moved into an unlabeled holding space before the review windows are arranged. When Preview is already on the target display but the wrong Space, the fallback temporarily bounces Preview through another display before returning it to the focused review Space. Review fallback bounds use the all-windows mode so multiple scriptable Preview or Notes windows are not left behind.
 

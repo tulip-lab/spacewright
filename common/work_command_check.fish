@@ -29,6 +29,7 @@ function work_command_check --description "Check that documented workspace comma
         workspace_find_app_window \
         workspace_find_app_key_window \
         workspace_app_key_window_info \
+        workspace_app_key_windows \
         workspace_app_key_space_fallback_info \
         workspace_apply_app_key_grid_bounds \
         workspace_capture_app_window \

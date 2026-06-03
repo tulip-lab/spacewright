@@ -187,6 +187,84 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
+    set -l review_snapshot_reconcile_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_review_move_calls
+
+        function workspace_run_cleanup_specs
+        end
+
+        function ws_query_windows
+            set -l phase $argv[2]
+
+            if test "$phase" = initial
+                printf "%s\n" "[
+                    {\"id\": 11, \"app\": \"Notes\", \"space\": 6, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Notes\"},
+                    {\"id\": 12, \"app\": \"Preview\", \"space\": 6, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Preview\"},
+                    {\"id\": 14, \"app\": \"Finder\", \"space\": 7, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Finder\"}
+                ]"
+            else if test "$phase" = final_review_reconcile
+                printf "%s\n" "[
+                    {\"id\": 11, \"app\": \"Notes\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Notes\"},
+                    {\"id\": 12, \"app\": \"Preview\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Preview\"},
+                    {\"id\": 14, \"app\": \"Finder\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Finder\"}
+                ]"
+            else
+                printf "%s\n" "[
+                    {\"id\": 11, \"app\": \"Notes\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Notes\"},
+                    {\"id\": 12, \"app\": \"Preview\", \"space\": 6, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Preview\"},
+                    {\"id\": 14, \"app\": \"Finder\", \"space\": 7, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Finder\"}
+                ]"
+            end
+        end
+
+        function workspace_resolve_display_role
+            echo 2
+        end
+
+        function find_or_create_labeled_space
+            echo 8
+        end
+
+        function workspace_retarget_contaminated_space
+            echo 8
+        end
+
+        function workspace_focus_labeled_space
+        end
+
+        function ws_move_windows_to_space
+            set -ga __work_smoke_review_move_calls (string join , -- $argv)
+        end
+
+        function ws_window
+        end
+
+        function ws_focus_space
+        end
+
+        function cleanup_unlabeled_empty_spaces
+        end
+
+        gtd_apply_review_space --label gtd_review_wide --display wide --finder-grid 1:1:0:0:1:1 --preview-grid 1:1:0:0:1:1 --notes-grid 1:1:0:0:1:1
+        or exit 1
+
+        test "$__work_smoke_review_move_calls[1]" = "8,14,12,11"
+        or exit 2
+
+        test "$__work_smoke_review_move_calls[2]" = "8,14,12"
+        or exit 3
+    '
+    fish -lc "$review_snapshot_reconcile_smoke" >/tmp/work-review-snapshot-reconcile-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      review snapshot Finder/Preview reconcile"
+    else
+        echo "FAIL    review snapshot Finder/Preview reconcile"
+        cat /tmp/work-review-snapshot-reconcile-smoke.out
+        set failed 1
+    end
+
     set -l dia_fullscreen_fixture '[
         {"id": 31, "app": "Dia", "space": 8, "can-move": true, "is-minimized": false, "is-native-fullscreen": true},
         {"id": 32, "app": "Dia", "space": 8, "can-move": true, "is-minimized": false, "is-native-fullscreen": false}

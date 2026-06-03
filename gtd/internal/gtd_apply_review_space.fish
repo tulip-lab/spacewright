@@ -34,15 +34,17 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
     or return 1
 
     set -l windows_json (ws_query_windows $_flag_label initial); or return 1
-    set -l finder_app (workspace_app_name finder)
-    set -l preview_app (workspace_app_name preview)
     set -l chatgpt_app (workspace_app_name chatgpt)
     set -l notes_app (workspace_app_name notes)
     set -l notes_apps_json (workspace_app_names_json notes)
     or return 1
 
+    set -l finder_windows (echo $windows_json | workspace_app_key_windows --app-key finder --movable)
+    or return 1
+
     set -l preview
-    set -l preview_movable_windows (echo $windows_json | ws_find_windows "$preview_app" --movable)
+    set -l preview_movable_windows (echo $windows_json | workspace_app_key_windows --app-key preview --movable)
+    or return 1
     set -l preview_fallback_window
     set -l preview_fallback_space
     set -l preview_fallback_display
@@ -102,10 +104,18 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
         end
     end
 
-    set -l chatgpt_initial (echo $windows_json | ws_find_window "$chatgpt_app")
-    set -l notes (workspace_find_app_key_window --app-key notes --caller $_flag_label --quiet-unmovable)
-    set -l notes_status $status
-    if test "$notes_status" -eq 1
+    set -l chatgpt_initial_info (echo $windows_json | workspace_app_key_window_info --app-key chatgpt)
+    if test $status -ne 0
+        return 1
+    end
+
+    set -l chatgpt_movable_windows (echo $windows_json | workspace_app_key_windows --app-key chatgpt --movable)
+    or return 1
+
+    set -l notes
+    set -l notes_status 0
+    set -l notes_initial_info (echo $windows_json | workspace_app_key_window_info --app-key notes)
+    if test $status -ne 0
         return 1
     end
 
@@ -114,7 +124,20 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
     set -l notes_fallback_space
     set -l notes_fallback_display
 
-    if test -z "$notes" -a "$notes_status" -eq 2
+    if test -n "$notes_initial_info"
+        set -l notes_initial_parts (string split \t -- "$notes_initial_info")
+        if test "$notes_initial_parts[4]" = true
+            set notes $notes_initial_parts[1]
+            rm -f /tmp/workspace-ws-window-bad/$notes 2>/dev/null
+        else
+            set notes_status 2
+            set notes_fallback_window $notes_initial_parts[1]
+            set notes_fallback_space $notes_initial_parts[2]
+            set notes_fallback_display $notes_initial_parts[3]
+        end
+    end
+
+    if test -z "$notes" -a "$notes_status" -eq 2 -a -z "$notes_fallback_window"
         set -l notes_fallback_info (workspace_app_key_space_fallback_info \
             --app-key notes \
             --caller $_flag_label \
@@ -141,12 +164,11 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
         end
     end
 
-    if test -z "$preview" -a -z "$preview_fallback_window" -a -z "$notes" -a -z "$notes_fallback_window" -a -z "$chatgpt_initial"
+    if test -z "$preview" -a -z "$preview_fallback_window" -a -z "$notes" -a -z "$notes_fallback_window" -a -z "$chatgpt_initial_info"
         destroy_empty_labeled_space $_flag_label
         return 0
     end
 
-    set -l finder_windows (echo $windows_json | ws_find_windows "$finder_app" --movable)
     set -l target_display (workspace_resolve_display_role $_flag_display)
     or return $status
     set -l review_app_regex (workspace_app_regex finder preview chatgpt notes)
@@ -213,24 +235,44 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
         or return 1
     end
 
-    set -l windows_to_move $finder_windows $preview_movable_windows
+    set -l windows_to_move $finder_windows $preview_movable_windows $chatgpt_movable_windows
 
     if test "$notes_space_fallback_used" -ne 1
         set -a windows_to_move $notes
     end
 
     ws_move_windows_to_space $target_space $windows_to_move
-    set -l chatgpt (workspace_capture_app_window --app "$chatgpt_app" --caller $_flag_label --space $target_space)
 
     set -l windows_json_final (ws_query_windows $_flag_label final); or return 1
-    set finder_windows (echo $windows_json_final | ws_find_windows "$finder_app" --space $target_space)
-    set preview_movable_windows (echo $windows_json_final | ws_find_windows "$preview_app" --space $target_space)
-    set preview (printf "%s\n" $preview_movable_windows | head -n 1)
+    set -l finder_retry_windows (echo $windows_json_final | workspace_app_key_windows --app-key finder --movable --not-space $target_space)
+    or return 1
+    set -l preview_retry_windows (echo $windows_json_final | workspace_app_key_windows --app-key preview --movable --not-space $target_space)
+    or return 1
+
+    if test (count $finder_retry_windows) -gt 0; or test (count $preview_retry_windows) -gt 0
+        ws_move_windows_to_space $target_space $finder_retry_windows $preview_retry_windows
+        set windows_json_final (ws_query_windows $_flag_label final_review_reconcile); or return 1
+    end
+
+    set finder_windows (echo $windows_json_final | workspace_app_key_windows --app-key finder --space $target_space --movable)
+    or return 1
+    set preview_movable_windows (echo $windows_json_final | workspace_app_key_windows --app-key preview --space $target_space --movable)
+    or return 1
+    set preview $preview_movable_windows[1]
     if test -z "$preview" -a -n "$preview_fallback_window"
         set preview $preview_fallback_window
     end
 
-    set chatgpt (workspace_find_app_window --app "$chatgpt_app" --caller $_flag_label --space $target_space --no-refresh --target-only)
+    set -l chatgpt_target_windows (echo $windows_json_final | workspace_app_key_windows --app-key chatgpt --space $target_space --movable)
+    or return 1
+    set -l chatgpt $chatgpt_target_windows[1]
+    if test -z "$chatgpt" -a -n "$chatgpt_initial_info"
+        set chatgpt (workspace_capture_app_window --app "$chatgpt_app" --caller $_flag_label --space $target_space)
+        if test $status -eq 1
+            return 1
+        end
+    end
+
     if test "$notes_space_fallback_used" -eq 1
         set notes (echo $windows_json_final | ws_jq -r --argjson apps "$notes_apps_json" --argjson s $target_space '
             first(

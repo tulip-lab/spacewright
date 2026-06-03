@@ -55,6 +55,7 @@ function work_inventory --description "Print a read-only workspace workflow inve
     printf "%-32s %s\n" "workspace_find_app_window" "movable app-window selector with optional refresh"
     printf "%-32s %s\n" "workspace_find_app_key_window" "movable app-window selector across registered app aliases"
     printf "%-32s %s\n" "workspace_app_key_window_info" "first app-key window metadata from existing window JSON"
+    printf "%-32s %s\n" "workspace_app_key_windows" "matching app-key window ids from existing window JSON"
     printf "%-32s %s\n" "workspace_app_key_space_fallback_info" "current-space fallback metadata for non-movable app-key windows"
     printf "%-32s %s\n" "workspace_apply_app_key_grid_bounds" "AppleScript bounds fallback for non-yabai-resizable app windows"
     printf "%-32s %s\n" "workspace_capture_app_window" "find, move, and confirm app window on target space"
