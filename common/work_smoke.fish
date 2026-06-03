@@ -37,6 +37,35 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         echo "OK      app registry"
     end
 
+    set -l ownership_policy_rows (workspace_ownership_policy_rows)
+
+    set -l required_ownership_patterns \
+        "*gtd_support_*Dia*all-movable-windows*" \
+        "*gtd_review_*Finder*all-movable-windows*" \
+        "*gtd_review_*Preview*all-movable-windows;fallback-space-owner*" \
+        "*gtd_review_*Notes*single-window;fallback-space-owner*" \
+        "*gtd_meeting_*Zoom*all-movable-windows;fallback-space-owner*" \
+        "*gtd_meeting_*Microsoft Teams/MSTeams*all-movable-windows*" \
+        "*gtd_mail_*Thunderbird*single-window;fallback-space-owner*" \
+        "*gtd_calendar*Calendar*single-window;fallback-space-owner*" \
+        "*coding_editor_*Code*single-window*" \
+        "*research_*ChatGPT*optional-helper*" \
+        "*office_writing_*Microsoft Word*single-window*"
+
+    set -l ownership_failed 0
+    for ownership_pattern in $required_ownership_patterns
+        string match -q $ownership_pattern -- $ownership_policy_rows
+        or begin
+            echo "FAIL    ownership policy pattern: $ownership_pattern"
+            set ownership_failed 1
+            set failed 1
+        end
+    end
+
+    if test "$ownership_failed" -eq 0
+        echo "OK      ownership policy registry"
+    end
+
     set -l fallback_windows_fixture '[
         {"id": 11, "app": "Notes", "space": 6, "can-move": false, "is-minimized": false},
         {"id": 12, "app": "Preview", "space": 6, "can-move": true, "is-minimized": false},

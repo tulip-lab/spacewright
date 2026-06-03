@@ -189,6 +189,8 @@ Useful move helpers:
 
 `workspace_app_name`, `workspace_app_names`, `workspace_app_names_json`, and `workspace_app_regex` are the central app-name registry. Entry wrappers should use app keys when possible; module-specific helpers can still use explicit names when the app has special selection behavior, but they should source those names through the registry.
 
+`workspace_ownership_policy_rows` is the static read-only app ownership registry used by `work_inventory`. It documents whether each workspace treats an app as a single selected window, all movable windows, an optional helper, or a fallback-space owner. It does not drive runtime layout decisions; module-specific helpers remain the source of behavioral truth.
+
 Fixed primary-display workspaces such as `coding_control`, `gtd_chat`, and `gtd_calendar` use app-key finders for ordinary app windows, then retry once when a final target-space check misses. Module-specific selectors stay local only for real special cases such as Dia multi-window layout or Zoom/Teams meeting-window title policy.
 
 `workspace_prepare_labeled_space` and `workspace_focus_labeled_space` own the repeated labeled-space entry sequence: create or reuse the space when needed, normalize the label/layout, focus the target display, run optional mode cleanup, focus the target space, and return control to the caller.
@@ -225,7 +227,7 @@ Primary read-only commands:
 - `work_check`
 - `work_command_check`
 
-`work_inventory` is the static workflow map. It records the top-level entries, module entries, managed apps, display entries, common helpers, and dependency boundaries in command output so the active system can be inspected without reading every function file.
+`work_inventory` is the static workflow map. It records the top-level entries, module entries, managed apps, ownership policies, display entries, common helpers, and dependency boundaries in command output so the active system can be inspected without reading every function file.
 
 `work_doctor` is the read-only validation entry. It checks required tools, Mackup/runtime paths, fish syntax, function reload, command availability, read-only yabai queries, display role health, duplicate labels, empty spaces, and bad-window cache summary. It must not move windows, switch spaces, apply display profiles, restart services, or cleanup state.
 

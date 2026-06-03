@@ -40,6 +40,10 @@ function work_inventory --description "Print a read-only workspace workflow inve
     printf "%-24s %-12s %-12s %s\n" "office_slides_*" "wide/tall" "external" "PowerPoint, ChatGPT"
     echo
 
+    echo "===== OWNERSHIP POLICY ====="
+    workspace_print_ownership_policy
+    echo
+
     echo "===== DISPLAY ENTRIES ====="
     printf "%-24s %s\n" "display_apply_solo" "apply solo display profile, reload, verify solo health"
     printf "%-24s %s\n" "display_apply_wide_left" "resolve current wide external display, reload, verify wide health"
@@ -72,6 +76,7 @@ function work_inventory --description "Print a read-only workspace workflow inve
     printf "%-32s %s\n" "find_or_create_labeled_space" "label-based space creation and reuse"
     printf "%-32s %s\n" "prepare_labeled_space" "unique label ownership and layout normalization"
     printf "%-32s %s\n" "workspace_retarget_contaminated_space" "move labels away from mixed-owner spaces"
+    printf "%-32s %s\n" "workspace_ownership_policy" "static workspace app ownership policy inventory"
     printf "%-32s %s\n" "cleanup_labeled_empty_spaces" "module-scoped empty labeled-space cleanup"
     printf "%-32s %s\n" "cleanup_unlabeled_empty_spaces" "transient empty space cleanup"
     printf "%-32s %s\n" "workspace_resolve_display_role" "primary/wide/tall display-role resolver"

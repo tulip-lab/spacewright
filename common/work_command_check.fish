@@ -45,6 +45,8 @@ function work_command_check --description "Check that documented workspace comma
         workspace_prepare_labeled_space \
         workspace_apply_primary_helper_space \
         workspace_retarget_contaminated_space \
+        workspace_ownership_policy_rows \
+        workspace_print_ownership_policy \
         workspace_print_app_status \
         workspace_simple_module_status \
         display_reload \

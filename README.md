@@ -127,6 +127,8 @@ Current core helpers include:
 - `workspace_focus_space_fallback`
 - `workspace_create_unlabeled_space_on_display`
 - `workspace_retarget_contaminated_space`
+- `workspace_ownership_policy_rows`
+- `workspace_print_ownership_policy`
 - `workspace_resolve_display_role`
 
 Public module commands stay stable, but thin mode wrappers are grouped by module:
@@ -154,7 +156,7 @@ work_doctor
 work_smoke
 ```
 
-`work_inventory` prints the current workflow map: top-level entries, module entries, managed apps, display entries, common helpers, and external dependencies.
+`work_inventory` prints the current workflow map: top-level entries, module entries, managed apps, workspace ownership policies, display entries, common helpers, and external dependencies.
 
 `work_doctor` runs read-only system checks:
 
