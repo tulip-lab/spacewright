@@ -11,6 +11,7 @@ function work_inventory --description "Print a read-only workspace workflow inve
     printf "%-18s %s\n" "work_check" "reload plus diagnostics and module mode status"
     printf "%-18s %s\n" "work_doctor" "read-only system and config checks"
     printf "%-18s %s\n" "work_smoke" "read-only helper wiring and dry-run checks"
+    printf "%-18s %s\n" "work_audit" "read-only mode symmetry, ownership, helper, and empty-label audit"
     echo
 
     echo "===== MODULE ENTRIES ====="
@@ -77,6 +78,7 @@ function work_inventory --description "Print a read-only workspace workflow inve
     printf "%-32s %s\n" "prepare_labeled_space" "unique label ownership and layout normalization"
     printf "%-32s %s\n" "workspace_retarget_contaminated_space" "move labels away from mixed-owner spaces"
     printf "%-32s %s\n" "workspace_ownership_policy" "static workspace app ownership policy inventory"
+    printf "%-32s %s\n" "work_audit" "read-only architecture and workspace-label drift checks"
     printf "%-32s %s\n" "cleanup_labeled_empty_spaces" "module-scoped empty labeled-space cleanup"
     printf "%-32s %s\n" "cleanup_unlabeled_empty_spaces" "transient empty space cleanup"
     printf "%-32s %s\n" "workspace_resolve_display_role" "primary/wide/tall display-role resolver"

@@ -66,6 +66,28 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         echo "OK      ownership policy registry"
     end
 
+    work_audit >/tmp/work-audit.out 2>&1
+    set -l audit_status $status
+    set -l audit_output
+    if test -e /tmp/work-audit.out
+        set audit_output (string collect </tmp/work-audit.out)
+    end
+
+    if test "$audit_status" -eq 0
+            and string match -q "*===== WORKSPACE AUDIT =====*" -- "$audit_output"
+            and string match -q "*OK      mode symmetry: wide/tall aggregate commands*" -- "$audit_output"
+            and string match -q "*OK      ownership policy coverage*" -- "$audit_output"
+            and string match -q "*OK      fallback helper coverage*" -- "$audit_output"
+            and string match -q "*OK      empty labeled-space allowlist*" -- "$audit_output"
+        echo "OK      workspace audit"
+    else
+        echo "FAIL    workspace audit"
+        if test -e /tmp/work-audit.out
+            cat /tmp/work-audit.out
+        end
+        set failed 1
+    end
+
     set -l fallback_windows_fixture '[
         {"id": 11, "app": "Notes", "space": 6, "can-move": false, "is-minimized": false},
         {"id": 12, "app": "Preview", "space": 6, "can-move": true, "is-minimized": false},

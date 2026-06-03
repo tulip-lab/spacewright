@@ -15,6 +15,7 @@ function work_command_check --description "Check that documented workspace comma
         work_inventory \
         work_doctor \
         work_smoke \
+        work_audit \
         ws_yabai \
         ws_jq \
         ws_query_windows \

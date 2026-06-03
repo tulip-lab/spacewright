@@ -226,6 +226,7 @@ Primary read-only commands:
 
 - `work_inventory`
 - `work_doctor`
+- `work_audit`
 - `work_diagnostics`
 - `work_status`
 - `work_mode_status`
@@ -233,6 +234,8 @@ Primary read-only commands:
 - `work_command_check`
 
 `work_inventory` is the static workflow map. It records the top-level entries, module entries, managed apps, ownership policies, display entries, common helpers, and dependency boundaries in command output so the active system can be inspected without reading every function file.
+
+`work_audit` is the read-only architecture drift check. It verifies solo/wide/tall wrapper symmetry through dry-run output, checks ownership policy coverage, confirms fallback and multi-window helper availability, and distinguishes empty labels that are allowlisted by design from suspicious empty labeled Spaces in the live read-only snapshot.
 
 `work_doctor` is the read-only validation entry. It checks required tools, Mackup/runtime paths, fish syntax, function reload, command availability, read-only yabai queries, display role health, duplicate labels, empty spaces, and bad-window cache summary. It must not move windows, switch spaces, apply display profiles, restart services, or cleanup state.
 

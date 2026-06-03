@@ -148,15 +148,18 @@ Runner helpers are grouped in `common/workspace_runners.fish`. App-window helper
 
 ## Inventory And Doctor
 
-Three read-only inspection commands document and validate the workspace system without moving windows, changing spaces, or applying display profiles:
+Four read-only inspection commands document and validate the workspace system without moving windows, changing spaces, or applying display profiles:
 
 ```fish
 work_inventory
 work_doctor
 work_smoke
+work_audit
 ```
 
 `work_inventory` prints the current workflow map: top-level entries, module entries, managed apps, workspace ownership policies, display entries, common helpers, and external dependencies.
+
+`work_audit` checks declared workspace facts for mode symmetry, ownership policy coverage, fallback and multi-window helper coverage, and empty labeled Spaces that are allowlisted by design versus suspicious in the live read-only snapshot.
 
 `work_doctor` runs read-only system checks:
 
@@ -173,7 +176,7 @@ work_smoke
 
 It returns nonzero only for failed checks. Warnings identify cleanup or environment follow-up without mutating state.
 
-`work_smoke` is the fast regression check after editing workspace code. It reloads functions, runs `work_command_check`, validates app registry keys, exercises every current `solo`, `wide`, and `tall` workspace CLI entry through `--dry-run`, and checks that retired helper commands are not loaded.
+`work_smoke` is the fast regression check after editing workspace code. It reloads functions, runs `work_command_check`, validates app registry keys, runs `work_audit`, exercises every current `solo`, `wide`, and `tall` workspace CLI entry through `--dry-run`, and checks that retired helper commands are not loaded.
 
 Additional loaded entry/helper commands include:
 
@@ -187,6 +190,7 @@ Additional loaded entry/helper commands include:
 - `cleanup_unlabeled_empty_spaces`
 - `work_recover_light`
 - `work_command_check`
+- `work_audit`
 - `ws_yabai`
 - `ws_jq`
 - `ws_query_windows`
@@ -276,6 +280,7 @@ Phase 8.5 adds conservative manual recovery commands:
 ```fish
 work_inventory
 work_doctor
+work_audit
 work_bad_windows --summary
 work_bad_windows --expired
 work_bad_windows --missing
@@ -290,6 +295,7 @@ The recovery rules are intentionally limited:
 
 - `work_inventory` prints the static workflow map and dependencies.
 - `work_doctor` runs read-only syntax, load, dependency, display, space, and cache checks.
+- `work_audit` reports mode symmetry, ownership policy coverage, fallback and multi-window helper coverage, and empty labeled-space allowlist/suspicion status without moving windows.
 - `work_bad_windows` only prints cached bad yabai window IDs and supports `--summary`, `--active`, `--expired`, `--present`, and `--missing`.
 - `work_clear_bad_windows` only clears `/tmp/workspace-ws-window-bad`; use `--expired`, `--missing`, `--present`, or `--active` for targeted cleanup, and no flag or `--all` for full cache cleanup.
 - `workspace_cleanup_known_labeled_spaces` destroys only empty spaces with known workspace labels.
