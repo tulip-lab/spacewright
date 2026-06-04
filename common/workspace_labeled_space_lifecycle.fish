@@ -11,7 +11,7 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
         return 1
     end
 
-    set -l spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+    set -l spaces_json (ws_query_spaces find_or_create_labeled_space initial)
     if test $status -ne 0 -o -z "$spaces_json"
         return 1
     end
@@ -44,7 +44,7 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
         sleep 0.2
     end
 
-    set spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+    set spaces_json (ws_query_spaces find_or_create_labeled_space after_stale_cleanup)
     if test $status -ne 0 -o -z "$spaces_json"
         return 1
     end
@@ -60,7 +60,7 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
     end
     sleep 0.8
 
-    set spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+    set spaces_json (ws_query_spaces find_or_create_labeled_space after_create)
     if test $status -ne 0 -o -z "$spaces_json"
         return 1
     end
@@ -104,7 +104,7 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
         sleep 0.8
     end
 
-    set spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+    set spaces_json (ws_query_spaces find_or_create_labeled_space final)
     if test $status -ne 0 -o -z "$spaces_json"
         return 1
     end
@@ -133,6 +133,40 @@ function workspace_create_unlabeled_space_on_display --description "Create an un
         return 2
     end
 
+    set -l spaces_json (ws_query_spaces workspace_create_unlabeled_space_on_display holding_space_reuse)
+    if test $status -ne 0 -o -z "$spaces_json"
+        return 1
+    end
+
+    set -l windows_json (ws_query_windows workspace_create_unlabeled_space_on_display holding_space_reuse)
+    if test $status -ne 0 -o -z "$windows_json"
+        return 1
+    end
+
+    set -l existing_empty_space (echo $spaces_json | ws_jq -r \
+        --argjson display "$target_display" \
+        --argjson windows "$windows_json" \
+        'first(
+            .[]
+            | select(.display==$display)
+            | select(.label=="")
+            | . as $space
+            | select(
+                [
+                    $windows[]
+                    | select(.space==$space.index)
+                    | select(.["is-sticky"]!=true)
+                ]
+                | length == 0
+            )
+            | .index
+        ) // empty')
+
+    if test -n "$existing_empty_space"
+        echo $existing_empty_space
+        return 0
+    end
+
     set -l temp_label "__workspace_holding_"(date +%s)"_"$fish_pid
     set -l target_space (find_or_create_labeled_space $temp_label $target_display)
     if test -z "$target_space"
@@ -140,7 +174,48 @@ function workspace_create_unlabeled_space_on_display --description "Create an un
     end
 
     ws_yabai -m space $target_space --label "" >/dev/null 2>&1
-    or return 1
+
+    set spaces_json (ws_query_spaces workspace_create_unlabeled_space_on_display holding_space_final)
+    if test $status -ne 0 -o -z "$spaces_json"
+        return 1
+    end
+
+    set windows_json (ws_query_windows workspace_create_unlabeled_space_on_display holding_space_final)
+    if test $status -ne 0 -o -z "$windows_json"
+        return 1
+    end
+
+    set -l final_space_info (echo $spaces_json | ws_jq -r \
+        --argjson target "$target_space" \
+        --argjson windows "$windows_json" \
+        'first(
+            .[]
+            | select(.index==$target)
+            | [
+                .label,
+                (
+                    [
+                        $windows[]
+                        | select(.space==$target)
+                        | select(.["is-sticky"]!=true)
+                    ]
+                    | length
+                )
+            ]
+            | @tsv
+        ) // empty')
+
+    if test -z "$final_space_info"
+        return 1
+    end
+
+    set -l final_space_parts (string split \t -- "$final_space_info")
+    set -l final_label $final_space_parts[1]
+    set -l final_window_count $final_space_parts[2]
+
+    if test -n "$final_label" -o "$final_window_count" != 0
+        return 1
+    end
 
     echo $target_space
 end
@@ -159,7 +234,7 @@ function prepare_labeled_space --description "Normalize labeled space state"
     end
 
     if test -n "$label"
-        set -l spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+        set -l spaces_json (ws_query_spaces prepare_labeled_space label_ownership)
         if test $status -ne 0 -o -z "$spaces_json"
             return 1
         end
@@ -190,7 +265,7 @@ function destroy_empty_labeled_space --description "Destroy the first empty spac
         return 1
     end
 
-    set -l spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+    set -l spaces_json (ws_query_spaces destroy_empty_labeled_space stale_check)
     if test $status -ne 0 -o -z "$spaces_json"
         return 1
     end

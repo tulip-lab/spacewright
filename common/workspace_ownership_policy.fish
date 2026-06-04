@@ -1,8 +1,8 @@
 function workspace_ownership_policy_rows --description "Print static workspace app ownership policy rows"
     printf "%s\t%s\t%s\t%s\n" "coding_editor_*" "Code" "single-window" "required primary; first movable app-key window"
-    printf "%s\t%s\t%s\t%s\n" "coding_editor_*" "Codex" "optional-helper" "single helper window when present"
+    printf "%s\t%s\t%s\t%s\n" "coding_editor_*" "Codex" "optional-helper;fallback-space-owner" "single helper window when present; current Codex space fallback"
     printf "%s\t%s\t%s\t%s\n" "coding_control" "Warp" "single-window" "optional control app; retargets contaminated labels"
-    printf "%s\t%s\t%s\t%s\n" "coding_control" "SmartGit" "single-window" "optional control app"
+    printf "%s\t%s\t%s\t%s\n" "coding_control" "SmartGit" "single-window;fallback-space-owner" "optional control app; current SmartGit space fallback"
     printf "%s\t%s\t%s\t%s\n" "coding_control" "KeePassXC/KeePassX" "single-window" "optional control app"
     printf "%s\t%s\t%s\t%s\n" "coding_control" "FlClash/Thaw" "all-movable-windows" "visible windows only; optional control app"
 

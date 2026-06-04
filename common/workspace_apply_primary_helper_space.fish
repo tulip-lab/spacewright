@@ -12,6 +12,7 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
         'primary-alone-grid=' \
         'helper-grid=' \
         primary-space-fallback \
+        helper-space-fallback \
         helper-visible \
         dry-run \
         -- $argv
@@ -64,6 +65,9 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
         if set -q _flag_primary_space_fallback
             printf "primary_space_fallback=%s\n" true
         end
+        if set -q _flag_helper_space_fallback
+            printf "helper_space_fallback=%s\n" true
+        end
         printf "cleanup=%s\n" "$cleanup_specs"
         return 0
     end
@@ -72,6 +76,8 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
     or return 1
 
     set -l primary_space_fallback_used 0
+    set -l helper_space_fallback_used 0
+    set -l helper_fallback_window
     set -l target_display
     set -l target_space
 
@@ -164,10 +170,73 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
         set target_display (workspace_resolve_display_role $_flag_display)
         or return $status
 
-        set target_space (workspace_prepare_labeled_space $label $target_display $layout $cleanup_specs)
-        or return 1
+        if set -q _flag_helper_space_fallback; and set -q _flag_primary_app_key; and set -q _flag_helper_app_key
+            set -l helper_probe (workspace_find_app_key_window \
+                --app-key $_flag_helper_app_key \
+                --caller $caller \
+                --quiet-unmovable \
+                --attempts 1 \
+                --wait 0.2)
+            set -l helper_probe_status $status
 
-        ws_move_windows_to_space $target_space $primary_window
+            if test "$helper_probe_status" -eq 1
+                return 1
+            end
+
+            if test -z "$helper_probe" -a "$helper_probe_status" -eq 2
+                set -l helper_fallback_info (workspace_app_key_space_fallback_info \
+                    --app-key $_flag_helper_app_key \
+                    --caller $caller \
+                    --phase helper_space_fallback)
+                set -l helper_fallback_status $status
+
+                if test "$helper_fallback_status" -eq 1
+                    return 1
+                end
+
+                if test -n "$helper_fallback_info"
+                    set -l helper_fallback_parts (string split \t -- "$helper_fallback_info")
+                    set helper_fallback_window $helper_fallback_parts[1]
+                    set target_space $helper_fallback_parts[2]
+                    set -l helper_source_display $helper_fallback_parts[3]
+
+                    if test -z "$helper_fallback_window" -o -z "$target_space" -o -z "$helper_source_display"
+                        return 1
+                    end
+
+                    set target_space (workspace_focus_space_fallback \
+                        --label $label \
+                        --caller $caller \
+                        --space $target_space \
+                        --source-display $helper_source_display \
+                        --target-display $target_display \
+                        --layout $layout \
+                        --phase helper-space-fallback \
+                        $cleanup_specs)
+                    or return 1
+
+                    set -l helper_fallback_allowed_app_regex (workspace_app_regex $_flag_primary_app_key $_flag_helper_app_key)
+                    or return 1
+
+                    workspace_evict_non_owned_windows_from_space \
+                        --caller $caller \
+                        --space $target_space \
+                        --target-display $target_display \
+                        --allowed-app-regex "$helper_fallback_allowed_app_regex"
+                    or return 1
+
+                    ws_move_windows_to_space $target_space $primary_window
+                    set helper_space_fallback_used 1
+                end
+            end
+        end
+
+        if test "$helper_space_fallback_used" -ne 1
+            set target_space (workspace_prepare_labeled_space $label $target_display $layout $cleanup_specs)
+            or return 1
+
+            ws_move_windows_to_space $target_space $primary_window
+        end
     end
 
     set -l primary_target_find_args $primary_find_args --space $target_space --no-refresh --target-only
@@ -210,12 +279,22 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
 
     set -l helper_window
     if set -q _flag_helper_app
-        set -l helper_find_args --app "$_flag_helper_app" --caller $caller --space $target_space
-        if set -q _flag_helper_visible
-            set -a helper_find_args --visible
-        end
+        if test "$helper_space_fallback_used" -eq 1
+            set helper_window $helper_fallback_window
+        else
+            set -l helper_find_args --caller $caller --space $target_space
+            if set -q _flag_helper_app_key
+                set -a helper_find_args --app-key $_flag_helper_app_key
+            else
+                set -a helper_find_args --app "$_flag_helper_app"
+            end
 
-        set helper_window (workspace_capture_app_window $helper_find_args)
+            if set -q _flag_helper_visible
+                set -a helper_find_args --visible
+            end
+
+            set helper_window (workspace_capture_app_window $helper_find_args)
+        end
     end
 
     set -l windows_json_final (ws_query_windows $caller final); or return 1
@@ -239,16 +318,43 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
     end
 
     if set -q _flag_helper_app
-        set -l final_helper_args --app "$_flag_helper_app" --caller $caller --space $target_space --no-refresh --target-only
-        if set -q _flag_helper_visible
-            set -a final_helper_args --visible
-        end
+        if test "$helper_space_fallback_used" -eq 1; and set -q _flag_helper_app_key
+            set -l helper_target_windows (echo $windows_json_final | workspace_app_key_windows --app-key $_flag_helper_app_key --space $target_space)
+            or return 1
+            set helper_window $helper_target_windows[1]
+            if test -z "$helper_window"
+                set helper_window $helper_fallback_window
+            end
+        else
+            set -l final_helper_args --caller $caller --space $target_space --no-refresh --target-only
+            if set -q _flag_helper_app_key
+                set -a final_helper_args --app-key $_flag_helper_app_key
+            else
+                set -a final_helper_args --app "$_flag_helper_app"
+            end
 
-        set helper_window (workspace_find_app_window $final_helper_args)
+            if set -q _flag_helper_visible
+                set -a final_helper_args --visible
+            end
+
+            if set -q _flag_helper_app_key
+                set helper_window (workspace_find_app_key_window $final_helper_args)
+            else
+                set helper_window (workspace_find_app_window $final_helper_args)
+            end
+        end
     end
 
     if test -n "$helper_window" -a -n "$_flag_helper_grid"
-        ws_window $helper_window --grid $_flag_helper_grid
+        if test "$helper_space_fallback_used" -eq 1; and set -q _flag_helper_app_key
+            workspace_apply_app_key_grid_bounds \
+                --app-key $_flag_helper_app_key \
+                --display $target_display \
+                --grid $_flag_helper_grid \
+                --caller $caller
+        else
+            ws_window $helper_window --grid $_flag_helper_grid
+        end
     end
 
     if test -n "$primary_window"

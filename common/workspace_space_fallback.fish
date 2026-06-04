@@ -33,7 +33,8 @@ function workspace_focus_space_fallback --description "Move, normalize and focus
     set -l target_space $_flag_space
     set -l cleanup_commands $argv
 
-    set -l spaces_json_fallback (ws_yabai -m query --spaces 2>/dev/null)
+    set -l initial_phase "$phase"-initial
+    set -l spaces_json_fallback (ws_query_spaces $caller $initial_phase)
     if test $status -ne 0 -o -z "$spaces_json_fallback"
         return 1
     end
@@ -51,7 +52,8 @@ function workspace_focus_space_fallback --description "Move, normalize and focus
         ws_yabai -m space $target_space --display $_flag_target_display >/dev/null 2>&1
         sleep 0.8
 
-        set spaces_json_fallback (ws_yabai -m query --spaces 2>/dev/null)
+        set -l after_move_phase "$phase"-after-display-move
+        set spaces_json_fallback (ws_query_spaces $caller $after_move_phase)
         if test $status -ne 0 -o -z "$spaces_json_fallback"
             return 1
         end

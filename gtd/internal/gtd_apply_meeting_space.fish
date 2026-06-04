@@ -50,6 +50,7 @@ function gtd_apply_meeting_space --description "Apply a GTD meeting workspace fo
     set -l teams_initial $teams_windows
 
     set -l zoom_space_fallback_used 0
+    set -l zoom_skip_final_bounds_fallback 0
     set -l zoom_fallback_window
     set -l zoom_fallback_space
     set -l zoom_fallback_display
@@ -67,26 +68,81 @@ function gtd_apply_meeting_space --description "Apply a GTD meeting workspace fo
             set -l zoom_fallback_info (workspace_app_key_space_fallback_info \
                 --app-key zoom \
                 --caller $_flag_label \
-                --phase zoom_space_fallback)
+                --phase zoom_space_fallback \
+                --visible)
             set -l zoom_fallback_status $status
 
             if test "$zoom_fallback_status" -eq 1
                 return 1
             end
 
-            if test -z "$zoom_fallback_info"
-                echo "[WARN] $_flag_label found Zoom, but could not identify a Zoom space fallback" >&2
-                return 1
-            end
+            if test "$zoom_fallback_status" -eq 2
+                if test -n "$_flag_zoom_grid"
+                    workspace_apply_app_key_grid_bounds \
+                        --app-key zoom \
+                        --display $target_display \
+                        --grid $_flag_zoom_grid \
+                        --caller $_flag_label \
+                        --system-events-first >/dev/null 2>&1
+                end
 
-            set -l zoom_fallback_parts (string split \t -- "$zoom_fallback_info")
-            set zoom_fallback_window $zoom_fallback_parts[1]
-            set zoom_fallback_space $zoom_fallback_parts[2]
-            set zoom_fallback_display $zoom_fallback_parts[3]
+                set zoom_fallback_info (workspace_app_key_space_fallback_info \
+                    --app-key zoom \
+                    --caller $_flag_label \
+                    --phase zoom_space_fallback_after_bounds)
+                set zoom_fallback_status $status
 
-            if test -z "$zoom_fallback_window" -o -z "$zoom_fallback_space" -o -z "$zoom_fallback_display"
-                echo "[WARN] $_flag_label found Zoom, but its fallback space metadata was incomplete" >&2
+                if test "$zoom_fallback_status" -eq 0 -a -n "$zoom_fallback_info"
+                    set -l zoom_fallback_parts (string split \t -- "$zoom_fallback_info")
+                    set zoom_fallback_window $zoom_fallback_parts[1]
+                    set zoom_fallback_space $zoom_fallback_parts[2]
+                    set zoom_fallback_display $zoom_fallback_parts[3]
+
+                    if test "$zoom_fallback_display" = "$target_display"
+                        set zoom_skip_final_bounds_fallback 1
+                    else
+                        set zoom_fallback_window
+                        set zoom_fallback_space
+                        set zoom_fallback_display
+                    end
+                else
+                    set zoom_fallback_status 2
+                end
+
+                if test -n "$zoom_fallback_space"
+                    set -l zoom_fallback_space_windows (ws_query_windows $_flag_label zoom_space_fallback_after_bounds_confirm)
+                    if test $status -eq 0
+                        set -l confirmed_zoom_display (echo $zoom_fallback_space_windows | ws_jq -r --argjson window "$zoom_fallback_window" '
+                            first(.[] | select(.id==$window) | .display) // empty
+                        ')
+
+                        if test "$confirmed_zoom_display" != "$target_display"
+                            set zoom_fallback_window
+                            set zoom_fallback_space
+                            set zoom_fallback_display
+                            set zoom_skip_final_bounds_fallback 0
+                        end
+                    end
+                end
+
+                if test -z "$zoom_fallback_space"
+                    set zoom_status 0
+                    set zoom_initial
+                    set zoom_windows
+                end
+            else if test -z "$zoom_fallback_info"
+                echo "[WARN] $_flag_label found Zoom, but could not identify a visible Zoom space fallback" >&2
                 return 1
+            else
+                set -l zoom_fallback_parts (string split \t -- "$zoom_fallback_info")
+                set zoom_fallback_window $zoom_fallback_parts[1]
+                set zoom_fallback_space $zoom_fallback_parts[2]
+                set zoom_fallback_display $zoom_fallback_parts[3]
+
+                if test -z "$zoom_fallback_window" -o -z "$zoom_fallback_space" -o -z "$zoom_fallback_display"
+                    echo "[WARN] $_flag_label found Zoom, but its fallback space metadata was incomplete" >&2
+                    return 1
+                end
             end
         end
     end
@@ -187,7 +243,7 @@ function gtd_apply_meeting_space --description "Apply a GTD meeting workspace fo
         end
 
         if test (count $zoom_windows) -eq 0
-            set zoom_windows (gtd_find_zoom_windows $_flag_label)
+            set zoom_windows (gtd_find_zoom_windows $_flag_label --quiet-unmovable)
             if test (count $zoom_windows) -gt 0
                 ws_move_windows_to_space $target_space $zoom_windows
                 set windows_json_final (ws_query_windows $_flag_label final_zoom_find_retry); or return 1
@@ -237,19 +293,38 @@ function gtd_apply_meeting_space --description "Apply a GTD meeting workspace fo
         set teams_windows (gtd_find_teams_windows $_flag_label $target_space --no-refresh --target-only)
     end
 
+    if test "$zoom_space_fallback_used" -ne 1
+        sleep 0.35
+        set -l zoom_settle_windows (gtd_find_zoom_windows $_flag_label --no-refresh)
+        if test $status -eq 1
+            return 1
+        end
+
+        if test (count $zoom_settle_windows) -gt 0
+            ws_move_windows_to_space $target_space $zoom_settle_windows
+            set windows_json_final (ws_query_windows $_flag_label final_zoom_settle_reconcile); or return 1
+            set zoom_windows (gtd_find_zoom_windows $_flag_label $target_space --no-refresh --target-only)
+        end
+    end
+
     if test -n "$outlook" -a -n "$_flag_outlook_grid"
         ws_window $outlook --grid $_flag_outlook_grid
     end
 
     if test (count $zoom_windows) -gt 0 -a -n "$_flag_zoom_grid"
         if test "$zoom_space_fallback_used" -eq 1
-            workspace_apply_app_key_grid_bounds \
-                --app-key zoom \
-                --display $target_display \
-                --grid $_flag_zoom_grid \
-                --caller $_flag_label
+            if test "$zoom_skip_final_bounds_fallback" -ne 1
+                workspace_apply_app_key_grid_bounds \
+                    --app-key zoom \
+                    --display $target_display \
+                    --grid $_flag_zoom_grid \
+                    --caller $_flag_label \
+                    --system-events-first
+            end
         else
-            ws_window $zoom_windows[1] --grid $_flag_zoom_grid
+            for zoom_window in $zoom_windows
+                ws_window $zoom_window --grid $_flag_zoom_grid
+            end
         end
     end
 

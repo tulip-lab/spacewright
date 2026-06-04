@@ -4,6 +4,7 @@ function coding_editor_solo --description "Collect VS Code and Codex onto the so
         --display primary \
         --primary-app-key code \
         --helper-app-key codex \
+        --helper-space-fallback \
         --helper-grid 1:3:0:0:1:1 \
         --primary-grid 1:3:1:0:2:1 \
         --primary-alone-grid 1:1:0:0:1:1 \
@@ -16,6 +17,7 @@ function coding_editor_wide --description "Collect VS Code and Codex onto the wi
         --display wide \
         --primary-app-key code \
         --helper-app-key codex \
+        --helper-space-fallback \
         --helper-grid 1:3:0:0:1:1 \
         --primary-grid 1:3:1:0:2:1 \
         --primary-alone-grid 1:1:0:0:1:1 \
@@ -28,6 +30,7 @@ function coding_editor_tall --description "Collect VS Code and Codex onto the ta
         --display tall \
         --primary-app-key code \
         --helper-app-key codex \
+        --helper-space-fallback \
         --helper-grid 2:1:0:0:1:1 \
         --primary-grid 2:1:0:1:1:1 \
         --primary-alone-grid 1:1:0:0:1:1 \

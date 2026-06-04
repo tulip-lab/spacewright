@@ -99,10 +99,38 @@ function coding_control --description "Collect Warp, SmartGit, KeePassXC, and Fl
         return 1
     end
 
-    set -l smartgit (workspace_find_app_key_window --app-key smartgit --caller $label)
-    set -l smartgit_status $status
-    if test "$smartgit_status" -eq 1
+    set -l smartgit
+    set -l smartgit_status 0
+    set -l smartgit_fallback_window
+    set -l smartgit_fallback_space
+    set -l smartgit_fallback_display
+
+    set -l smartgit_info (echo $windows_json | workspace_app_key_window_info --app-key smartgit --movable)
+    if test $status -ne 0
         return 1
+    end
+
+    if test -n "$smartgit_info"
+        set -l smartgit_parts (string split \t -- "$smartgit_info")
+        set smartgit $smartgit_parts[1]
+    else
+        set -l smartgit_fallback_info (echo $windows_json | workspace_app_key_window_info --app-key smartgit --unmovable)
+        if test $status -ne 0
+            return 1
+        end
+
+        if test -n "$smartgit_fallback_info"
+            set smartgit_status 2
+            set -l smartgit_fallback_parts (string split \t -- "$smartgit_fallback_info")
+            set smartgit_fallback_window $smartgit_fallback_parts[1]
+            set smartgit_fallback_space $smartgit_fallback_parts[2]
+            set smartgit_fallback_display $smartgit_fallback_parts[3]
+
+            if test -z "$smartgit_fallback_window" -o -z "$smartgit_fallback_space" -o -z "$smartgit_fallback_display"
+                echo "[WARN] $label found SmartGit, but its fallback space metadata was incomplete" >&2
+                return 1
+            end
+        end
     end
 
     set -l keepassx (workspace_find_app_key_window --app-key keepassx --caller $label)
@@ -120,7 +148,7 @@ function coding_control --description "Collect Warp, SmartGit, KeePassXC, and Fl
     ')
 
     # Do not create the workspace if neither helper window exists
-    if test -z "$warp" -a -z "$smartgit" -a -z "$keepassx" -a -z "$flclash"
+    if test -z "$warp" -a -z "$smartgit" -a -z "$smartgit_fallback_window" -a -z "$keepassx" -a -z "$flclash"
         if test "$warp_status" -eq 2 -o "$smartgit_status" -eq 2 -o "$keepassx_status" -eq 2
             return 1
         end
@@ -139,21 +167,45 @@ function coding_control --description "Collect Warp, SmartGit, KeePassXC, and Fl
     # -------------------------------------------------------------------------
     # 3. Prepare target labeled space
     # -------------------------------------------------------------------------
-    set -l target_space (find_or_create_labeled_space $label $target_display)
-    if test -z "$target_space"
-        return 1
+    set -l smartgit_space_fallback_used 0
+    set -l target_space
+
+    if test -n "$smartgit_fallback_space"
+        set target_space (workspace_focus_space_fallback \
+            --label $label \
+            --caller $label \
+            --space $smartgit_fallback_space \
+            --source-display $smartgit_fallback_display \
+            --target-display $target_display \
+            --layout float \
+            --phase smartgit-space-fallback)
+        or return 1
+
+        workspace_evict_non_owned_windows_from_space \
+            --caller $label \
+            --space $target_space \
+            --target-display $target_display \
+            --allowed-app-regex "$control_app_regex"
+        or return 1
+
+        set smartgit_space_fallback_used 1
+    else
+        set target_space (find_or_create_labeled_space $label $target_display)
+        if test -z "$target_space"
+            return 1
+        end
+
+        set target_space (workspace_retarget_contaminated_space \
+            $label \
+            $label \
+            $target_space \
+            $target_display \
+            "$control_app_regex")
+        or return 1
+
+        workspace_focus_labeled_space $label $target_space $target_display float
+        or return 1
     end
-
-    set target_space (workspace_retarget_contaminated_space \
-        $label \
-        $label \
-        $target_space \
-        $target_display \
-        "$control_app_regex")
-    or return 1
-
-    workspace_focus_labeled_space $label $target_space $target_display float
-    or return 1
 
     # -------------------------------------------------------------------------
     # 5. First-pass move
@@ -162,7 +214,11 @@ function coding_control --description "Collect Warp, SmartGit, KeePassXC, and Fl
     set -l smartgit_initial $smartgit
     set -l keepassx_initial $keepassx
 
-    ws_move_windows_to_space $target_space $warp $smartgit $keepassx $flclash
+    if test "$smartgit_space_fallback_used" -eq 1
+        ws_move_windows_to_space $target_space $warp $keepassx $flclash
+    else
+        ws_move_windows_to_space $target_space $warp $smartgit $keepassx $flclash
+    end
 
     # -------------------------------------------------------------------------
     # 6. Final capture on target space
@@ -172,6 +228,15 @@ function coding_control --description "Collect Warp, SmartGit, KeePassXC, and Fl
     set warp (workspace_find_app_key_window --app-key warp --caller $label --space $target_space --no-refresh --target-only)
     set smartgit (workspace_find_app_key_window --app-key smartgit --caller $label --space $target_space --no-refresh --target-only)
     set keepassx (workspace_find_app_key_window --app-key keepassx --caller $label --space $target_space --no-refresh --target-only)
+
+    if test "$smartgit_space_fallback_used" -eq 1
+        set -l smartgit_target_windows (echo $windows_json_final | workspace_app_key_windows --app-key smartgit --space $target_space)
+        or return 1
+        set smartgit $smartgit_target_windows[1]
+        if test -z "$smartgit"
+            set smartgit $smartgit_fallback_window
+        end
+    end
 
     if test -z "$warp" -a -n "$warp_initial"
         set warp (workspace_find_app_key_window --app-key warp --caller $label)
@@ -186,7 +251,7 @@ function coding_control --description "Collect Warp, SmartGit, KeePassXC, and Fl
         end
     end
 
-    if test -z "$smartgit" -a -n "$smartgit_initial"
+    if test "$smartgit_space_fallback_used" -ne 1 -a -z "$smartgit" -a -n "$smartgit_initial"
         set smartgit (workspace_find_app_key_window --app-key smartgit --caller $label)
         set smartgit_status $status
         if test "$smartgit_status" -eq 1
@@ -232,8 +297,18 @@ function coding_control --description "Collect Warp, SmartGit, KeePassXC, and Fl
     end
 
     if test -n "$smartgit"
-        ws_window $smartgit --move abs:300:60
-        ws_window $smartgit --resize abs:1200:1040
+        if test "$smartgit_space_fallback_used" -eq 1
+            workspace_apply_app_key_absolute_bounds \
+                --app-key smartgit \
+                --x 300 \
+                --y 60 \
+                --width 1200 \
+                --height 1040 \
+                --caller $label
+        else
+            ws_window $smartgit --move abs:300:60
+            ws_window $smartgit --resize abs:1200:1040
+        end
     end
 
     for wid in $flclash

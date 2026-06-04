@@ -227,10 +227,13 @@ function __work_audit_fallback_helper_coverage --description "Audit fallback pol
         workspace_space_non_owned_windows \
         workspace_evict_non_owned_windows_from_space \
         workspace_create_unlabeled_space_on_display \
-        workspace_apply_app_key_grid_bounds
+        workspace_apply_app_key_grid_bounds \
+        workspace_apply_app_key_absolute_bounds
     or set failed 1
 
     __work_audit_check_policy_specs \
+        "coding_editor_*|Codex|fallback-space-owner" \
+        "coding_control|SmartGit|fallback-space-owner" \
         "gtd_review_*|Preview|fallback-space-owner" \
         "gtd_review_*|Notes|fallback-space-owner" \
         "gtd_mail_*|Thunderbird|fallback-space-owner" \
@@ -299,7 +302,7 @@ function __work_audit_empty_labeled_spaces --description "Audit empty labeled-sp
         printf "        allow_empty=%s reason=%s\n" $parts[1] $parts[2]
     end
 
-    set -l spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+    set -l spaces_json (ws_query_spaces work_audit empty-labeled-spaces)
     if test $status -ne 0 -o -z "$spaces_json"
         echo "WARN    live empty labeled-space check skipped: yabai spaces query failed"
         return 0

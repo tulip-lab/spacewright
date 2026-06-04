@@ -1,13 +1,11 @@
 function workspace_status_snapshot --description "Print common display and space status sections"
-    set -l displays_json (ws_yabai -m query --displays 2>/dev/null)
+    set -l displays_json (ws_query_displays workspace_status_snapshot status)
     if test $status -ne 0 -o -z "$displays_json"
-        echo "[WARN] workspace_status_snapshot could not query displays from yabai" >&2
         set displays_json "[]"
     end
 
-    set -l spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+    set -l spaces_json (ws_query_spaces workspace_status_snapshot status)
     if test $status -ne 0 -o -z "$spaces_json"
-        echo "[WARN] workspace_status_snapshot could not query spaces from yabai" >&2
         set spaces_json "[]"
     end
 
@@ -41,9 +39,8 @@ function workspace_mode_status_section --description "Print labeled spaces match
     end
 
     echo "===== $title ====="
-    set -l spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+    set -l spaces_json (ws_query_spaces workspace_mode_status_section status)
     if test $status -ne 0 -o -z "$spaces_json"
-        echo "[WARN] workspace_mode_status_section could not query spaces from yabai" >&2
         return 1
     end
 

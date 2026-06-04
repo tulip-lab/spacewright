@@ -1,19 +1,16 @@
 function work_diagnostics --description "Show workspace diagnostics without changing spaces or windows"
-    set -l displays_json (ws_yabai -m query --displays 2>/dev/null)
+    set -l displays_json (ws_query_displays work_diagnostics summary)
     if test $status -ne 0 -o -z "$displays_json"
-        echo "[WARN] work_diagnostics could not query displays from yabai" >&2
         set displays_json "[]"
     end
 
-    set -l spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+    set -l spaces_json (ws_query_spaces work_diagnostics summary)
     if test $status -ne 0 -o -z "$spaces_json"
-        echo "[WARN] work_diagnostics could not query spaces from yabai" >&2
         set spaces_json "[]"
     end
 
-    set -l windows_json (ws_yabai -m query --windows 2>/dev/null)
+    set -l windows_json (ws_query_windows work_diagnostics summary)
     if test $status -ne 0 -o -z "$windows_json"
-        echo "[WARN] work_diagnostics could not query windows from yabai" >&2
         set windows_json "[]"
     end
 
@@ -33,8 +30,18 @@ function work_diagnostics --description "Show workspace diagnostics without chan
 
     echo
     echo "===== CURRENT FOCUS ====="
-    set -l current_display (ws_yabai -m query --displays --display 2>/dev/null | ws_jq -r '.index // empty')
-    set -l current_space (ws_yabai -m query --spaces --space 2>/dev/null | ws_jq -r '.index // empty')
+    set -l current_display_json (ws_query_current_display work_diagnostics current-focus)
+    set -l current_space_json (ws_query_current_space work_diagnostics current-focus)
+    set -l current_display
+    set -l current_space
+
+    if test -n "$current_display_json"
+        set current_display (echo $current_display_json | ws_jq -r '.index // empty')
+    end
+
+    if test -n "$current_space_json"
+        set current_space (echo $current_space_json | ws_jq -r '.index // empty')
+    end
     ws_jq -n \
         --arg display "$current_display" \
         --arg space "$current_space" \

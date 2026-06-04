@@ -27,7 +27,7 @@ function workspace_app_names --description "Print known yabai app names for a wo
         case finder
             printf "%s\n" Finder
         case preview
-            printf "%s\n" Preview
+            printf "%s\n" Preview 预览
         case notes
             printf "%s\n" Notes
         case calendar

@@ -36,9 +36,8 @@ function work_clear_bad_windows --description "Clear cached bad yabai window IDs
         return 0
     end
 
-    set -l windows_json (ws_yabai -m query --windows 2>/dev/null)
+    set -l windows_json (ws_query_windows work_clear_bad_windows cache)
     if test $status -ne 0 -o -z "$windows_json"
-        echo "[WARN] work_clear_bad_windows could not query windows from yabai" >&2
         set windows_json "[]"
     end
 

@@ -364,11 +364,16 @@ function workspace_find_app_key_window --description "Find a movable app window 
 end
 
 function workspace_capture_app_window --description "Move a movable app window to a target space and confirm it landed there"
-    argparse 'app=' 'caller=' 'space=' visible -- $argv
+    argparse 'app=' 'app-key=' 'caller=' 'space=' visible -- $argv
     or return 1
 
-    if not set -q _flag_app; or not set -q _flag_space
-        echo "usage: workspace_capture_app_window --app <app-name> --space <space> [--caller <name>] [--visible]" >&2
+    if not set -q _flag_app; and not set -q _flag_app_key
+        echo "usage: workspace_capture_app_window --app <app-name>|--app-key <key> --space <space> [--caller <name>] [--visible]" >&2
+        return 1
+    end
+
+    if not set -q _flag_space
+        echo "usage: workspace_capture_app_window --app <app-name>|--app-key <key> --space <space> [--caller <name>] [--visible]" >&2
         return 1
     end
 
@@ -377,12 +382,20 @@ function workspace_capture_app_window --description "Move a movable app window t
         set caller $_flag_caller
     end
 
-    set -l find_args --app "$_flag_app" --caller "$caller"
+    set -l find_args --caller "$caller"
+    set -l find_command workspace_find_app_window
+    if set -q _flag_app_key
+        set find_command workspace_find_app_key_window
+        set -a find_args --app-key $_flag_app_key
+    else
+        set -a find_args --app "$_flag_app"
+    end
+
     if set -q _flag_visible
         set -a find_args --visible
     end
 
-    set -l window_id (workspace_find_app_window $find_args)
+    set -l window_id ($find_command $find_args)
     set -l find_status $status
 
     if test "$find_status" -eq 1
@@ -395,13 +408,13 @@ function workspace_capture_app_window --description "Move a movable app window t
         return 2
     end
 
-    set -l target_window (workspace_find_app_window $find_args --space $_flag_space --no-refresh --target-only)
+    set -l target_window ($find_command $find_args --space $_flag_space --no-refresh --target-only)
     if test -n "$target_window"
         echo $target_window
         return 0
     end
 
-    set window_id (workspace_find_app_window $find_args --space $_flag_space)
+    set window_id ($find_command $find_args --space $_flag_space)
     set find_status $status
 
     if test "$find_status" -eq 1
@@ -410,7 +423,7 @@ function workspace_capture_app_window --description "Move a movable app window t
 
     if test -n "$window_id"
         ws_move_windows_to_space $_flag_space $window_id
-        set target_window (workspace_find_app_window $find_args --space $_flag_space --no-refresh --target-only)
+        set target_window ($find_command $find_args --space $_flag_space --no-refresh --target-only)
 
         if test -n "$target_window"
             echo $target_window

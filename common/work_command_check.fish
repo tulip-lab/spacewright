@@ -18,6 +18,10 @@ function work_command_check --description "Check that documented workspace comma
         work_audit \
         ws_yabai \
         ws_jq \
+        ws_query_displays \
+        ws_query_spaces \
+        ws_query_current_display \
+        ws_query_current_space \
         ws_query_windows \
         workspace_app_name \
         workspace_app_names \
@@ -33,6 +37,7 @@ function work_command_check --description "Check that documented workspace comma
         workspace_app_key_windows \
         workspace_app_key_space_fallback_info \
         workspace_apply_app_key_grid_bounds \
+        workspace_apply_app_key_absolute_bounds \
         workspace_capture_app_window \
         workspace_space_non_owned_windows \
         workspace_evict_non_owned_windows_from_space \

@@ -108,7 +108,7 @@ function work_doctor --description "Run read-only workspace system checks"
 
     echo
     echo "===== YABAI READ-ONLY QUERIES ====="
-    set -l displays_json (ws_yabai -m query --displays 2>/dev/null)
+    set -l displays_json (ws_query_displays work_doctor read-only)
     if test $status -eq 0 -a -n "$displays_json"
         set -l display_count (echo $displays_json | ws_jq -r 'length')
         __work_doctor_ok "displays query count=$display_count"
@@ -130,7 +130,7 @@ function work_doctor --description "Run read-only workspace system checks"
         __work_doctor_fail "could not query yabai displays"
     end
 
-    set -l spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+    set -l spaces_json (ws_query_spaces work_doctor read-only)
     if test $status -eq 0 -a -n "$spaces_json"
         set -l space_count (echo $spaces_json | ws_jq -r 'length')
         set -l duplicate_label_count (echo $spaces_json | ws_jq -r 'map(select(.label != "")) | group_by(.label) | map(select(length > 1)) | length')
@@ -159,7 +159,7 @@ function work_doctor --description "Run read-only workspace system checks"
         __work_doctor_fail "could not query yabai spaces"
     end
 
-    set -l windows_json (ws_yabai -m query --windows 2>/dev/null)
+    set -l windows_json (ws_query_windows work_doctor read-only)
     if test $status -eq 0 -a -n "$windows_json"
         set -l window_count (echo $windows_json | ws_jq -r 'length')
         __work_doctor_ok "windows query count=$window_count"

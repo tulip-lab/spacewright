@@ -36,12 +36,15 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
     set -l windows_json (ws_query_windows $_flag_label initial); or return 1
     set -l chatgpt_app (workspace_app_name chatgpt)
     set -l notes_app (workspace_app_name notes)
+    set -l preview_apps_json (workspace_app_names_json preview)
+    or return 1
     set -l notes_apps_json (workspace_app_names_json notes)
     or return 1
 
     set -l finder_windows (echo $windows_json | workspace_app_key_windows --app-key finder --movable)
     or return 1
 
+    set -l bad_window_dir /tmp/workspace-ws-window-bad
     set -l preview
     set -l preview_movable_windows (echo $windows_json | workspace_app_key_windows --app-key preview --movable)
     or return 1
@@ -50,7 +53,7 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
     set -l preview_fallback_display
 
     for preview_window in $preview_movable_windows
-        rm -f /tmp/workspace-ws-window-bad/$preview_window 2>/dev/null
+        rm -f "$bad_window_dir/$preview_window" 2>/dev/null
     end
 
     if test (count $preview_movable_windows) -gt 0
@@ -62,38 +65,40 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
         return 1
     end
 
-    if test -n "$preview_initial_info"
-        set -l preview_initial_parts (string split \t -- "$preview_initial_info")
-        set preview_fallback_window $preview_initial_parts[1]
-        set preview_fallback_space $preview_initial_parts[2]
-        set preview_fallback_display $preview_initial_parts[3]
-    else if test -z "$preview"
-        set preview (workspace_find_app_key_window --app-key preview --caller $_flag_label --quiet-unmovable)
-        set -l preview_status $status
-        if test "$preview_status" -eq 1
-            return 1
-        end
-
-        if test "$preview_status" -eq 2
-            set -l preview_fallback_info (workspace_app_key_space_fallback_info \
-                --app-key preview \
-                --caller $_flag_label \
-                --phase preview_space_fallback)
-            set -l preview_fallback_status $status
-
-            if test "$preview_fallback_status" -eq 1
+    if test -z "$preview"
+        if test -n "$preview_initial_info"
+            set -l preview_initial_parts (string split \t -- "$preview_initial_info")
+            set preview_fallback_window $preview_initial_parts[1]
+            set preview_fallback_space $preview_initial_parts[2]
+            set preview_fallback_display $preview_initial_parts[3]
+        else
+            set preview (workspace_find_app_key_window --app-key preview --caller $_flag_label --quiet-unmovable)
+            set -l preview_status $status
+            if test "$preview_status" -eq 1
                 return 1
             end
 
-            if test -z "$preview_fallback_info"
-                echo "[WARN] $_flag_label found Preview, but could not identify a Preview space fallback" >&2
-                return 1
-            end
+            if test "$preview_status" -eq 2
+                set -l preview_fallback_info (workspace_app_key_space_fallback_info \
+                    --app-key preview \
+                    --caller $_flag_label \
+                    --phase preview_space_fallback)
+                set -l preview_fallback_status $status
 
-            set -l preview_fallback_parts (string split \t -- "$preview_fallback_info")
-            set preview_fallback_window $preview_fallback_parts[1]
-            set preview_fallback_space $preview_fallback_parts[2]
-            set preview_fallback_display $preview_fallback_parts[3]
+                if test "$preview_fallback_status" -eq 1
+                    return 1
+                end
+
+                if test -z "$preview_fallback_info"
+                    echo "[WARN] $_flag_label found Preview, but could not identify a Preview space fallback" >&2
+                    return 1
+                end
+
+                set -l preview_fallback_parts (string split \t -- "$preview_fallback_info")
+                set preview_fallback_window $preview_fallback_parts[1]
+                set preview_fallback_space $preview_fallback_parts[2]
+                set preview_fallback_display $preview_fallback_parts[3]
+            end
         end
     end
 
@@ -244,14 +249,121 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
     ws_move_windows_to_space $target_space $windows_to_move
 
     set -l windows_json_final (ws_query_windows $_flag_label final); or return 1
-    set -l finder_retry_windows (echo $windows_json_final | workspace_app_key_windows --app-key finder --movable --not-space $target_space)
-    or return 1
-    set -l preview_retry_windows (echo $windows_json_final | workspace_app_key_windows --app-key preview --movable --not-space $target_space)
-    or return 1
 
-    if test (count $finder_retry_windows) -gt 0; or test (count $preview_retry_windows) -gt 0
+    for attempt in (seq 1 3)
+        set -l finder_retry_windows (echo $windows_json_final | workspace_app_key_windows --app-key finder --movable --not-space $target_space)
+        or return 1
+        set -l preview_retry_windows (echo $windows_json_final | workspace_app_key_windows --app-key preview --movable --not-space $target_space)
+        or return 1
+
+        for preview_window in $preview_retry_windows
+            rm -f "$bad_window_dir/$preview_window" 2>/dev/null
+        end
+
+        if test (count $finder_retry_windows) -eq 0; and test (count $preview_retry_windows) -eq 0
+            break
+        end
+
         ws_move_windows_to_space $target_space $finder_retry_windows $preview_retry_windows
-        set windows_json_final (ws_query_windows $_flag_label final_review_reconcile); or return 1
+
+        set -l reconcile_phase final_review_reconcile
+        if test "$attempt" -gt 1
+            set reconcile_phase final_review_reconcile_$attempt
+        end
+
+        set windows_json_final (ws_query_windows $_flag_label $reconcile_phase); or return 1
+    end
+
+    if test -z "$preview_fallback_window"
+        set -l preview_target_windows (echo $windows_json_final | workspace_app_key_windows --app-key preview --space $target_space --movable --nonempty-title)
+        or return 1
+
+        set -l preview_lingering_info (echo $windows_json_final | ws_jq -r --argjson apps "$preview_apps_json" --argjson s $target_space '
+            first(
+                .[]
+                | select(.app as $app | $apps | index($app))
+                | select(.space!=$s)
+                | select(.["is-minimized"]==false)
+                | select(.["can-move"]==true)
+                | [.id, .space, .display]
+                | @tsv
+            ) // empty
+        ')
+        if test $status -ne 0
+            return 1
+        end
+
+        if test -z "$preview_lingering_info" -a (count $preview_target_windows) -eq 0
+            set preview_lingering_info (echo $windows_json_final | ws_jq -r --argjson apps "$preview_apps_json" --argjson s $target_space '
+                first(
+                    .[]
+                    | select(.app as $app | $apps | index($app))
+                    | select(.space!=$s)
+                    | select(.["is-minimized"]==false)
+                    | [.id, .space, .display]
+                    | @tsv
+                ) // empty
+            ')
+            if test $status -ne 0
+                return 1
+            end
+        end
+
+        if test -n "$preview_lingering_info"
+            set -l preview_lingering_parts (string split \t -- "$preview_lingering_info")
+            set preview_fallback_window $preview_lingering_parts[1]
+            set preview_fallback_space $preview_lingering_parts[2]
+            set preview_fallback_display $preview_lingering_parts[3]
+
+            if test -z "$preview_fallback_window" -o -z "$preview_fallback_space" -o -z "$preview_fallback_display"
+                echo "[WARN] $_flag_label found Preview outside the review target, but its fallback space metadata was incomplete" >&2
+                return 1
+            end
+
+            set target_space (workspace_focus_space_fallback \
+                --label $_flag_label \
+                --space $preview_fallback_space \
+                --source-display $preview_fallback_display \
+                --target-display $target_display \
+                --layout float \
+                --phase preview-move-fallback \
+                $cleanup_specs)
+            or return 1
+
+            set preview_fallback_space $target_space
+            set preview_fallback_display $target_display
+
+            workspace_evict_non_owned_windows_from_space \
+                --caller $_flag_label \
+                --space $target_space \
+                --target-display $target_display \
+                --allowed-app-regex "$review_app_regex"
+            or return 1
+
+            set windows_json_final (ws_query_windows $_flag_label preview_move_fallback_before_move)
+            or return 1
+
+            set finder_windows (echo $windows_json_final | workspace_app_key_windows --app-key finder --movable)
+            or return 1
+            set preview_movable_windows (echo $windows_json_final | workspace_app_key_windows --app-key preview --movable)
+            or return 1
+            set chatgpt_movable_windows (echo $windows_json_final | workspace_app_key_windows --app-key chatgpt --movable)
+            or return 1
+
+            for preview_window in $preview_movable_windows
+                rm -f "$bad_window_dir/$preview_window" 2>/dev/null
+            end
+
+            set -l fallback_windows_to_move $finder_windows $preview_movable_windows $chatgpt_movable_windows
+            if test "$notes_space_fallback_used" -ne 1
+                set -l notes_move_windows (echo $windows_json_final | workspace_app_key_windows --app-key notes --movable)
+                or return 1
+                set -a fallback_windows_to_move $notes_move_windows[1]
+            end
+
+            ws_move_windows_to_space $target_space $fallback_windows_to_move
+            set windows_json_final (ws_query_windows $_flag_label preview_move_fallback); or return 1
+        end
     end
 
     set finder_windows (echo $windows_json_final | workspace_app_key_windows --app-key finder --space $target_space --movable)
@@ -259,6 +371,9 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
     set preview_movable_windows (echo $windows_json_final | workspace_app_key_windows --app-key preview --space $target_space --movable)
     or return 1
     set preview $preview_movable_windows[1]
+    for preview_window in $preview_movable_windows
+        rm -f "$bad_window_dir/$preview_window" 2>/dev/null
+    end
     if test -z "$preview" -a -n "$preview_fallback_window"
         set preview $preview_fallback_window
     end
@@ -283,6 +398,9 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
                 | .id
             ) // empty
         ')
+        if test -z "$notes" -a -n "$notes_fallback_window"
+            set notes $notes_fallback_window
+        end
     else
         set notes (echo $windows_json_final | ws_find_window "$notes_app" --space $target_space --nonempty-title)
 
@@ -308,7 +426,7 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
                 --all-windows
 
             if test "$preview_fallback_display" = "$target_display" -a "$preview_fallback_space" != "$target_space"
-                set -l displays_json (ws_yabai -m query --displays 2>/dev/null)
+                set -l displays_json (ws_query_displays $_flag_label preview-bounce)
                 if test $status -eq 0 -a -n "$displays_json"
                     set -l bounce_display (echo $displays_json | ws_jq -r --argjson target "$target_display" '
                         first(.[] | select(.index!=$target) | .index) // empty

@@ -28,16 +28,13 @@ function work_wide
 
     if set -q _flag_dry_run
         printf "dry_run=work_wide\n"
-        printf "commands=%s\n" coding_wide coding_control research_wide office_wide gtd_wide gtd_chat gtd_calendar
+        printf "commands=%s\n" coding_wide research_wide office_wide gtd_wide gtd_chat gtd_calendar coding_control
         return 0
     end
 
     set -l failed 0
 
     workspace_run_step "coding wide" coding_wide
-    or set failed 1
-
-    workspace_run_step "coding control" coding_control
     or set failed 1
 
     workspace_run_step "research wide" research_wide
@@ -55,6 +52,9 @@ function work_wide
     workspace_run_step "GTD calendar" gtd_calendar
     or set failed 1
 
+    workspace_run_step "coding control" coding_control
+    or set failed 1
+
     return $failed
 end
 
@@ -64,16 +64,13 @@ function work_tall
 
     if set -q _flag_dry_run
         printf "dry_run=work_tall\n"
-        printf "commands=%s\n" coding_tall coding_control research_tall office_tall gtd_tall gtd_chat gtd_calendar
+        printf "commands=%s\n" coding_tall research_tall office_tall gtd_tall gtd_chat gtd_calendar coding_control
         return 0
     end
 
     set -l failed 0
 
     workspace_run_step "coding tall" coding_tall
-    or set failed 1
-
-    workspace_run_step "coding control" coding_control
     or set failed 1
 
     workspace_run_step "research tall" research_tall
@@ -89,6 +86,9 @@ function work_tall
     or set failed 1
 
     workspace_run_step "GTD calendar" gtd_calendar
+    or set failed 1
+
+    workspace_run_step "coding control" coding_control
     or set failed 1
 
     return $failed

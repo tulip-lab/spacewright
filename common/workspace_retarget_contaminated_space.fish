@@ -1,9 +1,9 @@
 function workspace_space_non_owned_windows --description "Return window ids on a space whose app is outside an allowed app regex"
-    argparse 'space=' 'allowed-app-regex=' movable unmovable -- $argv
+    argparse 'space=' 'allowed-app-regex=' movable unmovable visible -- $argv
     or return 1
 
     if not set -q _flag_space; or not set -q _flag_allowed_app_regex
-        echo "usage: workspace_space_non_owned_windows --space <space> --allowed-app-regex <regex> [--movable|--unmovable]" >&2
+        echo "usage: workspace_space_non_owned_windows --space <space> --allowed-app-regex <regex> [--movable|--unmovable] [--visible]" >&2
         return 2
     end
 
@@ -20,13 +20,20 @@ function workspace_space_non_owned_windows --description "Return window ids on a
         set movable_filter unmovable
     end
 
+    set -l visible 0
+    if set -q _flag_visible
+        set visible 1
+    end
+
     echo $windows_json | ws_jq -r \
         --argjson s $_flag_space \
         --arg allowed_app_regex "$_flag_allowed_app_regex" \
-        --arg movable_filter "$movable_filter" '
+        --arg movable_filter "$movable_filter" \
+        --arg visible "$visible" '
         .[]
         | select(.space==$s)
         | select((.app | test($allowed_app_regex)) | not)
+        | select(($visible!="1") or (.["is-visible"]==true))
         | select(
             if $movable_filter == "movable" then
                 .["can-move"]==true
@@ -66,7 +73,8 @@ function workspace_evict_non_owned_windows_from_space --description "Move movabl
     set -l unmovable_non_owned_windows (echo $windows_json | workspace_space_non_owned_windows \
         --space $_flag_space \
         --allowed-app-regex "$_flag_allowed_app_regex" \
-        --unmovable)
+        --unmovable \
+        --visible)
     if test $status -ne 0
         return 1
     end

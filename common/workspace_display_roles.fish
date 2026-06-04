@@ -28,11 +28,8 @@ function detect_and_set_workspace_primary_display_uuid --description "Detect and
         return 1
     end
 
-    set -l displays_json (ws_yabai -m query --displays 2>/dev/null)
-    if test $status -ne 0 -o -z "$displays_json"
-        echo "[WARN] Could not query displays from yabai" >&2
-        return 1
-    end
+    set -l displays_json (ws_query_displays detect_and_set_workspace_primary_display_uuid detect)
+    or return 1
 
     set -l display_count (echo $displays_json | ws_jq -r 'length')
     if test -z "$display_count" -o "$display_count" -eq 0
@@ -106,11 +103,8 @@ function detect_and_set_workspace_primary_display_uuid --description "Detect and
 end
 
 function resolve_workspace_primary_display --description "Resolve the workspace primary display index"
-    set -l displays_json (ws_yabai -m query --displays 2>/dev/null)
-    if test $status -ne 0 -o -z "$displays_json"
-        echo "[WARN] resolve_workspace_primary_display: could not query displays" >&2
-        return 1
-    end
+    set -l displays_json (ws_query_displays resolve_workspace_primary_display primary)
+    or return 1
 
     set -l display_count (echo $displays_json | ws_jq -r 'length')
     if test -z "$display_count" -o "$display_count" -eq 0
@@ -151,11 +145,8 @@ function resolve_workspace_external_display --description "Resolve the preferred
             return 2
     end
 
-    set -l displays_json (ws_yabai -m query --displays 2>/dev/null)
-    if test $status -ne 0 -o -z "$displays_json"
-        echo "[WARN] resolve_workspace_external_display: could not query displays" >&2
-        return 1
-    end
+    set -l displays_json (ws_query_displays resolve_workspace_external_display external)
+    or return 1
 
     set -l display_count (echo $displays_json | ws_jq -r 'length')
     if test -z "$display_count" -o "$display_count" -eq 0

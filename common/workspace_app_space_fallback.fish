@@ -1,9 +1,9 @@
 function workspace_app_key_space_fallback_info --description "Return a present app-key window id, space and display for space fallback"
-    argparse 'app-key=' 'caller=' 'phase=' -- $argv
+    argparse 'app-key=' 'caller=' 'phase=' visible -- $argv
     or return 1
 
     if not set -q _flag_app_key
-        echo "usage: workspace_app_key_space_fallback_info --app-key <key> [--caller <name>] [--phase <query-phase>]" >&2
+        echo "usage: workspace_app_key_space_fallback_info --app-key <key> [--caller <name>] [--phase <query-phase>] [--visible]" >&2
         return 2
     end
 
@@ -19,15 +19,20 @@ function workspace_app_key_space_fallback_info --description "Return a present a
 
     set -l apps_json (workspace_app_names_json $_flag_app_key)
     or return 1
+    set -l visible 0
+    if set -q _flag_visible
+        set visible 1
+    end
 
     set -l windows_json (ws_query_windows $caller $phase)
     or return 1
 
-    set -l fallback_info (echo $windows_json | ws_jq -r --argjson apps "$apps_json" '
+    set -l fallback_info (echo $windows_json | ws_jq -r --argjson apps "$apps_json" --arg visible "$visible" '
         first(
             .[]
             | select(.app as $app | $apps | index($app))
             | select(.["is-minimized"]==false)
+            | select(($visible!="1") or (.["is-visible"]==true))
             | [.id, .space, .display]
             | @tsv
         ) // empty

@@ -53,7 +53,7 @@ The workspace primary display is where fixed/control workspaces such as `gtd_cha
 `detect_and_set_workspace_primary_display_uuid` uses `yabai` display metadata as the source of truth. It keeps an existing connected primary UUID, automatically uses the only display in single-display setups, and can detect a MacBook built-in display through `displayplacer` when available. If it cannot determine the primary display confidently, inspect the current displays:
 
 ```fish
-yabai -m query --displays | jq -r '.[] | "index=\(.index) uuid=\(.uuid) focus=\(.[\"has-focus\"]) frame=(\(.frame.x),\(.frame.y),\(.frame.w),\(.frame.h)) spaces=\(.spaces)"'
+ws_query_displays bootstrap display-list | ws_jq -r '.[] | "index=\(.index) uuid=\(.uuid) focus=\(.[\"has-focus\"]) frame=(\(.frame.x),\(.frame.y),\(.frame.w),\(.frame.h)) spaces=\(.spaces)"'
 ```
 
 Then set the workspace primary display manually:
@@ -103,6 +103,10 @@ Current core helpers include:
 - `ws_focus_space`
 - `ws_yabai`
 - `ws_jq`
+- `ws_query_displays`
+- `ws_query_spaces`
+- `ws_query_current_display`
+- `ws_query_current_space`
 - `ws_query_windows`
 - `workspace_app_name`
 - `workspace_app_names`
@@ -114,6 +118,7 @@ Current core helpers include:
 - `workspace_app_key_windows`
 - `workspace_app_key_space_fallback_info`
 - `workspace_apply_app_key_grid_bounds`
+- `workspace_apply_app_key_absolute_bounds`
 - `workspace_capture_app_window`
 - `workspace_space_non_owned_windows`
 - `workspace_evict_non_owned_windows_from_space`
@@ -193,6 +198,10 @@ Additional loaded entry/helper commands include:
 - `work_audit`
 - `ws_yabai`
 - `ws_jq`
+- `ws_query_displays`
+- `ws_query_spaces`
+- `ws_query_current_display`
+- `ws_query_current_space`
 - `ws_query_windows`
 - `ws_find_window`
 - `ws_find_windows`
@@ -242,7 +251,7 @@ set -e WORKSPACE_DEBUG_WINDOW
 
 `WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS` controls the timeout for shared yabai queries and defaults to `15` seconds because display queries can briefly stall after display-profile changes or Dock/yabai restarts. `WORKSPACE_YABAI_OPERATION_TIMEOUT_SECONDS` controls non-query `ws_yabai` operations such as display focus, space focus, and space destroy; it defaults to `3` seconds so one stuck operation does not make a full mode switch look hung. `WORKSPACE_YABAI_COMMAND_TIMEOUT_SECONDS` remains a global override for both categories. `WORKSPACE_YABAI_TIMEOUT_SECONDS` controls direct window operations through `ws_window` and defaults to `1` second.
 
-If even read-only yabai queries such as `ws_yabai -m query --displays` or `ws_query_windows probe initial` hit the timeout, restart yabai before rerunning workspace commands:
+If even read-only yabai queries such as `ws_query_displays probe displays`, `ws_query_spaces probe spaces`, or `ws_query_windows probe windows` hit the timeout, restart yabai before rerunning workspace commands:
 
 ```fish
 yabai --restart-service
@@ -253,10 +262,11 @@ After restart, confirm the query layer is responsive:
 
 ```fish
 set -gx WORKSPACE_DEBUG_YABAI 1
-time ws_yabai -m query --displays >/tmp/ws-displays.json
-time ws_query_windows probe initial >/tmp/ws-query-probe.json
+time ws_query_displays probe displays >/tmp/ws-displays.json
+time ws_query_spaces probe spaces >/tmp/ws-spaces.json
+time ws_query_windows probe windows >/tmp/ws-windows.json
 set -e WORKSPACE_DEBUG_YABAI
-rm -f /tmp/ws-displays.json /tmp/ws-query-probe.json
+rm -f /tmp/ws-displays.json /tmp/ws-spaces.json /tmp/ws-windows.json
 ```
 
 For a mode command that appears slow but still returns eventually, enable step logging for one run:
@@ -323,7 +333,7 @@ work_tall
 
 The `display_apply_*` commands apply the display profile, reload workspace functions, wait briefly for the display graph to settle, and run the matching `work_display_health` check. External display profiles resolve the currently connected external display at runtime instead of depending on a fixed external display UUID. The `work_*` commands then arrange the intended workspaces for that display mode.
 
-`work_wide` arranges coding, research, office, and GTD wide workspaces. `work_tall` arranges the matching tall workspaces. Office workspaces are no-ops when Word or PowerPoint does not have an eligible window. GTD remains the last aggregate module so ChatGPT ownership is preserved for review workspaces in top-level external modes.
+`work_wide` arranges coding, research, office, and GTD wide workspaces. `work_tall` arranges the matching tall workspaces. Office workspaces are no-ops when Word or PowerPoint does not have an eligible window. GTD remains the last ChatGPT-owning aggregate module so ChatGPT ownership is preserved for review workspaces in top-level external modes. The fixed `coding_control` workspace runs after GTD in top-level wide/tall modes so non-movable SmartGit fallback remains anchored on the workspace primary display.
 
 Module-level entries can also be run directly:
 
@@ -382,13 +392,23 @@ Window selection follows two shared patterns:
 - Use `--target-only` with `--space` when confirming that a moved window actually landed on the target space.
 - Use `ws_find_window` when a workspace needs title exclusion, app regex matching, non-empty title checks, or bad-window cache awareness.
 
-Primary/helper workspaces such as `gtd_mail_wide` select the required primary app through `workspace_find_app_key_window`, so all registered app names for that key are considered. They confirm the primary window lands on the target space after moving and retry the move once before failing with a warning.
+Primary/helper workspaces such as `gtd_mail_wide` select the required primary app through `workspace_find_app_key_window`, so all registered app names for that key are considered. They confirm the primary window lands on the target space after moving and retry the move once before failing with a warning. `workspace_capture_app_window` also accepts app keys so helper capture uses the same app-name registry.
 
 When yabai reports an app window but does not expose it as movable, `workspace_find_app_window` focuses that window's current space, activates the app, and re-queries before failing. This handles apps such as Thunderbird that may initially appear without an AX reference.
 
 `gtd_mail_*` also enables primary-space fallback for Thunderbird. If Thunderbird remains present but not movable, the command uses Thunderbird's current space as the mail workspace, moves that space to the target display, labels it as the requested mail workspace, moves movable non-mail/helper windows from that fallback space into an unlabeled holding space, and applies the requested grid by setting Thunderbird's largest scriptable window bounds through AppleScript.
 
-All workspace JSON parsing should go through `ws_jq`, `ws_find_window`, `ws_find_windows`, `workspace_select_app_window`, `workspace_find_app_window`, `workspace_find_app_key_window`, `workspace_app_key_window_info`, `workspace_app_key_windows`, or `workspace_capture_app_window`; direct `jq` pipelines are avoided inside workspace functions so parser timeouts remain bounded.
+Coding editor modes enable helper-space fallback for Codex. If Codex is present but yabai does not expose a movable Codex window, Codex's current space becomes the coding editor target, that space is moved/labeled for the requested coding mode, non-coding windows are evicted, VS Code is moved there, and Codex bounds are applied through the app-key grid bounds helper.
+
+All workspace JSON parsing should go through `ws_jq`, `ws_query_displays`, `ws_query_spaces`, `ws_query_current_display`, `ws_query_current_space`, `ws_query_windows`, `ws_find_window`, `ws_find_windows`, `workspace_select_app_window`, `workspace_find_app_window`, `workspace_find_app_key_window`, `workspace_app_key_window_info`, `workspace_app_key_windows`, or `workspace_capture_app_window`; direct `jq` pipelines are avoided inside workspace functions so parser timeouts remain bounded. Display, Space, and current-focus queries retry once before failing the caller. If a full `yabai -m query --windows` call fails, `ws_query_windows` falls back to querying windows one Space at a time and merges the arrays before returning to the caller.
+
+For future workspace edits:
+
+- keep full graph queries behind `ws_query_displays`, `ws_query_spaces`, and `ws_query_windows`
+- keep current focus checks behind `ws_query_current_display` and `ws_query_current_space`
+- use `workspace_app_key_space_fallback_info` plus `workspace_focus_space_fallback` when a present app is not movable
+- after moving required windows, re-query and confirm the target Space; use `--target-only` when a same-app window elsewhere would be a false positive
+- for non-movable app bounds fallback, derive display frames through `ws_query_displays` and cover new retry/fallback behavior in `work_smoke` or `work_audit`
 
 ## ChatGPT Ownership Rule
 
@@ -400,7 +420,7 @@ The global ownership rule is:
 
 If `ChatGPT` appears in more than one workspace design, the most recently executed module function may move it into that module’s workspace.
 
-Coding editor modes use `Codex` as the helper application instead of `ChatGPT`. In `coding_editor_solo`, `coding_editor_wide`, and `coding_editor_tall`, Codex is optional; when it is unavailable, VS Code uses the full target workspace.
+Coding editor modes use `Codex` as the helper application instead of `ChatGPT`. In `coding_editor_solo`, `coding_editor_wide`, and `coding_editor_tall`, Codex is optional; when it is unavailable, VS Code uses the full target workspace. If Codex is present but not movable, its current Space can become the coding editor target so VS Code and Codex still end up together.
 
 ChatGPT-owning modes use `workspace_capture_app_window` to capture ChatGPT. If yabai reports ChatGPT but does not expose a movable window, the helper activates ChatGPT, polls for a movable window, retries the move once, and prints a warning if the window remains non-movable.
 
@@ -416,7 +436,7 @@ If a workspace depends on a required primary application, such as Word, PowerPoi
 
 This prevents old empty labeled spaces from persisting after application state changes.
 
-Some fixed or ownership-sensitive workspaces also retarget contaminated labeled spaces before layout. For example, `coding_control` only owns Warp, SmartGit, KeePassXC, and FlClash/Thaw; if the existing `coding_control` label points at a space containing Finder or another unrelated app, the command clears that label and uses a clean control space.
+Some fixed or ownership-sensitive workspaces also retarget contaminated labeled spaces before layout. For example, `coding_control` only owns Warp, SmartGit, KeePassXC, and FlClash/Thaw; if the existing `coding_control` label points at a space containing Finder or another unrelated app, the command clears that label and uses a clean control space. If SmartGit is present but not movable, `coding_control` uses SmartGit's current Space as the control target, moves that Space to the workspace primary display, evicts non-control windows, moves the other control apps there, and applies SmartGit's fixed bounds through the absolute app-key bounds fallback.
 
 ## GTD Support Dia Layout
 
@@ -640,7 +660,7 @@ Control + Shift + 0
 After switching display mode, check the actual display graph if windows or the Dock appear on the wrong screen:
 
 ```fish
-yabai -m query --displays | jq -r '.[] | "index=\(.index) uuid=\(.uuid) focus=\(.[\"has-focus\"]) frame=(\(.frame.x),\(.frame.y),\(.frame.w),\(.frame.h)) spaces=\(.spaces)"'
+ws_query_displays troubleshoot display-list | ws_jq -r '.[] | "index=\(.index) uuid=\(.uuid) focus=\(.[\"has-focus\"]) frame=(\(.frame.x),\(.frame.y),\(.frame.w),\(.frame.h)) spaces=\(.spaces)"'
 echo primary=(resolve_workspace_primary_display)
 echo target=(resolve_workspace_external_display)
 work_display_health tall
@@ -691,16 +711,16 @@ gtd_meeting_tall
 
 Meeting commands use `gtd_find_zoom_windows` for Zoom and `gtd_find_teams_windows` for Teams. Both wrappers share `gtd_find_meeting_windows`, which captures movable main and active meeting/video/call/share/screen windows while excluding mini windows. The singular wrappers, `gtd_find_zoom_window` and `gtd_find_teams_window`, return the primary window for layout compatibility. Zoom can activate once in the meeting fallback when present but not currently exposed as movable by yabai. Teams recognizes both `Microsoft Teams` and `MSTeams`.
 
-If Zoom is present but yabai still does not expose a movable Zoom window, meeting commands use the current Zoom space as the meeting target, move movable non-meeting windows from that fallback space into an unlabeled holding space, move the other meeting windows there, and apply the Zoom bounds through AppleScript instead of `yabai` grid commands.
+If visible Zoom is present but yabai still does not expose a movable Zoom window, meeting commands use the current Zoom space as the meeting target, move movable non-meeting windows from that fallback space into an unlabeled holding space, move the other meeting windows there, and apply the Zoom bounds through AppleScript instead of `yabai` grid commands. If Zoom is present only as a hidden non-movable window, meeting first applies the Zoom grid through System Events on the target display, then uses the resulting Zoom Space as the meeting target when yabai confirms Zoom reached that display.
 
-Before applying the final grid, meeting commands reconcile all currently movable Zoom and Teams windows back onto the target meeting space. This catches active video or call windows that appear after the main app window has already landed on the meeting space.
+Before applying the final grid, meeting commands reconcile all currently movable Zoom and Teams windows back onto the target meeting space. Zoom gets one short extra settle/re-query before layout, then every selected non-mini Zoom window receives the Zoom grid. This catches active video or call windows that appear after the main app window has already landed on the meeting space.
 
 All `gtd_meeting_*` modes also retarget contaminated labeled spaces before layout. If a previous meeting label points at a space mixed with non-meeting apps, the command clears that label and uses a clean meeting space.
 
 `gtd_meeting_solo` uses a 1/3 + 2/3 layout on the workspace primary display: Zoom and Teams share the left third vertically, and Outlook uses the right two thirds.
 
-`gtd_review_*` modes create or reuse the review workspace when at least one non-Finder review app is available: Preview, Notes, or ChatGPT. Finder is included in the layout when present, but Finder alone does not create a review workspace. Review first collects existing Finder, Preview, Notes, and ChatGPT windows from the initial yabai snapshot instead of activating optional apps. When Finder or Preview is owned by review, all movable windows for that app are moved to the review space, reconciled once from the final snapshot if they are still on another Space, and laid out together.
+`gtd_review_*` modes create or reuse the review workspace when at least one non-Finder review app is available: Preview, Notes, or ChatGPT. Finder is included in the layout when present, but Finder alone does not create a review workspace. Review first collects existing Finder, Preview, Notes, and ChatGPT windows from the initial yabai snapshot instead of activating optional apps. When Finder or Preview is owned by review, all movable windows for that app are moved to the review space, reconciled with up to three short retries if they are still on another Space, and laid out together.
 
-If Notes is present but yabai does not expose a movable Notes window, `gtd_review_*` uses the current Notes space as the review target and moves the other review windows there. If Preview is present but not movable, the review target is focused and Preview bounds are applied through app AppleScript, then System Events if needed, instead of `yabai` grid commands. In either review fallback, movable non-review windows from that fallback space are moved into an unlabeled holding space before the review windows are arranged. When Preview is already on the target display but the wrong Space, the fallback temporarily bounces Preview through another display before returning it to the focused review Space. Review fallback bounds use the all-windows mode so multiple scriptable Preview or Notes windows are not left behind.
+If Notes is present but yabai does not expose a movable Notes window, `gtd_review_*` uses the current Notes space as the review target and moves the other review windows there. If Preview is present but not movable, the review target is focused and Preview bounds are applied through app AppleScript, then System Events if needed, instead of `yabai` grid commands. Movable Preview windows take precedence over unmovable Preview companion windows so an auxiliary unmovable window does not steal the review target. If a movable Preview window still remains outside the review target after the normal move and retry pass, review treats Preview's current Space as the fallback target, labels that Space as the review workspace, refreshes the window snapshot, and moves the other current review windows there. In either review fallback, movable non-review windows from that fallback space are moved into an unlabeled holding space before the review windows are arranged. When Preview is already on the target display but the wrong Space, the fallback temporarily bounces Preview through another display before returning it to the focused review Space. Review fallback bounds use the all-windows mode so multiple scriptable Preview or Notes windows are not left behind.
 
 If Calendar is present but yabai does not expose a movable Calendar window, `gtd_calendar` uses the current Calendar space as the calendar target, moves movable non-calendar windows from that fallback space into an unlabeled holding space, moves Reminders there, and applies Calendar bounds through app AppleScript, then System Events if needed, instead of `yabai` grid commands.

@@ -14,7 +14,7 @@ function cleanup_labeled_empty_spaces --description "Destroy empty spaces whose 
         set display_name "labeled"
     end
 
-    set -l spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+    set -l spaces_json (ws_query_spaces cleanup_labeled_empty_spaces cleanup)
     if test $status -ne 0 -o -z "$spaces_json"
         return 1
     end
@@ -39,7 +39,7 @@ function cleanup_unlabeled_empty_spaces --description "Remove unlabeled empty sp
     set -l protected_space $argv[1]
 
     if test -z "$protected_space"
-        set -l current_space_json (ws_yabai -m query --spaces --space 2>/dev/null)
+        set -l current_space_json (ws_query_current_space cleanup_unlabeled_empty_spaces protected-space)
         if test $status -ne 0 -o -z "$current_space_json"
             return 0
         end
@@ -51,7 +51,7 @@ function cleanup_unlabeled_empty_spaces --description "Remove unlabeled empty sp
         return 0
     end
 
-    set -l spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+    set -l spaces_json (ws_query_spaces cleanup_unlabeled_empty_spaces cleanup)
     if test $status -ne 0 -o -z "$spaces_json"
         return 0
     end

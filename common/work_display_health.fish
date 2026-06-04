@@ -8,9 +8,8 @@ function work_display_health --description "Show read-only workspace display rol
             return 2
     end
 
-    set -l displays_json (ws_yabai -m query --displays 2>/dev/null)
+    set -l displays_json (ws_query_displays work_display_health health)
     if test $status -ne 0 -o -z "$displays_json"
-        echo "[WARN] work_display_health could not query displays from yabai" >&2
         set displays_json "[]"
     end
 

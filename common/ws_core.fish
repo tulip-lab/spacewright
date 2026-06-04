@@ -79,8 +79,12 @@ function ws_query_windows --description "Query yabai windows with timeout and fa
 
     set -l windows_json (ws_yabai -m query --windows 2>/dev/null)
     if test $status -ne 0 -o -z "$windows_json"
-        echo "[WARN] $caller could not query $phase windows from yabai" >&2
-        return 1
+        set windows_json (__ws_query_windows_by_space)
+
+        if test $status -ne 0 -o -z "$windows_json"
+            echo "[WARN] $caller could not query $phase windows from yabai" >&2
+            return 1
+        end
     end
 
     echo $windows_json | ws_jq -e 'type == "array"' >/dev/null 2>&1
@@ -92,6 +96,171 @@ function ws_query_windows --description "Query yabai windows with timeout and fa
     echo $windows_json
 end
 
+function ws_query_displays --description "Query yabai displays with one retry and JSON validation"
+    set -l caller $argv[1]
+    set -l phase $argv[2]
+
+    if test -z "$caller"
+        set caller workspace
+    end
+
+    if test -z "$phase"
+        set phase displays
+    end
+
+    for attempt in 1 2
+        set -l displays_json (ws_yabai -m query --displays 2>/dev/null)
+        if test $status -eq 0 -a -n "$displays_json"
+            echo $displays_json | ws_jq -e 'type == "array"' >/dev/null 2>&1
+            if test $status -eq 0
+                echo $displays_json
+                return 0
+            end
+        end
+
+        if test "$attempt" -eq 1
+            sleep 0.25
+        end
+    end
+
+    echo "[WARN] $caller could not query $phase displays from yabai" >&2
+    return 1
+end
+
+function ws_query_spaces --description "Query yabai spaces with one retry and JSON validation"
+    set -l caller $argv[1]
+    set -l phase $argv[2]
+
+    if test -z "$caller"
+        set caller workspace
+    end
+
+    if test -z "$phase"
+        set phase spaces
+    end
+
+    for attempt in 1 2
+        set -l spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+        if test $status -eq 0 -a -n "$spaces_json"
+            echo $spaces_json | ws_jq -e 'type == "array"' >/dev/null 2>&1
+            if test $status -eq 0
+                echo $spaces_json
+                return 0
+            end
+        end
+
+        if test "$attempt" -eq 1
+            sleep 0.25
+        end
+    end
+
+    echo "[WARN] $caller could not query $phase spaces from yabai" >&2
+    return 1
+end
+
+function ws_query_current_display --description "Query current yabai display with one retry and JSON validation"
+    set -l caller $argv[1]
+    set -l phase $argv[2]
+
+    if test -z "$caller"
+        set caller workspace
+    end
+
+    if test -z "$phase"
+        set phase current-display
+    end
+
+    for attempt in 1 2
+        set -l display_json (ws_yabai -m query --displays --display 2>/dev/null)
+        if test $status -eq 0 -a -n "$display_json"
+            echo $display_json | ws_jq -e 'type == "object"' >/dev/null 2>&1
+            if test $status -eq 0
+                echo $display_json
+                return 0
+            end
+        end
+
+        if test "$attempt" -eq 1
+            sleep 0.25
+        end
+    end
+
+    echo "[WARN] $caller could not query $phase current display from yabai" >&2
+    return 1
+end
+
+function ws_query_current_space --description "Query current yabai space with one retry and JSON validation"
+    set -l caller $argv[1]
+    set -l phase $argv[2]
+
+    if test -z "$caller"
+        set caller workspace
+    end
+
+    if test -z "$phase"
+        set phase current-space
+    end
+
+    for attempt in 1 2
+        set -l space_json (ws_yabai -m query --spaces --space 2>/dev/null)
+        if test $status -eq 0 -a -n "$space_json"
+            echo $space_json | ws_jq -e 'type == "object"' >/dev/null 2>&1
+            if test $status -eq 0
+                echo $space_json
+                return 0
+            end
+        end
+
+        if test "$attempt" -eq 1
+            sleep 0.25
+        end
+    end
+
+    echo "[WARN] $caller could not query $phase current space from yabai" >&2
+    return 1
+end
+
+function __ws_query_windows_by_space --description "Fallback windows query that merges per-space yabai results"
+    set -l spaces_json (ws_query_spaces __ws_query_windows_by_space windows-by-space)
+    if test $status -ne 0 -o -z "$spaces_json"
+        return 1
+    end
+
+    set -l spaces (echo $spaces_json | ws_jq -r '.[].index')
+    if test $status -ne 0 -o (count $spaces) -eq 0
+        return 1
+    end
+
+    set -l windows_file (mktemp -t ws-yabai-windows-by-space.XXXXXX)
+    set -l found 0
+
+    for space in $spaces
+        set -l space_windows (ws_yabai -m query --windows --space $space 2>/dev/null)
+        if test $status -eq 0 -a -n "$space_windows"
+            echo $space_windows | ws_jq -e 'type == "array"' >/dev/null 2>&1
+            if test $status -eq 0
+                printf "%s\n" "$space_windows" >>$windows_file
+                set found 1
+            end
+        end
+    end
+
+    if test "$found" -ne 1
+        rm -f $windows_file
+        return 1
+    end
+
+    set -l merged_windows (ws_jq -s 'add' <$windows_file 2>/dev/null)
+    set -l merge_status $status
+    rm -f $windows_file
+
+    if test "$merge_status" -ne 0 -o -z "$merged_windows"
+        return 1
+    end
+
+    echo $merged_windows
+end
+
 function ws_focus_display --description "Focus a display only when it is not already focused"
     if test (count $argv) -lt 1
         echo "usage: ws_focus_display <display_index>"
@@ -99,7 +268,7 @@ function ws_focus_display --description "Focus a display only when it is not alr
     end
 
     set -l target_display $argv[1]
-    set -l current_display_json (ws_yabai -m query --displays --display 2>/dev/null)
+    set -l current_display_json (ws_query_current_display ws_focus_display focus)
     if test $status -ne 0 -o -z "$current_display_json"
         return 1
     end
@@ -124,7 +293,7 @@ function ws_focus_space --description "Focus a space only when it is not already
     end
 
     set -l target_space $argv[1]
-    set -l current_space_json (ws_yabai -m query --spaces --space 2>/dev/null)
+    set -l current_space_json (ws_query_current_space ws_focus_space focus)
     if test $status -ne 0 -o -z "$current_space_json"
         return 1
     end
