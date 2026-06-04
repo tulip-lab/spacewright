@@ -173,6 +173,25 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
+    set -l labeled_cleanup_query_failure_smoke '
+        work_reload >/dev/null
+
+        function ws_query_spaces
+            return 1
+        end
+
+        workspace_run_cleanup_specs gtd:tall
+        or exit 1
+    '
+    fish -lc "$labeled_cleanup_query_failure_smoke" >/tmp/work-labeled-cleanup-query-failure-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      labeled cleanup query failure is nonblocking"
+    else
+        echo "FAIL    labeled cleanup query failure is nonblocking"
+        cat /tmp/work-labeled-cleanup-query-failure-smoke.out
+        set failed 1
+    end
+
     set -l current_query_retry_smoke '
         work_reload >/dev/null
 
@@ -270,7 +289,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         "*gtd_support_*Dia*all-movable-windows*" \
         "*gtd_review_*Finder*all-movable-windows*" \
         "*gtd_review_*Preview*all-movable-windows;fallback-space-owner*" \
-        "*gtd_review_*Notes*single-window;fallback-space-owner*" \
+        "*gtd_review_*Notes*all-movable-windows;fallback-space-owner*" \
         "*gtd_meeting_*Zoom*all-movable-windows;fallback-space-owner*" \
         "*gtd_meeting_*Microsoft Teams/MSTeams*all-movable-windows*" \
         "*gtd_mail_*Thunderbird*single-window;fallback-space-owner*" \
@@ -540,6 +559,95 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     else
         echo "FAIL    review snapshot Finder/Preview reconcile"
         cat /tmp/work-review-snapshot-reconcile-smoke.out
+        set failed 1
+    end
+
+    set -l review_notes_reconcile_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_review_move_calls
+        set -g __work_smoke_review_grid_calls
+
+        function workspace_run_cleanup_specs
+        end
+
+        function ws_query_windows
+            set -l phase $argv[2]
+
+            if test "$phase" = initial
+                printf "%s\n" "[
+                    {\"id\": 11, \"app\": \"Notes\", \"space\": 7, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Notes\"},
+                    {\"id\": 15, \"app\": \"Notes\", \"space\": 9, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Notes\"},
+                    {\"id\": 12, \"app\": \"Preview\", \"space\": 6, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Preview\"},
+                    {\"id\": 14, \"app\": \"Finder\", \"space\": 7, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Finder\"}
+                ]"
+            else if test "$phase" = final_review_reconcile
+                printf "%s\n" "[
+                    {\"id\": 11, \"app\": \"Notes\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Notes\"},
+                    {\"id\": 15, \"app\": \"Notes\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Notes\"},
+                    {\"id\": 12, \"app\": \"Preview\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Preview\"},
+                    {\"id\": 14, \"app\": \"Finder\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Finder\"}
+                ]"
+            else
+                printf "%s\n" "[
+                    {\"id\": 11, \"app\": \"Notes\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Notes\"},
+                    {\"id\": 15, \"app\": \"Notes\", \"space\": 9, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Notes\"},
+                    {\"id\": 12, \"app\": \"Preview\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Preview\"},
+                    {\"id\": 14, \"app\": \"Finder\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Finder\"}
+                ]"
+            end
+        end
+
+        function workspace_resolve_display_role
+            echo 2
+        end
+
+        function find_or_create_labeled_space
+            echo 8
+        end
+
+        function workspace_retarget_contaminated_space
+            echo 8
+        end
+
+        function workspace_focus_labeled_space
+        end
+
+        function ws_move_windows_to_space
+            set -ga __work_smoke_review_move_calls (string join , -- $argv)
+        end
+
+        function ws_window
+            set -ga __work_smoke_review_grid_calls (string join , -- $argv)
+        end
+
+        function ws_focus_space
+        end
+
+        function cleanup_unlabeled_empty_spaces
+        end
+
+        gtd_apply_review_space --label gtd_review_wide --display wide --finder-grid 1:1:0:0:1:1 --preview-grid 1:1:0:0:1:1 --notes-grid 1:1:0:0:1:1
+        or exit 1
+
+        test "$__work_smoke_review_move_calls[1]" = "8,14,12,11,15"
+        or exit 2
+
+        test "$__work_smoke_review_move_calls[2]" = "8,15"
+        or exit 3
+
+        contains -- "11,--grid,1:1:0:0:1:1" $__work_smoke_review_grid_calls
+        or exit 4
+
+        contains -- "15,--grid,1:1:0:0:1:1" $__work_smoke_review_grid_calls
+        or exit 5
+    '
+    fish -lc "$review_notes_reconcile_smoke" >/tmp/work-review-notes-reconcile-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      review movable Notes reconcile"
+    else
+        echo "FAIL    review movable Notes reconcile"
+        cat /tmp/work-review-notes-reconcile-smoke.out
         set failed 1
     end
 

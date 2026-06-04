@@ -129,6 +129,8 @@ Workspace labels are structural ownership markers. Use:
 
 `find_or_create_labeled_space` does not rely on display focus to control new-space placement. It creates the space, identifies it by UUID difference, checks the actual display, and explicitly moves it to the target display when needed.
 
+Empty labeled-space cleanup is opportunistic. If the cleanup Space query fails, entry commands skip that cleanup and continue so a transient yabai query failure does not block the requested layout.
+
 ### Unlabeled Spaces
 
 `cleanup_unlabeled_empty_spaces` handles transient empty spaces that carry no structural label. This stays separate from labeled-space cleanup to avoid deleting meaningful workspaces too aggressively.
@@ -330,7 +332,7 @@ In `gtd_solo_all`, review runs after meeting so GTD review is the final SOLO own
 
 `Notes` is owned by `gtd_review_*`.
 
-`gtd_review_*` no longer requires Preview as the primary app. A review workspace is eligible when Preview, Notes, or ChatGPT is present. Finder is still included when available, but Finder alone is intentionally not enough to create a review workspace because Finder is commonly present outside review work. Review collects existing Finder, Preview, Notes, and ChatGPT windows from the initial yabai snapshot before using refresh helpers, and only captures ChatGPT when an existing ChatGPT window does not land on the target. When review owns Finder or Preview, all movable windows for that app are moved to the review space, reconciled with up to three short retries if they remain on another Space, and receive the app's review grid.
+`gtd_review_*` no longer requires Preview as the primary app. A review workspace is eligible when Preview, Notes, or ChatGPT is present. Finder is still included when available, but Finder alone is intentionally not enough to create a review workspace because Finder is commonly present outside review work. Review collects existing Finder, Preview, Notes, and ChatGPT windows from the initial yabai snapshot before using refresh helpers, and only captures ChatGPT when an existing ChatGPT window does not land on the target. When review owns Finder, Preview, or Notes, all movable windows for that app are moved to the review space, reconciled with up to three short retries if they remain on another Space, and receive the app's review grid.
 
 When Notes is present but not exposed as a movable yabai window, `gtd_review_*` treats the current Notes space as the review target and moves Finder, movable Preview windows, and ChatGPT there. When Preview itself is present but not movable, the review target is focused and Preview bounds are applied through `workspace_apply_app_key_grid_bounds` instead of a yabai move. Movable Preview windows take precedence over unmovable Preview companion windows so an auxiliary unmovable window does not steal the review target. If Preview is reported movable but remains outside the target after the normal move and retry pass, review promotes Preview's current Space to the review fallback target, normalizes the review label there, evicts non-review windows, refreshes the window snapshot, and moves the current review windows onto that Space. If Preview is already on the target display but a different Space, review temporarily bounces Preview through another display before returning it to the focused review Space. This mirrors the mail workspace's primary-space fallback: the non-movable or failed-move app's space is moved to the requested display if it owns the target, the review label is normalized, movable non-review windows are evicted to an unlabeled holding space, and fallback app bounds are applied through the shared bounds helper. Review passes `--all-windows` for non-movable Preview and Notes bounds so the fallback does not only affect the largest scriptable window.
 
@@ -530,7 +532,7 @@ If this remains stable, extract a small helper so tall and wide do not drift. Ke
 Review already moves all movable Finder and Preview windows together because real failures showed stray windows were being left behind. Before broadening other ownership, watch:
 
 - whether multiple Outlook, Zoom, or Teams windows should move together
-- whether ChatGPT or Notes should ever move as multi-window sets beyond the existing non-movable bounds fallback
+- whether ChatGPT should ever move as a multi-window set beyond the existing helper capture
 - whether moving all same-app windows would steal windows from another active context
 
 Do not generalize GTD support's Dia policy into broad multi-window ownership without concrete failures from real use.

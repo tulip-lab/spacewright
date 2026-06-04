@@ -35,7 +35,6 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
 
     set -l windows_json (ws_query_windows $_flag_label initial); or return 1
     set -l chatgpt_app (workspace_app_name chatgpt)
-    set -l notes_app (workspace_app_name notes)
     set -l preview_apps_json (workspace_app_names_json preview)
     or return 1
     set -l notes_apps_json (workspace_app_names_json notes)
@@ -119,22 +118,28 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
 
     set -l notes
     set -l notes_status 0
-    set -l notes_initial_info (echo $windows_json | workspace_app_key_window_info --app-key notes)
-    if test $status -ne 0
-        return 1
-    end
+    set -l notes_movable_windows (echo $windows_json | workspace_app_key_windows --app-key notes --movable)
+    or return 1
 
     set -l notes_space_fallback_used 0
     set -l notes_fallback_window
     set -l notes_fallback_space
     set -l notes_fallback_display
 
-    if test -n "$notes_initial_info"
-        set -l notes_initial_parts (string split \t -- "$notes_initial_info")
-        if test "$notes_initial_parts[4]" = true
-            set notes $notes_initial_parts[1]
-            rm -f /tmp/workspace-ws-window-bad/$notes 2>/dev/null
-        else
+    for notes_window in $notes_movable_windows
+        rm -f /tmp/workspace-ws-window-bad/$notes_window 2>/dev/null
+    end
+
+    if test (count $notes_movable_windows) -gt 0
+        set notes $notes_movable_windows[1]
+    else
+        set -l notes_initial_info (echo $windows_json | workspace_app_key_window_info --app-key notes --unmovable)
+        if test $status -ne 0
+            return 1
+        end
+
+        if test -n "$notes_initial_info"
+            set -l notes_initial_parts (string split \t -- "$notes_initial_info")
             set notes_status 2
             set notes_fallback_window $notes_initial_parts[1]
             set notes_fallback_space $notes_initial_parts[2]
@@ -243,7 +248,7 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
     set -l windows_to_move $finder_windows $preview_movable_windows $chatgpt_movable_windows
 
     if test "$notes_space_fallback_used" -ne 1
-        set -a windows_to_move $notes
+        set -a windows_to_move $notes_movable_windows
     end
 
     ws_move_windows_to_space $target_space $windows_to_move
@@ -255,16 +260,25 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
         or return 1
         set -l preview_retry_windows (echo $windows_json_final | workspace_app_key_windows --app-key preview --movable --not-space $target_space)
         or return 1
+        set -l notes_retry_windows
+        if test "$notes_space_fallback_used" -ne 1
+            set notes_retry_windows (echo $windows_json_final | workspace_app_key_windows --app-key notes --movable --not-space $target_space)
+            or return 1
+        end
 
         for preview_window in $preview_retry_windows
             rm -f "$bad_window_dir/$preview_window" 2>/dev/null
         end
 
-        if test (count $finder_retry_windows) -eq 0; and test (count $preview_retry_windows) -eq 0
+        for notes_window in $notes_retry_windows
+            rm -f "$bad_window_dir/$notes_window" 2>/dev/null
+        end
+
+        if test (count $finder_retry_windows) -eq 0; and test (count $preview_retry_windows) -eq 0; and test (count $notes_retry_windows) -eq 0
             break
         end
 
-        ws_move_windows_to_space $target_space $finder_retry_windows $preview_retry_windows
+        ws_move_windows_to_space $target_space $finder_retry_windows $preview_retry_windows $notes_retry_windows
 
         set -l reconcile_phase final_review_reconcile
         if test "$attempt" -gt 1
@@ -358,7 +372,7 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
             if test "$notes_space_fallback_used" -ne 1
                 set -l notes_move_windows (echo $windows_json_final | workspace_app_key_windows --app-key notes --movable)
                 or return 1
-                set -a fallback_windows_to_move $notes_move_windows[1]
+                set -a fallback_windows_to_move $notes_move_windows
             end
 
             ws_move_windows_to_space $target_space $fallback_windows_to_move
@@ -388,25 +402,21 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
         end
     end
 
+    set -l notes_target_windows
     if test "$notes_space_fallback_used" -eq 1
-        set notes (echo $windows_json_final | ws_jq -r --argjson apps "$notes_apps_json" --argjson s $target_space '
-            first(
-                .[]
-                | select(.app as $app | $apps | index($app))
-                | select(.space==$s)
-                | select(.["is-minimized"]==false)
-                | .id
-            ) // empty
+        set notes_target_windows (echo $windows_json_final | ws_jq -r --argjson apps "$notes_apps_json" --argjson s $target_space '
+            .[]
+            | select(.app as $app | $apps | index($app))
+            | select(.space==$s)
+            | select(.["is-minimized"]==false)
+            | .id
         ')
-        if test -z "$notes" -a -n "$notes_fallback_window"
-            set notes $notes_fallback_window
+        if test (count $notes_target_windows) -eq 0 -a -n "$notes_fallback_window"
+            set notes_target_windows $notes_fallback_window
         end
     else
-        set notes (echo $windows_json_final | ws_find_window "$notes_app" --space $target_space --nonempty-title)
-
-        if test -z "$notes"
-            set notes (echo $windows_json_final | ws_find_window "$notes_app" --space $target_space)
-        end
+        set notes_target_windows (echo $windows_json_final | workspace_app_key_windows --app-key notes --space $target_space --movable)
+        or return 1
     end
 
     if test -n "$_flag_finder_grid"
@@ -464,7 +474,7 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
         ws_window $chatgpt --grid $_flag_chatgpt_grid
     end
 
-    if test -n "$notes" -a -n "$_flag_notes_grid"
+    if test (count $notes_target_windows) -gt 0 -a -n "$_flag_notes_grid"
         if test "$notes_space_fallback_used" -eq 1
             workspace_apply_app_key_grid_bounds \
                 --app-key notes \
@@ -473,7 +483,9 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
                 --caller $_flag_label \
                 --all-windows
         else
-            ws_window $notes --grid $_flag_notes_grid
+            for notes_window in $notes_target_windows
+                ws_window $notes_window --grid $_flag_notes_grid
+            end
         end
     end
 

@@ -201,7 +201,7 @@ function __work_audit_ownership_policy_coverage --description "Audit static owne
         "gtd_support_*|Dia|all-movable-windows" \
         "gtd_review_*|Finder|all-movable-windows" \
         "gtd_review_*|Preview|all-movable-windows;fallback-space-owner" \
-        "gtd_review_*|Notes|single-window;fallback-space-owner" \
+        "gtd_review_*|Notes|all-movable-windows;fallback-space-owner" \
         "gtd_mail_*|Thunderbird|single-window;fallback-space-owner" \
         "gtd_meeting_*|Zoom|all-movable-windows;fallback-space-owner" \
         "gtd_meeting_*|Microsoft Teams/MSTeams|all-movable-windows" \
@@ -270,6 +270,7 @@ function __work_audit_multi_window_helper_coverage --description "Audit multi-wi
         "gtd_support_*|Dia|all-movable-windows" \
         "gtd_review_*|Finder|all-movable-windows" \
         "gtd_review_*|Preview|all-movable-windows" \
+        "gtd_review_*|Notes|all-movable-windows" \
         "gtd_meeting_*|Zoom|all-movable-windows" \
         "gtd_meeting_*|Microsoft Teams/MSTeams|all-movable-windows"
     or set failed 1

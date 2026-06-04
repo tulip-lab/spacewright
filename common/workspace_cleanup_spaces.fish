@@ -16,7 +16,7 @@ function cleanup_labeled_empty_spaces --description "Destroy empty spaces whose 
 
     set -l spaces_json (ws_query_spaces cleanup_labeled_empty_spaces cleanup)
     if test $status -ne 0 -o -z "$spaces_json"
-        return 1
+        return 0
     end
 
     set -l candidates (echo $spaces_json | ws_jq -r --arg pattern "$label_pattern" '

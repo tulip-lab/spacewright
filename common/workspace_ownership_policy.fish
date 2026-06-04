@@ -17,7 +17,7 @@ function workspace_ownership_policy_rows --description "Print static workspace a
     printf "%s\t%s\t%s\t%s\n" "gtd_support_*" "Dia" "all-movable-windows" "movable non-native-fullscreen Dia windows"
     printf "%s\t%s\t%s\t%s\n" "gtd_review_*" "Finder" "all-movable-windows" "snapshot-first; reconciled from final window snapshot"
     printf "%s\t%s\t%s\t%s\n" "gtd_review_*" "Preview" "all-movable-windows;fallback-space-owner" "movable windows; non-movable Preview can own fallback space"
-    printf "%s\t%s\t%s\t%s\n" "gtd_review_*" "Notes" "single-window;fallback-space-owner" "first Notes window; non-movable Notes can own fallback space"
+    printf "%s\t%s\t%s\t%s\n" "gtd_review_*" "Notes" "all-movable-windows;fallback-space-owner" "movable windows; non-movable Notes can own fallback space"
     printf "%s\t%s\t%s\t%s\n" "gtd_review_*" "ChatGPT" "optional-helper" "snapshot-first helper; capture only if existing window misses target"
     printf "%s\t%s\t%s\t%s\n" "gtd_mail_*" "Thunderbird" "single-window;fallback-space-owner" "required primary; current space can become mail workspace"
     printf "%s\t%s\t%s\t%s\n" "gtd_meeting_*" "Microsoft Outlook" "single-window" "first movable Outlook window"
