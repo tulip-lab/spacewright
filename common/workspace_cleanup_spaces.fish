@@ -1,3 +1,33 @@
+function workspace_cleanup_query_spaces --description "Query spaces for opportunistic cleanup with a short timeout"
+    set -l old_timeout "$WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS"
+    set -l cleanup_timeout "$WORKSPACE_CLEANUP_QUERY_TIMEOUT_SECONDS"
+
+    if test -z "$cleanup_timeout"
+        set cleanup_timeout 1
+    end
+
+    set -gx WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS "$cleanup_timeout"
+    set -l spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+    set -l query_status $status
+
+    if test -n "$old_timeout"
+        set -gx WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS "$old_timeout"
+    else
+        set -e WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS
+    end
+
+    if test "$query_status" -ne 0 -o -z "$spaces_json"
+        return 1
+    end
+
+    echo $spaces_json | ws_jq -e 'type == "array"' >/dev/null 2>&1
+    if test $status -ne 0
+        return 1
+    end
+
+    echo $spaces_json
+end
+
 function cleanup_labeled_empty_spaces --description "Destroy empty spaces whose labels match a regex"
     if test "$WORKSPACE_SKIP_LABELED_CLEANUP" = "1"
         return 0
@@ -14,8 +44,17 @@ function cleanup_labeled_empty_spaces --description "Destroy empty spaces whose 
         set display_name "labeled"
     end
 
-    set -l spaces_json (ws_query_spaces cleanup_labeled_empty_spaces cleanup)
-    if test $status -ne 0 -o -z "$spaces_json"
+    set -l spaces_json
+    if set -q __WORKSPACE_CLEANUP_SPACES_JSON
+        set spaces_json "$__WORKSPACE_CLEANUP_SPACES_JSON"
+    else
+        set spaces_json (workspace_cleanup_query_spaces)
+        if test $status -ne 0 -o -z "$spaces_json"
+            return 0
+        end
+    end
+
+    if test -z "$spaces_json"
         return 0
     end
 
@@ -51,7 +90,7 @@ function cleanup_unlabeled_empty_spaces --description "Remove unlabeled empty sp
         return 0
     end
 
-    set -l spaces_json (ws_query_spaces cleanup_unlabeled_empty_spaces cleanup)
+    set -l spaces_json (workspace_cleanup_query_spaces)
     if test $status -ne 0 -o -z "$spaces_json"
         return 0
     end

@@ -31,19 +31,60 @@ function workspace_run_step --description "Run a workspace step with visible tim
 end
 
 function workspace_run_cleanup_specs --description "Run workspace cleanup specs such as gtd:tall or legacy cleanup functions"
+    set -l had_cleanup_spaces_cache 0
+    set -l old_cleanup_spaces_cache
+
+    if set -q __WORKSPACE_CLEANUP_SPACES_JSON
+        set had_cleanup_spaces_cache 1
+        set old_cleanup_spaces_cache "$__WORKSPACE_CLEANUP_SPACES_JSON"
+    end
+
+    set -l needs_cleanup_spaces_cache 0
+    for cleanup_spec in $argv
+        if string match -q '*:*' -- $cleanup_spec
+            set needs_cleanup_spaces_cache 1
+            break
+        end
+    end
+
+    if test "$needs_cleanup_spaces_cache" -eq 1
+        set -l cleanup_spaces_json (workspace_cleanup_query_spaces)
+        if test $status -eq 0
+            set -g __WORKSPACE_CLEANUP_SPACES_JSON "$cleanup_spaces_json"
+        else
+            set -g __WORKSPACE_CLEANUP_SPACES_JSON ""
+        end
+    end
+
+    set -l failed 0
     for cleanup_spec in $argv
         if string match -q '*:*' -- $cleanup_spec
             set -l cleanup_parts (string split -m1 ':' -- $cleanup_spec)
             workspace_cleanup_mode_spaces $cleanup_parts[1] $cleanup_parts[2]
-            or return 1
+            or begin
+                set failed 1
+                break
+            end
         else if functions -q $cleanup_spec
             $cleanup_spec
-            or return 1
+            or begin
+                set failed 1
+                break
+            end
         else
             echo "[WARN] workspace_run_cleanup_specs: cleanup spec not found: $cleanup_spec" >&2
-            return 1
+            set failed 1
+            break
         end
     end
+
+    if test "$had_cleanup_spaces_cache" -eq 1
+        set -g __WORKSPACE_CLEANUP_SPACES_JSON "$old_cleanup_spaces_cache"
+    else
+        set -e __WORKSPACE_CLEANUP_SPACES_JSON
+    end
+
+    return $failed
 end
 
 function workspace_run_mode_steps --description "Run workspace mode steps with shared cleanup and child-cleanup suppression"

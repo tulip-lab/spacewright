@@ -176,12 +176,23 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     set -l labeled_cleanup_query_failure_smoke '
         work_reload >/dev/null
 
-        function ws_query_spaces
+        set -g __work_smoke_cleanup_query_calls 0
+
+        function ws_yabai
+            if test (count $argv) -eq 3 -a "$argv[1]" = "-m" -a "$argv[2]" = "query" -a "$argv[3]" = "--spaces"
+                set -g __work_smoke_cleanup_query_calls (math $__work_smoke_cleanup_query_calls + 1)
+                test "$WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS" = 1
+                or return 2
+            end
+
             return 1
         end
 
         workspace_run_cleanup_specs gtd:tall
         or exit 1
+
+        test "$__work_smoke_cleanup_query_calls" -eq 1
+        or exit 2
     '
     fish -lc "$labeled_cleanup_query_failure_smoke" >/tmp/work-labeled-cleanup-query-failure-smoke.out 2>&1
     if test $status -eq 0
@@ -189,6 +200,43 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     else
         echo "FAIL    labeled cleanup query failure is nonblocking"
         cat /tmp/work-labeled-cleanup-query-failure-smoke.out
+        set failed 1
+    end
+
+    set -l cleanup_specs_shared_query_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_cleanup_query_calls 0
+
+        function ws_yabai
+            if test (count $argv) -eq 3 -a "$argv[1]" = "-m" -a "$argv[2]" = "query" -a "$argv[3]" = "--spaces"
+                set -g __work_smoke_cleanup_query_calls (math $__work_smoke_cleanup_query_calls + 1)
+                printf "%s\n" "[
+                    {\"index\": 3, \"display\": 2, \"label\": \"gtd_review_tall\", \"windows\": []},
+                    {\"index\": 4, \"display\": 2, \"label\": \"gtd_review_solo\", \"windows\": []}
+                ]"
+                return 0
+            end
+
+            if test (count $argv) -eq 4 -a "$argv[1]" = "-m" -a "$argv[2]" = "space" -a "$argv[4]" = "--destroy"
+                return 0
+            end
+
+            return 1
+        end
+
+        workspace_run_cleanup_specs gtd:tall gtd:solo >/dev/null
+        or exit 1
+
+        test "$__work_smoke_cleanup_query_calls" -eq 1
+        or exit 2
+    '
+    fish -lc "$cleanup_specs_shared_query_smoke" >/tmp/work-cleanup-specs-shared-query-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      cleanup specs share Space query"
+    else
+        echo "FAIL    cleanup specs share Space query"
+        cat /tmp/work-cleanup-specs-shared-query-smoke.out
         set failed 1
     end
 
@@ -240,6 +288,45 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     else
         echo "FAIL    current display/space query retry"
         cat /tmp/work-current-query-retry-smoke.out
+        set failed 1
+    end
+
+    set -l focus_already_focused_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_focus_calls
+
+        function ws_yabai
+            if test (count $argv) -eq 4 -a "$argv[1]" = "-m" -a "$argv[2]" = "display" -a "$argv[3]" = "--focus"
+                set -ga __work_smoke_focus_calls display
+                echo "cannot focus an already focused display." >&2
+                return 1
+            end
+
+            if test (count $argv) -eq 4 -a "$argv[1]" = "-m" -a "$argv[2]" = "space" -a "$argv[3]" = "--focus"
+                set -ga __work_smoke_focus_calls space
+                echo "cannot focus an already focused space." >&2
+                return 1
+            end
+
+            return 1
+        end
+
+        ws_focus_display 2
+        or exit 1
+
+        ws_focus_space 7
+        or exit 2
+
+        test (string join , $__work_smoke_focus_calls) = "display,space"
+        or exit 3
+    '
+    fish -lc "$focus_already_focused_smoke" >/tmp/work-focus-already-focused-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      focus already-focused fallback"
+    else
+        echo "FAIL    focus already-focused fallback"
+        cat /tmp/work-focus-already-focused-smoke.out
         set failed 1
     end
 
@@ -648,6 +735,71 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     else
         echo "FAIL    review movable Notes reconcile"
         cat /tmp/work-review-notes-reconcile-smoke.out
+        set failed 1
+    end
+
+    set -l review_noop_move_filter_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_review_move_calls
+        set -g __work_smoke_review_focus_args
+
+        function workspace_run_cleanup_specs
+        end
+
+        function ws_query_windows
+            printf "%s\n" "[
+                {\"id\": 11, \"app\": \"Notes\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Notes\"},
+                {\"id\": 12, \"app\": \"Preview\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Preview\"},
+                {\"id\": 14, \"app\": \"Finder\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Finder\"},
+                {\"id\": 17, \"app\": \"ChatGPT\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"ChatGPT\"}
+            ]"
+        end
+
+        function workspace_resolve_display_role
+            echo 2
+        end
+
+        function find_or_create_labeled_space
+            echo 8
+        end
+
+        function workspace_retarget_contaminated_space
+            echo 8
+        end
+
+        function workspace_focus_labeled_space
+            set -g __work_smoke_review_focus_args (string join , -- $argv)
+        end
+
+        function ws_move_windows_to_space
+            set -ga __work_smoke_review_move_calls (string join , -- $argv)
+        end
+
+        function ws_window
+        end
+
+        function ws_focus_space
+        end
+
+        function cleanup_unlabeled_empty_spaces
+        end
+
+        gtd_apply_review_space --label gtd_review_wide --display wide --finder-grid 1:1:0:0:1:1 --preview-grid 1:1:0:0:1:1 --chatgpt-grid 1:1:0:0:1:1 --notes-grid 1:1:0:0:1:1 gtd:tall gtd:solo
+        or exit 1
+
+        test (count $__work_smoke_review_move_calls) -eq 0
+        or exit 2
+
+        test "$__work_smoke_review_focus_args" = "gtd_review_wide,8,2,float"
+        or exit 3
+    '
+    fish -lc "$review_noop_move_filter_smoke" >/tmp/work-review-noop-move-filter-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      review no-op move filtering"
+    else
+        echo "FAIL    review no-op move filtering"
+        cat /tmp/work-review-noop-move-filter-smoke.out
         set failed 1
     end
 

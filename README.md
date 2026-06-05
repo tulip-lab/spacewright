@@ -249,7 +249,7 @@ set -e WORKSPACE_DEBUG_YABAI
 set -e WORKSPACE_DEBUG_WINDOW
 ```
 
-`WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS` controls the timeout for shared yabai queries and defaults to `15` seconds because display queries can briefly stall after display-profile changes or Dock/yabai restarts. `WORKSPACE_YABAI_OPERATION_TIMEOUT_SECONDS` controls non-query `ws_yabai` operations such as display focus, space focus, and space destroy; it defaults to `3` seconds so one stuck operation does not make a full mode switch look hung. `WORKSPACE_YABAI_COMMAND_TIMEOUT_SECONDS` remains a global override for both categories. `WORKSPACE_YABAI_TIMEOUT_SECONDS` controls direct window operations through `ws_window` and defaults to `1` second.
+`WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS` controls the timeout for shared yabai queries and defaults to `15` seconds because display queries can briefly stall after display-profile changes or Dock/yabai restarts. `WORKSPACE_CLEANUP_QUERY_TIMEOUT_SECONDS` controls opportunistic cleanup Space snapshots and defaults to `1` second. `WORKSPACE_YABAI_OPERATION_TIMEOUT_SECONDS` controls non-query `ws_yabai` operations such as display focus, space focus, and space destroy; it defaults to `3` seconds so one stuck operation does not make a full mode switch look hung. `WORKSPACE_YABAI_COMMAND_TIMEOUT_SECONDS` remains a global override for both categories. `WORKSPACE_YABAI_TIMEOUT_SECONDS` controls direct window operations through `ws_window` and defaults to `1` second.
 
 If even read-only yabai queries such as `ws_query_displays probe displays`, `ws_query_spaces probe spaces`, or `ws_query_windows probe windows` hit the timeout, restart yabai before rerunning workspace commands:
 
@@ -308,7 +308,7 @@ The recovery rules are intentionally limited:
 - `work_audit` reports mode symmetry, ownership policy coverage, fallback and multi-window helper coverage, and empty labeled-space allowlist/suspicion status without moving windows.
 - `work_bad_windows` only prints cached bad yabai window IDs and supports `--summary`, `--active`, `--expired`, `--present`, and `--missing`.
 - `work_clear_bad_windows` only clears `/tmp/workspace-ws-window-bad`; use `--expired`, `--missing`, `--present`, or `--active` for targeted cleanup, and no flag or `--all` for full cache cleanup.
-- `workspace_cleanup_known_labeled_spaces` destroys only empty spaces with known workspace labels, and skips cleanup if yabai cannot provide a Space snapshot.
+- `workspace_cleanup_known_labeled_spaces` destroys only empty spaces with known workspace labels, uses short cleanup Space snapshots, and skips cleanup if yabai cannot provide a snapshot.
 - `cleanup_unlabeled_empty_spaces` destroys empty unlabeled spaces except the current protected space.
 - `work_recover_light` runs diagnostics, then the two empty-space cleanup commands, then diagnostics again.
 
@@ -400,12 +400,12 @@ When yabai reports an app window but does not expose it as movable, `workspace_f
 
 Coding editor modes enable helper-space fallback for Codex. If Codex is present but yabai does not expose a movable Codex window, Codex's current space becomes the coding editor target, that space is moved/labeled for the requested coding mode, non-coding windows are evicted, VS Code is moved there, and Codex bounds are applied through the app-key grid bounds helper.
 
-All workspace JSON parsing should go through `ws_jq`, `ws_query_displays`, `ws_query_spaces`, `ws_query_current_display`, `ws_query_current_space`, `ws_query_windows`, `ws_find_window`, `ws_find_windows`, `workspace_select_app_window`, `workspace_find_app_window`, `workspace_find_app_key_window`, `workspace_app_key_window_info`, `workspace_app_key_windows`, or `workspace_capture_app_window`; direct `jq` pipelines are avoided inside workspace functions so parser timeouts remain bounded. Display, Space, and current-focus queries retry once before failing the caller. If a full `yabai -m query --windows` call fails, `ws_query_windows` falls back to querying windows one Space at a time and merges the arrays before returning to the caller.
+All workspace JSON parsing should go through `ws_jq`, `ws_query_displays`, `ws_query_spaces`, `ws_query_current_display`, `ws_query_current_space`, `ws_query_windows`, `ws_find_window`, `ws_find_windows`, `workspace_select_app_window`, `workspace_find_app_window`, `workspace_find_app_key_window`, `workspace_app_key_window_info`, `workspace_app_key_windows`, or `workspace_capture_app_window`; direct `jq` pipelines are avoided inside workspace functions so parser timeouts remain bounded. Display, Space, and current-focus queries retry once before failing the caller. Focus helpers call yabai focus directly and treat `already focused` as success so a slow current-focus query does not block workspace entry. If a full `yabai -m query --windows` call fails, `ws_query_windows` falls back to querying windows one Space at a time and merges the arrays before returning to the caller.
 
 For future workspace edits:
 
 - keep full graph queries behind `ws_query_displays`, `ws_query_spaces`, and `ws_query_windows`
-- keep current focus checks behind `ws_query_current_display` and `ws_query_current_space`
+- use `ws_focus_display` and `ws_focus_space` for focus operations; use `ws_query_current_display` and `ws_query_current_space` only when the caller needs current-focus data
 - use `workspace_app_key_space_fallback_info` plus `workspace_focus_space_fallback` when a present app is not movable
 - after moving required windows, re-query and confirm the target Space; use `--target-only` when a same-app window elsewhere would be a false positive
 - for non-movable app bounds fallback, derive display frames through `ws_query_displays` and cover new retry/fallback behavior in `work_smoke` or `work_audit`

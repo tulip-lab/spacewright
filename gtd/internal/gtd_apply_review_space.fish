@@ -241,17 +241,28 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
             "$review_app_regex")
         or return 1
 
-        workspace_focus_labeled_space $_flag_label $target_space $target_display float $cleanup_specs
+        workspace_focus_labeled_space $_flag_label $target_space $target_display float
         or return 1
     end
 
-    set -l windows_to_move $finder_windows $preview_movable_windows $chatgpt_movable_windows
+    set -l finder_move_windows (echo $windows_json | workspace_app_key_windows --app-key finder --movable --not-space $target_space)
+    or return 1
+    set -l preview_move_windows (echo $windows_json | workspace_app_key_windows --app-key preview --movable --not-space $target_space)
+    or return 1
+    set -l chatgpt_move_windows (echo $windows_json | workspace_app_key_windows --app-key chatgpt --movable --not-space $target_space)
+    or return 1
+
+    set -l windows_to_move $finder_move_windows $preview_move_windows $chatgpt_move_windows
 
     if test "$notes_space_fallback_used" -ne 1
-        set -a windows_to_move $notes_movable_windows
+        set -l notes_move_windows (echo $windows_json | workspace_app_key_windows --app-key notes --movable --not-space $target_space)
+        or return 1
+        set -a windows_to_move $notes_move_windows
     end
 
-    ws_move_windows_to_space $target_space $windows_to_move
+    if test (count $windows_to_move) -gt 0
+        ws_move_windows_to_space $target_space $windows_to_move
+    end
 
     set -l windows_json_final (ws_query_windows $_flag_label final); or return 1
 

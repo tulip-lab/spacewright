@@ -67,34 +67,6 @@ function ws_window --description "Run a yabai window command only when the windo
         end
     end
 
-    if test "$argv[1]" = "--grid" -a -n "$argv[2]"
-        set -l cache_dir /tmp/workspace-ws-window-grid
-        set -l cache_file $cache_dir/$window_id
-        set -l current_window (perl -e 'alarm shift; exec @ARGV' $timeout_seconds yabai -m query --windows --window $window_id 2>/dev/null)
-
-        if test $status -ne 0 -o -z "$current_window"
-            mkdir -p "$bad_window_dir"
-            date +%s >$bad_window_file
-
-            if test "$WORKSPACE_DEBUG_WINDOW" = "1"
-                echo "[ws_window] query-timeout window=$window_id args=$argv"
-            end
-
-            return 0
-        end
-
-        set -l current_frame (echo $current_window | ws_jq -r '[.frame.x, .frame.y, .frame.w, .frame.h] | @tsv' 2>/dev/null)
-
-        if test -n "$current_frame" -a -f "$cache_file"
-            set -l cached (cat "$cache_file")
-            set -l current_key (printf "%s\t%s" "$argv[2]" "$current_frame")
-
-            if test "$cached" = "$current_key"
-                return 0
-            end
-        end
-    end
-
     if test "$WORKSPACE_DEBUG_WINDOW" = "1"
         set -l started_at (perl -MTime::HiRes=time -e 'printf "%.0f\n", time * 1000')
         perl -e 'alarm shift; exec @ARGV' $timeout_seconds yabai -m window $window_id $argv >/dev/null 2>&1
@@ -105,21 +77,6 @@ function ws_window --description "Run a yabai window command only when the windo
         if test "$status_code" -eq 142
             mkdir -p "$bad_window_dir"
             date +%s >$bad_window_file
-        end
-
-        if test "$argv[1]" = "--grid" -a -n "$argv[2]" -a "$status_code" -eq 0
-            set -l cache_dir /tmp/workspace-ws-window-grid
-            mkdir -p "$cache_dir"
-            set -l updated_window (perl -e 'alarm shift; exec @ARGV' $timeout_seconds yabai -m query --windows --window $window_id 2>/dev/null)
-            set -l updated_frame
-
-            if test $status -eq 0 -a -n "$updated_window"
-                set updated_frame (echo $updated_window | ws_jq -r '[.frame.x, .frame.y, .frame.w, .frame.h] | @tsv' 2>/dev/null)
-            end
-
-            if test -n "$updated_frame"
-                printf "%s\t%s\n" "$argv[2]" "$updated_frame" >$cache_dir/$window_id
-            end
         end
 
         if test "$elapsed" -ge 500
@@ -135,21 +92,6 @@ function ws_window --description "Run a yabai window command only when the windo
     if test "$status_code" -eq 142
         mkdir -p "$bad_window_dir"
         date +%s >$bad_window_file
-    end
-
-    if test "$argv[1]" = "--grid" -a -n "$argv[2]" -a "$status_code" -eq 0
-        set -l cache_dir /tmp/workspace-ws-window-grid
-        mkdir -p "$cache_dir"
-        set -l updated_window (perl -e 'alarm shift; exec @ARGV' $timeout_seconds yabai -m query --windows --window $window_id 2>/dev/null)
-        set -l updated_frame
-
-        if test $status -eq 0 -a -n "$updated_window"
-            set updated_frame (echo $updated_window | ws_jq -r '[.frame.x, .frame.y, .frame.w, .frame.h] | @tsv' 2>/dev/null)
-        end
-
-        if test -n "$updated_frame"
-            printf "%s\t%s\n" "$argv[2]" "$updated_frame" >$cache_dir/$window_id
-        end
     end
 
     return 0

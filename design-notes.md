@@ -129,7 +129,8 @@ Workspace labels are structural ownership markers. Use:
 
 `find_or_create_labeled_space` does not rely on display focus to control new-space placement. It creates the space, identifies it by UUID difference, checks the actual display, and explicitly moves it to the target display when needed.
 
-Empty labeled-space cleanup is opportunistic. If the cleanup Space query fails, entry commands skip that cleanup and continue so a transient yabai query failure does not block the requested layout.
+Empty labeled-space cleanup is opportunistic. Cleanup Space snapshots use a short timeout and skip cleanup on query failure so a transient slow yabai Space query does not block the requested layout.
+When a mode entry asks for multiple cleanup specs, `workspace_run_cleanup_specs` shares one cleanup Space snapshot across those specs instead of querying yabai once per mode.
 
 ### Unlabeled Spaces
 
@@ -173,7 +174,7 @@ Use shared bounded helpers for yabai and JSON parsing:
 
 Workspace functions should avoid direct `jq` pipelines where these helpers cover the behavior.
 
-`ws_yabai` separates read-only query timeout from non-query operation timeout. Queries can wait longer; focus/destroy operations fail faster so mode switches do not appear stuck on one space operation. `ws_query_displays`, `ws_query_spaces`, `ws_query_current_display`, and `ws_query_current_space` retry a failed query once before failing the caller. `ws_query_windows` first tries the full yabai window query, then falls back to per-Space window queries and merges the arrays when the full query fails. This keeps workspace entry points from failing before app-specific recovery logic can run.
+`ws_yabai` separates read-only query timeout from non-query operation timeout. Queries can wait longer; focus/destroy operations fail faster so mode switches do not appear stuck on one space operation. `ws_focus_display` and `ws_focus_space` call yabai focus directly and treat `already focused` as success, avoiding current-focus query stalls on the hot path. `ws_query_displays`, `ws_query_spaces`, `ws_query_current_display`, and `ws_query_current_space` retry a failed query once before failing the caller. `ws_query_windows` first tries the full yabai window query, then falls back to per-Space window queries and merges the arrays when the full query fails. This keeps workspace entry points from failing before app-specific recovery logic can run.
 
 If read-only queries repeatedly time out, recovery is explicit:
 
@@ -457,7 +458,7 @@ Do not run layout-changing workspace commands or display-changing commands durin
 New workspace code should preserve the current query and fallback boundary:
 
 - do not call full `yabai -m query --displays`, `--spaces`, or `--windows` outside `common/ws_core.fish`; use `ws_query_displays`, `ws_query_spaces`, and `ws_query_windows`
-- use `ws_query_current_display` and `ws_query_current_space` for current-focus checks instead of open-coded current queries
+- use `ws_focus_display` and `ws_focus_space` for focus operations; reserve `ws_query_current_display` and `ws_query_current_space` for callers that need current-focus data
 - route app-name matching through app keys and shared selectors unless the module has a real special case such as Dia, Zoom, Teams, or Outlook
 - when a present app is not movable, use `workspace_app_key_space_fallback_info` and `workspace_focus_space_fallback` before adding module-local fallback logic
 - after moving required or multi-window app sets, re-query the target Space and fail or retry when the expected app did not land there
