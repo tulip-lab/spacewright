@@ -3,42 +3,26 @@ function work_inventory --description "Print a read-only workspace workflow inve
     echo
 
     echo "===== TOP-LEVEL ENTRIES ====="
-    printf "%-18s %s\n" "work_solo" "coding_solo, research_solo, gtd_solo_all"
-    printf "%-18s %s\n" "work_wide" "coding_wide, research_wide, office_wide, gtd_wide, gtd_chat, gtd_calendar, coding_control"
-    printf "%-18s %s\n" "work_tall" "coding_tall, research_tall, office_tall, gtd_tall, gtd_chat, gtd_calendar, coding_control"
-    printf "%-18s %s\n" "work_status" "diagnostics plus module status snapshots"
-    printf "%-18s %s\n" "work_reload" "reload common, display, and module functions"
-    printf "%-18s %s\n" "work_check" "reload plus diagnostics and module mode status"
-    printf "%-18s %s\n" "work_doctor" "read-only system and config checks"
-    printf "%-18s %s\n" "work_smoke" "read-only helper wiring and dry-run checks"
-    printf "%-18s %s\n" "work_audit" "read-only mode symmetry, ownership, helper, and empty-label audit"
+    for row in (workspace_top_level_entry_rows)
+        set -l parts (string split \t -- "$row")
+        printf "%-18s %s\n" $parts[1] $parts[3]
+    end
     echo
 
     echo "===== MODULE ENTRIES ====="
     printf "%-10s %-20s %s\n" "module" "entries" "managed apps"
-    printf "%-10s %-20s %s\n" "coding" "solo, wide, tall" "Code, Codex; primary-display coding_control"
-    printf "%-10s %-20s %s\n" "research" "solo, wide, tall" "Zotero, ChatGPT"
-    printf "%-10s %-20s %s\n" "gtd" "solo_all, wide, tall" "Dia, Finder, Preview, Notes, ChatGPT, Thunderbird, Outlook, Zoom, Teams; primary-display chat/calendar"
-    printf "%-10s %-20s %s\n" "office" "wide, tall" "Word, PowerPoint, ChatGPT"
+    for row in (workspace_module_entry_rows)
+        set -l parts (string split \t -- "$row")
+        printf "%-10s %-20s %s\n" $parts[1] $parts[2] $parts[3]
+    end
     echo
 
     echo "===== WORKSPACE COMMAND MAP ====="
     printf "%-24s %-12s %-12s %s\n" "workspace" "mode" "display role" "apps"
-    printf "%-24s %-12s %-12s %s\n" "coding_editor_solo" "solo" "primary" "Code, Codex"
-    printf "%-24s %-12s %-12s %s\n" "coding_editor_wide" "wide" "external" "Code, Codex"
-    printf "%-24s %-12s %-12s %s\n" "coding_editor_tall" "tall" "external" "Code, Codex"
-    printf "%-24s %-12s %-12s %s\n" "coding_control" "primary" "primary" "Warp, SmartGit, KeePassXC, FlClash/Thaw"
-    printf "%-24s %-12s %-12s %s\n" "research_solo" "solo" "primary" "Zotero, ChatGPT"
-    printf "%-24s %-12s %-12s %s\n" "research_wide" "wide" "external" "Zotero, ChatGPT"
-    printf "%-24s %-12s %-12s %s\n" "research_tall" "tall" "external" "Zotero, ChatGPT"
-    printf "%-24s %-12s %-12s %s\n" "gtd_support_*" "all" "mode target" "Dia"
-    printf "%-24s %-12s %-12s %s\n" "gtd_review_*" "all" "mode target" "Preview, Notes, ChatGPT, Finder"
-    printf "%-24s %-12s %-12s %s\n" "gtd_mail_*" "all" "mode target" "Thunderbird"
-    printf "%-24s %-12s %-12s %s\n" "gtd_meeting_*" "all" "mode target" "Outlook, Zoom, Teams"
-    printf "%-24s %-12s %-12s %s\n" "gtd_chat" "primary" "primary" "Messages/chat helper windows"
-    printf "%-24s %-12s %-12s %s\n" "gtd_calendar" "primary" "primary" "Calendar"
-    printf "%-24s %-12s %-12s %s\n" "office_writing_*" "wide/tall" "external" "Word, ChatGPT"
-    printf "%-24s %-12s %-12s %s\n" "office_slides_*" "wide/tall" "external" "PowerPoint, ChatGPT"
+    for row in (workspace_command_map_rows)
+        set -l parts (string split \t -- "$row")
+        printf "%-24s %-12s %-12s %s\n" $parts[1] $parts[2] $parts[3] $parts[4]
+    end
     echo
 
     echo "===== OWNERSHIP POLICY ====="
@@ -46,58 +30,22 @@ function work_inventory --description "Print a read-only workspace workflow inve
     echo
 
     echo "===== DISPLAY ENTRIES ====="
-    printf "%-24s %s\n" "display_apply_solo" "apply solo display profile, reload, verify solo health"
-    printf "%-24s %s\n" "display_apply_wide_left" "resolve current wide external display, reload, verify wide health"
-    printf "%-24s %s\n" "display_apply_tall_left" "resolve current tall external display, reload, verify tall health"
+    for row in (workspace_display_entry_rows)
+        set -l parts (string split \t -- "$row")
+        printf "%-24s %s\n" $parts[1] $parts[2]
+    end
     echo
 
     echo "===== COMMON HELPERS ====="
-    printf "%-32s %s\n" "ws_yabai" "bounded yabai command wrapper"
-    printf "%-32s %s\n" "ws_restart_yabai" "bounded yabai service restart wrapper"
-    printf "%-32s %s\n" "ws_recover_yabai_once" "cooldown-guarded yabai restart recovery"
-    printf "%-32s %s\n" "ws_jq" "bounded jq parser wrapper"
-    printf "%-32s %s\n" "ws_query_displays" "bounded display query wrapper with retry"
-    printf "%-32s %s\n" "ws_query_spaces" "bounded space query wrapper with retry"
-    printf "%-32s %s\n" "ws_query_current_display" "bounded current-display query wrapper with retry"
-    printf "%-32s %s\n" "ws_query_current_space" "bounded current-space query wrapper with retry"
-    printf "%-32s %s\n" "ws_query_windows" "bounded window query wrapper"
-    printf "%-32s %s\n" "workspace_app_name(s)/regex" "central workspace app-name registry"
-    printf "%-32s %s\n" "ws_find_window/ws_find_windows" "structured window selectors"
-    printf "%-32s %s\n" "workspace_find_app_window" "movable app-window selector with optional refresh"
-    printf "%-32s %s\n" "workspace_find_app_key_window" "movable app-window selector across registered app aliases"
-    printf "%-32s %s\n" "workspace_app_key_window_info" "first app-key window metadata from existing window JSON"
-    printf "%-32s %s\n" "workspace_app_key_windows" "matching app-key window ids from existing window JSON"
-    printf "%-32s %s\n" "workspace_app_key_space_fallback_info" "current-space fallback metadata for non-movable app-key windows"
-    printf "%-32s %s\n" "workspace_apply_app_key_grid_bounds" "AppleScript/System Events bounds fallback for non-yabai-resizable app windows"
-    printf "%-32s %s\n" "workspace_apply_app_key_absolute_bounds" "AppleScript absolute bounds fallback for fixed-position app windows"
-    printf "%-32s %s\n" "workspace_capture_app_window" "find, move, and confirm app window on target space"
-    printf "%-32s %s\n" "workspace_space_non_owned_windows" "window ids outside a workspace ownership regex"
-    printf "%-32s %s\n" "workspace_evict_non_owned_windows_from_space" "move movable non-owned fallback-space windows to a holding space"
-    printf "%-32s %s\n" "workspace_apply_primary_helper_space" "required primary app plus optional helper workspace flow"
-    printf "%-32s %s\n" "workspace_run_mode_steps" "mode aggregate runner with shared cleanup suppression"
-    printf "%-32s %s\n" "workspace_run_cleanup_specs" "family:mode cleanup-spec dispatcher"
-    printf "%-32s %s\n" "workspace_print_app_status" "shared app status printer for module status commands"
-    printf "%-32s %s\n" "workspace_prepare_labeled_space" "find/create, normalize, and focus a labeled space"
-    printf "%-32s %s\n" "workspace_focus_labeled_space" "normalize and focus an existing labeled space"
-    printf "%-32s %s\n" "workspace_focus_space_fallback" "move and focus an app-owned fallback space by UUID"
-    printf "%-32s %s\n" "workspace_create_unlabeled_space_on_display" "create an unlabeled holding space on a target display"
-    printf "%-32s %s\n" "find_or_create_labeled_space" "label-based space creation and reuse"
-    printf "%-32s %s\n" "prepare_labeled_space" "unique label ownership and layout normalization"
-    printf "%-32s %s\n" "workspace_retarget_contaminated_space" "move labels away from mixed-owner spaces"
-    printf "%-32s %s\n" "workspace_ownership_policy" "static workspace app ownership policy inventory"
-    printf "%-32s %s\n" "work_audit" "read-only architecture and workspace-label drift checks"
-    printf "%-32s %s\n" "cleanup_labeled_empty_spaces" "module-scoped empty labeled-space cleanup"
-    printf "%-32s %s\n" "cleanup_unlabeled_empty_spaces" "transient empty space cleanup"
-    printf "%-32s %s\n" "workspace_resolve_display_role" "primary/wide/tall display-role resolver"
-    printf "%-32s %s\n" "resolve_workspace_primary_display" "configured primary workspace display role"
-    printf "%-32s %s\n" "resolve_workspace_external_display" "current non-primary or fallback target display role"
+    for row in (workspace_common_helper_rows)
+        set -l parts (string split \t -- "$row")
+        printf "%-32s %s\n" $parts[1] $parts[2]
+    end
     echo
 
     echo "===== DEPENDENCIES ====="
-    printf "%-18s %s\n" "fish" "function runtime and syntax validation"
-    printf "%-18s %s\n" "yabai" "display, space, and window query/move layer"
-    printf "%-18s %s\n" "jq" "JSON parsing"
-    printf "%-18s %s\n" "displayplacer" "display profile application"
-    printf "%-18s %s\n" "skhd" "keyboard entry layer"
-    printf "%-18s %s\n" "macOS Spaces" "space labels and window placement"
+    for row in (workspace_dependency_rows)
+        set -l parts (string split \t -- "$row")
+        printf "%-18s %s\n" $parts[1] $parts[2]
+    end
 end

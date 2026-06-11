@@ -4,7 +4,7 @@ function work_solo --description "Arrange solo primary-display workspaces"
 
     if set -q _flag_dry_run
         printf "dry_run=work_solo\n"
-        printf "commands=%s\n" coding_solo research_solo gtd_solo_all
+        printf "commands=%s\n" (workspace_top_level_commands work_solo)
         return 0
     end
 
@@ -28,7 +28,7 @@ function work_wide
 
     if set -q _flag_dry_run
         printf "dry_run=work_wide\n"
-        printf "commands=%s\n" coding_wide research_wide office_wide gtd_wide gtd_chat gtd_calendar coding_control
+        printf "commands=%s\n" (workspace_top_level_commands work_wide)
         return 0
     end
 
@@ -64,7 +64,7 @@ function work_tall
 
     if set -q _flag_dry_run
         printf "dry_run=work_tall\n"
-        printf "commands=%s\n" coding_tall research_tall office_tall gtd_tall gtd_chat gtd_calendar coding_control
+        printf "commands=%s\n" (workspace_top_level_commands work_tall)
         return 0
     end
 

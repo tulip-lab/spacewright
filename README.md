@@ -1,45 +1,75 @@
-# Workspace System
+# Workspace 用户指南
 
-## Overview
+这个目录维护 macOS workspace 自动化系统。它通过 `fish` 函数调用
+`yabai`、`displayplacer` 和 `skhd`，把常用工作场景整理成稳定入口。
 
-This workspace system is organized into four operational modules:
+当前系统分为四个主要模块：
 
-- `gtd`
 - `coding`
-- `office`
 - `research`
+- `office`
+- `gtd`
 
-Each module follows a consistent structure wherever applicable:
+本文件面向日常使用和排查。更底层的设计规则、边界和后续路线记录在
+`design-notes.md`。
 
-- reload function
-- grouped public entry definitions in `<module>_entries.fish`
-- internal helpers for app-specific behavior
-- status helpers
-- mode-status helper
-- `tall` entry
-- `wide` entry
-- optional primary-display workspaces for module-specific fixed layouts
+## 安全边界
 
-The system is designed to keep workspace behavior predictable, composable, and portable across machines.
+只读命令不会移动窗口、创建或删除 Space，也不会切换显示器配置：
 
-This README is the daily-use and troubleshooting entry point. Ongoing maintenance tasks and longer-term design roadmap items live in `design-notes.md` under `Roadmap And TODO`.
+```fish
+work_inventory
+work_doctor
+work_smoke
+work_audit
+work_status
+work_mode_status
+work_diagnostics
+work_display_health
+```
 
-The next-version plan is to move stable app, space, and window-position facts into a checked JSON configuration layer while keeping public commands and fish runtime safety helpers intact. The detailed plan is documented in `design-notes.md` under `Configurable Workspace Definitions`; it is not active runtime behavior yet.
+会改变窗口或 Space 状态的命令包括：
 
-Next-version implementation should start with read-only configuration support before any behavior migration:
+```fish
+work_solo
+work_wide
+work_tall
+coding_solo
+coding_wide
+coding_tall
+research_solo
+research_wide
+research_tall
+office_wide
+office_tall
+gtd_solo_all
+gtd_wide
+gtd_tall
+gtd_chat
+gtd_calendar
+workspace_cleanup_known_labeled_spaces
+cleanup_unlabeled_empty_spaces
+work_recover_light
+```
 
-1. add `workspaces.json`, `workspace_config_check`, `workspace_config_get`, and `workspace_config_plan`
-2. include config validation in `work_smoke`, `work_doctor`, and `work_inventory`
-3. migrate one simple primary/helper pilot such as `coding_editor_wide`
-4. expand only after the pilot is stable in daily use
+会改变显示器布局的命令包括：
 
-GTD meeting, review, support, and other ownership-sensitive workspaces should remain fish-first until the configured runner proves useful on simple repeated layouts.
+```fish
+display_apply_solo
+display_apply_wide_left
+display_apply_tall_left
+```
 
-## New Machine Bootstrap
+维护代码时，默认先运行只读检查。只有在明确希望调整当前桌面状态时，才运行
+`display_apply_*`、`work_*` 或模块入口。
 
-On a new Mac or after a macOS/yabai reset, configure the workspace primary display UUID before relying on WIDE, TALL, or primary-display workspace commands.
+## 第一次配置
 
-Recommended bootstrap:
+新机器、重装 macOS 或 yabai/displayplacer 重置后，先设置 workspace primary
+display。它是固定工作区的位置，例如 `gtd_chat`、`gtd_calendar` 和
+`coding_control`。
+
+推荐流程：
 
 ```fish
 work_reload
@@ -48,683 +78,232 @@ get_workspace_primary_display_uuid
 work_diagnostics
 ```
 
-The workspace primary display is where fixed/control workspaces such as `gtd_chat`, `gtd_calendar`, and `coding_control` belong. On a MacBook it is usually the built-in display. On a Mac mini with one display, it is that only display. On a Mac mini with multiple displays, set it explicitly once.
-
-`detect_and_set_workspace_primary_display_uuid` uses `yabai` display metadata as the source of truth. It keeps an existing connected primary UUID, automatically uses the only display in single-display setups, and can detect a MacBook built-in display through `displayplacer` when available. If it cannot determine the primary display confidently, inspect the current displays:
+如果自动检测失败，先查看 display 信息：
 
 ```fish
 ws_query_displays bootstrap display-list | ws_jq -r '.[] | "index=\(.index) uuid=\(.uuid) focus=\(.[\"has-focus\"]) frame=(\(.frame.x),\(.frame.y),\(.frame.w),\(.frame.h)) spaces=\(.spaces)"'
 ```
 
-Then set the workspace primary display manually:
+然后手动设置：
 
 ```fish
 set_workspace_primary_display_uuid <display-uuid>
-```
-
-Confirm the stored value:
-
-```fish
 get_workspace_primary_display_uuid
 ```
 
-The value is stored in the fish universal variable `WORKSPACE_PRIMARY_DISPLAY_UUID`, so it persists across future fish sessions for the same user.
+该值保存在 fish universal variable `WORKSPACE_PRIMARY_DISPLAY_UUID` 中。
 
-This setup matters because fixed workspaces such as `gtd_chat`, `gtd_calendar`, and `coding_control` must stay anchored to the workspace primary display. External modes such as `work_wide` and `work_tall` use the configured primary UUID to identify a non-primary target display, falling back to the primary display when only one display exists. The macOS primary display is allowed to differ from the workspace primary display role.
+## 三种显示模式
 
-## Common Helper Layer
+| 模式 | 显示器动作 | workspace 动作 | 用途 |
+|---|---|---|---|
+| Solo | `display_apply_solo` | `work_solo` | 只使用 workspace primary display |
+| Wide | `display_apply_wide_left` | `work_wide` | 左侧横向外接屏作为主要任务显示器 |
+| Tall | `display_apply_tall_left` | `work_tall` | 左侧纵向外接屏作为主要任务显示器 |
 
-Shared helpers are located in `workspace/common`.
-
-They are responsible for:
-
-- creating or reusing labeled spaces
-- normalizing labeled spaces
-- resolving target displays
-- focusing displays and spaces safely
-- cleaning unlabeled empty spaces
-- resolving primary and external target display roles
-- storing and reading the configured workspace primary display UUID
-- best-effort detection of the workspace primary display UUID
-- wrapping yabai and jq queries with bounded timeouts
-- selecting and refreshing shared app windows consistently
-
-Current core helpers include:
-
-- `find_or_create_labeled_space`
-- `prepare_labeled_space`
-- `source_workspace_common`
-- `workspace_status_snapshot`
-- `workspace_mode_status_section`
-- `cleanup_unlabeled_empty_spaces`
-- `resolve_workspace_primary_display`
-- `resolve_workspace_external_display`
-- `ws_focus_display`
-- `ws_focus_space`
-- `ws_yabai`
-- `ws_jq`
-- `ws_query_displays`
-- `ws_query_spaces`
-- `ws_query_current_display`
-- `ws_query_current_space`
-- `ws_query_windows`
-- `workspace_app_name`
-- `workspace_app_names`
-- `workspace_app_names_json`
-- `workspace_app_regex`
-- `workspace_find_app_window`
-- `workspace_find_app_key_window`
-- `workspace_app_key_window_info`
-- `workspace_app_key_windows`
-- `workspace_app_key_space_fallback_info`
-- `workspace_apply_app_key_grid_bounds`
-- `workspace_apply_app_key_absolute_bounds`
-- `workspace_capture_app_window`
-- `workspace_space_non_owned_windows`
-- `workspace_evict_non_owned_windows_from_space`
-- `workspace_apply_primary_helper_space`
-- `workspace_run_mode_steps`
-- `workspace_run_cleanup_specs`
-- `workspace_print_app_status`
-- `workspace_simple_module_status`
-- `workspace_prepare_labeled_space`
-- `workspace_focus_labeled_space`
-- `workspace_focus_space_fallback`
-- `workspace_create_unlabeled_space_on_display`
-- `workspace_retarget_contaminated_space`
-- `workspace_ownership_policy_rows`
-- `workspace_print_ownership_policy`
-- `workspace_resolve_display_role`
-
-Public module commands stay stable, but thin mode wrappers are grouped by module:
-
-- `coding/coding_entries.fish`
-- `research/research_entries.fish`
-- `office/office_entries.fish`
-- `gtd/gtd_entries.fish`
-
-This keeps the command surface readable while avoiding one tiny file per solo/wide/tall wrapper.
-
-Status helpers, `work_status`, `work_mode_status`, `work_check`, and the simple `coding_status`, `office_status`, and `research_status` wrappers are grouped in `common/workspace_status_helpers.fish`; `gtd_status` remains module-local because it delegates to `gtd_apps`.
-
-Display-role commands such as `set_workspace_primary_display_uuid`, `resolve_workspace_primary_display`, and `workspace_resolve_display_role` are grouped in `common/workspace_display_roles.fish`.
-
-Runner helpers are grouped in `common/workspace_runners.fish`. App-window helpers are split across `common/workspace_app_window_selectors.fish`, `common/workspace_app_window_lifecycle.fish`, `common/workspace_app_space_fallback.fish`, and `common/workspace_app_bounds.fish`. Labeled-space helpers are split across `common/workspace_labeled_space_lifecycle.fish`, `common/workspace_labeled_space_focus.fish`, and `common/workspace_space_fallback.fish`. Core yabai/jq query helpers are grouped in `common/ws_core.fish`.
-
-## Inventory And Doctor
-
-Four read-only inspection commands document and validate the workspace system without moving windows, changing spaces, or applying display profiles:
+常用组合：
 
 ```fish
-work_inventory
-work_doctor
-work_smoke
-work_audit
+display_apply_solo
+work_solo
+
+display_apply_wide_left
+work_wide
+
+display_apply_tall_left
+work_tall
 ```
 
-`work_inventory` prints the current workflow map: top-level entries, module entries, managed apps, workspace ownership policies, display entries, common helpers, and external dependencies.
+`display_apply_*` 只负责显示器几何和显示健康检查；`work_*` 负责进入工作场景。
+`skhd` 快捷键里使用 `display_apply_*; work_*`，所以即使显示健康检查给出 warning，
+仍会继续尝试进入 workspace 模式。
 
-`work_audit` checks declared workspace facts for mode symmetry, ownership policy coverage, fallback and multi-window helper coverage, and empty labeled Spaces that are allowlisted by design versus suspicious in the live read-only snapshot.
+## 顶层工作模式
 
-`work_doctor` runs read-only system checks:
+| 命令 | 包含内容 |
+|---|---|
+| `work_solo` | `coding_solo`、`research_solo`、`gtd_solo_all` |
+| `work_wide` | `coding_wide`、`research_wide`、`office_wide`、`gtd_wide`、`gtd_chat`、`gtd_calendar`、`coding_control` |
+| `work_tall` | `coding_tall`、`research_tall`、`office_tall`、`gtd_tall`、`gtd_chat`、`gtd_calendar`、`coding_control` |
 
-- required tools: `fish`, `jq`, `yabai`, `displayplacer`, and `skhd`
-- Mackup/runtime entry paths
-- fish syntax for workspace functions and display profile scripts
-- `work_reload`
-- `work_command_check`
-- `work_smoke`
-- read-only yabai display, space, and window queries
-- duplicate labels, empty labeled spaces, and empty unlabeled spaces
-- display role health
-- bad-window cache summary
+顶层入口保持公开命令稳定，方便 shell、`skhd` 和肌肉记忆继续使用。
 
-It returns nonzero only for failed checks. Warnings identify cleanup or environment follow-up without mutating state.
+## 模块入口
 
-`work_smoke` is the fast regression check after editing workspace code. It reloads functions, runs `work_command_check`, validates app registry keys, runs `work_audit`, exercises every current `solo`, `wide`, and `tall` workspace CLI entry through `--dry-run`, and checks that retired helper commands are not loaded.
+### Coding
 
-Additional loaded entry/helper commands include:
+| 命令 | 作用 |
+|---|---|
+| `coding_solo` | 内置/主显示器上的 VS Code + Codex |
+| `coding_wide` | wide 外接屏上的 VS Code + Codex |
+| `coding_tall` | tall 外接屏上的 VS Code + Codex |
+| `coding_control` | primary display 上的 Warp、SmartGit、KeePassXC、FlClash/Thaw 控制区 |
 
-- `set_workspace_primary_display_uuid`
-- `get_workspace_primary_display_uuid`
-- `detect_and_set_workspace_primary_display_uuid`
-- `work_diagnostics`
-- `work_bad_windows`
-- `work_clear_bad_windows`
-- `workspace_cleanup_known_labeled_spaces`
-- `cleanup_unlabeled_empty_spaces`
-- `work_recover_light`
-- `work_command_check`
-- `work_audit`
-- `ws_yabai`
-- `ws_jq`
-- `ws_query_displays`
-- `ws_query_spaces`
-- `ws_query_current_display`
-- `ws_query_current_space`
-- `ws_query_windows`
-- `ws_find_window`
-- `ws_find_windows`
-- `workspace_select_app_window`
-- `workspace_refresh_app_window`
-- `workspace_app_key_window_info`
-- `workspace_space_non_owned_windows`
-- `workspace_prepare_labeled_space`
-- `workspace_focus_labeled_space`
-- `workspace_app_key_space_fallback_info`
-- `workspace_focus_space_fallback`
-- `workspace_evict_non_owned_windows_from_space`
-- `workspace_debug_step`
-- `workspace_run_step`
+### Research
 
-These helpers allow all module-level workspace functions to share the same lifecycle and display-selection logic.
+| 命令 | 作用 |
+|---|---|
+| `research_solo` | Zotero + ChatGPT，主显示器 |
+| `research_wide` | Zotero + ChatGPT，wide 外接屏 |
+| `research_tall` | Zotero + ChatGPT，tall 外接屏 |
 
-## Diagnostics And Light Recovery
+### Office
 
-Use `work_diagnostics` first when a display transition or workspace command leaves the system in an unexpected state:
+| 命令 | 作用 |
+|---|---|
+| `office_writing_wide` | Word + ChatGPT，wide 外接屏 |
+| `office_writing_tall` | Word + ChatGPT，tall 外接屏 |
+| `office_slides_wide` | PowerPoint + ChatGPT，wide 外接屏 |
+| `office_slides_tall` | PowerPoint + ChatGPT，tall 外接屏 |
+| `office_wide` | writing + slides 的 wide 聚合入口 |
+| `office_tall` | writing + slides 的 tall 聚合入口 |
+
+Office 入口在主应用没有可用窗口时会尽量保持 no-op，不主动制造空工作区。
+
+### GTD
+
+| 命令 | 作用 |
+|---|---|
+| `gtd_support_solo` / `gtd_support_wide` / `gtd_support_tall` | Dia 支撑工作区 |
+| `gtd_review_solo` / `gtd_review_wide` / `gtd_review_tall` | Finder、Preview、Notes、ChatGPT 的 review 工作区 |
+| `gtd_mail_solo` / `gtd_mail_wide` / `gtd_mail_tall` | Thunderbird 邮件工作区 |
+| `gtd_meeting_solo` / `gtd_meeting_wide` / `gtd_meeting_tall` | Outlook、Zoom、Teams 会议工作区 |
+| `gtd_chat` | primary display 上的聊天工作区 |
+| `gtd_calendar` | primary display 上的 Calendar + Reminders |
+| `gtd_solo_all` | solo 模式下的 GTD 聚合入口 |
+| `gtd_wide` | wide 模式下的 GTD 聚合入口 |
+| `gtd_tall` | tall 模式下的 GTD 聚合入口 |
+
+GTD 模块包含最多 app-specific 规则。Outlook、Zoom、Teams、Dia、Preview、
+Notes、Thunderbird、DingTalk 等特殊行为仍保留在 fish helper 中，不由通用配置层接管。
+
+## 快捷键
+
+快捷键由 `.config/skhd/skhdrc` 提供。完整表格见：
+
+```text
+.config/skhd/README.md
+```
+
+核心规律：
+
+| 修饰键 | 模式 |
+|---|---|
+| `Fn + Shift + 数字` | Solo |
+| `Option + Shift + 数字` | Wide |
+| `Control + Shift + 数字` | Tall |
+
+数字映射：
+
+| 数字 | workspace family |
+|---|---|
+| `0` | `work` |
+| `1` | `coding` |
+| `2` | `research` |
+| `3` | `gtd_support` |
+| `4` | `gtd_review` |
+| `5` | `gtd_mail` |
+| `6` | `gtd_meeting` |
+| `7` | `office_writing` |
+| `8` | `office_slides` |
+| `9` | reserved |
+
+## 日常检查
+
+修改 workspace 代码后，推荐先运行：
+
+```fish
+work_reload
+work_smoke
+work_doctor
+```
+
+常用只读检查：
+
+| 命令 | 用途 |
+|---|---|
+| `work_inventory` | 打印当前 workspace 声明清单、模块、display entry、helper 和依赖 |
+| `work_command_check` | 检查公开命令和 helper 是否已加载 |
+| `work_smoke` | 检查 reload、command check、audit 和所有 dry-run 入口 |
+| `work_audit` | 检查 mode symmetry、ownership policy、helper coverage 和空 label 状态 |
+| `work_doctor` | 检查依赖、fish syntax、reload、只读 yabai query、display health 和 bad-window cache |
+| `work_diagnostics` | 查看 display、labeled spaces、duplicate labels、empty spaces 和 bad-window cache |
+| `work_display_health [mode]` | 检查 primary/target display、外接屏位置、形状和 Dock 设置 |
+
+`work_inventory`、`work_command_check`、`work_smoke` 的核心命令清单来自
+`common/workspace_manifest.fish`。这是一层只读 manifest：它统一文档和检查事实，
+但不会移动窗口，也不替代模块运行逻辑。
+
+## Dry Run
+
+大多数入口支持 `--dry-run`：
+
+```fish
+work_wide --dry-run
+coding_tall --dry-run
+gtd_meeting_wide --dry-run
+```
+
+Dry-run 只打印声明信息，不查询 yabai、不创建 Space、不移动窗口、不切换 display。
+
+## 故障排查流程
+
+如果布局结果不符合预期，先不要重复运行会移动窗口的入口。推荐顺序：
 
 ```fish
 work_reload
 work_diagnostics
+work_display_health
+work_bad_windows --summary
+work_audit
 ```
 
-The diagnostic output is read-only. It reports display state, labeled spaces, empty labeled spaces, duplicate labels, empty unlabeled spaces, and bad-window cache entries.
-
-It also includes display role health:
-
-- configured workspace primary display UUID and resolved primary display index
-- resolved target display index and whether it is at `origin:(0,0)`
-- Dock `orientation` and `autohide`
-- warnings for display-role or Dock mismatches
-
-If a workspace command appears to hang after rebooting macOS, profile the shared yabai calls separately from window actions:
-
-```fish
-work_reload
-set -gx WORKSPACE_DEBUG_YABAI 1
-set -gx WORKSPACE_DEBUG_WINDOW 1
-time gtd_chat
-time gtd_calendar
-set -e WORKSPACE_DEBUG_YABAI
-set -e WORKSPACE_DEBUG_WINDOW
-```
-
-`WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS` controls the timeout for shared yabai queries and defaults to `15` seconds because display queries can briefly stall after display-profile changes or Dock/yabai restarts. `WORKSPACE_CLEANUP_QUERY_TIMEOUT_SECONDS` controls opportunistic cleanup Space snapshots and defaults to `1` second. `WORKSPACE_YABAI_OPERATION_TIMEOUT_SECONDS` controls non-query `ws_yabai` operations such as display focus, space focus, and space destroy; it defaults to `3` seconds so one stuck operation does not make a full mode switch look hung. `WORKSPACE_YABAI_COMMAND_TIMEOUT_SECONDS` remains a global override for both categories. `WORKSPACE_YABAI_TIMEOUT_SECONDS` controls direct window operations through `ws_window` and defaults to `1` second.
-
-Workspace layout commands use `ws_recover_yabai_once` for light yabai recovery. If a non-read-only workspace command cannot query displays, spaces, current focus, or windows after the normal retry path, or if an app exists but remains non-movable after activation/polling, the helper restarts yabai once and retries the query or window selection. `WORKSPACE_YABAI_RESTART_COOLDOWN_SECONDS` defaults to `10` so one failing command does not repeatedly restart the service. `WORKSPACE_YABAI_RESTART_SETTLE_SECONDS` defaults to `1`. Set `WORKSPACE_DISABLE_YABAI_AUTO_RESTART=1` to force manual-only recovery for a run.
-
-Read-only commands such as `work_doctor`, `work_diagnostics`, `work_audit`, `work_status`, `work_mode_status`, `work_check`, `work_bad_windows`, and `work_smoke` do not automatically restart yabai.
-
-If even read-only yabai queries such as `ws_query_displays probe displays`, `ws_query_spaces probe spaces`, or `ws_query_windows probe windows` hit the timeout, restart yabai before rerunning workspace commands:
+如果 yabai query 明显卡住或失败：
 
 ```fish
 yabai --restart-service
 work_reload
-```
-
-After restart, confirm the query layer is responsive:
-
-```fish
-set -gx WORKSPACE_DEBUG_YABAI 1
-time ws_query_displays probe displays >/tmp/ws-displays.json
-time ws_query_spaces probe spaces >/tmp/ws-spaces.json
-time ws_query_windows probe windows >/tmp/ws-windows.json
-set -e WORKSPACE_DEBUG_YABAI
-rm -f /tmp/ws-displays.json /tmp/ws-spaces.json /tmp/ws-windows.json
-```
-
-For a mode command that appears slow but still returns eventually, enable step logging for one run:
-
-```fish
-set -gx WORKSPACE_DEBUG_STEPS 1
-gtd_solo_all
-set -e WORKSPACE_DEBUG_STEPS
-```
-
-If a window selector itself appears slow, enable selector-level logging for one run:
-
-```fish
-set -gx WORKSPACE_DEBUG_SELECT 1
-gtd_solo_all
-set -e WORKSPACE_DEBUG_SELECT
-```
-
-Phase 8.5 adds conservative manual recovery commands:
-
-```fish
-work_inventory
-work_doctor
-work_audit
-work_bad_windows --summary
-work_bad_windows --expired
-work_bad_windows --missing
-work_clear_bad_windows --expired
-workspace_cleanup_known_labeled_spaces
-cleanup_unlabeled_empty_spaces
-work_recover_light
-work_display_health
-```
-
-The recovery rules are intentionally limited:
-
-- `work_inventory` prints the static workflow map and dependencies.
-- `work_doctor` runs read-only syntax, load, dependency, display, space, and cache checks.
-- `work_audit` reports mode symmetry, ownership policy coverage, fallback and multi-window helper coverage, and empty labeled-space allowlist/suspicion status without moving windows.
-- `work_bad_windows` only prints cached bad yabai window IDs and supports `--summary`, `--active`, `--expired`, `--present`, and `--missing`.
-- `work_clear_bad_windows` only clears `/tmp/workspace-ws-window-bad`; use `--expired`, `--missing`, `--present`, or `--active` for targeted cleanup, and no flag or `--all` for full cache cleanup.
-- `workspace_cleanup_known_labeled_spaces` destroys only empty spaces with known workspace labels, uses short cleanup Space snapshots, and skips cleanup if yabai cannot provide a snapshot.
-- `cleanup_unlabeled_empty_spaces` destroys empty unlabeled spaces except the current protected space.
-- `work_recover_light` runs diagnostics, then the two empty-space cleanup commands, then diagnostics again.
-
-`work_recover_light` does not move windows, does not apply layouts, and does not switch display profiles.
-
-`work_display_health [solo|wide|tall]` is a read-only display-role check. It reports whether the configured workspace primary display is present, which target display was resolved, whether the target display is at `origin:(0,0)`, whether the target is left of the primary display when two displays are present, whether the target display shape matches the expected mode, and whether Dock `orientation`/`autohide` match the workspace assumptions.
-
-## Mode Commands
-
-The workspace system currently supports three top-level work modes:
-
-```fish
-display_apply_solo
-work_solo
-
-display_apply_wide_left
-work_wide
-
-display_apply_tall_left
-work_tall
-```
-
-The `display_apply_*` commands apply the display profile, reload workspace functions, wait briefly for the display graph to settle, and run the matching `work_display_health` check. External display profiles resolve the currently connected external display at runtime instead of depending on a fixed external display UUID. The `work_*` commands then arrange the intended workspaces for that display mode.
-
-`work_wide` arranges coding, research, office, and GTD wide workspaces. `work_tall` arranges the matching tall workspaces. Office workspaces are no-ops when Word or PowerPoint does not have an eligible window. GTD remains the last ChatGPT-owning aggregate module so ChatGPT ownership is preserved for review workspaces in top-level external modes. The fixed `coding_control` workspace runs after GTD in top-level wide/tall modes so non-movable SmartGit fallback remains anchored on the workspace primary display.
-
-Module-level entries can also be run directly:
-
-```fish
-coding_solo
-coding_wide
-coding_tall
-
-research_solo
-research_wide
-research_tall
-
-gtd_support_solo
-gtd_support_wide
-gtd_support_tall
-
-gtd_review_solo
-gtd_review_wide
-gtd_review_tall
-
-gtd_mail_solo
-gtd_mail_wide
-gtd_mail_tall
-
-gtd_meeting_solo
-gtd_meeting_wide
-gtd_meeting_tall
-
-office_writing_wide
-office_writing_tall
-
-office_slides_wide
-office_slides_tall
-```
-
-## Module Conventions
-
-All workspace modules follow these conventions:
-
-1. A workspace function may reuse an existing labeled space instead of creating a new one.
-2. A workspace function always normalizes the labeled space before arranging windows.
-3. When a primary application for a workspace is missing, the workspace function may destroy an old empty labeled space with the same label before returning.
-4. Unlabeled empty spaces are cleaned separately from labeled empty spaces.
-5. Labeled empty spaces are cleaned by module-specific cleanup helpers such as:
-   - `gtd_cleanup_*`
-   - `coding_cleanup_*`
-   - `office_cleanup_*`
-   - `research_cleanup_*`
-
-This separation keeps empty spaces under control without deleting meaningful structured workspaces too aggressively.
-
-Window selection follows two shared patterns:
-
-- Use `workspace_capture_app_window` when a workspace owns a simple app by name and needs it moved to a target space.
-- Use `workspace_find_app_window` when a workspace only needs to select or confirm a movable app window.
-- Use `--target-only` with `--space` when confirming that a moved window actually landed on the target space.
-- Use `ws_find_window` when a workspace needs title exclusion, app regex matching, non-empty title checks, or bad-window cache awareness.
-
-Primary/helper workspaces such as `gtd_mail_wide` select the required primary app through `workspace_find_app_key_window`, so all registered app names for that key are considered. They confirm the primary window lands on the target space after moving and retry the move once before failing with a warning. `workspace_capture_app_window` also accepts app keys so helper capture uses the same app-name registry.
-
-When yabai reports an app window but does not expose it as movable, `workspace_find_app_window` focuses that window's current space, activates the app, and re-queries before failing. This handles apps such as Thunderbird that may initially appear without an AX reference.
-
-`gtd_mail_*` also enables primary-space fallback for Thunderbird. If Thunderbird remains present but not movable, the command uses Thunderbird's current space as the mail workspace, moves that space to the target display, labels it as the requested mail workspace, moves movable non-mail/helper windows from that fallback space into an unlabeled holding space, and applies the requested grid by setting Thunderbird's largest scriptable window bounds through AppleScript.
-
-Coding editor modes enable helper-space fallback for Codex. If Codex is present but yabai does not expose a movable Codex window, Codex's current space becomes the coding editor target, that space is moved/labeled for the requested coding mode, non-coding windows are evicted, VS Code is moved there, and Codex bounds are applied through the app-key grid bounds helper.
-
-All workspace JSON parsing should go through `ws_jq`, `ws_query_displays`, `ws_query_spaces`, `ws_query_current_display`, `ws_query_current_space`, `ws_query_windows`, `ws_find_window`, `ws_find_windows`, `workspace_select_app_window`, `workspace_find_app_window`, `workspace_find_app_key_window`, `workspace_app_key_window_info`, `workspace_app_key_windows`, or `workspace_capture_app_window`; direct `jq` pipelines are avoided inside workspace functions so parser timeouts remain bounded. Display, Space, and current-focus queries retry once before failing the caller. In non-read-only workspace commands, failed shared queries can restart yabai once through `ws_recover_yabai_once` and then retry. Focus helpers call yabai focus directly and treat `already focused` as success so a slow current-focus query does not block workspace entry. If a full `yabai -m query --windows` call fails, `ws_query_windows` falls back to querying windows one Space at a time and merges the arrays before returning to the caller.
-
-For future workspace edits:
-
-- keep full graph queries behind `ws_query_displays`, `ws_query_spaces`, and `ws_query_windows`
-- use `ws_focus_display` and `ws_focus_space` for focus operations; use `ws_query_current_display` and `ws_query_current_space` only when the caller needs current-focus data
-- use `workspace_app_key_space_fallback_info` plus `workspace_focus_space_fallback` when a present app is not movable
-- after moving required windows, re-query and confirm the target Space; use `--target-only` when a same-app window elsewhere would be a false positive
-- for non-movable app bounds fallback, derive display frames through `ws_query_displays` and cover new retry/fallback behavior in `work_smoke` or `work_audit`
-
-## ChatGPT Ownership Rule
-
-`ChatGPT` is treated as a shared single-instance helper application across multiple modules.
-
-The global ownership rule is:
-
-**the last module invoked owns the `ChatGPT` window**
-
-If `ChatGPT` appears in more than one workspace design, the most recently executed module function may move it into that module’s workspace.
-
-Coding editor modes use `Codex` as the helper application instead of `ChatGPT`. In `coding_editor_solo`, `coding_editor_wide`, and `coding_editor_tall`, Codex is optional; when it is unavailable, VS Code uses the full target workspace. If Codex is present but not movable, its current Space can become the coding editor target so VS Code and Codex still end up together.
-
-ChatGPT-owning modes use `workspace_capture_app_window` to capture ChatGPT. If yabai reports ChatGPT but does not expose a movable window, the helper activates ChatGPT, polls for a movable window, uses shared yabai restart recovery once when needed, retries the move once, and prints a warning if the window remains non-movable.
-
-This behavior is intentional and is the standard rule for the current workspace system.
-
-## Stale Space Cleanup Rule
-
-If a workspace depends on a required primary application, such as Word, PowerPoint, or Zotero, and that application is not currently available, the workspace function will:
-
-1. check whether an old labeled space with the same label already exists
-2. destroy that space if it is empty
-3. return without creating a new workspace
-
-This prevents old empty labeled spaces from persisting after application state changes.
-
-Some fixed or ownership-sensitive workspaces also retarget contaminated labeled spaces before layout. For example, `coding_control` only owns Warp, SmartGit, KeePassXC, and FlClash/Thaw; if the existing `coding_control` label points at a space containing Finder or another unrelated app, the command clears that label and uses a clean control space. If SmartGit is present but not movable, `coding_control` uses SmartGit's current Space as the control target, moves that Space to the workspace primary display, evicts non-control windows, moves the other control apps there, and applies SmartGit's fixed bounds through the absolute app-key bounds fallback.
-
-## GTD Support Dia Layout
-
-`gtd_support_solo`, `gtd_support_wide`, and `gtd_support_tall` collect all non-minimized, non-native-fullscreen `Dia` windows that yabai reports as movable. Native fullscreen Dia windows are intentionally skipped so support layout commands do not interfere with browser video fullscreen state. After leaving fullscreen, rerun the support command to collect that Dia window back into the support workspace.
-
-If a previous support label points at a space mixed with non-Dia apps, support clears that label and uses a clean support space before moving Dia windows. If Dia exists but no non-fullscreen movable window is available, support activates Dia once, refreshes the window snapshot, uses shared yabai restart recovery once, and warns if yabai still cannot expose a movable non-fullscreen Dia window.
-
-Before applying the final Dia layout, support commands re-query every currently movable non-native-fullscreen Dia window and move the whole set to the support target. This catches Dia browser or tab windows that appear after the initial support-window capture without touching native fullscreen video windows.
-
-Solo support layout:
-
-- 1 Dia window: full space
-- 2 Dia windows: top half and bottom half
-- 3 Dia windows: two on the top half, one on the bottom half
-- 4 or more Dia windows: two-column grid, filled top to bottom
-
-Wide support layout:
-
-- 1 Dia window: left half
-- 2 Dia windows: left half and right half
-- 3 Dia windows: two stacked in the left half, one full-height in the right half
-- 4 or more Dia windows: two-column grid, filled top to bottom within each half
-
-Tall support layout:
-
-- 1 Dia window: bottom half
-- 2 Dia windows: top half and bottom half
-- 3 Dia windows: two on the top half, one on the bottom half
-- 4 or more Dia windows: two-column grid, filled top to bottom
-
-## GTD Chat Special Note
-
-`gtd_chat` uses the following windows as its core layout:
-
-- `Keybase`
-- `钉钉`
-- `WeChat`
-- `Messages`
-
-`WhatsApp` is treated as best-effort. If it can be detected and moved reliably, it may be included. If it cannot be moved cleanly, the workspace still counts as valid without it.
-
-So `WhatsApp` is not a strict success condition for `gtd_chat`.
-
-`gtd_chat` retargets contaminated labeled spaces before layout. If the existing `gtd_chat` label points at a space containing non-chat apps such as Thunderbird or Codex, the command clears that label and uses a clean chat space.
-
-For `WeChat`, `Keybase`, `DingTalk`, and `Messages`, `gtd_chat` uses the shared movable app-window finder and retries once if the window does not land on the chat space. This lets it recover from stale bad-window cache entries and from chat apps that need activation before yabai exposes a movable window.
-
-If DingTalk is present but yabai still does not expose a movable DingTalk window, `gtd_chat` uses the current DingTalk space as the chat target, moves the other chat windows there, and applies DingTalk bounds through AppleScript instead of `yabai` grid commands.
-
-## Reload Commands
-
-The main reload commands are:
-
-```fish
-gtd_reload
-coding_reload
-office_reload
-research_reload
-```
-
-These reload commands are defined together in `common/workspace_module_reloads.fish`; they source both module-local functions and the shared helper functions in `workspace/common`.
-
-## Status Commands
-
-The main inspection commands are:
-
-```fish
 work_diagnostics
-work_check
-work_status
-work_mode_status
-
-gtd_status
-coding_status
-office_status
-research_status
 ```
 
-Mode-level inspection is unified in:
+如果出现很多空 Space，可以先看状态：
 
 ```fish
 work_mode_status
-```
-
-These commands are intended for day-to-day maintenance and regression checking after changes to workspace behavior.
-
-Command-entry validation:
-
-```fish
-work_reload
-work_command_check
-```
-
-`work_command_check` verifies that documented workspace, display, status, recovery, and hotkey entry functions are loaded.
-
-Dry-run entry points:
-
-```fish
-work_wide --dry-run
-gtd_meeting_wide --dry-run
-research_tall --dry-run
-```
-
-Dry-run prints the intended command/app/layout metadata and does not query, move, focus, create, destroy, or relabel spaces.
-
-## Recommended Daily Sequences
-
-Before using the mode commands, keep these machine-level assumptions true:
-
-- `WORKSPACE_PRIMARY_DISPLAY_UUID` is set to the display that should host fixed/control workspaces.
-- macOS Dock is configured with auto-hide enabled.
-- In external modes, the external display profile may or may not become the macOS primary display.
-- Workspace primary/target roles are resolved by UUID, not by macOS primary display or display origin.
-- `yabai`, `jq`, and `displayplacer` are available in `PATH`.
-
-Check the core display role setup:
-
-```fish
-work_reload
-get_workspace_primary_display_uuid
-echo primary=(resolve_workspace_primary_display)
-echo target=(resolve_workspace_external_display)
-work_display_health
-```
-
-Check the Dock settings:
-
-```fish
-defaults read com.apple.dock orientation
-defaults read com.apple.dock autohide
-```
-
-Expected Dock values:
-
-```text
-left
-1
-```
-
-### Solo Primary Display
-
-Use this when working only on the workspace primary display.
-
-```fish
-display_apply_solo
-work_solo
-work_display_health solo
 work_diagnostics
 ```
 
-Expected state:
-
-- only the primary display is enabled
-- the primary display is at `origin:(0,0)`
-- `resolve_workspace_primary_display` returns the active display
-- `resolve_workspace_external_display` falls back to the primary display because no non-primary display is connected
-- fixed workspaces such as `gtd_chat`, `gtd_calendar`, and `coding_control` stay on the primary display
-
-Equivalent hotkey:
-
-```text
-Fn + Shift + 0
-```
-
-### Wide External Display
-
-Use this when the wide external monitor is connected on the left.
-
-```fish
-display_apply_wide_left
-work_wide
-work_display_health wide
-work_diagnostics
-```
-
-Expected state:
-
-- the wide external monitor is enabled and left of the workspace primary display
-- the workspace primary display remains enabled to the right of the external monitor
-- the external monitor may or may not be the macOS primary display depending on what macOS accepts from displayplacer
-- `resolve_workspace_primary_display` returns the configured primary display
-- `resolve_workspace_external_display wide` returns the wide target display
-- wide task workspaces move to the external display
-- fixed workspaces remain on the workspace primary display
-
-Equivalent hotkey:
-
-```text
-Option + Shift + 0
-```
-
-### Tall External Display
-
-Use this when the tall external monitor is connected on the left.
-
-```fish
-display_apply_tall_left
-work_tall
-work_display_health tall
-work_diagnostics
-```
-
-Expected state:
-
-- the tall external monitor is enabled and left of the workspace primary display
-- the workspace primary display remains enabled to the right of the external monitor
-- the external monitor may or may not be the macOS primary display depending on what macOS accepts from displayplacer
-- `resolve_workspace_primary_display` returns the configured primary display
-- `resolve_workspace_external_display tall` returns the tall target display
-- tall task workspaces move to the external display
-- fixed workspaces remain on the workspace primary display
-
-Equivalent hotkey:
-
-```text
-Control + Shift + 0
-```
-
-### Post-Switch Checks
-
-After switching display mode, check the actual display graph if windows or the Dock appear on the wrong screen:
-
-```fish
-ws_query_displays troubleshoot display-list | ws_jq -r '.[] | "index=\(.index) uuid=\(.uuid) focus=\(.[\"has-focus\"]) frame=(\(.frame.x),\(.frame.y),\(.frame.w),\(.frame.h)) spaces=\(.spaces)"'
-echo primary=(resolve_workspace_primary_display)
-echo target=(resolve_workspace_external_display)
-work_display_health tall
-```
-
-For external modes, the target display should resolve to the non-primary display when one is connected. On single-display systems, target and primary intentionally resolve to the same display.
-
-Use `work_display_health wide` after `display_apply_wide_left`, and `work_display_health tall` after `display_apply_tall_left`. If it reports target display role warnings, rerun the matching `display_apply_*` command. The `display_apply_*` commands return nonzero when their post-apply health check still has warnings, so SKHD bindings use `;` before `work_*` to keep workspace mode entry available even when display health warns.
-
-If the Dock is configured correctly but does not hide or show from the expected edge, restart the Dock after applying the display profile:
-
-```fish
-killall Dock
-```
-
-If diagnostics show only empty workspace spaces or stale bad-window cache entries, run:
+确认只想清理空 Space 时，再运行：
 
 ```fish
 work_recover_light
 ```
 
-If only bad-window cache entries are noisy, inspect and clean them explicitly:
+`work_recover_light` 会运行 diagnostics、清理空的 known-labeled Spaces 和空的
+unlabeled Spaces，再运行 diagnostics。它不会移动已有窗口，也不会应用 display profile。
 
-```fish
-work_bad_windows --summary
-work_bad_windows --expired
-work_clear_bad_windows --expired
-```
+## 维护约定
 
-`expired` means the cache entry is older than `WORKSPACE_BAD_WINDOW_TTL_SECONDS`, which defaults to `600`. `present_in_yabai=true` means yabai still reports that window ID, so inspect the app before clearing if the same ID repeatedly becomes bad again.
+- 公开命令名保持稳定：`work_wide`、`coding_tall`、`gtd_meeting_wide` 等不随内部实现随意改名。
+- 业务层 workspace 不硬编码 display UUID，应通过 `resolve_workspace_primary_display` 和 `resolve_workspace_external_display`。
+- app 名称匹配优先走 `workspace_app_name`、`workspace_app_names`、`workspace_app_regex` 和 app-key selector。
+- labeled Space 使用 `find_or_create_labeled_space`、`prepare_labeled_space` 和 `workspace_prepare_labeled_space`。
+- GTD 的复杂窗口选择和恢复逻辑保留模块本地实现，只有稳定重复事实进入 manifest。
+- display profile 只负责显示器布局；workspace entry 负责进入工作流。
+- 普通维护优先运行只读检查，不默认运行会改变桌面状态的命令。
 
-If `gtd_meeting_*` warns that Outlook exists but is not movable, inspect the GTD app diagnostics:
+## 相关文件
 
-```fish
-gtd_apps
-```
-
-Outlook should report `can_move=true` and `has_ax_reference=true`. If it does not, use the light Outlook recovery command:
-
-```fish
-gtd_reopen_outlook
-gtd_meeting_tall
-```
-
-`gtd_find_outlook_window` uses the shared movable app-window helper. If Outlook remains present but non-movable after activation and polling, the shared finder restarts yabai once and rechecks before warning.
-
-`gtd_reopen_outlook` does not quit Outlook. It clears Outlook entries from the workspace bad-window cache, asks Outlook to activate/reopen, then prints the current Outlook window diagnostics.
-
-Meeting commands use `gtd_find_zoom_windows` for Zoom and `gtd_find_teams_windows` for Teams. Both wrappers share `gtd_find_meeting_windows`, which captures movable main and active meeting/video/call/share/screen windows while excluding mini windows. The singular wrappers, `gtd_find_zoom_window` and `gtd_find_teams_window`, return the primary window for layout compatibility. Zoom can activate once in the meeting fallback when present but not currently exposed as movable by yabai. Teams recognizes both `Microsoft Teams` and `MSTeams`.
-
-If visible Zoom is present but yabai still does not expose a movable Zoom window, meeting commands use the current Zoom space as the meeting target, move movable non-meeting windows from that fallback space into an unlabeled holding space, move the other meeting windows there, and apply the Zoom bounds through AppleScript instead of `yabai` grid commands. If Zoom is present only as a hidden non-movable window, meeting first applies the Zoom grid through System Events on the target display, then uses the resulting Zoom Space as the meeting target when yabai confirms Zoom reached that display.
-
-Before applying the final grid, meeting commands reconcile all currently movable Zoom and Teams windows back onto the target meeting space. Zoom gets one short extra settle/re-query before layout, then every selected non-mini Zoom window receives the Zoom grid. This catches active video or call windows that appear after the main app window has already landed on the meeting space.
-
-All `gtd_meeting_*` modes also retarget contaminated labeled spaces before layout. If a previous meeting label points at a space mixed with non-meeting apps, the command clears that label and uses a clean meeting space.
-
-`gtd_meeting_solo` uses a 1/3 + 2/3 layout on the workspace primary display: Zoom and Teams share the left third vertically, and Outlook uses the right two thirds.
-
-`gtd_review_*` modes create or reuse the review workspace when at least one non-Finder review app is available: Preview, Notes, or ChatGPT. Finder is included in the layout when present, but Finder alone does not create a review workspace. Review first collects existing Finder, Preview, Notes, and ChatGPT windows from the initial yabai snapshot instead of activating optional apps. When Finder, Preview, or Notes is owned by review, all movable windows for that app are moved to the review space, reconciled with up to three short retries if they are still on another Space, and laid out together.
-
-If Notes is present but yabai does not expose a movable Notes window, `gtd_review_*` uses the current Notes space as the review target and moves the other review windows there. If Preview is present but not movable, the review target is focused and Preview bounds are applied through app AppleScript, then System Events if needed, instead of `yabai` grid commands. Movable Preview windows take precedence over unmovable Preview companion windows so an auxiliary unmovable window does not steal the review target. If a movable Preview window still remains outside the review target after the normal move and retry pass, review treats Preview's current Space as the fallback target, labels that Space as the review workspace, refreshes the window snapshot, and moves the other current review windows there. In either review fallback, movable non-review windows from that fallback space are moved into an unlabeled holding space before the review windows are arranged. When Preview is already on the target display but the wrong Space, the fallback temporarily bounces Preview through another display before returning it to the focused review Space. Review fallback bounds use the all-windows mode so multiple scriptable Preview or Notes windows are not left behind.
-
-If Calendar is present but yabai does not expose a movable Calendar window, `gtd_calendar` uses the current Calendar space as the calendar target, moves movable non-calendar windows from that fallback space into an unlabeled holding space, moves Reminders there, and applies Calendar bounds through app AppleScript, then System Events if needed, instead of `yabai` grid commands.
+| 文件 | 作用 |
+|---|---|
+| `common/workspace_manifest.fish` | 只读 workspace 声明清单 |
+| `common/work_entries.fish` | `work_solo`、`work_wide`、`work_tall` |
+| `common/source_workspace_common.fish` | 公共 helper 加载入口 |
+| `common/workspace_module_reloads.fish` | 模块 reload 定义 |
+| `common/work_inventory.fish` | workspace 清单输出 |
+| `common/work_command_check.fish` | 命令加载检查 |
+| `common/work_smoke.fish` | regression smoke checks |
+| `common/work_audit.fish` | architecture drift audit |
+| `display/display_entries.fish` | display profile 入口 |
+| `coding/`、`research/`、`office/`、`gtd/` | 模块入口和模块本地 helper |
+| `design-notes.md` | 维护者设计说明和路线图 |

@@ -138,7 +138,7 @@ function __work_audit_mode_symmetry --description "Audit read-only solo/wide/tal
         --command work_solo \
         --field commands \
         --label "mode symmetry: solo aggregate commands" \
-        coding_solo research_solo gtd_solo_all
+        (workspace_top_level_commands work_solo)
     or set failed 1
 
     set -l command_pairs \

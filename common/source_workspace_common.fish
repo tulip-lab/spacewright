@@ -1,5 +1,6 @@
 function source_workspace_common --description "Source shared workspace helper functions"
     source ~/.config/fish/functions/workspace/common/ws_core.fish
+    source ~/.config/fish/functions/workspace/common/workspace_manifest.fish
     source ~/.config/fish/functions/workspace/common/workspace_app_names.fish
     source ~/.config/fish/functions/workspace/common/ws_find_windows.fish
     source ~/.config/fish/functions/workspace/common/workspace_app_window_selectors.fish

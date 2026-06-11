@@ -1829,43 +1829,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
-    set -l dry_run_commands \
-        "work_solo --dry-run" \
-        "work_wide --dry-run" \
-        "work_tall --dry-run" \
-        "coding_solo --dry-run" \
-        "coding_wide --dry-run" \
-        "coding_tall --dry-run" \
-        "coding_editor_solo --dry-run" \
-        "coding_editor_wide --dry-run" \
-        "coding_editor_tall --dry-run" \
-        "coding_control --dry-run" \
-        "research_solo --dry-run" \
-        "research_wide --dry-run" \
-        "research_tall --dry-run" \
-        "office_wide --dry-run" \
-        "office_tall --dry-run" \
-        "office_writing_wide --dry-run" \
-        "office_writing_tall --dry-run" \
-        "office_slides_wide --dry-run" \
-        "office_slides_tall --dry-run" \
-        "gtd_solo_all --dry-run" \
-        "gtd_wide --dry-run" \
-        "gtd_tall --dry-run" \
-        "gtd_support_solo --dry-run" \
-        "gtd_meeting_wide --dry-run" \
-        "gtd_meeting_solo --dry-run" \
-        "gtd_meeting_tall --dry-run" \
-        "gtd_review_solo --dry-run" \
-        "gtd_review_wide --dry-run" \
-        "gtd_review_tall --dry-run" \
-        "gtd_support_wide --dry-run" \
-        "gtd_support_tall --dry-run" \
-        "gtd_mail_solo --dry-run" \
-        "gtd_mail_wide --dry-run" \
-        "gtd_mail_tall --dry-run" \
-        "gtd_chat --dry-run" \
-        "gtd_calendar --dry-run"
+    set -l dry_run_commands (workspace_dry_run_commands)
 
     for dry_run_command in $dry_run_commands
         fish -lc "work_reload >/dev/null; $dry_run_command >/dev/null"

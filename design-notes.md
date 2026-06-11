@@ -28,6 +28,7 @@ Module reloaders source these grouped entry files, plus separate internal helper
 
 Top-level and common wrappers follow the same grouping rule:
 
+- `common/workspace_manifest.fish` defines the read-only declaration rows used by inventory, command checks, top-level dry-run output, and smoke dry-run coverage
 - `common/work_entries.fish` defines `work_solo`, `work_wide`, and `work_tall`
 - `display/display_entries.fish` defines `display_reload`, `display_verify_mode`, `display_apply_*` entries, and their shared profile runner
 - `common/workspace_status_helpers.fish` defines status snapshots, mode status, simple module status wrappers, `work_status`, `work_mode_status`, and `work_check`
@@ -44,6 +45,25 @@ Top-level and common wrappers follow the same grouping rule:
 - `common/ws_core.fish` defines the core yabai/jq query and focus wrappers
 
 Keep public command names stable for shell and skhd callers. Prefer grouping tiny same-layer wrappers by responsibility over creating one file for every public function.
+
+### Read-Only Manifest Layer
+
+`common/workspace_manifest.fish` is the current shared declaration layer. It records stable facts that are useful for inspection and validation:
+
+- top-level entries and their child command lists
+- module entries and managed apps
+- workspace command map rows
+- display entry summaries
+- common helper summaries
+- external dependencies
+- commands that must be loaded by `work_command_check`
+- commands that should support `--dry-run` in `work_smoke`
+
+This manifest is deliberately fish-based and read-only. It is not a generic runtime engine, does not contain layouts, and does not replace GTD-specific behavior. `work_inventory`, `work_command_check`, `work_smoke`, and top-level `work_* --dry-run` use it so documentation and checks do not maintain separate copies of the same command lists.
+
+Runtime movement behavior remains in the existing entry functions and module helpers. `work_solo`, `work_wide`, and `work_tall` still execute their steps explicitly so this maintenance pass does not change window movement order or fallback behavior.
+
+If a public entry is added, renamed, or retired, update `workspace_manifest.fish` together with the module entry file, `skhd` documentation if a hotkey changes, and this design note if the ownership or mode composition changes.
 
 ### Display Roles
 
