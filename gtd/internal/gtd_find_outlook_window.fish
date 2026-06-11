@@ -21,7 +21,7 @@ function gtd_find_outlook_window --description "Find a movable Microsoft Outlook
     set -l find_status $status
 
     if test "$find_status" -eq 2
-        echo "[HINT] If Outlook stays non-movable, run: yabai --restart-service" >&2
+        echo "[HINT] Outlook remains non-movable after shared yabai recovery; run: yabai --restart-service" >&2
     end
 
     return $find_status

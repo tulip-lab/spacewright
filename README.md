@@ -251,6 +251,10 @@ set -e WORKSPACE_DEBUG_WINDOW
 
 `WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS` controls the timeout for shared yabai queries and defaults to `15` seconds because display queries can briefly stall after display-profile changes or Dock/yabai restarts. `WORKSPACE_CLEANUP_QUERY_TIMEOUT_SECONDS` controls opportunistic cleanup Space snapshots and defaults to `1` second. `WORKSPACE_YABAI_OPERATION_TIMEOUT_SECONDS` controls non-query `ws_yabai` operations such as display focus, space focus, and space destroy; it defaults to `3` seconds so one stuck operation does not make a full mode switch look hung. `WORKSPACE_YABAI_COMMAND_TIMEOUT_SECONDS` remains a global override for both categories. `WORKSPACE_YABAI_TIMEOUT_SECONDS` controls direct window operations through `ws_window` and defaults to `1` second.
 
+Workspace layout commands use `ws_recover_yabai_once` for light yabai recovery. If a non-read-only workspace command cannot query displays, spaces, current focus, or windows after the normal retry path, or if an app exists but remains non-movable after activation/polling, the helper restarts yabai once and retries the query or window selection. `WORKSPACE_YABAI_RESTART_COOLDOWN_SECONDS` defaults to `10` so one failing command does not repeatedly restart the service. `WORKSPACE_YABAI_RESTART_SETTLE_SECONDS` defaults to `1`. Set `WORKSPACE_DISABLE_YABAI_AUTO_RESTART=1` to force manual-only recovery for a run.
+
+Read-only commands such as `work_doctor`, `work_diagnostics`, `work_audit`, `work_status`, `work_mode_status`, `work_check`, `work_bad_windows`, and `work_smoke` do not automatically restart yabai.
+
 If even read-only yabai queries such as `ws_query_displays probe displays`, `ws_query_spaces probe spaces`, or `ws_query_windows probe windows` hit the timeout, restart yabai before rerunning workspace commands:
 
 ```fish
@@ -400,7 +404,7 @@ When yabai reports an app window but does not expose it as movable, `workspace_f
 
 Coding editor modes enable helper-space fallback for Codex. If Codex is present but yabai does not expose a movable Codex window, Codex's current space becomes the coding editor target, that space is moved/labeled for the requested coding mode, non-coding windows are evicted, VS Code is moved there, and Codex bounds are applied through the app-key grid bounds helper.
 
-All workspace JSON parsing should go through `ws_jq`, `ws_query_displays`, `ws_query_spaces`, `ws_query_current_display`, `ws_query_current_space`, `ws_query_windows`, `ws_find_window`, `ws_find_windows`, `workspace_select_app_window`, `workspace_find_app_window`, `workspace_find_app_key_window`, `workspace_app_key_window_info`, `workspace_app_key_windows`, or `workspace_capture_app_window`; direct `jq` pipelines are avoided inside workspace functions so parser timeouts remain bounded. Display, Space, and current-focus queries retry once before failing the caller. Focus helpers call yabai focus directly and treat `already focused` as success so a slow current-focus query does not block workspace entry. If a full `yabai -m query --windows` call fails, `ws_query_windows` falls back to querying windows one Space at a time and merges the arrays before returning to the caller.
+All workspace JSON parsing should go through `ws_jq`, `ws_query_displays`, `ws_query_spaces`, `ws_query_current_display`, `ws_query_current_space`, `ws_query_windows`, `ws_find_window`, `ws_find_windows`, `workspace_select_app_window`, `workspace_find_app_window`, `workspace_find_app_key_window`, `workspace_app_key_window_info`, `workspace_app_key_windows`, or `workspace_capture_app_window`; direct `jq` pipelines are avoided inside workspace functions so parser timeouts remain bounded. Display, Space, and current-focus queries retry once before failing the caller. In non-read-only workspace commands, failed shared queries can restart yabai once through `ws_recover_yabai_once` and then retry. Focus helpers call yabai focus directly and treat `already focused` as success so a slow current-focus query does not block workspace entry. If a full `yabai -m query --windows` call fails, `ws_query_windows` falls back to querying windows one Space at a time and merges the arrays before returning to the caller.
 
 For future workspace edits:
 
@@ -422,7 +426,7 @@ If `ChatGPT` appears in more than one workspace design, the most recently execut
 
 Coding editor modes use `Codex` as the helper application instead of `ChatGPT`. In `coding_editor_solo`, `coding_editor_wide`, and `coding_editor_tall`, Codex is optional; when it is unavailable, VS Code uses the full target workspace. If Codex is present but not movable, its current Space can become the coding editor target so VS Code and Codex still end up together.
 
-ChatGPT-owning modes use `workspace_capture_app_window` to capture ChatGPT. If yabai reports ChatGPT but does not expose a movable window, the helper activates ChatGPT, polls for a movable window, retries the move once, and prints a warning if the window remains non-movable.
+ChatGPT-owning modes use `workspace_capture_app_window` to capture ChatGPT. If yabai reports ChatGPT but does not expose a movable window, the helper activates ChatGPT, polls for a movable window, uses shared yabai restart recovery once when needed, retries the move once, and prints a warning if the window remains non-movable.
 
 This behavior is intentional and is the standard rule for the current workspace system.
 
@@ -442,7 +446,7 @@ Some fixed or ownership-sensitive workspaces also retarget contaminated labeled 
 
 `gtd_support_solo`, `gtd_support_wide`, and `gtd_support_tall` collect all non-minimized, non-native-fullscreen `Dia` windows that yabai reports as movable. Native fullscreen Dia windows are intentionally skipped so support layout commands do not interfere with browser video fullscreen state. After leaving fullscreen, rerun the support command to collect that Dia window back into the support workspace.
 
-If a previous support label points at a space mixed with non-Dia apps, support clears that label and uses a clean support space before moving Dia windows. If Dia exists but no non-fullscreen movable window is available, support activates Dia once, refreshes the window snapshot, and warns if yabai still cannot expose a movable non-fullscreen Dia window.
+If a previous support label points at a space mixed with non-Dia apps, support clears that label and uses a clean support space before moving Dia windows. If Dia exists but no non-fullscreen movable window is available, support activates Dia once, refreshes the window snapshot, uses shared yabai restart recovery once, and warns if yabai still cannot expose a movable non-fullscreen Dia window.
 
 Before applying the final Dia layout, support commands re-query every currently movable non-native-fullscreen Dia window and move the whole set to the support target. This catches Dia browser or tab windows that appear after the initial support-window capture without touching native fullscreen video windows.
 
@@ -705,7 +709,7 @@ gtd_reopen_outlook
 gtd_meeting_tall
 ```
 
-`gtd_find_outlook_window` uses the shared movable app-window helper. If Outlook remains present but non-movable after activation and polling, restart yabai to rebuild its window graph.
+`gtd_find_outlook_window` uses the shared movable app-window helper. If Outlook remains present but non-movable after activation and polling, the shared finder restarts yabai once and rechecks before warning.
 
 `gtd_reopen_outlook` does not quit Outlook. It clears Outlook entries from the workspace bad-window cache, asks Outlook to activate/reopen, then prints the current Outlook window diagnostics.
 

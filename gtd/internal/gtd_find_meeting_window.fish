@@ -133,8 +133,27 @@ function gtd_find_meeting_windows --description "Find all movable GTD meeting he
     end
 
     workspace_debug_step $caller "$debug_name-refresh-unmovable"
+    ws_recover_yabai_once "$caller" "found $warning_name, but yabai did not expose movable $warning_name windows"
+    if test $status -eq 0
+        set windows_json (ws_query_windows "$caller" "$debug_name"_after_yabai_restart); or return 1
+        set window_ids (echo $windows_json | ws_jq -r \
+            --argjson apps "$apps_json" \
+            --argjson secondary_titles "$secondary_titles_json" \
+            --arg target_space "" \
+            "$candidate_filter")
+
+        if test (count $window_ids) -gt 0
+            workspace_debug_step $caller "$debug_name-after-yabai-restart-found" $window_ids
+            for window_id in $window_ids
+                rm -f "$bad_window_dir/$window_id" 2>/dev/null
+            end
+            printf "%s\n" $window_ids
+            return 0
+        end
+    end
+
     if test "$quiet_unmovable" -ne 1
-        echo "[WARN] $caller found $warning_name, but yabai did not expose a movable $warning_name window" >&2
+        echo "[WARN] $caller found $warning_name, but yabai still did not expose a movable $warning_name window" >&2
     end
     return 2
 end

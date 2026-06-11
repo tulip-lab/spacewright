@@ -291,6 +291,221 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
+    set -l query_restart_recovery_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_query_calls 0
+        set -g __work_smoke_restart_calls 0
+
+        function sleep
+        end
+
+        function ws_restart_yabai
+            set -g __work_smoke_restart_calls (math $__work_smoke_restart_calls + 1)
+            return 0
+        end
+
+        function ws_yabai
+            if test (count $argv) -eq 3 -a "$argv[1]" = "-m" -a "$argv[2]" = "query" -a "$argv[3]" = "--spaces"
+                set -g __work_smoke_query_calls (math $__work_smoke_query_calls + 1)
+                if test "$__work_smoke_query_calls" -le 2
+                    return 1
+                end
+
+                printf "%s\n" "[
+                    {\"index\": 8, \"display\": 2, \"label\": \"gtd_support_wide\"}
+                ]"
+                return 0
+            end
+
+            return 1
+        end
+
+        set -l labels (ws_query_spaces gtd_support_wide recover | ws_jq -r ".[].label")
+        or exit 1
+
+        test "$labels" = gtd_support_wide
+        or exit 2
+
+        test "$__work_smoke_restart_calls" -eq 1
+        or exit 3
+
+        test "$__work_smoke_query_calls" -eq 3
+        or exit 4
+    '
+    fish -lc "$query_restart_recovery_smoke" >/tmp/work-query-restart-recovery-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      query yabai restart recovery"
+    else
+        echo "FAIL    query yabai restart recovery"
+        cat /tmp/work-query-restart-recovery-smoke.out
+        set failed 1
+    end
+
+    set -l readonly_query_no_restart_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_restart_calls 0
+
+        function sleep
+        end
+
+        function ws_restart_yabai
+            set -g __work_smoke_restart_calls (math $__work_smoke_restart_calls + 1)
+            return 0
+        end
+
+        function ws_yabai
+            return 1
+        end
+
+        if ws_query_spaces work_smoke recover >/dev/null 2>&1
+            exit 1
+        end
+
+        test "$__work_smoke_restart_calls" -eq 0
+        or exit 2
+    '
+    fish -lc "$readonly_query_no_restart_smoke" >/tmp/work-readonly-query-no-restart-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      read-only query does not restart yabai"
+    else
+        echo "FAIL    read-only query does not restart yabai"
+        cat /tmp/work-readonly-query-no-restart-smoke.out
+        set failed 1
+    end
+
+    set -l app_unmovable_restart_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_restart_calls 0
+        set -g __work_smoke_query_phases
+        set -g __work_smoke_allow_movable 0
+
+        function sleep
+        end
+
+        function perl
+            return 0
+        end
+
+        function ws_focus_space
+        end
+
+        function ws_restart_yabai
+            set -g __work_smoke_restart_calls (math $__work_smoke_restart_calls + 1)
+            return 0
+        end
+
+        function workspace_select_app_window
+            argparse "app=" "space=" movable visible -- $argv
+            or return 1
+
+            if set -q _flag_movable
+                if test "$__work_smoke_allow_movable" = 1
+                    echo 44
+                end
+            else
+                echo 44
+            end
+        end
+
+        function ws_query_windows
+            set -l phase $argv[2]
+            set -ga __work_smoke_query_phases $phase
+
+            if test "$phase" = find_Preview_after_yabai_restart
+                set -g __work_smoke_allow_movable 1
+                printf "%s\n" "[{\"id\":44,\"app\":\"Preview\",\"space\":6,\"can-move\":true,\"is-minimized\":false}]"
+                return 0
+            end
+
+            set -g __work_smoke_allow_movable 0
+            printf "%s\n" "[{\"id\":44,\"app\":\"Preview\",\"space\":6,\"can-move\":false,\"is-minimized\":false}]"
+            return 0
+        end
+
+        set -l window_id (workspace_find_app_window --app Preview --caller gtd_review_wide --attempts 1 --wait 0 2>/dev/null)
+        or exit 1
+
+        test "$window_id" = 44
+        or exit 2
+
+        test "$__work_smoke_restart_calls" -eq 1
+        or exit 3
+
+        contains -- find_Preview_after_yabai_restart $__work_smoke_query_phases
+        or exit 4
+    '
+    fish -lc "$app_unmovable_restart_smoke" >/tmp/work-app-unmovable-restart-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      app unmovable yabai restart recovery"
+    else
+        echo "FAIL    app unmovable yabai restart recovery"
+        cat /tmp/work-app-unmovable-restart-smoke.out
+        set failed 1
+    end
+
+    set -l capture_confirm_restart_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_restart_calls 0
+        set -g __work_smoke_moved ""
+        set -g __work_smoke_target_available 0
+
+        function sleep
+        end
+
+        function ws_restart_yabai
+            set -g __work_smoke_restart_calls (math $__work_smoke_restart_calls + 1)
+            set -g __work_smoke_target_available 1
+            return 0
+        end
+
+        function ws_move_windows_to_space
+            set -g __work_smoke_moved (string join , -- $argv)
+        end
+
+        function workspace_find_app_window
+            argparse "app=" "caller=" "space=" no-refresh target-only visible -- $argv
+            or return 1
+
+            if not set -q _flag_space
+                echo 44
+                return 0
+            end
+
+            if set -q _flag_target_only
+                if test "$__work_smoke_target_available" = 1
+                    echo 44
+                end
+                return 0
+            end
+
+            return 0
+        end
+
+        set -l window_id (workspace_capture_app_window --app Preview --caller gtd_review_wide --space 8)
+        or exit 1
+
+        test "$window_id" = 44
+        or exit 2
+
+        test "$__work_smoke_moved" = "8,44"
+        or exit 3
+
+        test "$__work_smoke_restart_calls" -eq 1
+        or exit 4
+    '
+    fish -lc "$capture_confirm_restart_smoke" >/tmp/work-capture-confirm-restart-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      capture confirmation yabai restart recovery"
+    else
+        echo "FAIL    capture confirmation yabai restart recovery"
+        cat /tmp/work-capture-confirm-restart-smoke.out
+        set failed 1
+    end
+
     set -l focus_already_focused_smoke '
         work_reload >/dev/null
 
@@ -1093,6 +1308,76 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     else
         echo "FAIL    support contaminated-space retarget"
         cat /tmp/work-support-retarget-smoke.out
+        set failed 1
+    end
+
+    set -l support_dia_restart_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_dia_refreshed 0
+        set -g __work_smoke_dia_restarted 0
+        set -g __work_smoke_dia_query_phases
+
+        function sleep
+        end
+
+        function __gtd_support_refresh_dia_app
+            set -g __work_smoke_dia_refreshed 1
+        end
+
+        function ws_restart_yabai
+            set -g __work_smoke_dia_restarted (math $__work_smoke_dia_restarted + 1)
+            return 0
+        end
+
+        function ws_query_windows
+            set -l phase $argv[2]
+            set -ga __work_smoke_dia_query_phases $phase
+
+            if test "$phase" = dia_refresh
+                printf "%s\n" "[
+                    {\"id\": 31, \"app\": \"Dia\", \"space\": 8, \"can-move\": false, \"is-minimized\": false, \"is-native-fullscreen\": false}
+                ]"
+                return 0
+            end
+
+            if test "$phase" = dia_yabai_restart
+                printf "%s\n" "[
+                    {\"id\": 31, \"app\": \"Dia\", \"space\": 8, \"can-move\": true, \"is-minimized\": false, \"is-native-fullscreen\": false}
+                ]"
+                return 0
+            end
+
+            return 1
+        end
+
+        set -l dia_initial_fixture "[
+            {\"id\": 31, \"app\": \"Dia\", \"space\": 8, \"can-move\": false, \"is-minimized\": false, \"is-native-fullscreen\": false}
+        ]"
+        set -l dia_windows (printf "%s\n" "$dia_initial_fixture" | gtd_support_find_dia_windows gtd_support_wide 2>/dev/null)
+        or exit 1
+
+        test "$dia_windows" = 31
+        or exit 2
+
+        test "$__work_smoke_dia_refreshed" = 1
+        or exit 3
+
+        test "$__work_smoke_dia_restarted" = 1
+        or exit 4
+
+        contains -- dia_refresh $__work_smoke_dia_query_phases
+        or exit 5
+
+        contains -- dia_yabai_restart $__work_smoke_dia_query_phases
+        or exit 6
+    '
+    fish -lc "$support_dia_restart_smoke" >/tmp/work-support-dia-restart-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      support Dia yabai restart recovery"
+    else
+        echo "FAIL    support Dia yabai restart recovery"
+        cat /tmp/work-support-dia-restart-smoke.out
         set failed 1
     end
 

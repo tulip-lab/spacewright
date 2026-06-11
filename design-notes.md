@@ -113,7 +113,7 @@ Expected mode-specific state:
 
 `work_display_health <mode>` returns nonzero when warnings are present. Plain `work_display_health` remains a read-only report suitable for diagnostics.
 
-Diagnostics do not apply display profiles, restart Dock, move spaces, or repair anything automatically. If external display health fails, rerun the matching `display_apply_*` command before entering the workspace mode again.
+Diagnostics do not apply display profiles, restart Dock, restart yabai, move spaces, or repair anything automatically. If external display health fails, rerun the matching `display_apply_*` command before entering the workspace mode again.
 
 ## Space And Label Rules
 
@@ -214,7 +214,7 @@ When a module already has a bounded yabai window JSON snapshot, `workspace_app_k
 
 `workspace_retarget_contaminated_space` is used when preserving a label on a mixed workspace would keep unrelated apps inside the workflow. `coding_control`, `gtd_chat`, `gtd_meeting_*`, and `gtd_review_*` use it to clear the old label and continue on a clean labeled space when their current target contains non-owned windows. `coding_control` treats KeePassXC/KeePassX as an owned control app alongside Warp, SmartGit, and FlClash/Thaw.
 
-`workspace_apply_primary_helper_space` owns the stable single-primary/single-helper workflow. Entry functions provide label, display role, app keys, cleanup specs, and grid geometry. The helper selects the required primary app through `workspace_find_app_key_window`, tries every registered app name for that key, confirms the primary window lands on the target space after moving, retries once if it does not, and fails with a warning rather than silently arranging an empty target. When an app is present but yabai does not expose a movable window, `workspace_find_app_window` focuses the app's current space before activating and re-querying it. `--helper-space-fallback` is intentionally opt-in and currently used by coding editor modes for Codex: if Codex remains non-movable, Codex's current Space becomes the editor target and the primary VS Code window is moved there. This keeps common movement mechanics centralized while leaving layout ownership visible at the call site.
+`workspace_apply_primary_helper_space` owns the stable single-primary/single-helper workflow. Entry functions provide label, display role, app keys, cleanup specs, and grid geometry. The helper selects the required primary app through `workspace_find_app_key_window`, tries every registered app name for that key, confirms the primary window lands on the target space after moving, retries once if it does not, and fails with a warning rather than silently arranging an empty target. When an app is present but yabai does not expose a movable window, `workspace_find_app_window` focuses the app's current space before activating and re-querying it, then uses shared `ws_recover_yabai_once` restart recovery before returning non-movable. `--helper-space-fallback` is intentionally opt-in and currently used by coding editor modes for Codex: if Codex remains non-movable, Codex's current Space becomes the editor target and the primary VS Code window is moved there. This keeps common movement mechanics centralized while leaving layout ownership visible at the call site.
 
 `--primary-space-fallback` is reserved for apps that can stay visible in yabai while lacking an AX-backed movable window. GTD mail enables this for Thunderbird: if Thunderbird remains non-movable, its current space becomes the mail workspace and is moved/labeled as the target through the shared current-space fallback helpers. Because yabai cannot resize a window without a movable AX reference, the fallback applies the requested grid through `workspace_apply_app_key_grid_bounds`, which first sets the largest scriptable app window's AppleScript bounds from the target display frame, then falls back to System Events position/size when the app-specific AppleScript path fails. Fixed pixel fallback, currently used by SmartGit in `coding_control`, uses `workspace_apply_app_key_absolute_bounds` with the same AppleScript/System Events order.
 
@@ -252,6 +252,8 @@ Primary read-only commands:
 `work_diagnostics` reports display health, labeled spaces, empty labeled spaces, duplicate labels, empty unlabeled spaces, and bad-window cache summary.
 
 `work_command_check` validates function availability after `work_reload`. It does not move windows, switch displays, or validate app presence.
+
+Workspace layout commands may use `ws_recover_yabai_once` to restart yabai once when shared queries fail after normal retry or when a present app remains non-movable after activation/polling. The helper is cooldown-guarded so multiple failures in one run do not repeatedly restart yabai. Read-only commands are excluded through the shared recovery allowlist.
 
 ### Bad Window Cache
 
@@ -345,7 +347,7 @@ This avoids moving a single Notes window back and forth between support and revi
 
 All GTD support modes collect every non-minimized, non-native-fullscreen Dia window that yabai reports as movable through `gtd_support_find_dia_windows`. Native fullscreen Dia windows are skipped so support layout does not move or grid a browser video fullscreen window. After the user leaves fullscreen, the next support run can collect that Dia window again.
 
-If a previous support label points at a space mixed with non-Dia apps, `gtd_apply_support_space` retargets the label to a clean support space before moving Dia windows. If Dia exists but no non-fullscreen movable Dia window is exposed, the helper activates Dia once, refreshes the window snapshot, and fails closed with a warning if Dia remains non-movable.
+If a previous support label points at a space mixed with non-Dia apps, `gtd_apply_support_space` retargets the label to a clean support space before moving Dia windows. If Dia exists but no non-fullscreen movable Dia window is exposed, the helper activates Dia once, refreshes the window snapshot, uses shared `ws_recover_yabai_once` restart recovery, and fails closed with a warning if Dia remains non-movable.
 
 After the first support move, `gtd_apply_support_space` re-queries all currently movable non-native-fullscreen Dia windows and moves the whole set to the support target before applying layout. This keeps late-appearing Dia browser/tab windows with the support workspace without interfering with native fullscreen windows.
 

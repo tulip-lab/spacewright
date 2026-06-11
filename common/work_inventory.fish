@@ -53,6 +53,8 @@ function work_inventory --description "Print a read-only workspace workflow inve
 
     echo "===== COMMON HELPERS ====="
     printf "%-32s %s\n" "ws_yabai" "bounded yabai command wrapper"
+    printf "%-32s %s\n" "ws_restart_yabai" "bounded yabai service restart wrapper"
+    printf "%-32s %s\n" "ws_recover_yabai_once" "cooldown-guarded yabai restart recovery"
     printf "%-32s %s\n" "ws_jq" "bounded jq parser wrapper"
     printf "%-32s %s\n" "ws_query_displays" "bounded display query wrapper with retry"
     printf "%-32s %s\n" "ws_query_spaces" "bounded space query wrapper with retry"

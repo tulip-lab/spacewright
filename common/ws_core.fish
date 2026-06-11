@@ -55,6 +55,104 @@ function ws_yabai --description "Run a yabai command with a bounded timeout"
     return $status_code
 end
 
+function ws_restart_yabai --description "Restart the yabai service through the bounded yabai wrapper"
+    set -l caller $argv[1]
+
+    if test -z "$caller"
+        set caller workspace
+    end
+
+    if not command -q yabai
+        echo "[WARN] $caller cannot restart yabai because the yabai command is not available" >&2
+        return 1
+    end
+
+    ws_yabai --restart-service >/dev/null 2>&1
+    set -l status_code $status
+
+    if test "$status_code" -ne 0
+        echo "[WARN] $caller could not restart yabai service" >&2
+    end
+
+    return $status_code
+end
+
+function ws_yabai_auto_restart_allowed --description "Return success when a caller may restart yabai for workspace recovery"
+    set -l caller $argv[1]
+
+    if test "$WORKSPACE_DISABLE_YABAI_AUTO_RESTART" = "1"
+        return 1
+    end
+
+    switch "$caller"
+        case "" \
+            work_audit \
+            work_bad_windows \
+            work_check \
+            work_clear_bad_windows \
+            work_diagnostics \
+            work_display_health \
+            work_doctor \
+            work_smoke \
+            work_status \
+            workspace_mode_status_section \
+            workspace_print_app_status \
+            workspace_status_snapshot \
+            __ws_query_windows_by_space \
+            '*_status'
+            return 1
+    end
+
+    return 0
+end
+
+function ws_recover_yabai_once --description "Restart yabai at most once within a short recovery cooldown"
+    set -l caller $argv[1]
+    set -l reason $argv[2..-1]
+
+    if test -z "$caller"
+        set caller workspace
+    end
+
+    if test -z "$reason"
+        set reason "yabai recovery requested"
+    else
+        set reason (string join ' ' -- $reason)
+    end
+
+    ws_yabai_auto_restart_allowed "$caller"
+    or return 1
+
+    set -l cooldown_seconds "$WORKSPACE_YABAI_RESTART_COOLDOWN_SECONDS"
+    if test -z "$cooldown_seconds"
+        set cooldown_seconds 10
+    end
+
+    set -l now (date +%s)
+    if set -q __WORKSPACE_YABAI_AUTO_RESTART_AT
+        if string match -qr '^[0-9]+$' -- "$__WORKSPACE_YABAI_AUTO_RESTART_AT"
+            set -l age (math $now - $__WORKSPACE_YABAI_AUTO_RESTART_AT)
+            if test "$age" -lt "$cooldown_seconds"
+                workspace_debug_step $caller yabai-restart-recent age=$age reason="$reason"
+                return 0
+            end
+        end
+    end
+
+    echo "[INFO] $caller $reason; restarting yabai once" >&2
+    ws_restart_yabai "$caller"
+    or return 1
+
+    set -g __WORKSPACE_YABAI_AUTO_RESTART_AT $now
+
+    set -l settle_seconds "$WORKSPACE_YABAI_RESTART_SETTLE_SECONDS"
+    if test -z "$settle_seconds"
+        set settle_seconds 1
+    end
+
+    sleep $settle_seconds
+end
+
 function ws_jq --description "Run jq against JSON with a bounded timeout"
     set -l timeout_seconds "$WORKSPACE_JQ_TIMEOUT_SECONDS"
 
@@ -77,23 +175,42 @@ function ws_query_windows --description "Query yabai windows with timeout and fa
         set phase windows
     end
 
-    set -l windows_json (ws_yabai -m query --windows 2>/dev/null)
-    if test $status -ne 0 -o -z "$windows_json"
-        set windows_json (__ws_query_windows_by_space)
+    set -l failure_reason
 
+    for recovery_attempt in 1 2
+        set -l windows_json (ws_yabai -m query --windows 2>/dev/null)
         if test $status -ne 0 -o -z "$windows_json"
-            echo "[WARN] $caller could not query $phase windows from yabai" >&2
-            return 1
+            set windows_json (__ws_query_windows_by_space)
+
+            if test $status -ne 0 -o -z "$windows_json"
+                set failure_reason "could not query $phase windows from yabai"
+            end
         end
+
+        if test -n "$windows_json"
+            echo $windows_json | ws_jq -e 'type == "array"' >/dev/null 2>&1
+            if test $status -eq 0
+                echo $windows_json
+                return 0
+            end
+
+            set failure_reason "received invalid $phase windows JSON from yabai"
+        end
+
+        if test "$recovery_attempt" -eq 1
+            ws_recover_yabai_once "$caller" "$failure_reason"
+            and continue
+        end
+
+        break
     end
 
-    echo $windows_json | ws_jq -e 'type == "array"' >/dev/null 2>&1
-    if test $status -ne 0
-        echo "[WARN] $caller received invalid $phase windows JSON from yabai" >&2
-        return 1
+    if test -z "$failure_reason"
+        set failure_reason "could not query $phase windows from yabai"
     end
 
-    echo $windows_json
+    echo "[WARN] $caller $failure_reason" >&2
+    return 1
 end
 
 function ws_query_displays --description "Query yabai displays with one retry and JSON validation"
@@ -108,19 +225,28 @@ function ws_query_displays --description "Query yabai displays with one retry an
         set phase displays
     end
 
-    for attempt in 1 2
-        set -l displays_json (ws_yabai -m query --displays 2>/dev/null)
-        if test $status -eq 0 -a -n "$displays_json"
-            echo $displays_json | ws_jq -e 'type == "array"' >/dev/null 2>&1
-            if test $status -eq 0
-                echo $displays_json
-                return 0
+    for recovery_attempt in 1 2
+        for attempt in 1 2
+            set -l displays_json (ws_yabai -m query --displays 2>/dev/null)
+            if test $status -eq 0 -a -n "$displays_json"
+                echo $displays_json | ws_jq -e 'type == "array"' >/dev/null 2>&1
+                if test $status -eq 0
+                    echo $displays_json
+                    return 0
+                end
+            end
+
+            if test "$attempt" -eq 1
+                sleep 0.25
             end
         end
 
-        if test "$attempt" -eq 1
-            sleep 0.25
+        if test "$recovery_attempt" -eq 1
+            ws_recover_yabai_once "$caller" "could not query $phase displays from yabai"
+            and continue
         end
+
+        break
     end
 
     echo "[WARN] $caller could not query $phase displays from yabai" >&2
@@ -139,19 +265,28 @@ function ws_query_spaces --description "Query yabai spaces with one retry and JS
         set phase spaces
     end
 
-    for attempt in 1 2
-        set -l spaces_json (ws_yabai -m query --spaces 2>/dev/null)
-        if test $status -eq 0 -a -n "$spaces_json"
-            echo $spaces_json | ws_jq -e 'type == "array"' >/dev/null 2>&1
-            if test $status -eq 0
-                echo $spaces_json
-                return 0
+    for recovery_attempt in 1 2
+        for attempt in 1 2
+            set -l spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+            if test $status -eq 0 -a -n "$spaces_json"
+                echo $spaces_json | ws_jq -e 'type == "array"' >/dev/null 2>&1
+                if test $status -eq 0
+                    echo $spaces_json
+                    return 0
+                end
+            end
+
+            if test "$attempt" -eq 1
+                sleep 0.25
             end
         end
 
-        if test "$attempt" -eq 1
-            sleep 0.25
+        if test "$recovery_attempt" -eq 1
+            ws_recover_yabai_once "$caller" "could not query $phase spaces from yabai"
+            and continue
         end
+
+        break
     end
 
     echo "[WARN] $caller could not query $phase spaces from yabai" >&2
@@ -170,19 +305,28 @@ function ws_query_current_display --description "Query current yabai display wit
         set phase current-display
     end
 
-    for attempt in 1 2
-        set -l display_json (ws_yabai -m query --displays --display 2>/dev/null)
-        if test $status -eq 0 -a -n "$display_json"
-            echo $display_json | ws_jq -e 'type == "object"' >/dev/null 2>&1
-            if test $status -eq 0
-                echo $display_json
-                return 0
+    for recovery_attempt in 1 2
+        for attempt in 1 2
+            set -l display_json (ws_yabai -m query --displays --display 2>/dev/null)
+            if test $status -eq 0 -a -n "$display_json"
+                echo $display_json | ws_jq -e 'type == "object"' >/dev/null 2>&1
+                if test $status -eq 0
+                    echo $display_json
+                    return 0
+                end
+            end
+
+            if test "$attempt" -eq 1
+                sleep 0.25
             end
         end
 
-        if test "$attempt" -eq 1
-            sleep 0.25
+        if test "$recovery_attempt" -eq 1
+            ws_recover_yabai_once "$caller" "could not query $phase current display from yabai"
+            and continue
         end
+
+        break
     end
 
     echo "[WARN] $caller could not query $phase current display from yabai" >&2
@@ -201,19 +345,28 @@ function ws_query_current_space --description "Query current yabai space with on
         set phase current-space
     end
 
-    for attempt in 1 2
-        set -l space_json (ws_yabai -m query --spaces --space 2>/dev/null)
-        if test $status -eq 0 -a -n "$space_json"
-            echo $space_json | ws_jq -e 'type == "object"' >/dev/null 2>&1
-            if test $status -eq 0
-                echo $space_json
-                return 0
+    for recovery_attempt in 1 2
+        for attempt in 1 2
+            set -l space_json (ws_yabai -m query --spaces --space 2>/dev/null)
+            if test $status -eq 0 -a -n "$space_json"
+                echo $space_json | ws_jq -e 'type == "object"' >/dev/null 2>&1
+                if test $status -eq 0
+                    echo $space_json
+                    return 0
+                end
+            end
+
+            if test "$attempt" -eq 1
+                sleep 0.25
             end
         end
 
-        if test "$attempt" -eq 1
-            sleep 0.25
+        if test "$recovery_attempt" -eq 1
+            ws_recover_yabai_once "$caller" "could not query $phase current space from yabai"
+            and continue
         end
+
+        break
     end
 
     echo "[WARN] $caller could not query $phase current space from yabai" >&2

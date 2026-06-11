@@ -17,6 +17,9 @@ function work_command_check --description "Check that documented workspace comma
         work_smoke \
         work_audit \
         ws_yabai \
+        ws_restart_yabai \
+        ws_yabai_auto_restart_allowed \
+        ws_recover_yabai_once \
         ws_jq \
         ws_query_displays \
         ws_query_spaces \

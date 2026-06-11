@@ -200,8 +200,22 @@ function workspace_find_app_window --description "Find a movable app window, act
     end
 
     workspace_debug_step $caller find-$app_key-refresh-unmovable
+    ws_recover_yabai_once "$caller" "found $_flag_app, but yabai did not expose a movable $_flag_app window"
+    if test $status -eq 0
+        set phase find_{$app_key}_after_yabai_restart
+        set windows_json (ws_query_windows "$caller" $phase); or return 1
+        set window_id (echo $windows_json | workspace_select_app_window $selector_args)
+
+        if test -n "$window_id"
+            workspace_debug_step $caller find-$app_key-found-after-yabai-restart $window_id
+            rm -f "$bad_window_dir/$window_id" 2>/dev/null
+            echo $window_id
+            return 0
+        end
+    end
+
     if not set -q _flag_quiet_unmovable
-        echo "[WARN] $caller found $_flag_app, but yabai did not expose a movable $_flag_app window" >&2
+        echo "[WARN] $caller found $_flag_app, but yabai still did not expose a movable $_flag_app window" >&2
     end
     return 2
 end
@@ -402,7 +416,9 @@ function workspace_capture_app_window --description "Move a movable app window t
         return 1
     end
 
+    set -l moved_attempted 0
     if test -n "$window_id"
+        set moved_attempted 1
         ws_move_windows_to_space $_flag_space $window_id
     else if test "$find_status" -eq 2
         return 2
@@ -422,6 +438,7 @@ function workspace_capture_app_window --description "Move a movable app window t
     end
 
     if test -n "$window_id"
+        set moved_attempted 1
         ws_move_windows_to_space $_flag_space $window_id
         set target_window ($find_command $find_args --space $_flag_space --no-refresh --target-only)
 
@@ -433,6 +450,18 @@ function workspace_capture_app_window --description "Move a movable app window t
 
     if test "$find_status" -eq 2
         return 2
+    end
+
+    if test "$moved_attempted" -eq 1
+        ws_recover_yabai_once "$caller" "could not confirm captured window on space $_flag_space"
+        if test $status -eq 0
+            set target_window ($find_command $find_args --space $_flag_space --no-refresh --target-only)
+
+            if test -n "$target_window"
+                echo $target_window
+                return 0
+            end
+        end
     end
 
     return 0
