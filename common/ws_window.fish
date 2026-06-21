@@ -14,6 +14,7 @@ function ws_window --description "Run a yabai window command only when the windo
     end
 
     set -e argv[1]
+    set -l command_args (string join ' ' -- $argv)
     set -l timeout_seconds "$WORKSPACE_YABAI_TIMEOUT_SECONDS"
 
     if test -z "$timeout_seconds"
@@ -38,7 +39,7 @@ function ws_window --description "Run a yabai window command only when the windo
 
             if test "$age" -lt "$bad_window_ttl"
                 if test "$WORKSPACE_DEBUG_WINDOW" = "1"
-                    echo "[ws_window] skip-bad-window window=$window_id args=$argv age={$age}s"
+                    printf "[ws_window] skip-bad-window window=%s args=%s age=%ss\n" "$window_id" "$command_args" "$age"
                 end
 
                 return 0
@@ -54,7 +55,7 @@ function ws_window --description "Run a yabai window command only when the windo
             date +%s >$bad_window_file
 
             if test "$WORKSPACE_DEBUG_WINDOW" = "1"
-                echo "[ws_window] query-timeout window=$window_id args=$argv"
+                printf "[ws_window] query-timeout window=%s args=%s\n" "$window_id" "$command_args"
             end
 
             return 0
@@ -80,7 +81,7 @@ function ws_window --description "Run a yabai window command only when the windo
         end
 
         if test "$elapsed" -ge 500
-            echo "[ws_window] {$elapsed}ms window=$window_id args=$argv status=$status_code"
+            printf "[ws_window] %sms window=%s args=%s status=%s\n" "$elapsed" "$window_id" "$command_args" "$status_code"
         end
 
         return 0

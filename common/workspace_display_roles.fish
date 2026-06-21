@@ -165,22 +165,18 @@ function resolve_workspace_external_display --description "Resolve the preferred
         return 1
     end
 
-    set -l mode_filter 'true'
-    if test "$expected_mode" = "wide"
-        set mode_filter '.frame.w > .frame.h'
-    else if test "$expected_mode" = "tall"
-        set mode_filter '.frame.h > .frame.w'
-    end
-
     set -l external_display (echo $displays_json | ws_jq -r \
         --arg uuid "$primary_uuid" \
-        --arg mode_filter "$mode_filter" '
+        --arg expected_mode "$expected_mode" '
+        def matches_expected_mode:
+            if $expected_mode == "wide" then .frame.w > .frame.h
+            elif $expected_mode == "tall" then .frame.h > .frame.w
+            else true end;
+
         first(
             .[]
             | select(.uuid != $uuid)
-            | select(if $mode_filter == ".frame.w > .frame.h" then .frame.w > .frame.h
-                     elif $mode_filter == ".frame.h > .frame.w" then .frame.h > .frame.w
-                     else true end)
+            | select(matches_expected_mode)
             | .index
         )
         // first(.[] | select(.uuid != $uuid) | .index)

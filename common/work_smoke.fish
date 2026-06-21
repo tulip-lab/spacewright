@@ -106,7 +106,8 @@ function work_smoke --description "Run read-only workspace smoke checks for help
 
                 printf "%s\n" "[
                     {\"index\": 1, \"uuid\": \"primary\", \"frame\": {\"x\": 0, \"y\": 0, \"w\": 1800, \"h\": 1169}},
-                    {\"index\": 2, \"uuid\": \"external\", \"frame\": {\"x\": -3062, \"y\": -594, \"w\": 3062, \"h\": 1282}}
+                    {\"index\": 2, \"uuid\": \"external-wide\", \"frame\": {\"x\": -3062, \"y\": -594, \"w\": 3062, \"h\": 1282}},
+                    {\"index\": 3, \"uuid\": \"external-tall\", \"frame\": {\"x\": 1800, \"y\": 0, \"w\": 1282, \"h\": 3062}}
                 ]"
                 return 0
             end
@@ -121,8 +122,14 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test (resolve_workspace_external_display wide) = 2
         or exit 1
 
-        test "$__work_smoke_display_query_calls" -eq 2
+        test (resolve_workspace_external_display tall) = 3
         or exit 2
+
+        test (resolve_workspace_external_display) = 2
+        or exit 3
+
+        test "$__work_smoke_display_query_calls" -eq 4
+        or exit 4
     '
     fish -lc "$displays_query_retry_smoke" >/tmp/work-displays-query-retry-smoke.out 2>&1
     if test $status -eq 0

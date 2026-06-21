@@ -36,7 +36,8 @@ function ws_yabai --description "Run a yabai command with a bounded timeout"
         rm -f $output_file $error_file
 
         if test "$elapsed" -ge 500 -o "$status_code" -ne 0
-            echo "[ws_yabai] {$elapsed}ms status=$status_code args=$argv" | string replace "{$elapsed}" "$elapsed" >&2
+            set -l command_args (string join ' ' -- $argv)
+            printf "[ws_yabai] %sms status=%s args=%s\n" "$elapsed" "$status_code" "$command_args" >&2
         end
 
         return $status_code

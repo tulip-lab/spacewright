@@ -22,9 +22,9 @@ function workspace_run_step --description "Run a workspace step with visible tim
     set -l elapsed (math $ended_at - $started_at)
 
     if test "$status_code" -eq 0
-        echo "<== $label {$elapsed}ms" | string replace "{$elapsed}" "$elapsed"
+        printf "<== %s %sms\n" "$label" "$elapsed"
     else
-        echo "[WARN] $label failed status=$status_code elapsed={$elapsed}ms" | string replace "{$elapsed}" "$elapsed" >&2
+        printf "[WARN] %s failed status=%s elapsed=%sms\n" "$label" "$status_code" "$elapsed" >&2
     end
 
     return $status_code
