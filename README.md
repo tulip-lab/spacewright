@@ -45,6 +45,10 @@ office_tall
 gtd_solo_all
 gtd_wide
 gtd_tall
+gtd_ai
+gtd_ai_solo
+gtd_ai_wide
+gtd_ai_tall
 gtd_chat
 gtd_calendar
 workspace_cleanup_known_labeled_spaces
@@ -168,6 +172,7 @@ Office 入口在主应用没有可用窗口时会尽量保持 no-op，不主动�
 | `gtd_review_solo` / `gtd_review_wide` / `gtd_review_tall` | Finder、Preview、Notes、ChatGPT 的 review 工作区 |
 | `gtd_mail_solo` / `gtd_mail_wide` / `gtd_mail_tall` | Thunderbird 邮件工作区 |
 | `gtd_meeting_solo` / `gtd_meeting_wide` / `gtd_meeting_tall` | Outlook、Zoom、Teams 会议工作区 |
+| `gtd_ai` / `gtd_ai_solo` / `gtd_ai_wide` / `gtd_ai_tall` | Codex、ChatGPT、Obsidian、Notes 的 AI 工作区 |
 | `gtd_chat` | primary display 上的聊天工作区 |
 | `gtd_calendar` | primary display 上的 Calendar + Reminders |
 | `gtd_solo_all` | solo 模式下的 GTD 聚合入口 |
@@ -176,6 +181,38 @@ Office 入口在主应用没有可用窗口时会尽量保持 no-op，不主动�
 
 GTD 模块包含最多 app-specific 规则。Outlook、Zoom、Teams、Dia、Preview、
 Notes、Thunderbird、DingTalk 等特殊行为仍保留在 fish helper 中，不由通用配置层接管。
+
+#### GTD AI Workspace
+
+Shortcut: `9`
+
+Apps: Codex, ChatGPT, Obsidian, Notes. Codex uses `CODEX_APP` when set, otherwise
+defaults to `Codex`.
+
+Entrypoints:
+
+```fish
+gtd_ai
+gtd_ai_wide
+gtd_ai_tall
+gtd_ai_solo
+```
+
+`gtd_ai` detects the current display mode and dispatches to the matching mode
+entry. The explicit skhd bindings use the same mode-specific pattern as the
+other numbered workspaces.
+
+Wide layout: Codex left third, ChatGPT middle third, Obsidian top-right, Notes
+bottom-right.
+
+Tall layout: Codex top-left, Obsidian top-right, ChatGPT bottom-left, Notes
+bottom-right.
+
+Solo layout: Codex top-left, ChatGPT top-right, Obsidian bottom-left, Notes
+bottom-right.
+
+`gtd_ai` is not part of the aggregate `work_*` entries because it opens missing
+apps when invoked directly.
 
 ## 快捷键
 
@@ -206,7 +243,7 @@ Notes、Thunderbird、DingTalk 等特殊行为仍保留在 fish helper 中，不
 | `6` | `gtd_meeting` |
 | `7` | `office_writing` |
 | `8` | `office_slides` |
-| `9` | reserved |
+| `9` | `gtd_ai` |
 
 ## 日常检查
 

@@ -168,7 +168,7 @@ function work_mode_status
     echo
     workspace_mode_status_section "GTD TALL SPACES" '^gtd_.*_tall$'
     echo
-    workspace_mode_status_section "GTD INTERNAL SPACES" '^(gtd_chat|gtd_calendar)$'
+    workspace_mode_status_section "GTD UNSUFFIXED SPACES" '^(gtd_ai|gtd_chat|gtd_calendar)$'
 
     echo
     echo "===== CODING MODE STATUS ====="

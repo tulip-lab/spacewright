@@ -21,6 +21,7 @@ function gtd_reload --description "Reload GTD workspace functions and helpers"
     source ~/.config/fish/functions/workspace/gtd/internal/gtd_apply_meeting_space.fish
     source ~/.config/fish/functions/workspace/gtd/internal/gtd_apply_support_space.fish
     source ~/.config/fish/functions/workspace/gtd/internal/gtd_apply_review_space.fish
+    source ~/.config/fish/functions/workspace/gtd/internal/gtd_apply_ai_space.fish
     source ~/.config/fish/functions/workspace/gtd/internal/gtd_support_find_dia_windows.fish
     source ~/.config/fish/functions/workspace/gtd/internal/gtd_support_layout_dia_windows.fish
     source ~/.config/fish/functions/workspace/gtd/internal/gtd_chat.fish

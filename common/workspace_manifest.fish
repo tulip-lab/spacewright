@@ -38,7 +38,7 @@ end
 function workspace_module_entry_rows --description "Print declared workspace module entries"
     printf "%s\t%s\t%s\n" coding "solo, wide, tall" "Code, Codex; primary-display coding_control"
     printf "%s\t%s\t%s\n" research "solo, wide, tall" "Zotero, ChatGPT"
-    printf "%s\t%s\t%s\n" gtd "solo_all, wide, tall" "Dia, Finder, Preview, Notes, ChatGPT, Thunderbird, Outlook, Zoom, Teams; primary-display chat/calendar"
+    printf "%s\t%s\t%s\n" gtd "solo_all, wide, tall, ai" "Dia, Finder, Preview, Notes, ChatGPT, Codex, Obsidian, Thunderbird, Outlook, Zoom, Teams; primary-display chat/calendar"
     printf "%s\t%s\t%s\n" office "wide, tall" "Word, PowerPoint, ChatGPT"
 end
 
@@ -54,6 +54,8 @@ function workspace_command_map_rows --description "Print declared workspace comm
     printf "%s\t%s\t%s\t%s\n" "gtd_review_*" all "mode target" "Preview, Notes, ChatGPT, Finder"
     printf "%s\t%s\t%s\t%s\n" "gtd_mail_*" all "mode target" Thunderbird
     printf "%s\t%s\t%s\t%s\n" "gtd_meeting_*" all "mode target" "Outlook, Zoom, Teams"
+    printf "%s\t%s\t%s\t%s\n" gtd_ai auto "current mode target" "Codex/CODEX_APP, ChatGPT, Obsidian, Notes"
+    printf "%s\t%s\t%s\t%s\n" "gtd_ai_*" all "mode target" "Codex/CODEX_APP, ChatGPT, Obsidian, Notes"
     printf "%s\t%s\t%s\t%s\n" gtd_chat primary primary "Messages/chat helper windows"
     printf "%s\t%s\t%s\t%s\n" gtd_calendar primary primary Calendar
     printf "%s\t%s\t%s\t%s\n" "office_writing_*" "wide/tall" external "Word, ChatGPT"
@@ -153,6 +155,10 @@ function workspace_dry_run_commands --description "Print workspace commands that
         "gtd_mail_solo --dry-run" \
         "gtd_mail_wide --dry-run" \
         "gtd_mail_tall --dry-run" \
+        "gtd_ai --dry-run" \
+        "gtd_ai_solo --dry-run" \
+        "gtd_ai_wide --dry-run" \
+        "gtd_ai_tall --dry-run" \
         "gtd_chat --dry-run" \
         "gtd_calendar --dry-run"
 end
@@ -268,6 +274,10 @@ function workspace_required_command_names --description "Print documented worksp
         gtd_meeting_solo \
         gtd_meeting_wide \
         gtd_meeting_tall \
+        gtd_ai \
+        gtd_ai_solo \
+        gtd_ai_wide \
+        gtd_ai_tall \
         gtd_solo_all \
         gtd_find_outlook_window \
         gtd_find_meeting_window \
@@ -280,6 +290,8 @@ function workspace_required_command_names --description "Print documented worksp
         gtd_apply_meeting_space \
         gtd_apply_support_space \
         gtd_apply_review_space \
+        gtd_apply_ai_space \
+        gtd_ai_detect_display_mode \
         gtd_support_find_dia_windows \
         gtd_support_layout_dia_windows \
         gtd_chat \

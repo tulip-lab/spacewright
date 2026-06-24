@@ -16,7 +16,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     end
 
     set -l app_keys \
-        code codex chatgpt zotero thunderbird word powerpoint outlook zoom teams dia finder preview notes \
+        code codex chatgpt obsidian zotero thunderbird word powerpoint outlook zoom teams dia finder preview notes \
         calendar reminders wechat keybase messages dingtalk whatsapp warp smartgit keepassx flclash thaw
 
     for key in $app_keys
@@ -602,6 +602,8 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         "*gtd_meeting_*Zoom*all-movable-windows;fallback-space-owner*" \
         "*gtd_meeting_*Microsoft Teams/MSTeams*all-movable-windows*" \
         "*gtd_mail_*Thunderbird*single-window;fallback-space-owner*" \
+        "*gtd_ai*Codex/CODEX_APP*single-window;configurable-app*" \
+        "*gtd_ai*Obsidian*single-window*" \
         "*gtd_calendar*Calendar*single-window;fallback-space-owner*" \
         "*coding_editor_*Code*single-window*" \
         "*coding_editor_*Codex*optional-helper;fallback-space-owner*" \

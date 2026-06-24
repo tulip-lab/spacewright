@@ -205,6 +205,10 @@ function __work_audit_ownership_policy_coverage --description "Audit static owne
         "gtd_mail_*|Thunderbird|single-window;fallback-space-owner" \
         "gtd_meeting_*|Zoom|all-movable-windows;fallback-space-owner" \
         "gtd_meeting_*|Microsoft Teams/MSTeams|all-movable-windows" \
+        "gtd_ai|Codex/CODEX_APP|single-window;configurable-app" \
+        "gtd_ai|ChatGPT|single-window" \
+        "gtd_ai|Obsidian|single-window" \
+        "gtd_ai|Notes|single-window" \
         "gtd_chat|DingTalk|single-window;fallback-space-owner" \
         "gtd_calendar|Calendar|single-window;fallback-space-owner"
     or set failed 1
@@ -257,6 +261,7 @@ function __work_audit_multi_window_helper_coverage --description "Audit multi-wi
     __work_audit_check_loaded_functions \
         ws_find_windows \
         workspace_app_key_windows \
+        gtd_apply_ai_space \
         gtd_find_meeting_windows \
         gtd_find_zoom_windows \
         gtd_find_teams_windows \

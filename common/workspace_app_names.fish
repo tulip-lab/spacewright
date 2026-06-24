@@ -8,6 +8,8 @@ function workspace_app_names --description "Print known yabai app names for a wo
             printf "%s\n" Codex
         case chatgpt
             printf "%s\n" ChatGPT
+        case obsidian
+            printf "%s\n" Obsidian
         case zotero
             printf "%s\n" Zotero
         case thunderbird

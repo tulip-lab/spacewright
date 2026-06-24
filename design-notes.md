@@ -349,11 +349,11 @@ ChatGPT-owning workspaces capture a movable `ChatGPT` window through `workspace_
 
 Coding editor modes use `Codex` instead of `ChatGPT` as the optional helper app. If Codex is not available, VS Code uses the full coding editor workspace. If Codex is present but yabai cannot move it, Codex's current Space becomes the coding editor target, non-coding windows are evicted, and VS Code is moved there.
 
-In `gtd_solo_all`, review runs after meeting so GTD review is the final SOLO owner for ChatGPT.
+`gtd_ai` owns ChatGPT when invoked directly. In `gtd_solo_all`, review runs after meeting so GTD review is the final SOLO owner for ChatGPT.
 
 ### Notes And Dia
 
-`Notes` is owned by `gtd_review_*`.
+`Notes` is owned by `gtd_review_*` and by `gtd_ai` when the AI workspace is invoked.
 
 `gtd_review_*` no longer requires Preview as the primary app. A review workspace is eligible when Preview, Notes, or ChatGPT is present. Finder is still included when available, but Finder alone is intentionally not enough to create a review workspace because Finder is commonly present outside review work. Review collects existing Finder, Preview, Notes, and ChatGPT windows from the initial yabai snapshot before using refresh helpers, and only captures ChatGPT when an existing ChatGPT window does not land on the target. When review owns Finder, Preview, or Notes, all movable windows for that app are moved to the review space, reconciled with up to three short retries if they remain on another Space, and receive the app's review grid.
 
@@ -378,6 +378,22 @@ After the first support move, `gtd_apply_support_space` re-queries all currently
 - tall: one bottom half; two top/bottom; three with two on top and one on bottom; four or more use a two-column grid
 
 This multi-window policy is deliberately scoped to GTD support. Meeting and review workspaces keep app-specific selection rules until real failures justify broadening multi-window ownership.
+
+### GTD AI
+
+`gtd_ai` uses a single labeled Space, `gtd_ai`, across solo, wide, and tall layouts. The mode-specific entry points are `gtd_ai_solo`, `gtd_ai_wide`, and `gtd_ai_tall`; the convenience `gtd_ai` entry detects the current display mode and dispatches to one of those explicit entries.
+
+The owned apps are Codex, ChatGPT, Obsidian, and Notes. Codex is configurable through `CODEX_APP`; when unset, the workspace uses `Codex`. This supports machines where Codex runs as a standalone app or inside a container app such as Warp, Terminal, or Code. The tradeoff is that the configured app name must match the yabai app name closely enough to avoid moving an unrelated container window.
+
+The AI workspace uses `workspace_retarget_contaminated_space` before preparing `gtd_ai`, so an old AI label mixed with unrelated apps is cleared and replaced with a clean target. Missing apps are opened when `gtd_ai_*` is invoked directly. If an app still has no movable layout window, the helper warns and skips that app instead of failing the whole workspace.
+
+Layouts:
+
+- wide: Codex left third, ChatGPT middle third, Obsidian top-right, Notes bottom-right
+- tall: Codex top-left, Obsidian top-right, ChatGPT bottom-left, Notes bottom-right
+- solo: Codex top-left, ChatGPT top-right, Obsidian bottom-left, Notes bottom-right
+
+`gtd_ai` is intentionally not included in aggregate `work_*` entries because those entries should not launch the AI app set as a side effect of switching the whole display mode.
 
 ### GTD Meeting
 
