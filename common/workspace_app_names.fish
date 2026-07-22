@@ -4,8 +4,6 @@ function workspace_app_names --description "Print known yabai app names for a wo
     switch "$key"
         case code
             printf "%s\n" Code
-        case codex
-            printf "%s\n" Codex
         case chatgpt
             printf "%s\n" ChatGPT
         case obsidian
@@ -21,7 +19,7 @@ function workspace_app_names --description "Print known yabai app names for a wo
         case outlook
             printf "%s\n" "Microsoft Outlook"
         case zoom
-            printf "%s\n" "zoom.us"
+            printf "%s\n" "zoom.us" Zoom
         case teams
             printf "%s\n" "Microsoft Teams" MSTeams
         case dia

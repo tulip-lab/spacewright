@@ -55,33 +55,42 @@ function gtd_review_tall --description "Collect review-related windows onto the 
         gtd:wide gtd:solo $argv
 end
 
-function gtd_mail_solo --description "Collect Thunderbird onto the solo GTD mail workspace"
+function gtd_mail_solo --description "Collect Thunderbird and Outlook onto the solo GTD mail workspace"
     workspace_apply_primary_helper_space \
         --label gtd_mail_solo \
         --display primary \
         --primary-app-key thunderbird \
+        --helper-app-key outlook \
         --primary-space-fallback \
-        --primary-grid 1:1:0:0:1:1 \
+        --helper-grid 2:1:0:0:1:1 \
+        --primary-grid 2:1:0:1:1:1 \
+        --primary-alone-grid 1:1:0:0:1:1 \
         gtd:wide gtd:tall $argv
 end
 
-function gtd_mail_wide --description "Collect Thunderbird onto the wide GTD mail workspace and apply the standard mail layout"
+function gtd_mail_wide --description "Collect Thunderbird and Outlook onto the wide GTD mail workspace and apply the standard mail layout"
     workspace_apply_primary_helper_space \
         --label gtd_mail_wide \
         --display wide \
         --primary-app-key thunderbird \
+        --helper-app-key outlook \
         --primary-space-fallback \
-        --primary-grid 1:5:2:0:3:1 \
+        --helper-grid 1:2:0:0:1:1 \
+        --primary-grid 1:2:1:0:1:1 \
+        --primary-alone-grid 1:1:0:0:1:1 \
         gtd:tall gtd:solo $argv
 end
 
-function gtd_mail_tall --description "Collect Thunderbird onto the tall GTD mail workspace and apply the standard tall mail layout"
+function gtd_mail_tall --description "Collect Thunderbird and Outlook onto the tall GTD mail workspace and apply the standard tall mail layout"
     workspace_apply_primary_helper_space \
         --label gtd_mail_tall \
         --display tall \
         --primary-app-key thunderbird \
+        --helper-app-key outlook \
         --primary-space-fallback \
+        --helper-grid 2:1:0:0:1:1 \
         --primary-grid 2:1:0:1:1:1 \
+        --primary-alone-grid 1:1:0:0:1:1 \
         gtd:wide gtd:solo $argv
 end
 
@@ -89,29 +98,26 @@ function gtd_meeting_solo --description "Collect meeting apps onto the solo GTD 
     gtd_apply_meeting_space \
         --label gtd_meeting_solo \
         --display primary \
-        --zoom-grid 2:3:0:0:1:1 \
-        --teams-grid 2:3:0:1:1:1 \
-        --outlook-grid 2:3:1:0:2:2 \
+        --zoom-grid 2:1:0:0:1:1 \
+        --teams-grid 2:1:0:1:1:1 \
         gtd:wide gtd:tall $argv
 end
 
-function gtd_meeting_wide --description "Collect Outlook, Zoom and Teams onto the wide GTD meeting workspace and apply the standard meeting layout"
+function gtd_meeting_wide --description "Collect Zoom and Teams onto the wide GTD meeting workspace and apply the standard meeting layout"
     gtd_apply_meeting_space \
         --label gtd_meeting_wide \
         --display wide \
-        --zoom-grid 2:5:0:0:2:1 \
-        --teams-grid 2:5:0:1:2:1 \
-        --outlook-grid 2:5:2:0:3:2 \
+        --zoom-grid 1:2:0:0:1:1 \
+        --teams-grid 1:2:1:0:1:1 \
         gtd:tall gtd:solo $argv
 end
 
-function gtd_meeting_tall --description "Collect Outlook, Zoom and Teams onto the tall GTD meeting workspace and apply the standard meeting layout"
+function gtd_meeting_tall --description "Collect Zoom and Teams onto the tall GTD meeting workspace and apply the standard meeting layout"
     gtd_apply_meeting_space \
         --label gtd_meeting_tall \
         --display tall \
-        --zoom-grid 2:2:0:0:1:1 \
-        --teams-grid 2:2:1:0:1:1 \
-        --outlook-grid 2:1:0:1:1:1 \
+        --zoom-grid 2:1:0:0:1:1 \
+        --teams-grid 2:1:0:1:1:1 \
         gtd:wide gtd:solo $argv
 end
 
@@ -142,36 +148,33 @@ function gtd_ai --description "Collect AI work apps onto the current GTD AI work
     end
 end
 
-function gtd_ai_solo --description "Collect Codex, ChatGPT, Obsidian and Notes onto the solo GTD AI workspace"
+function gtd_ai_solo --description "Collect ChatGPT, Obsidian and Notes onto the solo GTD AI workspace"
     gtd_apply_ai_space \
         --label gtd_ai \
         --display primary \
-        --codex-grid 2:2:0:0:1:1 \
-        --chatgpt-grid 2:2:1:0:1:1 \
-        --obsidian-grid 2:2:0:1:1:1 \
-        --notes-grid 2:2:1:1:1:1 \
+        --notes-grid 2:2:0:0:1:1 \
+        --obsidian-grid 2:2:1:0:1:1 \
+        --chatgpt-grid 2:1:0:1:1:1 \
         gtd:wide gtd:tall $argv
 end
 
-function gtd_ai_wide --description "Collect Codex, ChatGPT, Obsidian and Notes onto the wide GTD AI workspace"
+function gtd_ai_wide --description "Collect ChatGPT, Obsidian and Notes onto the wide GTD AI workspace"
     gtd_apply_ai_space \
         --label gtd_ai \
         --display wide \
-        --codex-grid 1:3:0:0:1:1 \
-        --chatgpt-grid 1:3:1:0:1:1 \
-        --obsidian-grid 2:3:2:0:1:1 \
-        --notes-grid 2:3:2:1:1:1 \
+        --notes-grid 1:3:0:0:1:1 \
+        --obsidian-grid 1:3:1:0:1:1 \
+        --chatgpt-grid 1:3:2:0:1:1 \
         gtd:tall gtd:solo $argv
 end
 
-function gtd_ai_tall --description "Collect Codex, ChatGPT, Obsidian and Notes onto the tall GTD AI workspace"
+function gtd_ai_tall --description "Collect ChatGPT, Obsidian and Notes onto the tall GTD AI workspace"
     gtd_apply_ai_space \
         --label gtd_ai \
         --display tall \
-        --codex-grid 2:2:0:0:1:1 \
+        --notes-grid 2:2:0:0:1:1 \
         --obsidian-grid 2:2:1:0:1:1 \
-        --chatgpt-grid 2:2:0:1:1:1 \
-        --notes-grid 2:2:1:1:1:1 \
+        --chatgpt-grid 2:1:0:1:1:1 \
         gtd:wide gtd:solo $argv
 end
 

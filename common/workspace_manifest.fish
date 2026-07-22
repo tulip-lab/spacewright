@@ -36,26 +36,26 @@ function workspace_top_level_commands --description "Print declared child comman
 end
 
 function workspace_module_entry_rows --description "Print declared workspace module entries"
-    printf "%s\t%s\t%s\n" coding "solo, wide, tall" "Code, Codex; primary-display coding_control"
+    printf "%s\t%s\t%s\n" coding "solo, wide, tall" "Code; primary-display coding_control"
     printf "%s\t%s\t%s\n" research "solo, wide, tall" "Zotero, ChatGPT"
-    printf "%s\t%s\t%s\n" gtd "solo_all, wide, tall, ai" "Dia, Finder, Preview, Notes, ChatGPT, Codex, Obsidian, Thunderbird, Outlook, Zoom, Teams; primary-display chat/calendar"
+    printf "%s\t%s\t%s\n" gtd "solo_all, wide, tall, ai" "Dia, Finder, Preview, Notes, ChatGPT, Obsidian, Thunderbird, Outlook, Zoom, Teams; primary-display chat/calendar"
     printf "%s\t%s\t%s\n" office "wide, tall" "Word, PowerPoint, ChatGPT"
 end
 
 function workspace_command_map_rows --description "Print declared workspace command map rows"
-    printf "%s\t%s\t%s\t%s\n" coding_editor_solo solo primary "Code, Codex"
-    printf "%s\t%s\t%s\t%s\n" coding_editor_wide wide external "Code, Codex"
-    printf "%s\t%s\t%s\t%s\n" coding_editor_tall tall external "Code, Codex"
+    printf "%s\t%s\t%s\t%s\n" coding_editor_solo solo primary Code
+    printf "%s\t%s\t%s\t%s\n" coding_editor_wide wide external Code
+    printf "%s\t%s\t%s\t%s\n" coding_editor_tall tall external Code
     printf "%s\t%s\t%s\t%s\n" coding_control primary primary "Warp, SmartGit, KeePassXC, FlClash/Thaw"
     printf "%s\t%s\t%s\t%s\n" research_solo solo primary "Zotero, ChatGPT"
     printf "%s\t%s\t%s\t%s\n" research_wide wide external "Zotero, ChatGPT"
     printf "%s\t%s\t%s\t%s\n" research_tall tall external "Zotero, ChatGPT"
     printf "%s\t%s\t%s\t%s\n" "gtd_support_*" all "mode target" Dia
     printf "%s\t%s\t%s\t%s\n" "gtd_review_*" all "mode target" "Preview, Notes, ChatGPT, Finder"
-    printf "%s\t%s\t%s\t%s\n" "gtd_mail_*" all "mode target" Thunderbird
-    printf "%s\t%s\t%s\t%s\n" "gtd_meeting_*" all "mode target" "Outlook, Zoom, Teams"
-    printf "%s\t%s\t%s\t%s\n" gtd_ai auto "current mode target" "Codex/CODEX_APP, ChatGPT, Obsidian, Notes"
-    printf "%s\t%s\t%s\t%s\n" "gtd_ai_*" all "mode target" "Codex/CODEX_APP, ChatGPT, Obsidian, Notes"
+    printf "%s\t%s\t%s\t%s\n" "gtd_mail_*" all "mode target" "Thunderbird, Outlook"
+    printf "%s\t%s\t%s\t%s\n" "gtd_meeting_*" all "mode target" "Zoom, Teams"
+    printf "%s\t%s\t%s\t%s\n" gtd_ai auto "current mode target" "ChatGPT, Obsidian, Notes"
+    printf "%s\t%s\t%s\t%s\n" "gtd_ai_*" all "mode target" "ChatGPT, Obsidian, Notes"
     printf "%s\t%s\t%s\t%s\n" gtd_chat primary primary "Messages/chat helper windows"
     printf "%s\t%s\t%s\t%s\n" gtd_calendar primary primary Calendar
     printf "%s\t%s\t%s\t%s\n" "office_writing_*" "wide/tall" external "Word, ChatGPT"
@@ -78,6 +78,9 @@ function workspace_common_helper_rows --description "Print declared common works
     printf "%s\t%s\n" ws_query_current_display "bounded current-display query wrapper with retry"
     printf "%s\t%s\n" ws_query_current_space "bounded current-space query wrapper with retry"
     printf "%s\t%s\n" ws_query_windows "bounded window query wrapper"
+    printf "%s\t%s\n" workspace_snapshot "single read-only display, Space, and window snapshot"
+    printf "%s\t%s\n" workspace_plan "read-only live-state plan for supported workspaces"
+    printf "%s\t%s\n" workspace_verify "read-only ownership and layout verification for supported workspaces"
     printf "%s\t%s\n" "workspace_app_name(s)/regex" "central workspace app-name registry"
     printf "%s\t%s\n" "ws_find_window/ws_find_windows" "structured window selectors"
     printf "%s\t%s\n" workspace_find_app_window "movable app-window selector with optional refresh"
@@ -91,6 +94,7 @@ function workspace_common_helper_rows --description "Print declared common works
     printf "%s\t%s\n" workspace_space_non_owned_windows "window ids outside a workspace ownership regex"
     printf "%s\t%s\n" workspace_evict_non_owned_windows_from_space "move movable non-owned fallback-space windows to a holding space"
     printf "%s\t%s\n" workspace_apply_primary_helper_space "required primary app plus optional helper workspace flow"
+    printf "%s\t%s\n" office_apply_document_space "Office ChatGPT plus multi-document workspace flow"
     printf "%s\t%s\n" workspace_run_mode_steps "mode aggregate runner with shared cleanup suppression"
     printf "%s\t%s\n" workspace_run_cleanup_specs "family:mode cleanup-spec dispatcher"
     printf "%s\t%s\n" workspace_print_app_status "shared app status printer for module status commands"
@@ -200,6 +204,10 @@ function workspace_required_command_names --description "Print documented worksp
         ws_query_current_display \
         ws_query_current_space \
         ws_query_windows \
+        workspace_snapshot \
+        workspace_observation_spec \
+        workspace_plan \
+        workspace_verify \
         workspace_app_name \
         workspace_app_names \
         workspace_app_names_json \
@@ -254,6 +262,7 @@ function workspace_required_command_names --description "Print documented worksp
         gtd_status \
         coding_status \
         office_status \
+        office_apply_document_space \
         research_status \
         coding_solo \
         coding_wide \

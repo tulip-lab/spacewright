@@ -16,7 +16,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     end
 
     set -l app_keys \
-        code codex chatgpt obsidian zotero thunderbird word powerpoint outlook zoom teams dia finder preview notes \
+        code chatgpt obsidian zotero thunderbird word powerpoint outlook zoom teams dia finder preview notes \
         calendar reminders wechat keybase messages dingtalk whatsapp warp smartgit keepassx flclash thaw
 
     for key in $app_keys
@@ -35,6 +35,219 @@ function work_smoke --description "Run read-only workspace smoke checks for help
 
     if test "$failed" -eq 0
         echo "OK      app registry"
+    end
+
+    if begin
+            workspace_app_names codex >/dev/null
+        end 2>/dev/null
+        echo "FAIL    retired codex app key still registered"
+        set failed 1
+    else
+        echo "OK      retired codex app key"
+    end
+
+    set -l coding_editor_dry_run (coding_editor_wide --dry-run)
+    if string match -q "*primary_app=Code*" -- "$coding_editor_dry_run"
+            and string match -q "*primary_grid=1:1:0:0:1:1*" -- "$coding_editor_dry_run"
+            and not string match -q "*helper_app=*" -- "$coding_editor_dry_run"
+            and not string match -q "*helper_space_fallback=*" -- "$coding_editor_dry_run"
+        echo "OK      coding editor is Code-only"
+    else
+        echo "FAIL    coding editor is Code-only"
+        printf "%s\n" $coding_editor_dry_run
+        set failed 1
+    end
+
+    set -l gtd_ai_wide_dry_run (gtd_ai_wide --dry-run)
+    if string match -q "*apps=ChatGPT,Obsidian,Notes*" -- "$gtd_ai_wide_dry_run"
+            and string match -q "*chatgpt_grid=1:3:2:0:1:1*" -- "$gtd_ai_wide_dry_run"
+            and string match -q "*obsidian_grid=1:3:1:0:1:1*" -- "$gtd_ai_wide_dry_run"
+            and string match -q "*notes_grid=1:3:0:0:1:1*" -- "$gtd_ai_wide_dry_run"
+            and not string match -q "*codex_grid=*" -- "$gtd_ai_wide_dry_run"
+        echo "OK      GTD AI wide ChatGPT-only layout"
+    else
+        echo "FAIL    GTD AI wide ChatGPT-only layout"
+        printf "%s\n" $gtd_ai_wide_dry_run
+        set failed 1
+    end
+
+    set -l gtd_meeting_wide_dry_run (gtd_meeting_wide --dry-run)
+    if string match -q "*apps=zoom.us|Zoom,Microsoft Teams|MSTeams*" -- "$gtd_meeting_wide_dry_run"
+            and string match -q "*zoom_grid=1:2:0:0:1:1*" -- "$gtd_meeting_wide_dry_run"
+            and string match -q "*teams_grid=1:2:1:0:1:1*" -- "$gtd_meeting_wide_dry_run"
+            and not string match -q "*outlook_grid=*" -- "$gtd_meeting_wide_dry_run"
+        echo "OK      GTD meeting wide Zoom/Teams grid"
+    else
+        echo "FAIL    GTD meeting wide Zoom/Teams grid"
+        printf "%s\n" $gtd_meeting_wide_dry_run
+        set failed 1
+    end
+
+    set -l gtd_mail_wide_dry_run (gtd_mail_wide --dry-run)
+    if string match -q "*primary_app=Thunderbird*" -- "$gtd_mail_wide_dry_run"
+            and string match -q "*helper_app=Microsoft Outlook*" -- "$gtd_mail_wide_dry_run"
+            and string match -q "*primary_grid=1:2:1:0:1:1*" -- "$gtd_mail_wide_dry_run"
+            and string match -q "*helper_grid=1:2:0:0:1:1*" -- "$gtd_mail_wide_dry_run"
+        echo "OK      GTD mail wide Outlook helper grid"
+    else
+        echo "FAIL    GTD mail wide Outlook helper grid"
+        printf "%s\n" $gtd_mail_wide_dry_run
+        set failed 1
+    end
+
+    set -l workspace_observability_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_observation_fixture meeting_ok
+        set -g __work_smoke_observation_display_queries 0
+        set -g __work_smoke_observation_space_queries 0
+        set -g __work_smoke_observation_window_queries 0
+        set -g __work_smoke_observation_mutations 0
+
+        function ws_query_displays
+            set -g __work_smoke_observation_display_queries (math $__work_smoke_observation_display_queries + 1)
+            printf "%s\n" "[
+                {\"index\":1,\"uuid\":\"primary\",\"frame\":{\"x\":0,\"y\":0,\"w\":1800,\"h\":1169}},
+                {\"index\":2,\"uuid\":\"external-wide\",\"frame\":{\"x\":-3062,\"y\":-594,\"w\":3062,\"h\":1282}}
+            ]"
+        end
+
+        function ws_query_spaces
+            set -g __work_smoke_observation_space_queries (math $__work_smoke_observation_space_queries + 1)
+            switch "$__work_smoke_observation_fixture"
+                case meeting_ok meeting_bad
+                    printf "%s\n" "[
+                        {\"index\":4,\"display\":1,\"label\":\"coding_control\",\"windows\":[]},
+                        {\"index\":8,\"display\":2,\"label\":\"gtd_meeting_wide\",\"windows\":[41,51]}
+                    ]"
+                case coding
+                    printf "%s\n" "[
+                        {\"index\":4,\"display\":1,\"label\":\"coding_control\",\"windows\":[21]},
+                        {\"index\":6,\"display\":1,\"label\":\"\",\"windows\":[22]}
+                    ]"
+            end
+        end
+
+        function ws_query_windows
+            set -g __work_smoke_observation_window_queries (math $__work_smoke_observation_window_queries + 1)
+            switch "$__work_smoke_observation_fixture"
+                case meeting_ok
+                    printf "%s\n" "[
+                        {\"id\":41,\"app\":\"Zoom\",\"title\":\"Zoom Workplace\",\"space\":8,\"display\":2,\"can-move\":true,\"is-minimized\":false,\"frame\":{\"x\":-3058,\"y\":-559,\"w\":1525,\"h\":1243}},
+                        {\"id\":51,\"app\":\"Microsoft Teams\",\"title\":\"Teams Meeting\",\"space\":8,\"display\":2,\"can-move\":true,\"is-minimized\":false,\"frame\":{\"x\":-1529,\"y\":-559,\"w\":1525,\"h\":1243}}
+                    ]"
+                case meeting_bad
+                    printf "%s\n" "[
+                        {\"id\":41,\"app\":\"Zoom\",\"title\":\"Zoom Workplace\",\"space\":7,\"display\":2,\"can-move\":true,\"is-minimized\":false,\"frame\":{\"x\":-3058,\"y\":-559,\"w\":1525,\"h\":1243}},
+                        {\"id\":51,\"app\":\"Microsoft Teams\",\"title\":\"Teams Meeting\",\"space\":8,\"display\":2,\"can-move\":true,\"is-minimized\":false,\"frame\":{\"x\":-1529,\"y\":-559,\"w\":1525,\"h\":1243}}
+                    ]"
+                case coding
+                    printf "%s\n" "[
+                        {\"id\":21,\"app\":\"Warp\",\"title\":\"Warp\",\"space\":4,\"display\":1,\"can-move\":true,\"is-minimized\":false,\"frame\":{\"x\":4,\"y\":44,\"w\":1792,\"h\":745}},
+                        {\"id\":22,\"app\":\"SmartGit\",\"title\":\"SmartGit\",\"space\":6,\"display\":1,\"can-move\":false,\"is-minimized\":false,\"frame\":{\"x\":300,\"y\":60,\"w\":1200,\"h\":1040}}
+                    ]"
+            end
+        end
+
+        function get_workspace_primary_display_uuid
+            echo primary
+        end
+
+        function ws_window
+            set -g __work_smoke_observation_mutations (math $__work_smoke_observation_mutations + 1)
+            return 1
+        end
+
+        function ws_move_windows_to_space
+            set -g __work_smoke_observation_mutations (math $__work_smoke_observation_mutations + 1)
+            return 1
+        end
+
+        function workspace_prepare_labeled_space
+            set -g __work_smoke_observation_mutations (math $__work_smoke_observation_mutations + 1)
+            return 1
+        end
+
+        function cleanup_unlabeled_empty_spaces
+            set -g __work_smoke_observation_mutations (math $__work_smoke_observation_mutations + 1)
+            return 1
+        end
+
+        function open
+            set -g __work_smoke_observation_mutations (math $__work_smoke_observation_mutations + 1)
+            return 1
+        end
+
+        set -l snapshot_json (workspace_snapshot)
+        or exit 1
+        echo $snapshot_json | ws_jq -e "
+            .version == 1
+            and (.displays | length) == 2
+            and (.spaces | length) == 2
+            and (.windows | length) == 2
+        " >/dev/null
+        or exit 2
+        test "$__work_smoke_observation_display_queries" -eq 1
+        and test "$__work_smoke_observation_space_queries" -eq 1
+        and test "$__work_smoke_observation_window_queries" -eq 1
+        or exit 3
+
+        workspace_snapshot --caller unsafe >/dev/null 2>&1
+        and exit 13
+
+        set -l meeting_plan (workspace_plan --json gtd_meeting_wide)
+        or exit 4
+        echo $meeting_plan | ws_jq -e "
+            .workspace == \"gtd_meeting_wide\"
+            and .read_only == true
+            and .status == \"ready_existing\"
+            and .target_display == 2
+            and .target_space == 8
+            and ([.roles[] | select(.role == \"zoom\") | .selected_ids[]] == [41])
+            and ([.roles[] | select(.role == \"teams\") | .selected_ids[]] == [51])
+            and (first(.roles[] | select(.role == \"zoom\") | .layout.grid) == \"1:2:0:0:1:1\")
+            and (first(.roles[] | select(.role == \"teams\") | .layout.grid) == \"1:2:1:0:1:1\")
+        " >/dev/null
+        or exit 5
+
+        set -l meeting_verify (workspace_verify --json gtd_meeting_wide)
+        or exit 6
+        echo $meeting_verify | ws_jq -e ".ok == true" >/dev/null
+        or exit 7
+
+        set -g __work_smoke_observation_fixture meeting_bad
+        set -l meeting_bad_verify (workspace_verify --json gtd_meeting_wide)
+        set -l meeting_bad_status $status
+        test "$meeting_bad_status" -ne 0
+        or exit 8
+        echo $meeting_bad_verify | ws_jq -e "
+            .ok == false
+            and (first(.checks[] | select(.name == \"owned_windows_on_target\") | .ok) == false)
+        " >/dev/null
+        or exit 9
+
+        set -g __work_smoke_observation_fixture coding
+        set -l coding_plan (workspace_plan --json coding_control)
+        or exit 10
+        echo $coding_plan | ws_jq -e "
+            .workspace == \"coding_control\"
+            and .target_display == 1
+            and ([.roles[] | select(.role == \"warp\") | .selected_ids[]] == [21])
+            and ([.roles[] | select(.role == \"smartgit\") | .fallback_candidate_ids[]] == [22])
+            and (first(.roles[] | select(.role == \"warp\") | .layout.grid) == \"3:1:0:0:1:2\")
+        " >/dev/null
+        or exit 11
+
+        test "$__work_smoke_observation_mutations" -eq 0
+        or exit 12
+    '
+    fish -lc "$workspace_observability_smoke" >/tmp/work-observability-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      workspace snapshot plan verify"
+    else
+        echo "FAIL    workspace snapshot plan verify"
+        cat /tmp/work-observability-smoke.out
+        set failed 1
     end
 
     set -l localized_preview_fixture '[
@@ -600,16 +813,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         "*gtd_review_*Preview*all-movable-windows;fallback-space-owner*" \
         "*gtd_review_*Notes*all-movable-windows;fallback-space-owner*" \
         "*gtd_meeting_*Zoom*all-movable-windows;fallback-space-owner*" \
-        "*gtd_meeting_*Microsoft Teams/MSTeams*all-movable-windows*" \
+        "*gtd_meeting_*Microsoft Teams/MSTeams*all-movable-windows;fallback-space-owner*" \
         "*gtd_mail_*Thunderbird*single-window;fallback-space-owner*" \
-        "*gtd_ai*Codex/CODEX_APP*single-window;configurable-app*" \
+        "*gtd_mail_*Microsoft Outlook*optional-helper*" \
+        "*gtd_ai*ChatGPT*single-window*" \
         "*gtd_ai*Obsidian*single-window*" \
         "*gtd_calendar*Calendar*single-window;fallback-space-owner*" \
         "*coding_editor_*Code*single-window*" \
-        "*coding_editor_*Codex*optional-helper;fallback-space-owner*" \
         "*coding_control*SmartGit*single-window;fallback-space-owner*" \
         "*research_*ChatGPT*optional-helper*" \
-        "*office_writing_*Microsoft Word*single-window*"
+        "*office_writing_*Microsoft Word*all-movable-windows*" \
+        "*office_slides_*Microsoft PowerPoint*all-movable-windows*"
 
     set -l ownership_failed 0
     for ownership_pattern in $required_ownership_patterns
@@ -1390,14 +1604,12 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
-    set -l codex_helper_fallback_smoke '
+    set -l office_slides_tall_multi_window_smoke '
         work_reload >/dev/null
 
-        set -g __work_smoke_helper_fallback_args ""
-        set -g __work_smoke_helper_eviction_args ""
-        set -g __work_smoke_helper_moved ""
-        set -g __work_smoke_helper_bounds ""
-        set -g __work_smoke_helper_grid ""
+        set -g __work_smoke_office_capture_args ""
+        set -g __work_smoke_office_moves
+        set -g __work_smoke_office_grids
 
         function workspace_run_cleanup_specs
         end
@@ -1406,52 +1618,41 @@ function work_smoke --description "Run read-only workspace smoke checks for help
             echo 2
         end
 
-        function workspace_find_app_key_window
-            argparse "app-key=" "space=" "caller=" "attempts=" "wait=" no-refresh target-only visible quiet-unmovable -- $argv
-
-            switch "$_flag_app_key"
-                case code
-                    echo 11
-                    return 0
-                case codex
-                    return 2
-            end
+        function find_or_create_labeled_space
+            echo 8
         end
 
-        function workspace_app_key_space_fallback_info
-            printf "%s\t%s\t%s\n" 12 5 1
+        function workspace_retarget_contaminated_space
+            echo 8
         end
 
-        function workspace_focus_space_fallback
-            set -g __work_smoke_helper_fallback_args (string join " " -- $argv)
-            echo 5
-        end
-
-        function workspace_evict_non_owned_windows_from_space
-            set -g __work_smoke_helper_eviction_args (string join " " -- $argv)
+        function workspace_focus_labeled_space
         end
 
         function workspace_prepare_labeled_space
-            exit 8
-        end
-
-        function ws_move_windows_to_space
-            set -g __work_smoke_helper_moved (string join , -- $argv)
+            echo 8
         end
 
         function ws_query_windows
             printf "%s\n" "[
-                {\"id\": 11, \"app\": \"Code\", \"space\": 5, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Code\"},
-                {\"id\": 12, \"app\": \"Codex\", \"space\": 5, \"display\": 2, \"can-move\": false, \"is-minimized\": false, \"title\": \"Codex\"}
+                {\"id\": 17, \"app\": \"ChatGPT\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"ChatGPT\"},
+                {\"id\": 21, \"app\": \"Microsoft PowerPoint\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"slides A\"},
+                {\"id\": 22, \"app\": \"Microsoft PowerPoint\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"slides B\"},
+                {\"id\": 23, \"app\": \"Microsoft PowerPoint\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"slides C\"}
             ]"
         end
 
-        function workspace_apply_app_key_grid_bounds
-            set -g __work_smoke_helper_bounds (string join " " -- $argv)
+        function workspace_capture_app_window
+            set -g __work_smoke_office_capture_args (string join " " -- $argv)
+            echo 17
+        end
+
+        function ws_move_windows_to_space
+            set -ga __work_smoke_office_moves (string join , -- $argv)
         end
 
         function ws_window
-            set -g __work_smoke_helper_grid (string join " " -- $argv)
+            set -ga __work_smoke_office_grids (string join " " -- $argv)
         end
 
         function ws_focus_space
@@ -1460,44 +1661,207 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         function cleanup_unlabeled_empty_spaces
         end
 
-        workspace_apply_primary_helper_space \
-            --label coding_editor_wide \
-            --display wide \
-            --primary-app-key code \
-            --helper-app-key codex \
-            --helper-space-fallback \
-            --helper-grid 1:3:0:0:1:1 \
-            --primary-grid 1:3:1:0:2:1 \
-            --primary-alone-grid 1:1:0:0:1:1
+        office_slides_tall
         or exit 1
 
-        string match -q "*--space 5*" -- "$__work_smoke_helper_fallback_args"
+        string match -q "*--app-key chatgpt*" -- "$__work_smoke_office_capture_args"
         or exit 2
 
-        string match -q "*--target-display 2*" -- "$__work_smoke_helper_fallback_args"
+        contains -- "8,21,22,23" $__work_smoke_office_moves
         or exit 3
 
-        test "$__work_smoke_helper_moved" = "5,11"
+        contains -- "17 --grid 2:2:0:0:1:1" $__work_smoke_office_grids
         or exit 4
 
-        string match -q "*--space 5*" -- "$__work_smoke_helper_eviction_args"
+        contains -- "21 --grid 2:2:1:0:1:1" $__work_smoke_office_grids
         or exit 5
 
-        string match -q "*--app-key codex*" -- "$__work_smoke_helper_bounds"
+        contains -- "22 --grid 2:2:0:1:1:1" $__work_smoke_office_grids
         or exit 6
 
-        string match -q "*--grid 1:3:0:0:1:1*" -- "$__work_smoke_helper_bounds"
+        contains -- "23 --grid 2:2:1:1:1:1" $__work_smoke_office_grids
         or exit 7
-
-        test "$__work_smoke_helper_grid" = "11 --grid 1:3:1:0:2:1"
-        or exit 8
     '
-    fish -lc "$codex_helper_fallback_smoke" >/tmp/work-codex-helper-fallback-smoke.out 2>&1
+    fish -lc "$office_slides_tall_multi_window_smoke" >/tmp/work-office-slides-tall-multi-window-smoke.out 2>&1
     if test $status -eq 0
-        echo "OK      Codex helper space fallback"
+        echo "OK      office slides tall multi-window layout"
     else
-        echo "FAIL    Codex helper space fallback"
-        cat /tmp/work-codex-helper-fallback-smoke.out
+        echo "FAIL    office slides tall multi-window layout"
+        cat /tmp/work-office-slides-tall-multi-window-smoke.out
+        set failed 1
+    end
+
+    set -l office_writing_wide_multi_window_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_office_capture_args ""
+        set -g __work_smoke_office_moves
+        set -g __work_smoke_office_grids
+
+        function workspace_run_cleanup_specs
+        end
+
+        function workspace_resolve_display_role
+            echo 2
+        end
+
+        function find_or_create_labeled_space
+            echo 8
+        end
+
+        function workspace_retarget_contaminated_space
+            echo 8
+        end
+
+        function workspace_focus_labeled_space
+        end
+
+        function workspace_prepare_labeled_space
+            echo 8
+        end
+
+        function ws_query_windows
+            printf "%s\n" "[
+                {\"id\": 17, \"app\": \"ChatGPT\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"ChatGPT\"},
+                {\"id\": 31, \"app\": \"Microsoft Word\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"draft A\"},
+                {\"id\": 32, \"app\": \"Microsoft Word\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"draft B\"}
+            ]"
+        end
+
+        function workspace_capture_app_window
+            set -g __work_smoke_office_capture_args (string join " " -- $argv)
+            echo 17
+        end
+
+        function ws_move_windows_to_space
+            set -ga __work_smoke_office_moves (string join , -- $argv)
+        end
+
+        function ws_window
+            set -ga __work_smoke_office_grids (string join " " -- $argv)
+        end
+
+        function ws_focus_space
+        end
+
+        function cleanup_unlabeled_empty_spaces
+        end
+
+        office_writing_wide
+        or exit 1
+
+        string match -q "*--app-key chatgpt*" -- "$__work_smoke_office_capture_args"
+        or exit 2
+
+        contains -- "8,31,32" $__work_smoke_office_moves
+        or exit 3
+
+        contains -- "17 --grid 1:3:0:0:1:1" $__work_smoke_office_grids
+        or exit 4
+
+        contains -- "31 --grid 1:3:1:0:1:1" $__work_smoke_office_grids
+        or exit 5
+
+        contains -- "32 --grid 1:3:2:0:1:1" $__work_smoke_office_grids
+        or exit 6
+    '
+    fish -lc "$office_writing_wide_multi_window_smoke" >/tmp/work-office-writing-wide-multi-window-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      office writing wide multi-window layout"
+    else
+        echo "FAIL    office writing wide multi-window layout"
+        cat /tmp/work-office-writing-wide-multi-window-smoke.out
+        set failed 1
+    end
+
+    set -l coding_control_hidden_flclash_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_control_moves
+        set -g __work_smoke_control_grids
+        set -g __work_smoke_flclash_opened 0
+
+        function perl
+            if contains -- open $argv; and contains -- FlClash $argv
+                set -g __work_smoke_flclash_opened 1
+                return 0
+            end
+
+            command perl $argv
+        end
+
+        function sleep
+        end
+
+        function ws_query_windows
+            set -l phase $argv[2]
+
+            switch "$phase"
+                case final
+                    printf "%s\n" "[
+                        {\"id\": 41, \"app\": \"FlClash\", \"space\": 8, \"display\": 1, \"can-move\": true, \"is-minimized\": false, \"is-visible\": false, \"title\": \"FlClash\"}
+                    ]"
+                case "*"
+                    printf "%s\n" "[
+                        {\"id\": 41, \"app\": \"FlClash\", \"space\": 5, \"display\": 1, \"can-move\": true, \"is-minimized\": false, \"is-visible\": false, \"title\": \"FlClash\"}
+                    ]"
+            end
+        end
+
+        function workspace_find_app_key_window
+            return 0
+        end
+
+        function resolve_workspace_primary_display
+            echo 1
+        end
+
+        function find_or_create_labeled_space
+            echo 8
+        end
+
+        function workspace_retarget_contaminated_space
+            echo 8
+        end
+
+        function workspace_focus_labeled_space
+        end
+
+        function ws_move_windows_to_space
+            set -ga __work_smoke_control_moves (string join , -- $argv)
+        end
+
+        function ws_window
+            set -ga __work_smoke_control_grids (string join " " -- $argv)
+        end
+
+        function ws_focus_space
+        end
+
+        function cleanup_unlabeled_empty_spaces
+        end
+
+        coding_control
+        or exit 1
+
+        test "$__work_smoke_flclash_opened" = 0
+        or exit 2
+
+        contains -- "8,41" $__work_smoke_control_moves
+        or exit 3
+
+        contains -- "41 --move abs:360:120" $__work_smoke_control_grids
+        or exit 4
+
+        contains -- "41 --resize abs:1200:1040" $__work_smoke_control_grids
+        or exit 5
+    '
+    fish -lc "$coding_control_hidden_flclash_smoke" >/tmp/work-coding-control-hidden-flclash-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      coding control hidden FlClash no-open capture"
+    else
+        echo "FAIL    coding control hidden FlClash no-open capture"
+        cat /tmp/work-coding-control-hidden-flclash-smoke.out
         set failed 1
     end
 
@@ -1633,7 +1997,6 @@ function work_smoke --description "Run read-only workspace smoke checks for help
             switch "$phase"
                 case initial
                     printf "%s\n" "[
-                        {\"id\": 31, \"app\": \"Microsoft Outlook\", \"space\": 7, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Outlook\"},
                         {\"id\": 41, \"app\": \"zoom.us\", \"space\": 7, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Zoom Workplace\"}
                     ]"
                 case zoom_any
@@ -1662,7 +2025,6 @@ function work_smoke --description "Run read-only workspace smoke checks for help
                 case final_zoom_settle_reconcile
                     set -g __work_smoke_zoom_late_visible 1
                     printf "%s\n" "[
-                        {\"id\": 31, \"app\": \"Microsoft Outlook\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Outlook\"},
                         {\"id\": 41, \"app\": \"zoom.us\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Zoom Workplace\"},
                         {\"id\": 42, \"app\": \"zoom.us\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Zoom Meeting\"}
                     ]"
@@ -1670,7 +2032,6 @@ function work_smoke --description "Run read-only workspace smoke checks for help
                     printf "%s\n" "[]"
                 case "*"
                     printf "%s\n" "[
-                        {\"id\": 31, \"app\": \"Microsoft Outlook\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Outlook\"},
                         {\"id\": 41, \"app\": \"zoom.us\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Zoom Workplace\"}
                     ]"
             end
@@ -1708,18 +2069,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         gtd_apply_meeting_space \
             --label gtd_meeting_wide \
             --display wide \
-            --zoom-grid 2:5:0:0:2:1 \
-            --teams-grid 2:5:0:1:2:1 \
-            --outlook-grid 2:5:2:0:3:2
+            --zoom-grid 1:2:0:0:1:1 \
+            --teams-grid 1:2:1:0:1:1
         or exit 1
 
         contains -- "8,41,42" $__work_smoke_zoom_moves
         or exit 2
 
-        contains -- "41 --grid 2:5:0:0:2:1" $__work_smoke_zoom_grids
+        contains -- "41 --grid 1:2:0:0:1:1" $__work_smoke_zoom_grids
         or exit 3
 
-        contains -- "42 --grid 2:5:0:0:2:1" $__work_smoke_zoom_grids
+        contains -- "42 --grid 1:2:0:0:1:1" $__work_smoke_zoom_grids
         or exit 4
     '
     fish -lc "$meeting_zoom_settle_smoke" >/tmp/work-meeting-zoom-settle-smoke.out 2>&1
@@ -1728,6 +2088,297 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     else
         echo "FAIL    meeting Zoom settle reconciliation"
         cat /tmp/work-meeting-zoom-settle-smoke.out
+        set failed 1
+    end
+
+    set -l meeting_zoom_alias_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_zoom_alias_moves
+        set -g __work_smoke_zoom_alias_grids
+
+        function workspace_run_cleanup_specs
+        end
+
+        function ws_query_windows
+            set -l phase $argv[2]
+
+            switch "$phase"
+                case initial zoom_any
+                    printf "%s\n" "[
+                        {\"id\": 41, \"app\": \"Zoom\", \"space\": 7, \"display\": 1, \"can-move\": true, \"is-minimized\": false, \"title\": \"Zoom Workplace\"}
+                    ]"
+                case teams_any teams_target
+                    printf "%s\n" "[]"
+                case "*"
+                    printf "%s\n" "[
+                        {\"id\": 41, \"app\": \"Zoom\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Zoom Workplace\"}
+                    ]"
+            end
+        end
+
+        function workspace_resolve_display_role
+            echo 2
+        end
+
+        function find_or_create_labeled_space
+            echo 8
+        end
+
+        function workspace_retarget_contaminated_space
+            echo 8
+        end
+
+        function workspace_focus_labeled_space
+        end
+
+        function ws_move_windows_to_space
+            set -ga __work_smoke_zoom_alias_moves (string join , -- $argv)
+        end
+
+        function ws_window
+            set -ga __work_smoke_zoom_alias_grids (string join " " -- $argv)
+        end
+
+        function ws_focus_space
+        end
+
+        function cleanup_unlabeled_empty_spaces
+        end
+
+        gtd_apply_meeting_space \
+            --label gtd_meeting_tall \
+            --display tall \
+            --zoom-grid 2:1:0:0:1:1 \
+            --teams-grid 2:1:0:1:1:1
+        or exit 1
+
+        contains -- "8,41" $__work_smoke_zoom_alias_moves
+        or exit 2
+
+        contains -- "41 --grid 2:1:0:0:1:1" $__work_smoke_zoom_alias_grids
+        or exit 3
+    '
+    fish -lc "$meeting_zoom_alias_smoke" >/tmp/work-meeting-zoom-alias-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      meeting Zoom app alias capture"
+    else
+        echo "FAIL    meeting Zoom app alias capture"
+        cat /tmp/work-meeting-zoom-alias-smoke.out
+        set failed 1
+    end
+
+    set -l meeting_teams_settle_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_teams_any_calls 0
+        set -g __work_smoke_teams_late_visible 0
+        set -g __work_smoke_teams_moves
+        set -g __work_smoke_teams_grids
+
+        function workspace_run_cleanup_specs
+        end
+
+        function sleep
+        end
+
+        function ws_query_windows
+            set -l phase $argv[2]
+
+            switch "$phase"
+                case zoom_any zoom_target
+                    printf "%s\n" "[]"
+                case teams_any
+                    set -g __work_smoke_teams_any_calls (math $__work_smoke_teams_any_calls + 1)
+                    if test "$__work_smoke_teams_any_calls" -ge 3
+                        printf "%s\n" "[
+                            {\"id\": 51, \"app\": \"Microsoft Teams\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Teams\"},
+                            {\"id\": 52, \"app\": \"Microsoft Teams\", \"space\": 9, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Teams Meeting\"}
+                        ]"
+                    else
+                        printf "%s\n" "[
+                            {\"id\": 51, \"app\": \"Microsoft Teams\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Teams\"}
+                        ]"
+                    end
+                case teams_target
+                    if test "$__work_smoke_teams_late_visible" = 1
+                        printf "%s\n" "[
+                            {\"id\": 51, \"app\": \"Microsoft Teams\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Teams\"},
+                            {\"id\": 52, \"app\": \"Microsoft Teams\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Teams Meeting\"}
+                        ]"
+                    else
+                        printf "%s\n" "[
+                            {\"id\": 51, \"app\": \"Microsoft Teams\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Teams\"}
+                        ]"
+                    end
+                case final_teams_settle_reconcile
+                    set -g __work_smoke_teams_late_visible 1
+                    printf "%s\n" "[
+                        {\"id\": 51, \"app\": \"Microsoft Teams\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Teams\"},
+                        {\"id\": 52, \"app\": \"Microsoft Teams\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Teams Meeting\"}
+                    ]"
+                case "*"
+                    printf "%s\n" "[
+                        {\"id\": 51, \"app\": \"Microsoft Teams\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Teams\"}
+                    ]"
+            end
+        end
+
+        function workspace_resolve_display_role
+            echo 2
+        end
+
+        function find_or_create_labeled_space
+            echo 8
+        end
+
+        function workspace_retarget_contaminated_space
+            echo 8
+        end
+
+        function workspace_focus_labeled_space
+        end
+
+        function ws_move_windows_to_space
+            set -ga __work_smoke_teams_moves (string join , -- $argv)
+        end
+
+        function ws_window
+            set -ga __work_smoke_teams_grids (string join " " -- $argv)
+        end
+
+        function ws_focus_space
+        end
+
+        function cleanup_unlabeled_empty_spaces
+        end
+
+        gtd_apply_meeting_space \
+            --label gtd_meeting_wide \
+            --display wide \
+            --zoom-grid 1:2:0:0:1:1 \
+            --teams-grid 1:2:1:0:1:1
+        or exit 1
+
+        contains -- "8,51,52" $__work_smoke_teams_moves
+        or exit 2
+
+        contains -- "51 --grid 1:2:1:0:1:1" $__work_smoke_teams_grids
+        or exit 3
+
+        contains -- "52 --grid 1:2:1:0:1:1" $__work_smoke_teams_grids
+        or exit 4
+    '
+    fish -lc "$meeting_teams_settle_smoke" >/tmp/work-meeting-teams-settle-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      meeting Teams settle reconciliation"
+    else
+        echo "FAIL    meeting Teams settle reconciliation"
+        cat /tmp/work-meeting-teams-settle-smoke.out
+        set failed 1
+    end
+
+    set -l meeting_teams_companion_fallback_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_teams_companion_fallback_args ""
+        set -g __work_smoke_teams_companion_eviction_args ""
+        set -g __work_smoke_teams_companion_moves
+        set -g __work_smoke_teams_companion_bounds
+
+        function workspace_run_cleanup_specs
+        end
+
+        function sleep
+        end
+
+        function ws_query_windows
+            set -l phase $argv[2]
+
+            switch "$phase"
+                case zoom_any zoom_target
+                    printf "%s\n" "[]"
+                case teams_any teams_unmovable_space_fallback
+                    printf "%s\n" "[
+                        {\"id\": 51, \"app\": \"Microsoft Teams\", \"space\": 8, \"display\": 2, \"can-move\": true, \"has-ax-reference\": true, \"is-minimized\": false, \"is-visible\": false, \"title\": \"Teams\"},
+                        {\"id\": 52, \"app\": \"MSTeams\", \"space\": 6, \"display\": 1, \"can-move\": false, \"has-ax-reference\": false, \"is-minimized\": false, \"is-visible\": false, \"title\": \"\"}
+                    ]"
+                case teams_target final final_teams_settle_reconcile
+                    printf "%s\n" "[
+                        {\"id\": 51, \"app\": \"Microsoft Teams\", \"space\": 6, \"display\": 2, \"can-move\": true, \"has-ax-reference\": true, \"is-minimized\": false, \"is-visible\": false, \"title\": \"Teams\"},
+                        {\"id\": 52, \"app\": \"MSTeams\", \"space\": 6, \"display\": 2, \"can-move\": false, \"has-ax-reference\": false, \"is-minimized\": false, \"is-visible\": false, \"title\": \"\"}
+                    ]"
+                case "*"
+                    printf "%s\n" "[
+                        {\"id\": 51, \"app\": \"Microsoft Teams\", \"space\": 6, \"display\": 2, \"can-move\": true, \"has-ax-reference\": true, \"is-minimized\": false, \"is-visible\": false, \"title\": \"Teams\"},
+                        {\"id\": 52, \"app\": \"MSTeams\", \"space\": 6, \"display\": 2, \"can-move\": false, \"has-ax-reference\": false, \"is-minimized\": false, \"is-visible\": false, \"title\": \"\"}
+                    ]"
+            end
+        end
+
+        function workspace_resolve_display_role
+            echo 2
+        end
+
+        function find_or_create_labeled_space
+            echo 8
+        end
+
+        function workspace_retarget_contaminated_space
+            echo 8
+        end
+
+        function workspace_focus_labeled_space
+        end
+
+        function workspace_focus_space_fallback
+            set -g __work_smoke_teams_companion_fallback_args (string join " " -- $argv)
+            echo 6
+        end
+
+        function workspace_evict_non_owned_windows_from_space
+            set -g __work_smoke_teams_companion_eviction_args (string join " " -- $argv)
+        end
+
+        function ws_move_windows_to_space
+            set -ga __work_smoke_teams_companion_moves (string join , -- $argv)
+        end
+
+        function workspace_apply_app_key_grid_bounds
+            set -ga __work_smoke_teams_companion_bounds (string join " " -- $argv)
+        end
+
+        function ws_window
+        end
+
+        function ws_focus_space
+        end
+
+        function cleanup_unlabeled_empty_spaces
+        end
+
+        gtd_apply_meeting_space \
+            --label gtd_meeting_wide \
+            --display wide \
+            --zoom-grid 1:2:0:0:1:1 \
+            --teams-grid 1:2:1:0:1:1
+        or exit 1
+
+        string match -q "*--space 6*" -- "$__work_smoke_teams_companion_fallback_args"
+        or exit 2
+
+        contains -- "6,51" $__work_smoke_teams_companion_moves
+        or exit 3
+
+        string match -q "*--app-key teams*--all-windows*" -- "$__work_smoke_teams_companion_bounds"
+        or exit 4
+    '
+    fish -lc "$meeting_teams_companion_fallback_smoke" >/tmp/work-meeting-teams-companion-fallback-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      meeting Teams non-AX companion fallback"
+    else
+        echo "FAIL    meeting Teams non-AX companion fallback"
+        cat /tmp/work-meeting-teams-companion-fallback-smoke.out
         set failed 1
     end
 
@@ -1747,7 +2398,6 @@ function work_smoke --description "Run read-only workspace smoke checks for help
             switch "$phase"
                 case initial
                     printf "%s\n" "[
-                        {\"id\": 31, \"app\": \"Microsoft Outlook\", \"space\": 6, \"display\": 1, \"can-move\": true, \"is-minimized\": false, \"is-visible\": true, \"title\": \"Outlook\"},
                         {\"id\": 41, \"app\": \"zoom.us\", \"space\": 6, \"display\": 1, \"can-move\": false, \"is-minimized\": false, \"is-visible\": false, \"title\": \"Zoom Workplace\"},
                         {\"id\": 51, \"app\": \"Microsoft Teams\", \"space\": 7, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"is-visible\": true, \"title\": \"Teams\"}
                     ]"
@@ -1765,7 +2415,6 @@ function work_smoke --description "Run read-only workspace smoke checks for help
                     ]"
                 case "*"
                     printf "%s\n" "[
-                        {\"id\": 31, \"app\": \"Microsoft Outlook\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"is-visible\": true, \"title\": \"Outlook\"},
                         {\"id\": 51, \"app\": \"Microsoft Teams\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"is-visible\": true, \"title\": \"Teams\"},
                         {\"id\": 41, \"app\": \"zoom.us\", \"space\": 6, \"display\": 1, \"can-move\": false, \"is-minimized\": false, \"is-visible\": false, \"title\": \"Zoom Workplace\"}
                     ]"
@@ -1813,15 +2462,14 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         gtd_apply_meeting_space \
             --label gtd_meeting_wide \
             --display wide \
-            --zoom-grid 2:5:0:0:2:1 \
-            --teams-grid 2:5:0:1:2:1 \
-            --outlook-grid 2:5:2:0:3:2
+            --zoom-grid 1:2:0:0:1:1 \
+            --teams-grid 1:2:1:0:1:1
         or exit 1
 
         test "$__work_smoke_zoom_fallback_called" = 1
         or exit 2
 
-        contains -- "8,31,51" $__work_smoke_meeting_moves
+        contains -- "8,51" $__work_smoke_meeting_moves
         or exit 3
 
         string match -q "*--app-key zoom*--system-events-first*" -- "$__work_smoke_zoom_bounds_calls"

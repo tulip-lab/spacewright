@@ -109,7 +109,7 @@ function workspace_simple_module_status --description "Print a standard module s
 end
 
 function coding_status --description "Show display, space and coding application status"
-    workspace_simple_module_status coding_status "CODING APPS" code codex warp smartgit keepassx flclash thaw
+    workspace_simple_module_status coding_status "CODING APPS" code warp smartgit keepassx flclash thaw
 end
 
 function office_status --description "Show display, space and office application status"

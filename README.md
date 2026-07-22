@@ -26,6 +26,9 @@ work_status
 work_mode_status
 work_diagnostics
 work_display_health
+workspace_snapshot
+workspace_plan gtd_meeting_wide
+workspace_verify gtd_meeting_wide
 ```
 
 会改变窗口或 Space 状态的命令包括：
@@ -138,9 +141,9 @@ work_tall
 
 | 命令 | 作用 |
 |---|---|
-| `coding_solo` | 内置/主显示器上的 VS Code + Codex |
-| `coding_wide` | wide 外接屏上的 VS Code + Codex |
-| `coding_tall` | tall 外接屏上的 VS Code + Codex |
+| `coding_solo` | 内置/主显示器上的 VS Code 单独工作区 |
+| `coding_wide` | wide 外接屏上的 VS Code 单独工作区 |
+| `coding_tall` | tall 外接屏上的 VS Code 单独工作区 |
 | `coding_control` | primary display 上的 Warp、SmartGit、KeePassXC、FlClash/Thaw 控制区 |
 
 ### Research
@@ -162,7 +165,17 @@ work_tall
 | `office_wide` | writing + slides 的 wide 聚合入口 |
 | `office_tall` | writing + slides 的 tall 聚合入口 |
 
-Office 入口在主应用没有可用窗口时会尽量保持 no-op，不主动制造空工作区。
+Office 入口在主应用没有可用窗口时会尽量保持 no-op，不主动制造空工作区。Word
+和 PowerPoint 会收集所有可移动窗口；ChatGPT 是共享辅助窗口，存在时一起进入
+对应 Office workspace。
+
+Wide 布局：ChatGPT 占左三分之一；一个 Word/PowerPoint 窗口占右侧三分之二；
+两个文档窗口分别占中、右三分之一；三个或更多文档窗口时，第一个占中间三分之一，
+第二、第三个分占右侧上下半区。
+
+Tall 布局：一个文档窗口时，ChatGPT 占上半屏，文档占下半屏；两个文档窗口时，
+ChatGPT 占左上，第一个文档占右上，第二个文档占下半屏；三个或更多文档窗口时，
+下半屏左右分给第二、第三个文档窗口。
 
 ### GTD
 
@@ -170,9 +183,9 @@ Office 入口在主应用没有可用窗口时会尽量保持 no-op，不主动�
 |---|---|
 | `gtd_support_solo` / `gtd_support_wide` / `gtd_support_tall` | Dia 支撑工作区 |
 | `gtd_review_solo` / `gtd_review_wide` / `gtd_review_tall` | Finder、Preview、Notes、ChatGPT 的 review 工作区 |
-| `gtd_mail_solo` / `gtd_mail_wide` / `gtd_mail_tall` | Thunderbird 邮件工作区 |
-| `gtd_meeting_solo` / `gtd_meeting_wide` / `gtd_meeting_tall` | Outlook、Zoom、Teams 会议工作区 |
-| `gtd_ai` / `gtd_ai_solo` / `gtd_ai_wide` / `gtd_ai_tall` | Codex、ChatGPT、Obsidian、Notes 的 AI 工作区 |
+| `gtd_mail_solo` / `gtd_mail_wide` / `gtd_mail_tall` | Thunderbird、Outlook 邮件工作区 |
+| `gtd_meeting_solo` / `gtd_meeting_wide` / `gtd_meeting_tall` | Zoom、Teams 会议工作区 |
+| `gtd_ai` / `gtd_ai_solo` / `gtd_ai_wide` / `gtd_ai_tall` | ChatGPT、Obsidian、Notes 的 AI 工作区 |
 | `gtd_chat` | primary display 上的聊天工作区 |
 | `gtd_calendar` | primary display 上的 Calendar + Reminders |
 | `gtd_solo_all` | solo 模式下的 GTD 聚合入口 |
@@ -180,14 +193,15 @@ Office 入口在主应用没有可用窗口时会尽量保持 no-op，不主动�
 | `gtd_tall` | tall 模式下的 GTD 聚合入口 |
 
 GTD 模块包含最多 app-specific 规则。Outlook、Zoom、Teams、Dia、Preview、
-Notes、Thunderbird、DingTalk 等特殊行为仍保留在 fish helper 中，不由通用配置层接管。
+Notes、Thunderbird、DingTalk 等特殊行为仍保留在 fish helper 中，不由通用配置层接管。Mail
+workspace 以 Thunderbird 为必需主窗口，Outlook 存在时作为辅助窗口进入同一
+workspace；wide 左右分，tall 上下分。
 
 #### GTD AI Workspace
 
 Shortcut: `9`
 
-Apps: Codex, ChatGPT, Obsidian, Notes. Codex uses `CODEX_APP` when set, otherwise
-defaults to `Codex`.
+Apps: ChatGPT, Obsidian, Notes.
 
 Entrypoints:
 
@@ -202,14 +216,11 @@ gtd_ai_solo
 entry. The explicit skhd bindings use the same mode-specific pattern as the
 other numbered workspaces.
 
-Wide layout: Codex left third, ChatGPT middle third, Obsidian top-right, Notes
-bottom-right.
+Wide layout: Notes left third, Obsidian middle third, ChatGPT right third.
 
-Tall layout: Codex top-left, Obsidian top-right, ChatGPT bottom-left, Notes
-bottom-right.
+Tall layout: Notes top-left, Obsidian top-right, ChatGPT bottom half.
 
-Solo layout: Codex top-left, ChatGPT top-right, Obsidian bottom-left, Notes
-bottom-right.
+Solo layout: Notes top-left, Obsidian top-right, ChatGPT bottom half.
 
 `gtd_ai` is not part of the aggregate `work_*` entries because it opens missing
 apps when invoked directly.
@@ -266,10 +277,32 @@ work_doctor
 | `work_doctor` | 检查依赖、fish syntax、reload、只读 yabai query、display health 和 bad-window cache |
 | `work_diagnostics` | 查看 display、labeled spaces、duplicate labels、empty spaces 和 bad-window cache |
 | `work_display_health [mode]` | 检查 primary/target display、外接屏位置、形状和 Dock 设置 |
+| `workspace_snapshot` | 一次查询并输出当前 displays、Spaces 和 windows JSON |
+| `workspace_plan [--json] <workspace>` | 基于当前快照显示窗口匹配、目标 Space、fallback 候选和计划布局 |
+| `workspace_verify [--json] <workspace>` | 检查当前窗口归属、label、display 和布局是否符合 workspace 契约 |
 
 `work_inventory`、`work_command_check`、`work_smoke` 的核心命令清单来自
 `common/workspace_manifest.fish`。这是一层只读 manifest：它统一文档和检查事实，
 但不会移动窗口，也不替代模块运行逻辑。
+
+## Plan 与 Verify
+
+当前只读观测层覆盖 `gtd_meeting_wide` 和 `coding_control`：
+
+```fish
+workspace_plan gtd_meeting_wide
+workspace_verify gtd_meeting_wide
+
+workspace_plan --json coding_control
+workspace_verify --json coding_control
+```
+
+`workspace_plan` 使用一次 display、Space 和 window 快照说明当前会匹配哪些窗口、
+目标 display/Space、可能的 fallback，以及预期布局。`workspace_verify` 使用同一种快照
+检查当前结果，发现窗口仍在其他 Space、label 重复、混入无关窗口或布局不符时返回非零。
+
+这两个命令和 `workspace_snapshot` 都不会激活或打开应用、重启 yabai、移动窗口、
+创建或删除 Space、运行 cleanup，也不会应用 display profile。
 
 ## Dry Run
 
@@ -334,6 +367,7 @@ unlabeled Spaces，再运行 diagnostics。它不会移动已有窗口，也不�
 | 文件 | 作用 |
 |---|---|
 | `common/workspace_manifest.fish` | 只读 workspace 声明清单 |
+| `common/workspace_observability.fish` | workspace snapshot、plan 和 verify |
 | `common/work_entries.fish` | `work_solo`、`work_wide`、`work_tall` |
 | `common/source_workspace_common.fish` | 公共 helper 加载入口 |
 | `common/workspace_module_reloads.fish` | 模块 reload 定义 |

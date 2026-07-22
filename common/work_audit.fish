@@ -192,20 +192,21 @@ function __work_audit_ownership_policy_coverage --description "Audit static owne
 
     __work_audit_check_policy_specs \
         "coding_editor_*|Code|single-window" \
-        "coding_editor_*|Codex|optional-helper" \
         "coding_control|FlClash/Thaw|all-movable-windows" \
         "research_*|Zotero|single-window" \
         "research_*|ChatGPT|optional-helper" \
-        "office_writing_*|Microsoft Word|single-window" \
-        "office_slides_*|Microsoft PowerPoint|single-window" \
+        "office_writing_*|Microsoft Word|all-movable-windows" \
+        "office_writing_*|ChatGPT|optional-helper" \
+        "office_slides_*|Microsoft PowerPoint|all-movable-windows" \
+        "office_slides_*|ChatGPT|optional-helper" \
         "gtd_support_*|Dia|all-movable-windows" \
         "gtd_review_*|Finder|all-movable-windows" \
         "gtd_review_*|Preview|all-movable-windows;fallback-space-owner" \
         "gtd_review_*|Notes|all-movable-windows;fallback-space-owner" \
         "gtd_mail_*|Thunderbird|single-window;fallback-space-owner" \
+        "gtd_mail_*|Microsoft Outlook|optional-helper" \
         "gtd_meeting_*|Zoom|all-movable-windows;fallback-space-owner" \
-        "gtd_meeting_*|Microsoft Teams/MSTeams|all-movable-windows" \
-        "gtd_ai|Codex/CODEX_APP|single-window;configurable-app" \
+        "gtd_meeting_*|Microsoft Teams/MSTeams|all-movable-windows;fallback-space-owner" \
         "gtd_ai|ChatGPT|single-window" \
         "gtd_ai|Obsidian|single-window" \
         "gtd_ai|Notes|single-window" \
@@ -236,12 +237,12 @@ function __work_audit_fallback_helper_coverage --description "Audit fallback pol
     or set failed 1
 
     __work_audit_check_policy_specs \
-        "coding_editor_*|Codex|fallback-space-owner" \
         "coding_control|SmartGit|fallback-space-owner" \
         "gtd_review_*|Preview|fallback-space-owner" \
         "gtd_review_*|Notes|fallback-space-owner" \
         "gtd_mail_*|Thunderbird|fallback-space-owner" \
         "gtd_meeting_*|Zoom|fallback-space-owner" \
+        "gtd_meeting_*|Microsoft Teams/MSTeams|fallback-space-owner" \
         "gtd_chat|DingTalk|fallback-space-owner" \
         "gtd_calendar|Calendar|fallback-space-owner"
     or set failed 1
@@ -261,6 +262,7 @@ function __work_audit_multi_window_helper_coverage --description "Audit multi-wi
     __work_audit_check_loaded_functions \
         ws_find_windows \
         workspace_app_key_windows \
+        office_apply_document_space \
         gtd_apply_ai_space \
         gtd_find_meeting_windows \
         gtd_find_zoom_windows \
@@ -272,6 +274,8 @@ function __work_audit_multi_window_helper_coverage --description "Audit multi-wi
 
     __work_audit_check_policy_specs \
         "coding_control|FlClash/Thaw|all-movable-windows" \
+        "office_writing_*|Microsoft Word|all-movable-windows" \
+        "office_slides_*|Microsoft PowerPoint|all-movable-windows" \
         "gtd_support_*|Dia|all-movable-windows" \
         "gtd_review_*|Finder|all-movable-windows" \
         "gtd_review_*|Preview|all-movable-windows" \

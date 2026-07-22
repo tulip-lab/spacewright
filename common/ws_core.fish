@@ -96,6 +96,9 @@ function ws_yabai_auto_restart_allowed --description "Return success when a call
             work_doctor \
             work_smoke \
             work_status \
+            workspace_plan \
+            workspace_snapshot \
+            workspace_verify \
             workspace_mode_status_section \
             workspace_print_app_status \
             workspace_status_snapshot \

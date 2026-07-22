@@ -1,3 +1,29 @@
+function __coding_control_flclash_windows --description "Return movable FlClash/Thaw window ids from yabai window JSON"
+    argparse 'space=' -- $argv
+    or return 1
+
+    set -l windows_json
+    read -lz windows_json
+    if test -z "$windows_json"
+        return 1
+    end
+
+    set -l window_ids
+    for app_key in flclash thaw
+        set -l selector_args --app-key $app_key --movable
+        if set -q _flag_space
+            set -a selector_args --space $_flag_space
+        end
+
+        set -a window_ids (printf "%s\n" "$windows_json" | workspace_app_key_windows $selector_args)
+        or return 1
+    end
+
+    if test (count $window_ids) -gt 0
+        printf "%s\n" $window_ids
+    end
+end
+
 function coding_control --description "Collect Warp, SmartGit, KeePassXC, and FlClash onto the internal coding control workspace and apply the standard control layout"
     argparse dry-run -- $argv
     or return 1
@@ -35,8 +61,8 @@ function coding_control --description "Collect Warp, SmartGit, KeePassXC, and Fl
     #   - KeePassXC:
     #       Optional. Use the first non-minimized KeePassXC/KeePassX window if available.
     #   - FlClash:
-    #       Optional. If running but hidden, activate it before capture.
-    #       Use visible non-minimized FlClash/Thaw windows if available.
+    #       Optional. Never launch or activate it as a side effect.
+    #       Use movable non-minimized FlClash/Thaw windows if available.
     #
     # Creation rule:
     #   The workspace is only created if at least one of the following exists:
@@ -60,8 +86,6 @@ function coding_control --description "Collect Warp, SmartGit, KeePassXC, and Fl
     # -------------------------------------------------------------------------
 
     set -l label coding_control
-    set -l flclash_app (workspace_app_name flclash)
-    set -l flclash_apps_json (workspace_app_names_json flclash thaw)
     set -l control_app_regex (workspace_app_regex warp smartgit keepassx flclash thaw)
     or return 1
 
@@ -69,29 +93,6 @@ function coding_control --description "Collect Warp, SmartGit, KeePassXC, and Fl
     # 1. Find candidate windows first
     # -------------------------------------------------------------------------
     set -l windows_json (ws_query_windows "coding_control" initial); or return 1
-
-    set -l flclash_running (echo $windows_json | ws_jq -r --argjson apps "$flclash_apps_json" '
-        .[]
-        | select(.app as $app | $apps | index($app))
-        | select(.["is-minimized"]==false)
-        | .id
-    ')
-
-    set -l flclash_visible (echo $windows_json | ws_jq -r --argjson apps "$flclash_apps_json" '
-        first(
-            .[]
-            | select(.app as $app | $apps | index($app))
-            | select(.["is-minimized"]==false)
-            | select(.["is-visible"]==true)
-            | .id
-        ) // empty
-    ')
-
-    if test -n "$flclash_running" -a -z "$flclash_visible"
-        perl -e 'alarm shift; exec @ARGV' 2 open -a "$flclash_app" >/dev/null 2>&1
-        sleep 0.5
-        set windows_json (ws_query_windows "coding_control" refresh); or return 1
-    end
 
     set -l warp (workspace_find_app_key_window --app-key warp --caller $label)
     set -l warp_status $status
@@ -139,13 +140,8 @@ function coding_control --description "Collect Warp, SmartGit, KeePassXC, and Fl
         return 1
     end
 
-    set -l flclash (echo $windows_json | ws_jq -r --argjson apps "$flclash_apps_json" '
-        .[]
-        | select(.app as $app | $apps | index($app))
-        | select(.["is-minimized"]==false)
-        | select(.["is-visible"]==true)
-        | .id
-    ')
+    set -l flclash (printf "%s\n" "$windows_json" | __coding_control_flclash_windows)
+    or return 1
 
     # Do not create the workspace if neither helper window exists
     if test -z "$warp" -a -z "$smartgit" -a -z "$smartgit_fallback_window" -a -z "$keepassx" -a -z "$flclash"
@@ -277,14 +273,8 @@ function coding_control --description "Collect Warp, SmartGit, KeePassXC, and Fl
         end
     end
 
-    set flclash (echo $windows_json_final | ws_jq -r --argjson apps "$flclash_apps_json" --argjson s $target_space '
-        .[]
-        | select(.app as $app | $apps | index($app))
-        | select(.space==$s)
-        | select(.["is-minimized"]==false)
-        | select(.["is-visible"]==true)
-        | .id
-    ')
+    set flclash (printf "%s\n" "$windows_json_final" | __coding_control_flclash_windows --space $target_space)
+    or return 1
 
     # -------------------------------------------------------------------------
     # 8. Apply final layout
