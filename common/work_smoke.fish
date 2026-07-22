@@ -16,7 +16,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     end
 
     set -l app_keys \
-        code chatgpt obsidian zotero thunderbird word powerpoint outlook zoom teams dia finder preview notes \
+        code claude chatgpt obsidian zotero thunderbird word powerpoint outlook zoom teams dia finder preview notes \
         calendar reminders wechat keybase messages dingtalk whatsapp warp smartgit keepassx flclash thaw
 
     for key in $app_keys
@@ -46,15 +46,27 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         echo "OK      retired codex app key"
     end
 
-    set -l coding_editor_dry_run (coding_editor_wide --dry-run)
-    if string match -q "*primary_app=Code*" -- "$coding_editor_dry_run"
-            and string match -q "*primary_grid=1:1:0:0:1:1*" -- "$coding_editor_dry_run"
-            and not string match -q "*helper_app=*" -- "$coding_editor_dry_run"
-            and not string match -q "*helper_space_fallback=*" -- "$coding_editor_dry_run"
-        echo "OK      coding editor is Code-only"
+    set -l coding_editor_wide_dry_run (coding_editor_wide --dry-run)
+    set -l coding_editor_tall_dry_run (coding_editor_tall --dry-run)
+    set -l coding_editor_solo_dry_run (coding_editor_solo --dry-run)
+    if string match -q "*primary_app=Code*" -- "$coding_editor_wide_dry_run"
+            and string match -q "*helper_app=Claude*" -- "$coding_editor_wide_dry_run"
+            and string match -q "*primary_grid=1:3:1:0:2:1*" -- "$coding_editor_wide_dry_run"
+            and string match -q "*primary_alone_grid=1:1:0:0:1:1*" -- "$coding_editor_wide_dry_run"
+            and string match -q "*helper_grid=1:3:0:0:1:1*" -- "$coding_editor_wide_dry_run"
+            and string match -q "*primary_app=Code*" -- "$coding_editor_tall_dry_run"
+            and string match -q "*helper_app=Claude*" -- "$coding_editor_tall_dry_run"
+            and string match -q "*primary_grid=2:1:0:1:1:1*" -- "$coding_editor_tall_dry_run"
+            and string match -q "*primary_alone_grid=1:1:0:0:1:1*" -- "$coding_editor_tall_dry_run"
+            and string match -q "*helper_grid=2:1:0:0:1:1*" -- "$coding_editor_tall_dry_run"
+            and string match -q "*primary_grid=1:1:0:0:1:1*" -- "$coding_editor_solo_dry_run"
+            and not string match -q "*helper_app=*" -- "$coding_editor_solo_dry_run"
+        echo "OK      coding editor VS Code/Claude layouts"
     else
-        echo "FAIL    coding editor is Code-only"
-        printf "%s\n" $coding_editor_dry_run
+        echo "FAIL    coding editor VS Code/Claude layouts"
+        printf "%s\n" $coding_editor_wide_dry_run
+        printf "%s\n" $coding_editor_tall_dry_run
+        printf "%s\n" $coding_editor_solo_dry_run
         set failed 1
     end
 
@@ -249,6 +261,9 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         cat /tmp/work-observability-smoke.out
         set failed 1
     end
+
+    work_smoke_observability
+    or set failed 1
 
     set -l localized_preview_fixture '[
         {"id": 18, "app": "预览", "space": 6, "can-move": true, "is-minimized": false}
@@ -820,6 +835,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         "*gtd_ai*Obsidian*single-window*" \
         "*gtd_calendar*Calendar*single-window;fallback-space-owner*" \
         "*coding_editor_*Code*single-window*" \
+        "*coding_editor_wide/tall*Claude*optional-helper*" \
         "*coding_control*SmartGit*single-window;fallback-space-owner*" \
         "*research_*ChatGPT*optional-helper*" \
         "*office_writing_*Microsoft Word*all-movable-windows*" \

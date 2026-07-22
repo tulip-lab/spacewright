@@ -3,6 +3,7 @@ function source_workspace_common --description "Source shared workspace helper f
     source ~/.config/fish/functions/workspace/common/workspace_manifest.fish
     source ~/.config/fish/functions/workspace/common/workspace_app_names.fish
     source ~/.config/fish/functions/workspace/common/workspace_observability.fish
+    source ~/.config/fish/functions/workspace/common/workspace_label_recovery.fish
     source ~/.config/fish/functions/workspace/common/ws_find_windows.fish
     source ~/.config/fish/functions/workspace/common/workspace_app_window_selectors.fish
     source ~/.config/fish/functions/workspace/common/workspace_app_window_lifecycle.fish

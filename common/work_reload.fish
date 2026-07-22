@@ -27,6 +27,7 @@ function work_reload --description "Reload all workspace display/common/module f
     source ~/.config/fish/functions/workspace/common/work_audit.fish
     source ~/.config/fish/functions/workspace/common/work_doctor.fish
     source ~/.config/fish/functions/workspace/common/work_smoke.fish
+    source ~/.config/fish/functions/workspace/common/work_smoke_observability.fish
     source ~/.config/fish/functions/workspace/common/work_entries.fish
 
     # -------------------------------------------------------------------------

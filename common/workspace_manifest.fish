@@ -36,7 +36,7 @@ function workspace_top_level_commands --description "Print declared child comman
 end
 
 function workspace_module_entry_rows --description "Print declared workspace module entries"
-    printf "%s\t%s\t%s\n" coding "solo, wide, tall" "Code; primary-display coding_control"
+    printf "%s\t%s\t%s\n" coding "solo, wide, tall" "Code; optional Claude on wide/tall; primary-display coding_control"
     printf "%s\t%s\t%s\n" research "solo, wide, tall" "Zotero, ChatGPT"
     printf "%s\t%s\t%s\n" gtd "solo_all, wide, tall, ai" "Dia, Finder, Preview, Notes, ChatGPT, Obsidian, Thunderbird, Outlook, Zoom, Teams; primary-display chat/calendar"
     printf "%s\t%s\t%s\n" office "wide, tall" "Word, PowerPoint, ChatGPT"
@@ -44,8 +44,8 @@ end
 
 function workspace_command_map_rows --description "Print declared workspace command map rows"
     printf "%s\t%s\t%s\t%s\n" coding_editor_solo solo primary Code
-    printf "%s\t%s\t%s\t%s\n" coding_editor_wide wide external Code
-    printf "%s\t%s\t%s\t%s\n" coding_editor_tall tall external Code
+    printf "%s\t%s\t%s\t%s\n" coding_editor_wide wide external "Code, Claude"
+    printf "%s\t%s\t%s\t%s\n" coding_editor_tall tall external "Code, Claude"
     printf "%s\t%s\t%s\t%s\n" coding_control primary primary "Warp, SmartGit, KeePassXC, FlClash/Thaw"
     printf "%s\t%s\t%s\t%s\n" research_solo solo primary "Zotero, ChatGPT"
     printf "%s\t%s\t%s\t%s\n" research_wide wide external "Zotero, ChatGPT"
@@ -184,6 +184,7 @@ function workspace_required_command_names --description "Print documented worksp
         work_inventory \
         work_doctor \
         work_smoke \
+        work_smoke_observability \
         work_audit \
         workspace_top_level_entry_rows \
         workspace_top_level_commands \
@@ -205,9 +206,11 @@ function workspace_required_command_names --description "Print documented worksp
         ws_query_current_space \
         ws_query_windows \
         workspace_snapshot \
+        workspace_observation_workspaces \
         workspace_observation_spec \
         workspace_plan \
         workspace_verify \
+        workspace_restore_labels \
         workspace_app_name \
         workspace_app_names \
         workspace_app_names_json \

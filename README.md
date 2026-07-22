@@ -142,9 +142,12 @@ work_tall
 | 命令 | 作用 |
 |---|---|
 | `coding_solo` | 内置/主显示器上的 VS Code 单独工作区 |
-| `coding_wide` | wide 外接屏上的 VS Code 单独工作区 |
-| `coding_tall` | tall 外接屏上的 VS Code 单独工作区 |
+| `coding_wide` | wide 外接屏：Claude 左侧 1/3，VS Code 右侧 2/3 |
+| `coding_tall` | tall 外接屏：Claude 上半，VS Code 下半 |
 | `coding_control` | primary display 上的 Warp、SmartGit、KeePassXC、FlClash/Thaw 控制区 |
+
+`coding_editor_wide` 和 `coding_editor_tall` 只收集已经打开的 Claude 窗口，不会自动启动
+Claude。Claude 不存在时，VS Code 使用整个 workspace；`coding_editor_solo` 仍保持 VS Code 全屏。
 
 ### Research
 
@@ -280,6 +283,9 @@ work_doctor
 | `workspace_snapshot` | 一次查询并输出当前 displays、Spaces 和 windows JSON |
 | `workspace_plan [--json] <workspace>` | 基于当前快照显示窗口匹配、目标 Space、fallback 候选和计划布局 |
 | `workspace_verify [--json] <workspace>` | 检查当前窗口归属、label、display 和布局是否符合 workspace 契约 |
+| `workspace_verify [--json] --all` | 使用同一次快照汇总所有已配置观测契约的 `satisfied`、`drift` 和 `not_applicable` 状态 |
+| `workspace_restore_labels [--json] [--dry-run] [workspace ...]` | 只读规划可安全恢复的缺失 label；不传 workspace 时检查全部观测契约 |
+| `work_smoke_observability` | 定向检查 snapshot、verify 汇总和 label-only 恢复安全边界 |
 
 `work_inventory`、`work_command_check`、`work_smoke` 的核心命令清单来自
 `common/workspace_manifest.fish`。这是一层只读 manifest：它统一文档和检查事实，
@@ -295,14 +301,43 @@ workspace_verify gtd_meeting_wide
 
 workspace_plan --json coding_control
 workspace_verify --json coding_control
+
+workspace_verify --all
 ```
 
 `workspace_plan` 使用一次 display、Space 和 window 快照说明当前会匹配哪些窗口、
 目标 display/Space、可能的 fallback，以及预期布局。`workspace_verify` 使用同一种快照
 检查当前结果，发现窗口仍在其他 Space、label 重复、混入无关窗口或布局不符时返回非零。
 
-这两个命令和 `workspace_snapshot` 都不会激活或打开应用、重启 yabai、移动窗口、
+这些命令和 `workspace_snapshot` 都不会激活或打开应用、重启 yabai、移动窗口、
 创建或删除 Space、运行 cleanup，也不会应用 display profile。
+
+## Label-only 恢复
+
+如果窗口位置和布局正确，但 yabai label 在 Dock/yabai 重启后丢失，先查看恢复计划：
+
+```fish
+workspace_restore_labels
+workspace_restore_labels --json gtd_meeting_wide coding_control
+```
+
+默认行为等同于 `--dry-run`。只有同时满足以下条件时，结果才会是 `ready`：
+
+- workspace 窗口只指向一个候选 Space
+- 候选 Space 位于契约要求的 display
+- 候选 Space 没有其他 label
+- 候选 Space 没有不属于该 workspace 的非最小化窗口
+- 当前不存在同名 label 或重复 label
+
+确认计划后，显式应用：
+
+```fish
+workspace_restore_labels --apply gtd_meeting_wide coding_control
+```
+
+`--apply` 只执行 yabai `space --label`，不会移动窗口、切换 Space、创建或删除 Space、
+运行 cleanup 或应用 display profile。如果任一请求的 workspace 返回 `blocked_*`，整次
+应用会在写入前停止，避免只恢复一部分 label。
 
 ## Dry Run
 
@@ -368,6 +403,8 @@ unlabeled Spaces，再运行 diagnostics。它不会移动已有窗口，也不�
 |---|---|
 | `common/workspace_manifest.fish` | 只读 workspace 声明清单 |
 | `common/workspace_observability.fish` | workspace snapshot、plan 和 verify |
+| `common/workspace_label_recovery.fish` | 显式、默认只读的 label-only 恢复 |
+| `common/work_smoke_observability.fish` | observability 和 label 恢复的定向 smoke |
 | `common/work_entries.fish` | `work_solo`、`work_wide`、`work_tall` |
 | `common/source_workspace_common.fish` | 公共 helper 加载入口 |
 | `common/workspace_module_reloads.fish` | 模块 reload 定义 |

@@ -210,4 +210,9 @@ function work_check --description "Run workspace reload and mode-status checks"
 
     echo
     work_mode_status
+
+    echo
+    echo "===== OBSERVED WORKSPACES ====="
+    workspace_verify --all
+    or true
 end

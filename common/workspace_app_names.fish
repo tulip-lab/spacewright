@@ -4,6 +4,8 @@ function workspace_app_names --description "Print known yabai app names for a wo
     switch "$key"
         case code
             printf "%s\n" Code
+        case claude
+            printf "%s\n" Claude
         case chatgpt
             printf "%s\n" ChatGPT
         case obsidian

@@ -192,6 +192,7 @@ function __work_audit_ownership_policy_coverage --description "Audit static owne
 
     __work_audit_check_policy_specs \
         "coding_editor_*|Code|single-window" \
+        "coding_editor_wide/tall|Claude|optional-helper" \
         "coding_control|FlClash/Thaw|all-movable-windows" \
         "research_*|Zotero|single-window" \
         "research_*|ChatGPT|optional-helper" \

@@ -25,6 +25,10 @@ function workspace_snapshot --description "Capture one read-only workspace displ
         }'
 end
 
+function workspace_observation_workspaces --description "Print workspaces with read-only observation contracts"
+    printf "%s\n" gtd_meeting_wide coding_control
+end
+
 function workspace_observation_spec --description "Print the read-only observation contract for a supported workspace"
     set -l workspace $argv[1]
 
@@ -427,13 +431,62 @@ function __workspace_observation_verify_json --description "Verify a workspace p
             version: 1,
             workspace: $plan.workspace,
             read_only: true,
-            status: (if all($checks[]; .ok) then "satisfied" else "drift" end),
+            status: (
+                if $plan.status == "not_applicable" and all($checks[]; .ok) then "not_applicable"
+                elif all($checks[]; .ok) then "satisfied"
+                else "drift"
+                end
+            ),
             ok: all($checks[]; .ok),
             target_display: $plan.target_display,
             target_space: $plan.target_space,
             checks: $checks,
             warnings: $plan.warnings
         }'
+end
+
+function __workspace_observation_verify_all_json --description "Verify every observed workspace against one snapshot"
+    set -l snapshot_json
+    read -lz snapshot_json
+    if test -z "$snapshot_json"
+        return 1
+    end
+
+    set -l verification_results
+    for workspace in (workspace_observation_workspaces)
+        set -l plan_json (printf "%s\n" "$snapshot_json" | __workspace_observation_plan_json $workspace | string collect)
+        or return $status
+        set -l verification_json (printf "%s\n" "$plan_json" | __workspace_observation_verify_json | string collect)
+        or return 1
+        set -a verification_results "$verification_json"
+    end
+
+    printf "%s\n" $verification_results | ws_jq -s '
+        {
+            version: 1,
+            read_only: true,
+            status: (
+                if any(.[]; .ok == false) then "drift"
+                elif all(.[]; .status == "not_applicable") then "not_applicable"
+                else "satisfied"
+                end
+            ),
+            ok: all(.[]; .ok == true),
+            counts: {
+                satisfied: ([.[] | select(.status == "satisfied")] | length),
+                drift: ([.[] | select(.status == "drift")] | length),
+                not_applicable: ([.[] | select(.status == "not_applicable")] | length)
+            },
+            results: .
+        }'
+end
+
+function __workspace_observation_print_verification_summary --description "Print all observed workspace verification results"
+    ws_jq -r '
+        "read_only=\(.read_only)",
+        (.results[] | "workspace=\(.workspace) status=\(.status) ok=\(.ok)"),
+        "summary=\(.status) satisfied=\(.counts.satisfied) drift=\(.counts.drift) not_applicable=\(.counts.not_applicable)"
+    '
 end
 
 function __workspace_observation_print_verification --description "Print a compact workspace verification report"
@@ -447,11 +500,32 @@ function __workspace_observation_print_verification --description "Print a compa
 end
 
 function workspace_verify --description "Verify a supported workspace against a read-only live-state snapshot"
-    argparse json -- $argv
+    argparse json all -- $argv
     or return 2
 
+    if set -q _flag_all
+        if test (count $argv) -ne 0
+            echo "usage: workspace_verify [--json] --all" >&2
+            return 2
+        end
+
+        set -l snapshot_json (workspace_snapshot | string collect)
+        or return 1
+        set -l verification_json (printf "%s\n" "$snapshot_json" | __workspace_observation_verify_all_json | string collect)
+        or return 1
+
+        if set -q _flag_json
+            printf "%s\n" "$verification_json"
+        else
+            printf "%s\n" "$verification_json" | __workspace_observation_print_verification_summary
+        end
+
+        printf "%s\n" "$verification_json" | ws_jq -e '.ok == true' >/dev/null 2>&1
+        return $status
+    end
+
     if test (count $argv) -ne 1
-        echo "usage: workspace_verify [--json] <workspace>" >&2
+        echo "usage: workspace_verify [--json] <workspace> | workspace_verify [--json] --all" >&2
         return 2
     end
 
