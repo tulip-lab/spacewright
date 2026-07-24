@@ -223,7 +223,7 @@ Useful move helpers:
 
 `workspace_find_app_window` is the default helper for simple app-name ownership. It selects a movable yabai window, can constrain to a target space, can activate the app and poll for a refreshed movable window, and clears recovered bad-window cache entries. Use this for ordinary single-window helper apps instead of hand-written `ws_find_window "<app>"` logic. When a caller is confirming that a window landed on a specific target space, combine `--space` with `--target-only` so the finder cannot satisfy the check with the same app on another space.
 
-`workspace_capture_app_window` builds on that finder: it finds a movable app window, moves it to the target space, then confirms the app is present on that space. It accepts either a concrete app name or an app key; app-key capture is preferred when the app is in the registry. This is the preferred path for shared helper apps such as ChatGPT in research, office, GTD AI, and GTD review workspaces.
+`workspace_capture_app_window` builds on that finder: it finds a movable app window, moves it to the target space, then confirms the app is present on that space. It accepts either a concrete app name or an app key; app-key capture is preferred when the app is in the registry. This is the preferred path for shared helper apps such as ChatGPT in coding, research solo, office, GTD AI, and GTD review workspaces, and Claude in research wide/tall workspaces.
 
 `workspace_app_name`, `workspace_app_names`, `workspace_app_names_json`, and `workspace_app_regex` are the central app-name registry. Entry wrappers should use app keys when possible; module-specific helpers can still use explicit names when the app has special selection behavior, but they should source those names through the registry.
 
@@ -237,7 +237,7 @@ When a module already has a bounded yabai window JSON snapshot, `workspace_app_k
 
 `workspace_retarget_contaminated_space` is used when preserving a label on a mixed workspace would keep unrelated apps inside the workflow. `coding_control`, `gtd_chat`, `gtd_meeting_*`, and `gtd_review_*` use it to clear the old label and continue on a clean labeled space when their current target contains non-owned windows. `coding_control` treats KeePassXC/KeePassX as an owned control app alongside Warp, SmartGit, and FlClash/Thaw. FlClash/Thaw ownership uses movable non-minimized windows, not only windows that yabai currently marks visible.
 
-`workspace_apply_primary_helper_space` owns the stable single-primary/single-helper workflow. Entry functions provide label, display role, app keys, cleanup specs, and grid geometry. The helper selects the required primary app through `workspace_find_app_key_window`, tries every registered app name for that key, confirms the primary window lands on the target space after moving, retries once if it does not, and fails with a warning rather than silently arranging an empty target. When an app is present but yabai does not expose a movable window, `workspace_find_app_window` focuses the app's current space before activating and re-querying it, then uses shared `ws_recover_yabai_once` restart recovery before returning non-movable. Coding editor wide/tall modes use VS Code as the required primary and an already-open Claude window as the optional helper; solo remains VS Code-only.
+`workspace_apply_primary_helper_space` owns the stable single-primary/single-helper workflow. Entry functions provide label, display role, app keys, cleanup specs, and grid geometry. The helper selects the required primary app through `workspace_find_app_key_window`, tries every registered app name for that key, confirms the primary window lands on the target space after moving, retries once if it does not, and fails with a warning rather than silently arranging an empty target. When an app is present but yabai does not expose a movable window, `workspace_find_app_window` focuses the app's current space before activating and re-querying it, then uses shared `ws_recover_yabai_once` restart recovery before returning non-movable. Coding editor wide/tall modes use VS Code as the required primary and an already-open ChatGPT window as the optional helper; solo remains VS Code-only. Research wide/tall modes use Zotero as the required primary and an already-open Claude window as the optional helper; research solo continues to use ChatGPT.
 
 `office_apply_document_space` owns Office writing and slides workspaces. It requires at least one movable Word or PowerPoint window, captures one ChatGPT helper window when present, moves all movable document windows to the target, and applies count-aware layouts for wide and tall modes.
 
@@ -368,7 +368,7 @@ This keeps behavior deterministic without hidden precedence rules.
 
 ChatGPT-owning workspaces capture a movable `ChatGPT` window through `workspace_capture_app_window`. If ChatGPT exists but yabai does not expose a movable window, the helper activates ChatGPT, polls for a refreshed movable window, retries the move once, and warns when yabai still cannot move it.
 
-Coding editor modes do not own ChatGPT, so ChatGPT remains governed by research, office, GTD review, and GTD AI ownership. Wide/tall coding editor modes may own one already-open Claude window as an optional helper. Wide places Claude in the left third and VS Code in the right two thirds; tall places Claude above VS Code. When Claude is absent, VS Code uses the full workspace. Solo remains VS Code-only.
+Wide/tall coding editor modes may own one already-open ChatGPT window as an optional helper. Wide places ChatGPT in the left third and VS Code in the right two thirds; tall places ChatGPT above VS Code. When ChatGPT is absent, VS Code uses the full workspace. Solo remains VS Code-only. Research wide/tall modes may own one already-open Claude window in the same positions previously used by ChatGPT; research solo continues to own ChatGPT.
 
 `gtd_ai` owns ChatGPT when invoked directly. In `gtd_solo_all`, review runs after meeting so GTD review is the final SOLO owner for ChatGPT.
 
@@ -388,7 +388,7 @@ This avoids moving a single Notes window back and forth between support and revi
 
 All GTD support modes collect every non-minimized, non-native-fullscreen Dia window that yabai reports as movable through `gtd_support_find_dia_windows`. Native fullscreen Dia windows are skipped so support layout does not move or grid a browser video fullscreen window. After the user leaves fullscreen, the next support run can collect that Dia window again.
 
-If a previous support label points at a space mixed with non-Dia apps, `gtd_apply_support_space` retargets the label to a clean support space before moving Dia windows. If Dia exists but no non-fullscreen movable Dia window is exposed, the helper activates Dia once, refreshes the window snapshot, uses shared `ws_recover_yabai_once` restart recovery, and fails closed with a warning if Dia remains non-movable.
+If a previous support label points at a space mixed with non-Dia apps, `gtd_apply_support_space` retargets the label to a clean support space before moving Dia windows. If any non-fullscreen Dia window remains non-movable, even when other Dia windows are already movable, the helper activates Dia once, refreshes the window snapshot, uses shared `ws_recover_yabai_once` restart recovery, and fails closed with a warning unless every eligible Dia window becomes movable.
 
 After the first support move, `gtd_apply_support_space` re-queries all currently movable non-native-fullscreen Dia windows and moves the whole set to the support target before applying layout. This keeps late-appearing Dia browser/tab windows with the support workspace without interfering with native fullscreen windows.
 
@@ -558,7 +558,7 @@ Watch:
 - `gtd_mail_*` for Outlook helper placement with Thunderbird
 - `gtd_meeting_*` for Zoom and Teams placement
 - `gtd_support_*` for multiple Dia windows
-- ChatGPT ownership when moving between GTD review, office, research, and GTD AI
+- ChatGPT ownership when moving between coding wide/tall, research solo, GTD review, office, and GTD AI
 - bad-window cache summaries after repeated workspace transitions
 
 Collect read-only evidence before changing code:
@@ -869,7 +869,7 @@ The runner should support:
    This should make drift visible before behavior changes.
 
 3. **Migrate the simplest repeated entry first**
-   Start with `coding_editor_wide`. It uses the shared primary/helper path with required VS Code, optional Claude, grid-only layout, and no Space fallback policy. Keep the public command name unchanged. The pilot must preserve the full-workspace VS Code fallback when Claude is absent before expanding to other optional-helper families.
+   Start with `coding_editor_wide`. It uses the shared primary/helper path with required VS Code, optional ChatGPT, grid-only layout, and no Space fallback policy. Keep the public command name unchanged. The pilot must preserve the full-workspace VS Code fallback when ChatGPT is absent before expanding to other optional-helper families.
 
 4. **Migrate simple families by pattern**
    Candidate command families:

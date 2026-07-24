@@ -109,7 +109,7 @@ function workspace_simple_module_status --description "Print a standard module s
 end
 
 function coding_status --description "Show display, space and coding application status"
-    workspace_simple_module_status coding_status "CODING APPS" code warp smartgit keepassx flclash thaw
+    workspace_simple_module_status coding_status "CODING APPS" code chatgpt warp smartgit keepassx flclash thaw
 end
 
 function office_status --description "Show display, space and office application status"
@@ -117,7 +117,7 @@ function office_status --description "Show display, space and office application
 end
 
 function research_status --description "Show display, space and research application status"
-    workspace_simple_module_status research_status "RESEARCH APPS" zotero chatgpt
+    workspace_simple_module_status research_status "RESEARCH APPS" zotero chatgpt claude
 end
 
 function work_status

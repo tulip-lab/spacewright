@@ -10,23 +10,23 @@ function research_solo --description "Collect Zotero and ChatGPT onto the solo r
         research:wide research:tall $argv
 end
 
-function research_wide --description "Collect Zotero and ChatGPT onto the wide research workspace and apply the standard research layout"
+function research_wide --description "Collect Zotero and Claude onto the wide research workspace and apply the standard research layout"
     workspace_apply_primary_helper_space \
         --label research_wide \
         --display wide \
         --primary-app-key zotero \
-        --helper-app-key chatgpt \
+        --helper-app-key claude \
         --primary-grid 1:3:0:0:2:1 \
         --helper-grid 1:3:2:0:1:1 \
         research:tall research:solo $argv
 end
 
-function research_tall --description "Collect Zotero and ChatGPT onto the tall research workspace and apply the standard research layout"
+function research_tall --description "Collect Zotero and Claude onto the tall research workspace and apply the standard research layout"
     workspace_apply_primary_helper_space \
         --label research_tall \
         --display tall \
         --primary-app-key zotero \
-        --helper-app-key chatgpt \
+        --helper-app-key claude \
         --primary-grid 2:1:0:0:1:1 \
         --helper-grid 2:1:0:1:1:1 \
         research:wide research:solo $argv

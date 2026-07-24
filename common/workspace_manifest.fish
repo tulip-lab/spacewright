@@ -36,20 +36,20 @@ function workspace_top_level_commands --description "Print declared child comman
 end
 
 function workspace_module_entry_rows --description "Print declared workspace module entries"
-    printf "%s\t%s\t%s\n" coding "solo, wide, tall" "Code; optional Claude on wide/tall; primary-display coding_control"
-    printf "%s\t%s\t%s\n" research "solo, wide, tall" "Zotero, ChatGPT"
+    printf "%s\t%s\t%s\n" coding "solo, wide, tall" "Code; optional ChatGPT on wide/tall; primary-display coding_control"
+    printf "%s\t%s\t%s\n" research "solo, wide, tall" "Zotero; ChatGPT on solo; optional Claude on wide/tall"
     printf "%s\t%s\t%s\n" gtd "solo_all, wide, tall, ai" "Dia, Finder, Preview, Notes, ChatGPT, Obsidian, Thunderbird, Outlook, Zoom, Teams; primary-display chat/calendar"
     printf "%s\t%s\t%s\n" office "wide, tall" "Word, PowerPoint, ChatGPT"
 end
 
 function workspace_command_map_rows --description "Print declared workspace command map rows"
     printf "%s\t%s\t%s\t%s\n" coding_editor_solo solo primary Code
-    printf "%s\t%s\t%s\t%s\n" coding_editor_wide wide external "Code, Claude"
-    printf "%s\t%s\t%s\t%s\n" coding_editor_tall tall external "Code, Claude"
+    printf "%s\t%s\t%s\t%s\n" coding_editor_wide wide external "Code, ChatGPT"
+    printf "%s\t%s\t%s\t%s\n" coding_editor_tall tall external "Code, ChatGPT"
     printf "%s\t%s\t%s\t%s\n" coding_control primary primary "Warp, SmartGit, KeePassXC, FlClash/Thaw"
     printf "%s\t%s\t%s\t%s\n" research_solo solo primary "Zotero, ChatGPT"
-    printf "%s\t%s\t%s\t%s\n" research_wide wide external "Zotero, ChatGPT"
-    printf "%s\t%s\t%s\t%s\n" research_tall tall external "Zotero, ChatGPT"
+    printf "%s\t%s\t%s\t%s\n" research_wide wide external "Zotero, Claude"
+    printf "%s\t%s\t%s\t%s\n" research_tall tall external "Zotero, Claude"
     printf "%s\t%s\t%s\t%s\n" "gtd_support_*" all "mode target" Dia
     printf "%s\t%s\t%s\t%s\n" "gtd_review_*" all "mode target" "Preview, Notes, ChatGPT, Finder"
     printf "%s\t%s\t%s\t%s\n" "gtd_mail_*" all "mode target" "Thunderbird, Outlook"

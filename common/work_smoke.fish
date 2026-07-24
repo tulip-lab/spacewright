@@ -50,20 +50,20 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     set -l coding_editor_tall_dry_run (coding_editor_tall --dry-run)
     set -l coding_editor_solo_dry_run (coding_editor_solo --dry-run)
     if string match -q "*primary_app=Code*" -- "$coding_editor_wide_dry_run"
-            and string match -q "*helper_app=Claude*" -- "$coding_editor_wide_dry_run"
+            and string match -q "*helper_app=ChatGPT*" -- "$coding_editor_wide_dry_run"
             and string match -q "*primary_grid=1:3:1:0:2:1*" -- "$coding_editor_wide_dry_run"
             and string match -q "*primary_alone_grid=1:1:0:0:1:1*" -- "$coding_editor_wide_dry_run"
             and string match -q "*helper_grid=1:3:0:0:1:1*" -- "$coding_editor_wide_dry_run"
             and string match -q "*primary_app=Code*" -- "$coding_editor_tall_dry_run"
-            and string match -q "*helper_app=Claude*" -- "$coding_editor_tall_dry_run"
+            and string match -q "*helper_app=ChatGPT*" -- "$coding_editor_tall_dry_run"
             and string match -q "*primary_grid=2:1:0:1:1:1*" -- "$coding_editor_tall_dry_run"
             and string match -q "*primary_alone_grid=1:1:0:0:1:1*" -- "$coding_editor_tall_dry_run"
             and string match -q "*helper_grid=2:1:0:0:1:1*" -- "$coding_editor_tall_dry_run"
             and string match -q "*primary_grid=1:1:0:0:1:1*" -- "$coding_editor_solo_dry_run"
             and not string match -q "*helper_app=*" -- "$coding_editor_solo_dry_run"
-        echo "OK      coding editor VS Code/Claude layouts"
+        echo "OK      coding editor VS Code/ChatGPT layouts"
     else
-        echo "FAIL    coding editor VS Code/Claude layouts"
+        echo "FAIL    coding editor VS Code/ChatGPT layouts"
         printf "%s\n" $coding_editor_wide_dry_run
         printf "%s\n" $coding_editor_tall_dry_run
         printf "%s\n" $coding_editor_solo_dry_run
@@ -835,9 +835,10 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         "*gtd_ai*Obsidian*single-window*" \
         "*gtd_calendar*Calendar*single-window;fallback-space-owner*" \
         "*coding_editor_*Code*single-window*" \
-        "*coding_editor_wide/tall*Claude*optional-helper*" \
+        "*coding_editor_wide/tall*ChatGPT*optional-helper*" \
         "*coding_control*SmartGit*single-window;fallback-space-owner*" \
-        "*research_*ChatGPT*optional-helper*" \
+        "*research_solo*ChatGPT*optional-helper*" \
+        "*research_wide/tall*Claude*optional-helper*" \
         "*office_writing_*Microsoft Word*all-movable-windows*" \
         "*office_slides_*Microsoft PowerPoint*all-movable-windows*"
 
@@ -1547,6 +1548,71 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     else
         echo "FAIL    support contaminated-space retarget"
         cat /tmp/work-support-retarget-smoke.out
+        set failed 1
+    end
+
+    set -l support_partial_dia_restart_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_dia_refreshed 0
+        set -g __work_smoke_dia_restarted 0
+
+        function sleep
+        end
+
+        function __gtd_support_refresh_dia_app
+            set -g __work_smoke_dia_refreshed 1
+        end
+
+        function ws_restart_yabai
+            set -g __work_smoke_dia_restarted (math $__work_smoke_dia_restarted + 1)
+            return 0
+        end
+
+        function ws_query_windows
+            set -l phase $argv[2]
+
+            if test "$phase" = dia_refresh
+                printf "%s\n" "[
+                    {\"id\": 31, \"app\": \"Dia\", \"space\": 8, \"can-move\": true, \"is-minimized\": false, \"is-native-fullscreen\": false},
+                    {\"id\": 32, \"app\": \"Dia\", \"space\": 3, \"can-move\": false, \"is-minimized\": false, \"is-native-fullscreen\": false}
+                ]"
+                return 0
+            end
+
+            if test "$phase" = dia_yabai_restart
+                printf "%s\n" "[
+                    {\"id\": 31, \"app\": \"Dia\", \"space\": 8, \"can-move\": true, \"is-minimized\": false, \"is-native-fullscreen\": false},
+                    {\"id\": 32, \"app\": \"Dia\", \"space\": 3, \"can-move\": true, \"is-minimized\": false, \"is-native-fullscreen\": false}
+                ]"
+                return 0
+            end
+
+            return 1
+        end
+
+        set -l dia_initial_fixture "[
+            {\"id\": 31, \"app\": \"Dia\", \"space\": 8, \"can-move\": true, \"is-minimized\": false, \"is-native-fullscreen\": false},
+            {\"id\": 32, \"app\": \"Dia\", \"space\": 3, \"can-move\": false, \"is-minimized\": false, \"is-native-fullscreen\": false}
+        ]"
+        set -l dia_windows (printf "%s\n" "$dia_initial_fixture" | gtd_support_find_dia_windows gtd_support_wide 2>/dev/null)
+        or exit 1
+
+        test (string join , $dia_windows) = "31,32"
+        or exit 2
+
+        test "$__work_smoke_dia_refreshed" = 1
+        or exit 3
+
+        test "$__work_smoke_dia_restarted" = 1
+        or exit 4
+    '
+    fish -lc "$support_partial_dia_restart_smoke" >/tmp/work-support-partial-dia-restart-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      support partial Dia yabai restart recovery"
+    else
+        echo "FAIL    support partial Dia yabai restart recovery"
+        cat /tmp/work-support-partial-dia-restart-smoke.out
         set failed 1
     end
 

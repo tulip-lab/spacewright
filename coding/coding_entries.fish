@@ -7,26 +7,26 @@ function coding_editor_solo --description "Collect VS Code onto the solo coding 
         coding:wide coding:tall $argv
 end
 
-function coding_editor_wide --description "Collect VS Code and optional Claude onto the wide coding editor workspace"
+function coding_editor_wide --description "Collect VS Code and optional ChatGPT onto the wide coding editor workspace"
     workspace_apply_primary_helper_space \
         --label coding_editor_wide \
         --display wide \
         --primary-app-key code \
         --primary-grid 1:3:1:0:2:1 \
         --primary-alone-grid 1:1:0:0:1:1 \
-        --helper-app-key claude \
+        --helper-app-key chatgpt \
         --helper-grid 1:3:0:0:1:1 \
         coding:tall coding:solo $argv
 end
 
-function coding_editor_tall --description "Collect VS Code and optional Claude onto the tall coding editor workspace"
+function coding_editor_tall --description "Collect VS Code and optional ChatGPT onto the tall coding editor workspace"
     workspace_apply_primary_helper_space \
         --label coding_editor_tall \
         --display tall \
         --primary-app-key code \
         --primary-grid 2:1:0:1:1:1 \
         --primary-alone-grid 1:1:0:0:1:1 \
-        --helper-app-key claude \
+        --helper-app-key chatgpt \
         --helper-grid 2:1:0:0:1:1 \
         coding:wide coding:solo $argv
 end
