@@ -264,6 +264,7 @@ Dry-run is intentionally shallow: it reports declared workflow metadata and retu
 Primary read-only commands:
 
 - `work_inventory`
+- `yabai_doctor`
 - `work_doctor`
 - `work_audit`
 - `work_diagnostics`
@@ -273,6 +274,31 @@ Primary read-only commands:
 - `work_command_check`
 
 `work_inventory` is the static workflow map. It records the top-level entries, module entries, managed apps, ownership policies, display entries, common helpers, and dependency boundaries in command output so the active system can be inspected without reading every function file.
+
+`yabai_doctor` is the dedicated yabai runtime check. Without options it is
+strictly read-only: it resolves the active binary and version, checks whether
+the required Homebrew HEAD build is active, confirms the loaded LaunchAgent is
+running, performs bounded display/Space/window queries, hashes the binary, and
+matches that hash against `sudo -n -l`. It does not load the scripting
+addition, restart a service, open System Settings, or create a Space.
+
+`yabai_doctor --repair` is the explicit state-changing recovery path. Its
+dependency order is:
+
+```text
+HEAD binary -> matching sudoers hash -> load scripting addition ->
+restart loaded LaunchAgent -> Accessibility/query check ->
+temporary Space create/destroy probe -> work_doctor
+```
+
+The sudoers candidate is validated with `visudo -cf` before installation and
+its temporary file is removed on success or failure. The Space probe destroys
+only one UUID proven absent from the pre-create snapshot and present in the
+post-create snapshot; missing or ambiguous identity stops without deletion.
+Repair never changes SIP, resets TCC, approves privacy prompts, moves windows,
+applies a display profile, or invokes a workspace layout entry. When the new
+binary lacks Accessibility permission, it opens the relevant System Settings
+page and requires the user to re-add `/opt/homebrew/bin/yabai`.
 
 `work_audit` is the read-only architecture drift check. It verifies solo/wide/tall wrapper symmetry through dry-run output, checks ownership policy coverage, confirms fallback and multi-window helper availability, and distinguishes empty labels that are allowlisted by design from suspicious empty labeled Spaces in the live read-only snapshot.
 

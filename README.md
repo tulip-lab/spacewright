@@ -278,6 +278,7 @@ work_doctor
 | `work_smoke` | 检查 reload、command check、audit 和所有 dry-run 入口 |
 | `work_audit` | 检查 mode symmetry、ownership policy、helper coverage 和空 label 状态 |
 | `work_doctor` | 检查依赖、fish syntax、reload、只读 yabai query、display health 和 bad-window cache |
+| `yabai_doctor` | 只读检查 yabai binary/HEAD、LaunchAgent、query 和 sudoers SHA；显式 `--repair` 才修复 |
 | `work_diagnostics` | 查看 display、labeled spaces、duplicate labels、empty spaces 和 bad-window cache |
 | `work_display_health [mode]` | 检查 primary/target display、外接屏位置、形状和 Dock 设置 |
 | `workspace_snapshot` | 一次查询并输出当前 displays、Spaces 和 windows JSON |
@@ -362,6 +363,27 @@ work_display_health
 work_bad_windows --summary
 work_audit
 ```
+
+如果怀疑 yabai 在 macOS 重启或 Homebrew 更新后失效，先运行严格只读检查：
+
+```fish
+yabai_doctor
+```
+
+需要修复时再显式运行：
+
+```fish
+yabai_doctor --repair
+```
+
+修复模式会按依赖顺序检查或恢复 yabai HEAD、绑定当前 binary SHA-256 的
+sudoers 规则、scripting addition 和当前已加载的 LaunchAgent。服务恢复后，它只创建
+一个临时 Space，并且仅当能唯一识别该 Space 时才将其删除，最后运行
+`work_doctor`。它不会修改 SIP、重置 TCC、移动窗口、应用 display profile 或执行
+`work_wide`/`work_tall`/`work_solo`。
+
+如果新 binary 缺少 Accessibility 权限，命令会打开对应的系统设置页并停止。手动删除
+并重新添加 `/opt/homebrew/bin/yabai` 后，再次运行 `yabai_doctor --repair`。
 
 如果 yabai query 明显卡住或失败：
 
