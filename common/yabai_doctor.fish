@@ -256,6 +256,57 @@ function __yabai_doctor_load_sa
     sudo -n "$path" --load-sa
 end
 
+function __yabai_doctor_space_probe
+    set -l before (ws_query_spaces yabai_doctor_space_before read-only)
+    or return 1
+
+    echo "REPAIR  verify Space creation"
+    ws_yabai -m space --create
+    or return 1
+
+    for attempt in (seq 1 20)
+        sleep 0.25
+
+        set -l after (ws_query_spaces yabai_doctor_space_after read-only)
+        or continue
+
+        set -l new_uuids (jq -nr \
+            --argjson before "$before" \
+            --argjson after "$after" \
+            '$after | map(.uuid) - ($before | map(.uuid)) | .[]')
+
+        if test (count $new_uuids) -eq 1
+            set -l new_uuid $new_uuids[1]
+            set -l new_index (echo "$after" | ws_jq -r \
+                --arg uuid "$new_uuid" \
+                '.[] | select(.uuid == $uuid) | .index')
+            string match -rq '^[0-9]+$' -- "$new_index"
+            or return 1
+
+            ws_yabai -m space --destroy "$new_index"
+            or return 1
+
+            sleep 0.5
+            set -l final (ws_query_spaces yabai_doctor_space_final read-only)
+            or return 1
+            set -l still_present (echo "$final" | ws_jq -r \
+                --arg uuid "$new_uuid" \
+                'any(.[]; .uuid == $uuid)')
+
+            test "$still_present" = false
+            return $status
+        end
+
+        if test (count $new_uuids) -gt 1
+            echo "FAIL    ambiguous new Space identity; no Space destroyed" >&2
+            return 1
+        end
+    end
+
+    echo "FAIL    Space creation was not observed; no Space destroyed" >&2
+    return 1
+end
+
 function __yabai_doctor_repair
     __yabai_doctor_ensure_head
     or begin

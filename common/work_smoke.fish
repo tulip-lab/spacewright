@@ -3088,6 +3088,123 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
+    set -l yabai_doctor_space_probe_smoke '
+        work_reload >/dev/null
+        set -g __yabai_doctor_space_calls
+
+        function sleep
+        end
+
+        function ws_query_spaces
+            switch "$argv[1]"
+                case yabai_doctor_space_before
+                    echo "[{\"uuid\":\"A\",\"index\":1},{\"uuid\":\"B\",\"index\":2}]"
+                case yabai_doctor_space_after
+                    echo "[{\"uuid\":\"A\",\"index\":1},{\"uuid\":\"B\",\"index\":2},{\"uuid\":\"C\",\"index\":3}]"
+                case yabai_doctor_space_final
+                    echo "[{\"uuid\":\"A\",\"index\":1},{\"uuid\":\"B\",\"index\":2}]"
+                case "*"
+                    return 1
+            end
+        end
+
+        function ws_yabai
+            set -ga __yabai_doctor_space_calls (string join " " -- $argv)
+        end
+
+        __yabai_doctor_space_probe >/dev/null
+        or exit 1
+
+        contains -- "-m space --create" $__yabai_doctor_space_calls
+        or exit 2
+
+        contains -- "-m space --destroy 3" $__yabai_doctor_space_calls
+        or exit 3
+
+        test (count $__yabai_doctor_space_calls) -eq 2
+        or exit 4
+    '
+    fish -lc "$yabai_doctor_space_probe_smoke" >/tmp/work-yabai-doctor-space-probe-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      yabai doctor destroys only new Space"
+    else
+        echo "FAIL    yabai doctor destroys only new Space"
+        cat /tmp/work-yabai-doctor-space-probe-smoke.out
+        set failed 1
+    end
+
+    set -l yabai_doctor_space_missing_smoke '
+        work_reload >/dev/null
+        set -g __yabai_doctor_destroy_calls 0
+
+        function sleep
+        end
+
+        function ws_query_spaces
+            echo "[{\"uuid\":\"A\",\"index\":1},{\"uuid\":\"B\",\"index\":2}]"
+        end
+
+        function ws_yabai
+            if contains -- --destroy $argv
+                set -g __yabai_doctor_destroy_calls \
+                    (math $__yabai_doctor_destroy_calls + 1)
+            end
+        end
+
+        __yabai_doctor_space_probe >/dev/null 2>&1
+        test $status -eq 1
+        or exit 1
+
+        test "$__yabai_doctor_destroy_calls" -eq 0
+        or exit 2
+    '
+    fish -lc "$yabai_doctor_space_missing_smoke" >/tmp/work-yabai-doctor-space-missing-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      yabai doctor preserves Spaces when creation is unobserved"
+    else
+        echo "FAIL    yabai doctor preserves Spaces when creation is unobserved"
+        cat /tmp/work-yabai-doctor-space-missing-smoke.out
+        set failed 1
+    end
+
+    set -l yabai_doctor_space_ambiguous_smoke '
+        work_reload >/dev/null
+        set -g __yabai_doctor_destroy_calls 0
+
+        function sleep
+        end
+
+        function ws_query_spaces
+            if test "$argv[1]" = yabai_doctor_space_before
+                echo "[{\"uuid\":\"A\",\"index\":1},{\"uuid\":\"B\",\"index\":2}]"
+            else
+                echo "[{\"uuid\":\"A\",\"index\":1},{\"uuid\":\"B\",\"index\":2},{\"uuid\":\"C\",\"index\":3},{\"uuid\":\"D\",\"index\":4}]"
+            end
+        end
+
+        function ws_yabai
+            if contains -- --destroy $argv
+                set -g __yabai_doctor_destroy_calls \
+                    (math $__yabai_doctor_destroy_calls + 1)
+            end
+        end
+
+        __yabai_doctor_space_probe >/dev/null 2>&1
+        test $status -eq 1
+        or exit 1
+
+        test "$__yabai_doctor_destroy_calls" -eq 0
+        or exit 2
+    '
+    fish -lc "$yabai_doctor_space_ambiguous_smoke" >/tmp/work-yabai-doctor-space-ambiguous-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      yabai doctor preserves ambiguous Spaces"
+    else
+        echo "FAIL    yabai doctor preserves ambiguous Spaces"
+        cat /tmp/work-yabai-doctor-space-ambiguous-smoke.out
+        set failed 1
+    end
+
     set -l dry_run_commands (workspace_dry_run_commands)
 
     for dry_run_command in $dry_run_commands
