@@ -2610,6 +2610,60 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
+    set -l yabai_doctor_usage_smoke '
+        work_reload >/dev/null
+        yabai_doctor --unknown >/tmp/yabai-doctor-usage.out 2>&1
+        test $status -eq 2
+        or exit 1
+        string match -q "usage: yabai_doctor [--repair]" \
+            (cat /tmp/yabai-doctor-usage.out)
+        or exit 2
+    '
+    fish -lc "$yabai_doctor_usage_smoke"
+    if test $status -eq 0
+        echo "OK      yabai doctor rejects unsupported options"
+    else
+        echo "FAIL    yabai doctor rejects unsupported options"
+        set failed 1
+    end
+
+    set -l yabai_doctor_dispatch_smoke '
+        work_reload >/dev/null
+        set -g __yabai_doctor_check_calls 0
+        set -g __yabai_doctor_repair_calls 0
+
+        function __yabai_doctor_check
+            set -g __yabai_doctor_check_calls \
+                (math $__yabai_doctor_check_calls + 1)
+        end
+
+        function __yabai_doctor_repair
+            set -g __yabai_doctor_repair_calls \
+                (math $__yabai_doctor_repair_calls + 1)
+        end
+
+        yabai_doctor >/dev/null
+        or exit 1
+        test "$__yabai_doctor_check_calls" -eq 1
+        or exit 2
+        test "$__yabai_doctor_repair_calls" -eq 0
+        or exit 3
+
+        yabai_doctor --repair >/dev/null
+        or exit 4
+        test "$__yabai_doctor_check_calls" -eq 1
+        or exit 5
+        test "$__yabai_doctor_repair_calls" -eq 1
+        or exit 6
+    '
+    fish -lc "$yabai_doctor_dispatch_smoke"
+    if test $status -eq 0
+        echo "OK      yabai doctor dispatch"
+    else
+        echo "FAIL    yabai doctor dispatch"
+        set failed 1
+    end
+
     set -l dry_run_commands (workspace_dry_run_commands)
 
     for dry_run_command in $dry_run_commands

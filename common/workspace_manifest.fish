@@ -5,6 +5,7 @@ function workspace_top_level_entry_rows --description "Print declared top-level 
     printf "%s\t%s\t%s\n" work_status "Inspect current workspace/display/module state" "diagnostics plus module status snapshots"
     printf "%s\t%s\t%s\n" work_reload "Reload common, display, and module functions" "reload only"
     printf "%s\t%s\t%s\n" work_check "Run reload, diagnostics, and module mode status" "read-only status"
+    printf "%s\t%s\t%s\n" yabai_doctor "Diagnose or explicitly repair yabai" "read-only unless --repair"
     printf "%s\t%s\t%s\n" work_doctor "Run read-only system and config checks" "read-only validation"
     printf "%s\t%s\t%s\n" work_smoke "Run helper wiring and dry-run regression checks" "read-only regression"
     printf "%s\t%s\t%s\n" work_audit "Audit mode symmetry, ownership, helpers, and labels" "read-only architecture check"
@@ -182,6 +183,7 @@ function workspace_required_command_names --description "Print documented worksp
         cleanup_unlabeled_empty_spaces \
         work_recover_light \
         work_inventory \
+        yabai_doctor \
         work_doctor \
         work_smoke \
         work_smoke_observability \
