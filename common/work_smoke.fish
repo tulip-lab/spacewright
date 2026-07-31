@@ -577,6 +577,48 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
+    set -l legacy_yabai_service_restart_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_launchctl_calls
+
+        function launchctl
+            set -ga __work_smoke_launchctl_calls (string join " " -- $argv)
+
+            if test "$argv[1]" = print
+                return 0
+            end
+
+            if test "$argv[1]" = kickstart
+                return 0
+            end
+
+            return 1
+        end
+
+        function ws_yabai
+            return 1
+        end
+
+        ws_restart_yabai work_smoke
+        or exit 1
+
+        set -l service "gui/"(id -u)"/com.asmvik.yabai"
+        contains -- "print $service" $__work_smoke_launchctl_calls
+        or exit 2
+
+        contains -- "kickstart -k $service" $__work_smoke_launchctl_calls
+        or exit 3
+    '
+    fish -lc "$legacy_yabai_service_restart_smoke" >/tmp/work-legacy-yabai-service-restart-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      legacy yabai LaunchAgent restart"
+    else
+        echo "FAIL    legacy yabai LaunchAgent restart"
+        cat /tmp/work-legacy-yabai-service-restart-smoke.out
+        set failed 1
+    end
+
     set -l readonly_query_no_restart_smoke '
         work_reload >/dev/null
 

@@ -202,9 +202,13 @@ Workspace functions should avoid direct `jq` pipelines where these helpers cover
 If read-only queries repeatedly time out, recovery is explicit:
 
 ```fish
-yabai --restart-service
+ws_restart_yabai manual
 work_reload
 ```
+
+`ws_restart_yabai` restarts the loaded legacy `com.asmvik.yabai` LaunchAgent
+through `launchctl kickstart` when present, and otherwise delegates to yabai's
+standard service command.
 
 ### Window Movement
 
@@ -278,7 +282,7 @@ Primary read-only commands:
 
 `work_command_check` validates function availability after `work_reload`. It does not move windows, switch displays, or validate app presence.
 
-Workspace layout commands may use `ws_recover_yabai_once` to restart yabai once when shared queries fail after normal retry or when a present app remains non-movable after activation/polling. The helper is cooldown-guarded so multiple failures in one run do not repeatedly restart yabai. Read-only commands are excluded through the shared recovery allowlist.
+Workspace layout commands may use `ws_recover_yabai_once` to restart yabai once when shared queries fail after normal retry or when a present app remains non-movable after activation/polling. The helper is cooldown-guarded so multiple failures in one run do not repeatedly restart yabai. Its restart boundary supports the loaded legacy `com.asmvik.yabai` LaunchAgent as well as yabai's standard service. Read-only commands are excluded through the shared recovery allowlist.
 
 ### Read-Only Workspace Observability
 

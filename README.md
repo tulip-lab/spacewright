@@ -366,10 +366,13 @@ work_audit
 如果 yabai query 明显卡住或失败：
 
 ```fish
-yabai --restart-service
+ws_restart_yabai manual
 work_reload
 work_diagnostics
 ```
+
+`ws_restart_yabai` 会优先重启当前已加载的旧版 `com.asmvik.yabai`
+LaunchAgent；未检测到该服务时，使用 yabai 自带的标准 service 命令。
 
 如果出现很多空 Space，可以先看状态：
 

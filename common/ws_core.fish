@@ -68,8 +68,14 @@ function ws_restart_yabai --description "Restart the yabai service through the b
         return 1
     end
 
-    ws_yabai --restart-service >/dev/null 2>&1
-    set -l status_code $status
+    set -l legacy_service "gui/"(id -u)"/com.asmvik.yabai"
+    if command -q launchctl; and launchctl print "$legacy_service" >/dev/null 2>&1
+        launchctl kickstart -k "$legacy_service" >/dev/null 2>&1
+        set -l status_code $status
+    else
+        ws_yabai --restart-service >/dev/null 2>&1
+        set -l status_code $status
+    end
 
     if test "$status_code" -ne 0
         echo "[WARN] $caller could not restart yabai service" >&2
