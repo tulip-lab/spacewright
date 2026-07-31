@@ -2816,6 +2816,278 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
+    set -l yabai_doctor_repair_order_smoke '
+        work_reload >/dev/null
+        set -g __yabai_doctor_repair_order
+
+        function __yabai_doctor_ensure_head
+            set -ga __yabai_doctor_repair_order ensure_head
+        end
+
+        function __yabai_doctor_install_sudoers
+            set -ga __yabai_doctor_repair_order install_sudoers
+        end
+
+        function __yabai_doctor_load_sa
+            set -ga __yabai_doctor_repair_order load_sa
+        end
+
+        function ws_restart_yabai
+            set -ga __yabai_doctor_repair_order restart
+        end
+
+        function sleep
+        end
+
+        function __yabai_doctor_queries
+            set -ga __yabai_doctor_repair_order query
+        end
+
+        function __yabai_doctor_space_probe
+            set -ga __yabai_doctor_repair_order space_probe
+        end
+
+        function work_doctor
+            set -ga __yabai_doctor_repair_order work_doctor
+        end
+
+        function __yabai_doctor_check
+            set -ga __yabai_doctor_repair_order final_check
+        end
+
+        yabai_doctor --repair >/dev/null
+        or exit 1
+
+        test (string join " " -- $__yabai_doctor_repair_order) = \
+            "ensure_head install_sudoers load_sa restart query space_probe work_doctor final_check"
+    '
+    fish -lc "$yabai_doctor_repair_order_smoke" >/tmp/work-yabai-doctor-repair-order-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      yabai doctor repair dependency order"
+    else
+        echo "FAIL    yabai doctor repair dependency order"
+        cat /tmp/work-yabai-doctor-repair-order-smoke.out
+        set failed 1
+    end
+
+    set -l yabai_doctor_accessibility_smoke '
+        work_reload >/dev/null
+        set -g __yabai_doctor_accessibility_opened 0
+        set -g __yabai_doctor_space_probe_calls 0
+
+        function __yabai_doctor_ensure_head
+        end
+
+        function __yabai_doctor_install_sudoers
+        end
+
+        function __yabai_doctor_load_sa
+        end
+
+        function ws_restart_yabai
+        end
+
+        function sleep
+        end
+
+        function __yabai_doctor_queries
+            return 1
+        end
+
+        function __yabai_doctor_accessibility_missing
+            return 0
+        end
+
+        function __yabai_doctor_open_accessibility
+            set -g __yabai_doctor_accessibility_opened 1
+        end
+
+        function __yabai_doctor_space_probe
+            set -g __yabai_doctor_space_probe_calls \
+                (math $__yabai_doctor_space_probe_calls + 1)
+        end
+
+        yabai_doctor --repair >/dev/null
+        test $status -eq 1
+        or exit 1
+
+        test "$__yabai_doctor_accessibility_opened" -eq 1
+        or exit 2
+
+        test "$__yabai_doctor_space_probe_calls" -eq 0
+        or exit 3
+    '
+    fish -lc "$yabai_doctor_accessibility_smoke" >/tmp/work-yabai-doctor-accessibility-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      yabai doctor hands off Accessibility"
+    else
+        echo "FAIL    yabai doctor hands off Accessibility"
+        cat /tmp/work-yabai-doctor-accessibility-smoke.out
+        set failed 1
+    end
+
+    set -l yabai_doctor_head_install_smoke '
+        work_reload >/dev/null
+        set -g __yabai_doctor_head_phase stable
+        set -g __yabai_doctor_brew_calls
+
+        function __yabai_doctor_binary_path
+            echo /opt/homebrew/bin/yabai
+        end
+
+        function __yabai_doctor_real_path
+            if test "$__yabai_doctor_head_phase" = stable
+                echo /opt/homebrew/Cellar/yabai/7.1.25/bin/yabai
+            else
+                echo /opt/homebrew/Cellar/yabai/HEAD-test/bin/yabai
+            end
+        end
+
+        function brew
+            set -ga __yabai_doctor_brew_calls (string join " " -- $argv)
+
+            if test "$argv[1]" = install
+                set -g __yabai_doctor_head_phase head
+            end
+        end
+
+        __yabai_doctor_ensure_head >/dev/null
+        or exit 1
+
+        contains -- "list --versions yabai" $__yabai_doctor_brew_calls
+        or exit 2
+
+        contains -- "unlink yabai" $__yabai_doctor_brew_calls
+        or exit 3
+
+        contains -- "install --HEAD asmvik/formulae/yabai" $__yabai_doctor_brew_calls
+        or exit 4
+    '
+    fish -lc "$yabai_doctor_head_install_smoke" >/tmp/work-yabai-doctor-head-install-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      yabai doctor activates Homebrew HEAD"
+    else
+        echo "FAIL    yabai doctor activates Homebrew HEAD"
+        cat /tmp/work-yabai-doctor-head-install-smoke.out
+        set failed 1
+    end
+
+    set -l yabai_doctor_visudo_guard_smoke '
+        work_reload >/dev/null
+        set -g __yabai_doctor_install_calls 0
+        set -g __yabai_doctor_validated_path
+
+        function __yabai_doctor_binary_path
+            echo /opt/homebrew/bin/yabai
+        end
+
+        function __yabai_doctor_sha256
+            echo abc123
+        end
+
+        function __yabai_doctor_validate_sudoers
+            set -g __yabai_doctor_validated_path $argv[1]
+            return 1
+        end
+
+        function __yabai_doctor_install_sudoers_file
+            set -g __yabai_doctor_install_calls \
+                (math $__yabai_doctor_install_calls + 1)
+        end
+
+        __yabai_doctor_install_sudoers >/dev/null 2>&1
+        test $status -eq 1
+        or exit 1
+
+        test "$__yabai_doctor_install_calls" -eq 0
+        or exit 2
+
+        test -n "$__yabai_doctor_validated_path"
+        or exit 3
+
+        test ! -e "$__yabai_doctor_validated_path"
+        or exit 4
+    '
+    fish -lc "$yabai_doctor_visudo_guard_smoke" >/tmp/work-yabai-doctor-visudo-guard-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      yabai doctor blocks invalid sudoers"
+    else
+        echo "FAIL    yabai doctor blocks invalid sudoers"
+        cat /tmp/work-yabai-doctor-visudo-guard-smoke.out
+        set failed 1
+    end
+
+    set -l yabai_doctor_sudoers_content_smoke '
+        work_reload >/dev/null
+        set -g __yabai_doctor_sudoers_content
+        set -g __yabai_doctor_installed_path
+
+        function __yabai_doctor_binary_path
+            echo /opt/homebrew/bin/yabai
+        end
+
+        function __yabai_doctor_sha256
+            echo abc123
+        end
+
+        function whoami
+            echo testuser
+        end
+
+        function __yabai_doctor_validate_sudoers
+        end
+
+        function __yabai_doctor_install_sudoers_file
+            set -g __yabai_doctor_installed_path $argv[1]
+            set -g __yabai_doctor_sudoers_content (cat "$argv[1]")
+        end
+
+        __yabai_doctor_install_sudoers >/dev/null
+        or exit 1
+
+        test "$__yabai_doctor_sudoers_content" = \
+            "testuser ALL=(root) NOPASSWD: sha256:abc123 /opt/homebrew/bin/yabai --load-sa"
+        or exit 2
+
+        test ! -e "$__yabai_doctor_installed_path"
+        or exit 3
+    '
+    fish -lc "$yabai_doctor_sudoers_content_smoke" >/tmp/work-yabai-doctor-sudoers-content-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      yabai doctor writes hash-bound sudoers"
+    else
+        echo "FAIL    yabai doctor writes hash-bound sudoers"
+        cat /tmp/work-yabai-doctor-sudoers-content-smoke.out
+        set failed 1
+    end
+
+    set -l yabai_doctor_load_sa_smoke '
+        work_reload >/dev/null
+        set -g __yabai_doctor_sudo_calls
+
+        function __yabai_doctor_binary_path
+            echo /opt/homebrew/bin/yabai
+        end
+
+        function sudo
+            set -ga __yabai_doctor_sudo_calls (string join " " -- $argv)
+        end
+
+        __yabai_doctor_load_sa >/dev/null
+        or exit 1
+
+        test "$__yabai_doctor_sudo_calls" = \
+            "-n /opt/homebrew/bin/yabai --load-sa"
+    '
+    fish -lc "$yabai_doctor_load_sa_smoke" >/tmp/work-yabai-doctor-load-sa-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      yabai doctor loads scripting addition"
+    else
+        echo "FAIL    yabai doctor loads scripting addition"
+        cat /tmp/work-yabai-doctor-load-sa-smoke.out
+        set failed 1
+    end
+
     set -l dry_run_commands (workspace_dry_run_commands)
 
     for dry_run_command in $dry_run_commands

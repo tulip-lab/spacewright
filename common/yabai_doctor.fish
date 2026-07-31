@@ -168,6 +168,153 @@ function __yabai_doctor_check
     test "$failed" -eq 0
 end
 
+function __yabai_doctor_accessibility_missing
+    set -l error_log /tmp/yabai_(whoami).err.log
+    test -r "$error_log"
+    or return 1
+
+    tail -n 20 "$error_log" |
+        string match -rq 'could not access accessibility features'
+end
+
+function __yabai_doctor_open_accessibility
+    open 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'
+    echo "ACTION  remove and re-add /opt/homebrew/bin/yabai in Accessibility, then rerun:"
+    echo "        yabai_doctor --repair"
+end
+
+function __yabai_doctor_ensure_head
+    set -l path (__yabai_doctor_binary_path)
+    if test -n "$path"
+        set -l real_path (__yabai_doctor_real_path "$path")
+        if __yabai_doctor_head_active "$real_path"
+            echo "OK      yabai HEAD already active"
+            return 0
+        end
+    end
+
+    command -q brew
+    or begin
+        echo "FAIL    Homebrew not found" >&2
+        return 1
+    end
+
+    echo "REPAIR  install yabai HEAD"
+    if brew list --versions yabai >/dev/null 2>&1
+        brew unlink yabai
+        or return 1
+    end
+
+    brew install --HEAD asmvik/formulae/yabai
+    or return 1
+
+    set path (__yabai_doctor_binary_path)
+    test -n "$path"
+    or return 1
+
+    __yabai_doctor_head_active (__yabai_doctor_real_path "$path")
+end
+
+function __yabai_doctor_validate_sudoers
+    /usr/sbin/visudo -cf "$argv[1]"
+end
+
+function __yabai_doctor_install_sudoers_file
+    sudo /usr/bin/install -o root -g wheel -m 440 \
+        "$argv[1]" /private/etc/sudoers.d/yabai
+end
+
+function __yabai_doctor_install_sudoers
+    set -l path (__yabai_doctor_binary_path)
+    set -l hash (__yabai_doctor_sha256 "$path")
+    test -n "$path" -a -n "$hash"
+    or return 1
+
+    set -l sudoers_tmp (mktemp)
+    or return 1
+    set -l install_status 1
+
+    printf '%s ALL=(root) NOPASSWD: sha256:%s %s --load-sa\n' \
+        (whoami) "$hash" "$path" >"$sudoers_tmp"
+
+    if __yabai_doctor_validate_sudoers "$sudoers_tmp"
+        echo "REPAIR  install hash-bound yabai sudoers rule"
+        __yabai_doctor_install_sudoers_file "$sudoers_tmp"
+        set install_status $status
+    end
+
+    rm -f "$sudoers_tmp"
+    test "$install_status" -eq 0
+end
+
+function __yabai_doctor_load_sa
+    set -l path (__yabai_doctor_binary_path)
+    test -n "$path"
+    or return 1
+
+    echo "REPAIR  load yabai scripting addition"
+    sudo -n "$path" --load-sa
+end
+
+function __yabai_doctor_repair
+    __yabai_doctor_ensure_head
+    or begin
+        echo "FAIL    repair phase=HEAD"
+        return 1
+    end
+
+    __yabai_doctor_install_sudoers
+    or begin
+        echo "FAIL    repair phase=sudoers"
+        return 1
+    end
+
+    __yabai_doctor_load_sa
+    or begin
+        echo "FAIL    repair phase=scripting_addition"
+        return 1
+    end
+
+    echo "REPAIR  restart yabai LaunchAgent"
+    ws_restart_yabai yabai_doctor
+    or begin
+        echo "FAIL    repair phase=service_restart"
+        return 1
+    end
+    sleep 1
+
+    __yabai_doctor_queries >/dev/null
+    or begin
+        if __yabai_doctor_accessibility_missing
+            __yabai_doctor_open_accessibility
+            echo "FAIL    manual Accessibility action required"
+        else
+            echo "FAIL    repair phase=daemon_query"
+        end
+        return 1
+    end
+
+    __yabai_doctor_space_probe
+    or begin
+        echo "FAIL    repair phase=space_probe"
+        return 1
+    end
+
+    work_doctor
+    or begin
+        echo "FAIL    repair phase=work_doctor"
+        return 1
+    end
+
+    __yabai_doctor_check
+    or begin
+        echo "FAIL    repair phase=final_check"
+        return 1
+    end
+
+    echo "OK      repaired and verified"
+end
+
 function yabai_doctor --description "Diagnose yabai and optionally repair its runtime setup"
     argparse h/help repair -- $argv
     or begin
