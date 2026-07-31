@@ -1,3 +1,173 @@
+function __yabai_doctor_ok
+    printf "OK      %s\n" "$argv"
+end
+
+function __yabai_doctor_warn
+    printf "WARN    %s\n" "$argv"
+end
+
+function __yabai_doctor_fail
+    printf "FAIL    %s\n" "$argv"
+end
+
+function __yabai_doctor_binary_path
+    command -s yabai
+end
+
+function __yabai_doctor_real_path
+    set -l path $argv[1]
+    perl -MCwd=realpath -e 'print realpath($ARGV[0]) // $ARGV[0]' "$path"
+end
+
+function __yabai_doctor_sha256
+    shasum -a 256 "$argv[1]" | string split ' ' | head -n 1
+end
+
+function __yabai_doctor_version
+    "$argv[1]" --version 2>/dev/null
+end
+
+function __yabai_doctor_macos_version
+    sw_vers -productVersion 2>/dev/null
+end
+
+function __yabai_doctor_head_active
+    string match -q '*/Cellar/yabai/HEAD-*/bin/yabai' -- "$argv[1]"
+end
+
+function __yabai_doctor_head_required
+    set -l macos_version (__yabai_doctor_macos_version)
+    set -l parts (string split . -- "$macos_version")
+    set -l major $parts[1]
+    set -l minor 0
+
+    if test (count $parts) -ge 2
+        set minor $parts[2]
+    end
+
+    string match -rq '^[0-9]+$' -- "$major"
+    or return 1
+    string match -rq '^[0-9]+$' -- "$minor"
+    or return 1
+
+    test "$major" -gt 26
+    and return 0
+
+    test "$major" -eq 26 -a "$minor" -ge 6
+end
+
+function __yabai_doctor_loaded_service
+    set -l user_id (id -u)
+
+    for label in com.asmvik.yabai com.koekeishiya.yabai homebrew.mxcl.yabai
+        set -l service "gui/$user_id/$label"
+        if launchctl print "$service" >/dev/null 2>&1
+            echo "$service"
+            return 0
+        end
+    end
+
+    return 1
+end
+
+function __yabai_doctor_service_running
+    launchctl print "$argv[1]" 2>/dev/null |
+        string match -rq '^[[:space:]]*state = running$'
+end
+
+function __yabai_doctor_sudo_rule_matches
+    set -l path $argv[1]
+    set -l hash $argv[2]
+    set -l escaped_path (string escape --style=regex -- "$path")
+    set -l rule_pattern (string join '' -- \
+        'sha256:' "$hash" \
+        '[[:space:]]+' "$escaped_path" \
+        '[[:space:]]+--load-sa')
+
+    sudo -n -l 2>/dev/null |
+        string match -rq -- "$rule_pattern"
+end
+
+function __yabai_doctor_queries
+    set -l displays (ws_query_displays yabai_doctor read-only)
+    or return 1
+
+    set -l spaces (ws_query_spaces yabai_doctor read-only)
+    or return 1
+
+    set -l windows (ws_query_windows yabai_doctor read-only)
+    or return 1
+
+    echo "displays="(echo "$displays" | ws_jq -r length)
+    echo "spaces="(echo "$spaces" | ws_jq -r length)
+    echo "windows="(echo "$windows" | ws_jq -r length)
+end
+
+function __yabai_doctor_check
+    set -l failed 0
+
+    echo "===== YABAI DOCTOR ====="
+
+    set -l path (__yabai_doctor_binary_path)
+    if test -z "$path"
+        __yabai_doctor_fail "yabai command not found"
+        return 1
+    end
+    __yabai_doctor_ok "binary=$path"
+
+    set -l real_path (__yabai_doctor_real_path "$path")
+    set -l hash (__yabai_doctor_sha256 "$path")
+    set -l yabai_version (__yabai_doctor_version "$path")
+    set -l macos_version (__yabai_doctor_macos_version)
+    __yabai_doctor_ok "real_path=$real_path"
+    __yabai_doctor_ok "version=$yabai_version"
+    __yabai_doctor_ok "sha256=$hash"
+    __yabai_doctor_ok "macOS=$macos_version"
+
+    if __yabai_doctor_head_active "$real_path"
+        __yabai_doctor_ok "HEAD build active"
+    else if __yabai_doctor_head_required
+        __yabai_doctor_fail "macOS 26.6 or newer requires the yabai HEAD Space fix"
+        set failed 1
+    else
+        __yabai_doctor_warn "stable yabai build active"
+    end
+
+    set -l service (__yabai_doctor_loaded_service)
+    if test -n "$service"
+        __yabai_doctor_ok "LaunchAgent loaded: $service"
+        if __yabai_doctor_service_running "$service"
+            __yabai_doctor_ok "LaunchAgent running"
+        else
+            __yabai_doctor_fail "LaunchAgent loaded but not running"
+            set failed 1
+        end
+    else
+        __yabai_doctor_fail "yabai LaunchAgent not loaded"
+        set failed 1
+    end
+
+    set -l query_output (__yabai_doctor_queries)
+    set -l query_status $status
+    if test "$query_status" -eq 0
+        for line in $query_output
+            __yabai_doctor_ok "query $line"
+        end
+    else
+        __yabai_doctor_fail "yabai read-only queries failed"
+        set failed 1
+    end
+
+    if __yabai_doctor_sudo_rule_matches "$path" "$hash"
+        __yabai_doctor_ok "sudoers hash matches"
+    else
+        __yabai_doctor_fail "sudoers hash does not match"
+        set failed 1
+    end
+
+    test "$failed" -eq 0
+end
+
 function yabai_doctor --description "Diagnose yabai and optionally repair its runtime setup"
     argparse h/help repair -- $argv
     or begin

@@ -2664,6 +2664,158 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
+    set -l yabai_doctor_readonly_smoke '
+        work_reload >/dev/null
+        set -g __yabai_doctor_mutations
+
+        function __yabai_doctor_binary_path
+            echo /opt/homebrew/bin/yabai
+        end
+
+        function __yabai_doctor_real_path
+            echo /opt/homebrew/Cellar/yabai/HEAD-test/bin/yabai
+        end
+
+        function __yabai_doctor_sha256
+            echo abc123
+        end
+
+        function __yabai_doctor_version
+            echo yabai-vHEAD
+        end
+
+        function __yabai_doctor_loaded_service
+            echo gui/501/com.asmvik.yabai
+        end
+
+        function __yabai_doctor_service_running
+            return 0
+        end
+
+        function __yabai_doctor_sudo_rule_matches
+            return 0
+        end
+
+        function __yabai_doctor_queries
+            printf "%s\n" displays=2 spaces=5 windows=12
+        end
+
+        function __yabai_doctor_ensure_head
+            set -ga __yabai_doctor_mutations ensure_head
+        end
+
+        function __yabai_doctor_install_sudoers
+            set -ga __yabai_doctor_mutations install_sudoers
+        end
+
+        function ws_restart_yabai
+            set -ga __yabai_doctor_mutations restart
+        end
+
+        set -l output (yabai_doctor 2>/tmp/yabai-doctor-readonly.err)
+        or exit 1
+
+        test ! -s /tmp/yabai-doctor-readonly.err
+        or exit 2
+
+        test (count $__yabai_doctor_mutations) -eq 0
+        or exit 3
+
+        string match -q "*HEAD build active*" -- $output
+        or exit 4
+
+        string match -q "*sudoers hash matches*" -- $output
+        or exit 5
+
+        string match -q "*LaunchAgent running*" -- $output
+        or exit 6
+    '
+    fish -lc "$yabai_doctor_readonly_smoke" >/tmp/work-yabai-doctor-readonly-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      yabai doctor default is read-only"
+    else
+        echo "FAIL    yabai doctor default is read-only"
+        cat /tmp/work-yabai-doctor-readonly-smoke.out
+        set failed 1
+    end
+
+    set -l yabai_doctor_stale_sudoers_smoke '
+        work_reload >/dev/null
+
+        function __yabai_doctor_binary_path
+            echo /opt/homebrew/bin/yabai
+        end
+
+        function __yabai_doctor_real_path
+            echo /opt/homebrew/Cellar/yabai/HEAD-test/bin/yabai
+        end
+
+        function __yabai_doctor_sha256
+            echo stale123
+        end
+
+        function __yabai_doctor_version
+            echo yabai-vHEAD
+        end
+
+        function __yabai_doctor_loaded_service
+            echo gui/501/com.asmvik.yabai
+        end
+
+        function __yabai_doctor_service_running
+            return 0
+        end
+
+        function __yabai_doctor_sudo_rule_matches
+            return 1
+        end
+
+        function __yabai_doctor_queries
+            printf "%s\n" displays=2 spaces=5 windows=12
+        end
+
+        set -l output (yabai_doctor)
+        set -l doctor_status $status
+
+        test "$doctor_status" -eq 1
+        or exit 1
+
+        string match -q "FAIL    sudoers hash does not match" -- $output
+        or exit 2
+    '
+    fish -lc "$yabai_doctor_stale_sudoers_smoke" >/tmp/work-yabai-doctor-stale-sudoers-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      yabai doctor detects stale sudoers hash"
+    else
+        echo "FAIL    yabai doctor detects stale sudoers hash"
+        cat /tmp/work-yabai-doctor-stale-sudoers-smoke.out
+        set failed 1
+    end
+
+    set -l yabai_doctor_sudoers_rule_smoke '
+        work_reload >/dev/null
+
+        function sudo
+            test "$argv[1]" = -n
+            or return 1
+            test "$argv[2]" = -l
+            or return 1
+            echo "(root) NOPASSWD: sha256:abc123 /opt/homebrew/bin/yabai --load-sa"
+        end
+
+        __yabai_doctor_sudo_rule_matches \
+            /opt/homebrew/bin/yabai \
+            abc123
+    '
+    fish -lc "$yabai_doctor_sudoers_rule_smoke" >/tmp/work-yabai-doctor-sudoers-rule-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      yabai doctor parses sudoers rule"
+    else
+        echo "FAIL    yabai doctor parses sudoers rule"
+        cat /tmp/work-yabai-doctor-sudoers-rule-smoke.out
+        set failed 1
+    end
+
     set -l dry_run_commands (workspace_dry_run_commands)
 
     for dry_run_command in $dry_run_commands
