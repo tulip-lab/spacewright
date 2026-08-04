@@ -144,7 +144,7 @@ work_tall
 | `coding_solo` | 内置/主显示器上的 VS Code 单独工作区 |
 | `coding_wide` | wide 外接屏：ChatGPT 左侧 1/3，VS Code 右侧 2/3 |
 | `coding_tall` | tall 外接屏：ChatGPT 上半，VS Code 下半 |
-| `coding_control` | primary display 上的 Warp、SmartGit、KeePassXC、FlClash/Thaw 控制区 |
+| `coding_control` | primary display 上的 Warp、SmartGit、KeePassXC、FlClash/Thaw、Portfolio Performance 控制区 |
 
 `coding_editor_wide` 和 `coding_editor_tall` 只收集已经打开的 ChatGPT 窗口，不会自动启动
 ChatGPT。ChatGPT 不存在时，VS Code 使用整个 workspace；`coding_editor_solo` 仍保持 VS Code 全屏。

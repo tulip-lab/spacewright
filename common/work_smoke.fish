@@ -256,6 +256,14 @@ function work_smoke --description "Run read-only workspace smoke checks for help
             and ([.roles[] | select(.role == \"warp\") | .selected_ids[]] == [21])
             and ([.roles[] | select(.role == \"smartgit\") | .fallback_candidate_ids[]] == [22])
             and (first(.roles[] | select(.role == \"warp\") | .layout.grid) == \"3:1:0:0:1:2\")
+            and (first(.roles[] | select(.role == \"portfolio_performance\") | .layout) == {
+                kind: \"absolute\",
+                x: 420,
+                y: 180,
+                width: 1220,
+                height: 852,
+                tolerance: 8
+            })
         " >/dev/null
         or exit 11
 

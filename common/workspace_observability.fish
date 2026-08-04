@@ -88,12 +88,15 @@ function workspace_observation_spec --description "Print the read-only observati
             or return 1
             set -l flclash_apps (workspace_app_names_json flclash thaw | string collect)
             or return 1
+            set -l portfolio_performance_apps (workspace_app_names_json portfolio_performance | string collect)
+            or return 1
 
             ws_jq -n \
                 --argjson warp_apps "$warp_apps" \
                 --argjson smartgit_apps "$smartgit_apps" \
                 --argjson keepassx_apps "$keepassx_apps" \
-                --argjson flclash_apps "$flclash_apps" '
+                --argjson flclash_apps "$flclash_apps" \
+                --argjson portfolio_performance_apps "$portfolio_performance_apps" '
                 {
                     version: 1,
                     workspace: "coding_control",
@@ -143,6 +146,20 @@ function workspace_observation_spec --description "Print the read-only observati
                                 y: 120,
                                 width: 1200,
                                 height: 1040,
+                                tolerance: 8
+                            }
+                        },
+                        {
+                            role: "portfolio_performance",
+                            app_names: $portfolio_performance_apps,
+                            selection: "first",
+                            fallback_space_owner: false,
+                            layout: {
+                                kind: "absolute",
+                                x: 420,
+                                y: 180,
+                                width: 1220,
+                                height: 852,
                                 tolerance: 8
                             }
                         }
