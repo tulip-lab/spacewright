@@ -19,10 +19,27 @@ function __workspace_order_labels_on_display --description "Order existing label
     end
 
     if set -q _flag_preserve_leading_unlabeled
-        set -l first_label (echo $initial_spaces | ws_jq -r --argjson display "$_flag_display" '
-            ([.[] | select(.display == $display)] | sort_by(.index) | first | .label) // empty
+        set -l home_info (echo $initial_spaces | ws_jq -r --argjson display "$_flag_display" '
+            [.[] | select(.display == $display and .label == "")]
+            | sort_by(.index)
+            | first
+            | if . == null then empty else [.uuid, .index] | @tsv end
         ')
-        if test -z "$first_label"
+
+        if test -n "$home_info"
+            set -l home_parts (string split \t -- "$home_info")
+            set -l home_uuid $home_parts[1]
+            set -l home_index $home_parts[2]
+
+            if test -z "$home_uuid" -o -z "$home_index"
+                return 1
+            end
+
+            if test "$home_index" -ne "$target_index"
+                ws_yabai -m space "$home_uuid" --move "$target_index"
+                or return 1
+            end
+
             set target_index (math $target_index + 1)
         end
     end

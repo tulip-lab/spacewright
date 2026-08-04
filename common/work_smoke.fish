@@ -974,20 +974,23 @@ function work_smoke --description "Run read-only workspace smoke checks for help
 
     set -l workspace_order_spaces_smoke '
         work_reload >/dev/null
+        if set -q WORKSPACE_TEST_SOURCE_ROOT
+            source "$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_order_spaces.fish"
+        end
 
         set -g __work_smoke_order_query_calls 0
         set -g __work_smoke_order_commands
         set -g __work_smoke_order_spaces "[
-            {\"index\":4,\"display\":1,\"label\":\"coding_control\"},
-            {\"index\":1,\"display\":1,\"label\":\"\"},
-            {\"index\":2,\"display\":1,\"label\":\"gtd_chat\"},
-            {\"index\":3,\"display\":1,\"label\":\"gtd_calendar\"},
-            {\"index\":5,\"display\":1,\"label\":\"\"},
-            {\"index\":6,\"display\":2,\"label\":\"coding_editor_wide\"},
-            {\"index\":7,\"display\":2,\"label\":\"research_wide\"},
-            {\"index\":8,\"display\":2,\"label\":\"gtd_mail_wide\"},
-            {\"index\":9,\"display\":2,\"label\":\"gtd_ai\"},
-            {\"index\":10,\"display\":2,\"label\":\"gtd_meeting_wide\"}
+            {\"index\":1,\"display\":1,\"label\":\"coding_control\",\"uuid\":\"control\"},
+            {\"index\":2,\"display\":1,\"label\":\"gtd_chat\",\"uuid\":\"chat\"},
+            {\"index\":3,\"display\":1,\"label\":\"gtd_calendar\",\"uuid\":\"calendar\"},
+            {\"index\":4,\"display\":1,\"label\":\"\",\"uuid\":\"home\"},
+            {\"index\":5,\"display\":1,\"label\":\"\",\"uuid\":\"spare\"},
+            {\"index\":6,\"display\":2,\"label\":\"coding_editor_wide\",\"uuid\":\"editor\"},
+            {\"index\":7,\"display\":2,\"label\":\"research_wide\",\"uuid\":\"research\"},
+            {\"index\":8,\"display\":2,\"label\":\"gtd_mail_wide\",\"uuid\":\"mail\"},
+            {\"index\":9,\"display\":2,\"label\":\"gtd_ai\",\"uuid\":\"ai\"},
+            {\"index\":10,\"display\":2,\"label\":\"gtd_meeting_wide\",\"uuid\":\"meeting\"}
         ]"
 
         function resolve_workspace_primary_display
@@ -1012,16 +1015,16 @@ function work_smoke --description "Run read-only workspace smoke checks for help
             and test "$argv[4]" = --move
             or return 1
 
-            set -l label $argv[3]
+            set -l selector $argv[3]
             set -l target $argv[5]
             set -g __work_smoke_order_spaces (echo $__work_smoke_order_spaces | ws_jq -c \
-                --arg label "$label" \
+                --arg selector "$selector" \
                 --argjson target "$target" "
-                    (first(.[] | select(.label == \$label)).display) as \$display
+                    (first(.[] | select(.label == \$selector or .uuid == \$selector)).display) as \$display
                     | ([.[] | select(.display == \$display)] | sort_by(.index)) as \$display_spaces
                     | (\$display_spaces | map(.index) | min) as \$first_index
-                    | (first(\$display_spaces[] | select(.label == \$label))) as \$selected
-                    | (\$display_spaces | map(select(.label != \$label))) as \$remaining
+                    | (first(\$display_spaces[] | select(.label == \$selector or .uuid == \$selector))) as \$selected
+                    | (\$display_spaces | map(select(.uuid != \$selected.uuid))) as \$remaining
                     | (\$target - \$first_index) as \$offset
                     | (\$remaining[0:\$offset] + [\$selected] + \$remaining[\$offset:]) as \$ordered
                     | (\$ordered | to_entries | map(.value + {index: (\$first_index + .key)})) as \$updated
@@ -1033,21 +1036,60 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         or exit 1
 
         test (echo $__work_smoke_order_spaces | ws_jq -r \
-            "[.[] | select(.display == 1) | .label] | join(\",\")") = ",coding_control,gtd_chat,gtd_calendar,"
+            "first(.[] | select(.display == 1) | .uuid)") = home
         or exit 2
+
+        test "$__work_smoke_order_commands[1]" = "-m space home --move 1"
+        or exit 3
+
+        test (echo $__work_smoke_order_spaces | ws_jq -r \
+            "[.[] | select(.display == 1) | .label] | join(\",\")") = ",coding_control,gtd_chat,gtd_calendar,"
+        or exit 4
 
         test (echo $__work_smoke_order_spaces | ws_jq -r \
             "[.[] | select(.display == 2) | .label] | join(\",\")") = \
             "gtd_ai,coding_editor_wide,research_wide,gtd_mail_wide,gtd_meeting_wide"
-        or exit 3
+        or exit 5
 
         test "$__work_smoke_order_query_calls" -gt (count $__work_smoke_order_commands)
-        or exit 4
+        or exit 6
 
         for command_line in $__work_smoke_order_commands
             string match -rq -- "--create|--destroy|--display" "$command_line"
-            and exit 5
+            and exit 7
         end
+
+        set -g __work_smoke_order_spaces "[
+            {\"index\":1,\"display\":1,\"label\":\"\",\"uuid\":\"home\"},
+            {\"index\":2,\"display\":1,\"label\":\"gtd_chat\",\"uuid\":\"chat\"},
+            {\"index\":3,\"display\":1,\"label\":\"coding_control\",\"uuid\":\"control\"},
+            {\"index\":4,\"display\":1,\"label\":\"gtd_calendar\",\"uuid\":\"calendar\"},
+            {\"index\":5,\"display\":2,\"label\":\"research_wide\",\"uuid\":\"research\"}
+        ]"
+        set -g __work_smoke_order_commands
+
+        workspace_order_mode_spaces wide
+        or exit 8
+
+        for command_line in $__work_smoke_order_commands
+            string match -q -- "-m space home --move *" "$command_line"
+            and exit 9
+        end
+
+        set -g __work_smoke_order_spaces "[
+            {\"index\":1,\"display\":1,\"label\":\"gtd_calendar\",\"uuid\":\"calendar\"},
+            {\"index\":2,\"display\":1,\"label\":\"gtd_chat\",\"uuid\":\"chat\"},
+            {\"index\":3,\"display\":1,\"label\":\"coding_control\",\"uuid\":\"control\"},
+            {\"index\":4,\"display\":2,\"label\":\"research_wide\",\"uuid\":\"research\"}
+        ]"
+
+        workspace_order_mode_spaces wide
+        or exit 10
+
+        test (echo $__work_smoke_order_spaces | ws_jq -r \
+            "[.[] | select(.display == 1) | .label] | join(\",\")") = \
+            "coding_control,gtd_chat,gtd_calendar"
+        or exit 11
 
         exit 0
     '
@@ -1057,6 +1099,47 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     else
         echo "FAIL    label-based primary and external Space ordering"
         cat /tmp/work-order-spaces-smoke.out
+        set failed 1
+    end
+
+    set -l workspace_order_home_failure_smoke '
+        work_reload >/dev/null
+        if set -q WORKSPACE_TEST_SOURCE_ROOT
+            source "$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_order_spaces.fish"
+        end
+
+        function resolve_workspace_primary_display
+            echo 1
+        end
+
+        function workspace_resolve_display_role
+            echo 2
+        end
+
+        function ws_query_spaces
+            printf "%s\n" "[
+                {\"index\":1,\"display\":1,\"label\":\"coding_control\",\"uuid\":\"control\"},
+                {\"index\":2,\"display\":1,\"label\":\"\",\"uuid\":\"home\"},
+                {\"index\":3,\"display\":2,\"label\":\"research_wide\",\"uuid\":\"research\"}
+            ]"
+        end
+
+        function ws_yabai
+            if test "$argv[3]" = home
+                return 1
+            end
+        end
+
+        workspace_order_mode_spaces wide
+        test $status -ne 0
+        or exit 1
+    '
+    fish -lc "$workspace_order_home_failure_smoke" >/tmp/work-order-home-failure-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      Home Space ordering failure propagation"
+    else
+        echo "FAIL    Home Space ordering failure propagation"
+        cat /tmp/work-order-home-failure-smoke.out
         set failed 1
     end
 
