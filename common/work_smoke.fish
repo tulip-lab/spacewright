@@ -879,6 +879,92 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
+    set -l workspace_order_spaces_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_order_query_calls 0
+        set -g __work_smoke_order_commands
+        set -g __work_smoke_order_spaces "[
+            {\"index\":1,\"display\":1,\"label\":\"\"},
+            {\"index\":2,\"display\":1,\"label\":\"gtd_chat\"},
+            {\"index\":3,\"display\":1,\"label\":\"gtd_calendar\"},
+            {\"index\":4,\"display\":1,\"label\":\"coding_control\"},
+            {\"index\":5,\"display\":1,\"label\":\"\"},
+            {\"index\":6,\"display\":2,\"label\":\"coding_editor_wide\"},
+            {\"index\":7,\"display\":2,\"label\":\"research_wide\"},
+            {\"index\":8,\"display\":2,\"label\":\"gtd_mail_wide\"},
+            {\"index\":9,\"display\":2,\"label\":\"gtd_ai\"},
+            {\"index\":10,\"display\":2,\"label\":\"gtd_meeting_wide\"}
+        ]"
+
+        function resolve_workspace_primary_display
+            echo 1
+        end
+
+        function workspace_resolve_display_role
+            echo 2
+        end
+
+        function ws_query_spaces
+            set -g __work_smoke_order_query_calls (math $__work_smoke_order_query_calls + 1)
+            echo $__work_smoke_order_spaces
+        end
+
+        function ws_yabai
+            set -ga __work_smoke_order_commands (string join " " -- $argv)
+
+            test (count $argv) -eq 5
+            and test "$argv[1]" = -m
+            and test "$argv[2]" = space
+            and test "$argv[4]" = --move
+            or return 1
+
+            set -l label $argv[3]
+            set -l target $argv[5]
+            set -g __work_smoke_order_spaces (echo $__work_smoke_order_spaces | ws_jq -c \
+                --arg label "$label" \
+                --argjson target "$target" "
+                    (first(.[] | select(.label == \$label)).display) as \$display
+                    | ([.[] | select(.display == \$display)] | sort_by(.index)) as \$display_spaces
+                    | (\$display_spaces | map(.index) | min) as \$first_index
+                    | (first(\$display_spaces[] | select(.label == \$label))) as \$selected
+                    | (\$display_spaces | map(select(.label != \$label))) as \$remaining
+                    | (\$target - \$first_index) as \$offset
+                    | (\$remaining[0:\$offset] + [\$selected] + \$remaining[\$offset:]) as \$ordered
+                    | (\$ordered | to_entries | map(.value + {index: (\$first_index + .key)})) as \$updated
+                    | ([.[] | select(.display != \$display)] + \$updated | sort_by(.index))
+                ")
+        end
+
+        workspace_order_mode_spaces wide
+        or exit 1
+
+        test (echo $__work_smoke_order_spaces | ws_jq -r \
+            "[.[] | select(.display == 1) | .label] | join(\",\")") = ",coding_control,gtd_chat,gtd_calendar,"
+        or exit 2
+
+        test (echo $__work_smoke_order_spaces | ws_jq -r \
+            "[.[] | select(.display == 2) | .label] | join(\",\")") = \
+            "gtd_ai,coding_editor_wide,research_wide,gtd_mail_wide,gtd_meeting_wide"
+        or exit 3
+
+        test "$__work_smoke_order_query_calls" -gt (count $__work_smoke_order_commands)
+        or exit 4
+
+        for command_line in $__work_smoke_order_commands
+            string match -rq -- "--create|--destroy|--display" "$command_line"
+            and exit 5
+        end
+    '
+    fish -lc "$workspace_order_spaces_smoke" >/tmp/work-order-spaces-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      label-based primary and external Space ordering"
+    else
+        echo "FAIL    label-based primary and external Space ordering"
+        cat /tmp/work-order-spaces-smoke.out
+        set failed 1
+    end
+
     set -l ownership_policy_rows (workspace_ownership_policy_rows)
 
     set -l required_ownership_patterns \

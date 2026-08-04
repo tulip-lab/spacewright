@@ -10,6 +10,7 @@ function source_workspace_common --description "Source shared workspace helper f
     source ~/.config/fish/functions/workspace/common/workspace_app_space_fallback.fish
     source ~/.config/fish/functions/workspace/common/workspace_app_bounds.fish
     source ~/.config/fish/functions/workspace/common/workspace_runners.fish
+    source ~/.config/fish/functions/workspace/common/workspace_order_spaces.fish
     source ~/.config/fish/functions/workspace/common/workspace_labeled_space_lifecycle.fish
     source ~/.config/fish/functions/workspace/common/workspace_labeled_space_focus.fish
     source ~/.config/fish/functions/workspace/common/workspace_space_fallback.fish

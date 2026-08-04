@@ -98,6 +98,7 @@ function workspace_common_helper_rows --description "Print declared common works
     printf "%s\t%s\n" office_apply_document_space "Office ChatGPT plus multi-document workspace flow"
     printf "%s\t%s\n" workspace_run_mode_steps "mode aggregate runner with shared cleanup suppression"
     printf "%s\t%s\n" workspace_run_cleanup_specs "family:mode cleanup-spec dispatcher"
+    printf "%s\t%s\n" workspace_order_mode_spaces "label-based primary and external Space ordering"
     printf "%s\t%s\n" workspace_print_app_status "shared app status printer for module status commands"
     printf "%s\t%s\n" workspace_prepare_labeled_space "find/create, normalize, and focus a labeled space"
     printf "%s\t%s\n" workspace_focus_labeled_space "normalize and focus an existing labeled space"
@@ -235,6 +236,7 @@ function workspace_required_command_names --description "Print documented worksp
         workspace_run_step \
         workspace_run_cleanup_specs \
         workspace_run_mode_steps \
+        workspace_order_mode_spaces \
         workspace_create_unlabeled_space_on_display \
         workspace_focus_labeled_space \
         workspace_focus_space_fallback \
