@@ -5,6 +5,7 @@ function workspace_ownership_policy_rows --description "Print static workspace a
     printf "%s\t%s\t%s\t%s\n" "coding_control" "SmartGit" "single-window;fallback-space-owner" "optional control app; current SmartGit space fallback"
     printf "%s\t%s\t%s\t%s\n" "coding_control" "KeePassXC/KeePassX" "single-window" "optional control app"
     printf "%s\t%s\t%s\t%s\n" "coding_control" "FlClash/Thaw" "all-movable-windows" "movable non-minimized windows; optional control app"
+    printf "%s\t%s\t%s\t%s\n" "coding_control" "Portfolio Performance" "single-window" "optional control app"
 
     printf "%s\t%s\t%s\t%s\n" "research_*" "Zotero" "single-window" "required primary; first movable app-key window"
     printf "%s\t%s\t%s\t%s\n" "research_solo" "ChatGPT" "optional-helper" "single visible helper window when present"

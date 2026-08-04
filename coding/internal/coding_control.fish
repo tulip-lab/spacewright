@@ -32,7 +32,7 @@ function coding_control --description "Collect Warp, SmartGit, KeePassXC, and Fl
         printf "dry_run=coding_control\n"
         printf "label=%s\n" coding_control
         printf "display=%s\n" primary
-        printf "apps=%s,%s,%s,%s|%s\n" (workspace_app_name warp) (workspace_app_name smartgit) (workspace_app_name keepassx) (workspace_app_name flclash) (workspace_app_name thaw)
+        printf "apps=%s,%s,%s,%s|%s,%s\n" (workspace_app_name warp) (workspace_app_name smartgit) (workspace_app_name keepassx) (workspace_app_name flclash) (workspace_app_name thaw) (workspace_app_name portfolio_performance)
         return 0
     end
 

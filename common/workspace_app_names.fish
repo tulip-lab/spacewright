@@ -56,6 +56,8 @@ function workspace_app_names --description "Print known yabai app names for a wo
             printf "%s\n" FlClash
         case thaw
             printf "%s\n" Thaw
+        case portfolio_performance
+            printf "%s\n" "Portfolio Performance"
         case '*'
             echo "[WARN] workspace_app_names: unknown app key: $key" >&2
             return 2

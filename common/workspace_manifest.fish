@@ -47,7 +47,7 @@ function workspace_command_map_rows --description "Print declared workspace comm
     printf "%s\t%s\t%s\t%s\n" coding_editor_solo solo primary Code
     printf "%s\t%s\t%s\t%s\n" coding_editor_wide wide external "Code, ChatGPT"
     printf "%s\t%s\t%s\t%s\n" coding_editor_tall tall external "Code, ChatGPT"
-    printf "%s\t%s\t%s\t%s\n" coding_control primary primary "Warp, SmartGit, KeePassXC, FlClash/Thaw"
+    printf "%s\t%s\t%s\t%s\n" coding_control primary primary "Warp, SmartGit, KeePassXC, FlClash/Thaw, Portfolio Performance"
     printf "%s\t%s\t%s\t%s\n" research_solo solo primary "Zotero, ChatGPT"
     printf "%s\t%s\t%s\t%s\n" research_wide wide external "Zotero, Claude"
     printf "%s\t%s\t%s\t%s\n" research_tall tall external "Zotero, Claude"

@@ -17,7 +17,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
 
     set -l app_keys \
         code claude chatgpt obsidian zotero thunderbird word powerpoint outlook zoom teams dia finder preview notes \
-        calendar reminders wechat keybase messages dingtalk whatsapp warp smartgit keepassx flclash thaw
+        calendar reminders wechat keybase messages dingtalk whatsapp warp smartgit keepassx flclash thaw portfolio_performance
 
     for key in $app_keys
         workspace_app_name $key >/dev/null
@@ -44,6 +44,15 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     else
         echo "OK      retired codex app key"
+    end
+
+    set -l coding_control_dry_run (coding_control --dry-run)
+    if string match -q "*apps=Warp,SmartGit,KeePassXC,FlClash|Thaw,Portfolio Performance*" -- "$coding_control_dry_run"
+        echo "OK      coding control Portfolio Performance dry-run"
+    else
+        echo "FAIL    coding control Portfolio Performance dry-run"
+        printf "%s\n" $coding_control_dry_run
+        set failed 1
     end
 
     set -l coding_editor_wide_dry_run (coding_editor_wide --dry-run)
@@ -879,6 +888,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         "*coding_editor_*Code*single-window*" \
         "*coding_editor_wide/tall*ChatGPT*optional-helper*" \
         "*coding_control*SmartGit*single-window;fallback-space-owner*" \
+        "*coding_control*Portfolio Performance*single-window*" \
         "*research_solo*ChatGPT*optional-helper*" \
         "*research_wide/tall*Claude*optional-helper*" \
         "*office_writing_*Microsoft Word*all-movable-windows*" \
