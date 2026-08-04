@@ -34,6 +34,7 @@ function workspace_ownership_policy_rows --description "Print static workspace a
     printf "%s\t%s\t%s\t%s\n" "gtd_chat" "DingTalk" "single-window;fallback-space-owner" "first app-key window; current space fallback when non-movable"
     printf "%s\t%s\t%s\t%s\n" "gtd_chat" "Messages" "single-window" "optional chat app; first movable app-key window"
     printf "%s\t%s\t%s\t%s\n" "gtd_chat" "WhatsApp" "optional-helper" "single window; move failures tolerated"
+    printf "%s\t%s\t%s\t%s\n" "gtd_chat" "FaceTime" "single-window" "optional chat app; first movable app-key window; centered layout"
     printf "%s\t%s\t%s\t%s\n" "gtd_calendar" "Calendar" "single-window;fallback-space-owner" "first app-key window; current space fallback when non-movable"
     printf "%s\t%s\t%s\t%s\n" "gtd_calendar" "Reminders" "single-window" "first movable app-key window"
 end

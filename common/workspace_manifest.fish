@@ -59,7 +59,7 @@ function workspace_command_map_rows --description "Print declared workspace comm
     printf "%s\t%s\t%s\t%s\n" "gtd_meeting_*" all "mode target" "Zoom, Teams"
     printf "%s\t%s\t%s\t%s\n" gtd_ai auto "current mode target" "ChatGPT, Obsidian, Notes"
     printf "%s\t%s\t%s\t%s\n" "gtd_ai_*" all "mode target" "ChatGPT, Obsidian, Notes"
-    printf "%s\t%s\t%s\t%s\n" gtd_chat primary primary "Messages/chat helper windows"
+    printf "%s\t%s\t%s\t%s\n" gtd_chat primary primary "Messages/chat helper windows, FaceTime"
     printf "%s\t%s\t%s\t%s\n" gtd_calendar primary primary Calendar
     printf "%s\t%s\t%s\t%s\n" "office_writing_*" "wide/tall" external "Word, ChatGPT"
     printf "%s\t%s\t%s\t%s\n" "office_slides_*" "wide/tall" external "PowerPoint, ChatGPT"

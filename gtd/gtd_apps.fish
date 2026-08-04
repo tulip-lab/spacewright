@@ -21,6 +21,7 @@ function gtd_apps --description "Show all current GTD-related application window
     #   - DingTalk / 钉钉
     #   - Messages
     #   - WhatsApp
+    #   - FaceTime
     #   - ChatGPT
     #   - Obsidian
     #   - Notes
@@ -31,7 +32,7 @@ function gtd_apps --description "Show all current GTD-related application window
 
     set -l windows_json (ws_query_windows gtd_apps status); or return 1
     set -l apps_json (workspace_app_names_json \
-        thunderbird calendar reminders outlook zoom teams wechat keybase dingtalk messages whatsapp chatgpt obsidian notes preview finder dia); or return 1
+        thunderbird calendar reminders outlook zoom teams wechat keybase dingtalk messages whatsapp facetime chatgpt obsidian notes preview finder dia); or return 1
     set -l bad_window_ids_json '[]'
     set -l bad_window_dir /tmp/workspace-ws-window-bad
 

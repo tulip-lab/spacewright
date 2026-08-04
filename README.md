@@ -202,7 +202,7 @@ ChatGPT 占左上，第一个文档占右上，第二个文档占下半屏；三
 | `gtd_mail_solo` / `gtd_mail_wide` / `gtd_mail_tall` | Thunderbird、Outlook 邮件工作区 |
 | `gtd_meeting_solo` / `gtd_meeting_wide` / `gtd_meeting_tall` | Zoom、Teams 会议工作区 |
 | `gtd_ai` / `gtd_ai_solo` / `gtd_ai_wide` / `gtd_ai_tall` | ChatGPT、Obsidian、Notes 的 AI 工作区 |
-| `gtd_chat` | primary display 上的聊天工作区 |
+| `gtd_chat` | primary display 上的聊天工作区；已有 FaceTime 窗口会被收集并居中 |
 | `gtd_calendar` | primary display 上的 Calendar + Reminders |
 | `gtd_solo_all` | solo 模式下的 GTD 聚合入口 |
 | `gtd_wide` | wide 模式下的 GTD 聚合入口 |

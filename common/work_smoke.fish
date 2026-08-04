@@ -17,7 +17,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
 
     set -l app_keys \
         code claude chatgpt obsidian zotero thunderbird word powerpoint outlook zoom teams dia finder preview notes \
-        calendar reminders wechat keybase messages dingtalk whatsapp warp smartgit keepassx flclash thaw portfolio_performance
+        calendar reminders wechat keybase messages dingtalk whatsapp facetime warp smartgit keepassx flclash thaw portfolio_performance
 
     for key in $app_keys
         workspace_app_name $key >/dev/null
@@ -35,6 +35,84 @@ function work_smoke --description "Run read-only workspace smoke checks for help
 
     if test "$failed" -eq 0
         echo "OK      app registry"
+    end
+
+    set -l gtd_chat_dry_run (gtd_chat --dry-run)
+    if string match -q "*apps=WeChat,Keybase,DingTalk|钉钉,Messages,WhatsApp,FaceTime*" -- "$gtd_chat_dry_run"
+        echo "OK      GTD chat FaceTime dry-run"
+    else
+        echo "FAIL    GTD chat FaceTime dry-run"
+        printf "%s\n" $gtd_chat_dry_run
+        set failed 1
+    end
+
+    set -l gtd_chat_facetime_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_chat_moves
+        set -g __work_smoke_chat_windows
+
+        function ws_query_windows
+            printf "%s\n" "[
+                {\"id\":61,\"app\":\"FaceTime\",\"title\":\"FaceTime\",\"space\":9,\"display\":1,\"can-move\":true,\"is-minimized\":false}
+            ]"
+        end
+
+        function workspace_find_app_key_window
+            argparse "app-key=" "caller=" "space=" no-refresh target-only quiet-unmovable -- $argv
+            if test "$_flag_app_key" = facetime
+                echo 61
+            end
+        end
+
+        function resolve_workspace_primary_display
+            echo 1
+        end
+
+        function find_or_create_labeled_space
+            echo 9
+        end
+
+        function workspace_retarget_contaminated_space
+            echo 9
+        end
+
+        function workspace_focus_labeled_space
+        end
+
+        function ws_move_windows_to_space
+            set -ga __work_smoke_chat_moves (string join " " -- $argv)
+        end
+
+        function ws_window
+            set -ga __work_smoke_chat_windows (string join " " -- $argv)
+        end
+
+        function ws_focus_space
+        end
+
+        function cleanup_unlabeled_empty_spaces
+        end
+
+        gtd_chat
+        or exit 1
+
+        contains -- "9 61" $__work_smoke_chat_moves
+        or exit 2
+
+        contains -- "61 --move abs:458:190" $__work_smoke_chat_windows
+        or exit 3
+
+        contains -- "61 --resize abs:885:560" $__work_smoke_chat_windows
+        or exit 4
+    '
+    fish -lc "$gtd_chat_facetime_smoke" >/tmp/work-gtd-chat-facetime-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      GTD chat FaceTime capture and centered layout"
+    else
+        echo "FAIL    GTD chat FaceTime capture and centered layout"
+        cat /tmp/work-gtd-chat-facetime-smoke.out
+        set failed 1
     end
 
     if begin

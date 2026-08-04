@@ -7,7 +7,7 @@ function gtd_chat --description "Fast GTD chat workspace layout on workspace pri
         printf "dry_run=gtd_chat\n"
         printf "label=%s\n" gtd_chat
         printf "display=%s\n" primary
-        printf "apps=%s,%s,%s,%s,%s\n" (workspace_app_name wechat) (workspace_app_name keybase) "$dingtalk_apps" (workspace_app_name messages) (workspace_app_name whatsapp)
+        printf "apps=%s,%s,%s,%s,%s,%s\n" (workspace_app_name wechat) (workspace_app_name keybase) "$dingtalk_apps" (workspace_app_name messages) (workspace_app_name whatsapp) (workspace_app_name facetime)
         return 0
     end
 
@@ -28,6 +28,7 @@ function gtd_chat --description "Fast GTD chat workspace layout on workspace pri
     #   - 钉钉 / DingTalk
     #   - Messages
     #   - WhatsApp
+    #   - FaceTime
     #
     # Layout:
     #   - Keybase  -> upper-left
@@ -35,6 +36,7 @@ function gtd_chat --description "Fast GTD chat workspace layout on workspace pri
     #   - 钉钉      -> upper-right
     #   - Messages -> lower-right
     #   - WhatsApp -> centered, moderate size
+    #   - FaceTime -> centered, moderate size
     #
     # Notes:
     #   - The function is re-runnable.
@@ -51,7 +53,7 @@ function gtd_chat --description "Fast GTD chat workspace layout on workspace pri
     or return 1
     set -l messages_app (workspace_app_name messages)
     set -l whatsapp_app (workspace_app_name whatsapp)
-    set -l chat_app_regex (workspace_app_regex wechat keybase dingtalk messages whatsapp)
+    set -l chat_app_regex (workspace_app_regex wechat keybase dingtalk messages whatsapp facetime)
     or return 1
 
     # 1. first capture
@@ -136,8 +138,14 @@ function gtd_chat --description "Fast GTD chat workspace layout on workspace pri
 
     set -l whatsapp (echo $windows_json | ws_find_window "$whatsapp_app")
 
-    if test -z "$wechat" -a -z "$keybase" -a -z "$dingtalk" -a -z "$dingtalk_fallback_window" -a -z "$messages" -a -z "$whatsapp"
-        if test "$wechat_status" -eq 2 -o "$keybase_status" -eq 2 -o "$dingtalk_status" -eq 2 -o "$messages_status" -eq 2
+    set -l facetime (workspace_find_app_key_window --app-key facetime --caller $label)
+    set -l facetime_status $status
+    if test "$facetime_status" -eq 1
+        return 1
+    end
+
+    if test -z "$wechat" -a -z "$keybase" -a -z "$dingtalk" -a -z "$dingtalk_fallback_window" -a -z "$messages" -a -z "$whatsapp" -a -z "$facetime"
+        if test "$wechat_status" -eq 2 -o "$keybase_status" -eq 2 -o "$dingtalk_status" -eq 2 -o "$messages_status" -eq 2 -o "$facetime_status" -eq 2
             return 1
         end
 
@@ -192,9 +200,9 @@ function gtd_chat --description "Fast GTD chat workspace layout on workspace pri
 
     # 4a. move stable chat apps
     if test "$dingtalk_space_fallback_used" -eq 1
-        ws_move_windows_to_space $target_space $wechat $keybase $messages
+        ws_move_windows_to_space $target_space $wechat $keybase $messages $facetime
     else
-        ws_move_windows_to_space $target_space $wechat $keybase $dingtalk $messages
+        ws_move_windows_to_space $target_space $wechat $keybase $dingtalk $messages $facetime
     end
 
     # 4b. move WhatsApp separately; tolerate move failures
@@ -226,6 +234,8 @@ function gtd_chat --description "Fast GTD chat workspace layout on workspace pri
     set messages (echo $windows_json_final | ws_find_window "$messages_app" --space $target_space)
 
     set whatsapp (echo $windows_json_final | ws_find_window "$whatsapp_app" --space $target_space)
+
+    set facetime (workspace_find_app_key_window --app-key facetime --caller $label --space $target_space --no-refresh --target-only)
 
     if test -z "$wechat"
         set wechat (workspace_find_app_key_window --app-key wechat --caller $label)
@@ -283,6 +293,20 @@ function gtd_chat --description "Fast GTD chat workspace layout on workspace pri
         end
     end
 
+    if test -z "$facetime"
+        set facetime (workspace_find_app_key_window --app-key facetime --caller $label)
+        set facetime_status $status
+        if test "$facetime_status" -eq 1
+            return 1
+        end
+
+        if test -n "$facetime"
+            ws_move_windows_to_space $target_space $facetime
+            set windows_json_final (ws_query_windows gtd_chat final_facetime_retry); or return 1
+            set facetime (workspace_find_app_key_window --app-key facetime --caller $label --space $target_space --no-refresh --target-only)
+        end
+    end
+
     # 7. final layout
     if test -n "$keybase"
         ws_window $keybase --grid 2:2:0:0:1:1
@@ -311,6 +335,11 @@ function gtd_chat --description "Fast GTD chat workspace layout on workspace pri
     if test -n "$whatsapp"
         ws_window $whatsapp --move abs:458:190
         ws_window $whatsapp --resize abs:885:560
+    end
+
+    if test -n "$facetime"
+        ws_window $facetime --move abs:458:190
+        ws_window $facetime --resize abs:885:560
     end
 
     ws_focus_space $target_space

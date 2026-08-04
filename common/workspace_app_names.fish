@@ -46,6 +46,8 @@ function workspace_app_names --description "Print known yabai app names for a wo
             printf "%s\n" DingTalk 钉钉
         case whatsapp
             printf "%s\n" WhatsApp
+        case facetime
+            printf "%s\n" FaceTime
         case warp
             printf "%s\n" Warp
         case smartgit

@@ -214,6 +214,7 @@ function __work_audit_ownership_policy_coverage --description "Audit static owne
         "gtd_ai|Obsidian|single-window" \
         "gtd_ai|Notes|single-window" \
         "gtd_chat|DingTalk|single-window;fallback-space-owner" \
+        "gtd_chat|FaceTime|single-window" \
         "gtd_calendar|Calendar|single-window;fallback-space-owner"
     or set failed 1
 

@@ -505,11 +505,13 @@ The core GTD chat layout is:
 
 WhatsApp is best-effort. Its window behavior is less stable in some sessions, so it should not make the whole chat workspace fragile.
 
+FaceTime is an optional single-window chat app. When an existing movable FaceTime window is present, `gtd_chat` moves it to the chat Space and applies the same centered moderate-size bounds used for WhatsApp. It does not launch FaceTime when absent.
+
 `gtd_chat` uses `workspace_retarget_contaminated_space` before preparing the labeled space. If an old `gtd_chat` label points at a space that also contains non-chat apps, such as Thunderbird or ChatGPT, the label is cleared and chat windows are moved to a clean chat space instead of preserving the mixed workspace.
 
-`WeChat`, `Keybase`, `DingTalk`, and `Messages` are selected through `workspace_find_app_key_window` and retried once if they are missing from the final target space. This avoids silently skipping a movable chat window because of a stale bad-window cache entry, and gives DingTalk one activation/re-query path before reporting that yabai still cannot move it.
+`WeChat`, `Keybase`, `DingTalk`, `Messages`, and `FaceTime` are selected through `workspace_find_app_key_window` and retried once if they are missing from the final target space. This avoids silently skipping a movable chat window because of a stale bad-window cache entry, and gives DingTalk one activation/re-query path before reporting that yabai still cannot move it.
 
-When DingTalk remains present but non-movable after activation, `gtd_chat` treats the current DingTalk space as the chat target. The DingTalk space is moved to the workspace primary display if needed, labeled as `gtd_chat`, movable non-chat windows are evicted to an unlabeled holding space, and WeChat, Keybase, Messages, and WhatsApp are moved there. DingTalk bounds use `workspace_apply_app_key_grid_bounds` in that fallback path because yabai cannot grid an unmovable window.
+When DingTalk remains present but non-movable after activation, `gtd_chat` treats the current DingTalk space as the chat target. The DingTalk space is moved to the workspace primary display if needed, labeled as `gtd_chat`, movable non-chat windows are evicted to an unlabeled holding space, and WeChat, Keybase, Messages, WhatsApp, and FaceTime are moved there. DingTalk bounds use `workspace_apply_app_key_grid_bounds` in that fallback path because yabai cannot grid an unmovable window.
 
 When Calendar remains present but non-movable, `gtd_calendar` treats the current Calendar space as the calendar target. The Calendar space is moved to the workspace primary display if needed, movable non-calendar windows are evicted to an unlabeled holding space, Reminders is moved there, and Calendar bounds are applied through `workspace_apply_app_key_grid_bounds`.
 
