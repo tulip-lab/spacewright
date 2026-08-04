@@ -953,10 +953,10 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set -g __work_smoke_order_query_calls 0
         set -g __work_smoke_order_commands
         set -g __work_smoke_order_spaces "[
+            {\"index\":4,\"display\":1,\"label\":\"coding_control\"},
             {\"index\":1,\"display\":1,\"label\":\"\"},
             {\"index\":2,\"display\":1,\"label\":\"gtd_chat\"},
             {\"index\":3,\"display\":1,\"label\":\"gtd_calendar\"},
-            {\"index\":4,\"display\":1,\"label\":\"coding_control\"},
             {\"index\":5,\"display\":1,\"label\":\"\"},
             {\"index\":6,\"display\":2,\"label\":\"coding_editor_wide\"},
             {\"index\":7,\"display\":2,\"label\":\"research_wide\"},

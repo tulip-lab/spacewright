@@ -20,7 +20,7 @@ function __workspace_order_labels_on_display --description "Order existing label
 
     if set -q _flag_preserve_leading_unlabeled
         set -l first_label (echo $initial_spaces | ws_jq -r --argjson display "$_flag_display" '
-            first(.[] | select(.display == $display) | .label) // empty
+            ([.[] | select(.display == $display)] | sort_by(.index) | first | .label) // empty
         ')
         if test -z "$first_label"
             set target_index (math $target_index + 1)
