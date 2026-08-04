@@ -102,6 +102,8 @@ The whole-workspace hotkeys intentionally use `;` rather than `and` so `work_*` 
 
 In top-level `work_wide` and `work_tall`, GTD remains the final ChatGPT-owning aggregate, but `coding_control` runs after GTD. This is intentional: when SmartGit is present without a movable AX window, the only reliable recovery is to make SmartGit's current Space the fixed control Space, so it must run after meeting fallback paths that may temporarily own the same unmovable-window Space.
 
+After `coding_control`, `work_wide` and `work_tall` run label-based Space ordering as their final step, even if an earlier module step failed. On the primary display, an existing leftmost unlabeled Home Space stays first, followed by `coding_control`, `gtd_chat`, and `gtd_calendar`. On the external display, an existing `gtd_ai` comes first, followed by coding, research, Office writing, Office slides, GTD support, review, mail, and meeting labels for the current wide/tall mode. Missing labels are skipped. The helper resolves fresh indices before each same-display move, preserves unmanaged relative order, and never creates, destroys, or migrates Spaces. In particular, it does not invoke or move `gtd_ai`; that label participates only when it already belongs to the external display. `work_diagnostics` reports whether macOS recent-use Space reordering is disabled but does not modify the preference.
+
 `display_apply_*` commands:
 
 - run the corresponding display profile

@@ -135,6 +135,17 @@ work_tall
 
 顶层入口保持公开命令稳定，方便 shell、`skhd` 和肌肉记忆继续使用。
 
+`work_wide` 和 `work_tall` 在所有模块步骤结束后自动整理已有 Space。主显示器保留
+最左侧未标记 Home Space，然后依次排列 `coding_control`、`gtd_chat`、
+`gtd_calendar`。外接屏依次排列 `gtd_ai`、coding、research、office writing、
+office slides、GTD support、review、mail、meeting，其中模式化 label 使用当前
+`_wide` 或 `_tall` 后缀。
+
+排序只处理目标显示器上已经存在的 label；缺席项直接跳过，其他 Space 保持相对顺序并
+排在受管序列之后。排序不会创建、销毁或跨屏迁移 Space，也不会为了 `gtd_ai` 启动 app。
+macOS 的“根据最近使用情况自动重新排列 Spaces”应保持关闭；`work_diagnostics` 只读报告
+该设置，不会代替用户修改系统偏好。
+
 ## 模块入口
 
 ### Coding

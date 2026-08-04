@@ -879,6 +879,74 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
+    set -l aggregate_space_order_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_aggregate_calls
+        set -g __work_smoke_fail_wide 1
+
+        for command_name in coding_wide research_wide office_wide gtd_wide gtd_chat gtd_calendar coding_control coding_tall research_tall office_tall gtd_tall
+            eval "function $command_name; set -ga __work_smoke_aggregate_calls $command_name; if test \"$command_name\" = coding_wide -a \"\$__work_smoke_fail_wide\" = 1; return 1; end; end"
+        end
+
+        function workspace_run_step
+            set -e argv[1]
+            $argv
+        end
+
+        function workspace_order_mode_spaces
+            set -ga __work_smoke_aggregate_calls order:$argv[1]
+        end
+
+        work_wide
+        set -l wide_status $status
+        test "$wide_status" -ne 0
+        or exit 1
+        test "$__work_smoke_aggregate_calls[-1]" = order:wide
+        or exit 2
+
+        set -g __work_smoke_aggregate_calls
+        set -g __work_smoke_fail_wide 0
+        work_tall
+        or exit 3
+        test "$__work_smoke_aggregate_calls[-1]" = order:tall
+        or exit 4
+    '
+    fish -lc "$aggregate_space_order_smoke" >/tmp/work-aggregate-space-order-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      aggregate commands finish with Space ordering"
+    else
+        echo "FAIL    aggregate commands finish with Space ordering"
+        cat /tmp/work-aggregate-space-order-smoke.out
+        set failed 1
+    end
+
+    set -l space_order_health_smoke '
+        work_reload >/dev/null
+
+        function defaults
+            echo 0
+        end
+
+        string match -q "*status=ok*" -- (workspace_space_order_health)
+        or exit 1
+
+        function defaults
+            echo 1
+        end
+
+        string match -q "*status=warning*" -- (workspace_space_order_health)
+        or exit 2
+    '
+    fish -lc "$space_order_health_smoke" >/tmp/work-space-order-health-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      Space ordering recent-use diagnostic"
+    else
+        echo "FAIL    Space ordering recent-use diagnostic"
+        cat /tmp/work-space-order-health-smoke.out
+        set failed 1
+    end
+
     set -l workspace_order_spaces_smoke '
         work_reload >/dev/null
 

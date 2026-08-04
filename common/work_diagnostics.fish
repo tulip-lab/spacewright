@@ -1,3 +1,13 @@
+function workspace_space_order_health --description "Report whether macOS recent-use Space reordering is disabled"
+    set -l recent_use_reordering (defaults read com.apple.dock mru-spaces 2>/dev/null)
+
+    if test "$recent_use_reordering" = 0
+        echo "status=ok recent_use_reordering=disabled"
+    else
+        echo "status=warning recent_use_reordering=enabled_or_unknown"
+    end
+end
+
 function work_diagnostics --description "Show workspace diagnostics without changing spaces or windows"
     set -l displays_json (ws_query_displays work_diagnostics summary)
     if test $status -ne 0 -o -z "$displays_json"
@@ -27,6 +37,10 @@ function work_diagnostics --description "Show workspace diagnostics without chan
     echo
     echo "===== DISPLAY ROLE HEALTH ====="
     work_display_health
+
+    echo
+    echo "===== SPACE ORDER HEALTH ====="
+    workspace_space_order_health
 
     echo
     echo "===== CURRENT FOCUS ====="

@@ -55,6 +55,9 @@ function work_wide
     workspace_run_step "coding control" coding_control
     or set failed 1
 
+    workspace_run_step "Space order wide" workspace_order_mode_spaces wide
+    or set failed 1
+
     return $failed
 end
 
@@ -89,6 +92,9 @@ function work_tall
     or set failed 1
 
     workspace_run_step "coding control" coding_control
+    or set failed 1
+
+    workspace_run_step "Space order tall" workspace_order_mode_spaces tall
     or set failed 1
 
     return $failed
