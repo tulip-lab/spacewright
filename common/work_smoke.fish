@@ -1499,6 +1499,185 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
+    set -l review_obsidian_smoke '
+        work_reload >/dev/null
+        if set -q WORKSPACE_TEST_SOURCE_ROOT
+            source "$WORKSPACE_TEST_SOURCE_ROOT/gtd/internal/gtd_apply_review_space.fish"
+        end
+
+        set -g __work_smoke_obsidian_space 4
+        set -g __work_smoke_obsidian_present 1
+        set -g __work_smoke_obsidian_movable true
+        set -g __work_smoke_review_move_calls
+        set -g __work_smoke_review_grid_calls
+        set -g __work_smoke_review_find_calls
+        set -g __work_smoke_review_destroy_calls
+        set -g __work_smoke_review_retarget_args
+
+        function workspace_run_cleanup_specs
+        end
+
+        function ws_query_windows
+            if test "$__work_smoke_obsidian_present" -eq 1
+                printf "[{\"id\":121,\"app\":\"Obsidian\",\"space\":%s,\"display\":2,\"can-move\":%s,\"is-minimized\":false,\"title\":\"Obsidian\"}]\n" \
+                    $__work_smoke_obsidian_space $__work_smoke_obsidian_movable
+            else
+                printf "[]\n"
+            end
+        end
+
+        function workspace_find_app_key_window
+            set -ga __work_smoke_review_find_calls (string join , -- $argv)
+        end
+
+        function workspace_resolve_display_role
+            echo 2
+        end
+
+        function find_or_create_labeled_space
+            echo 8
+        end
+
+        function workspace_retarget_contaminated_space
+            set -g __work_smoke_review_retarget_args (string join " " -- $argv)
+            echo 8
+        end
+
+        function workspace_focus_labeled_space
+        end
+
+        function ws_move_windows_to_space
+            set -ga __work_smoke_review_move_calls (string join , -- $argv)
+            if contains -- 121 $argv
+                set -g __work_smoke_obsidian_space $argv[1]
+            end
+        end
+
+        function ws_window
+            set -ga __work_smoke_review_grid_calls (string join , -- $argv)
+        end
+
+        function ws_focus_space
+        end
+
+        function cleanup_unlabeled_empty_spaces
+        end
+
+        function destroy_empty_labeled_space
+            set -ga __work_smoke_review_destroy_calls (string join , -- $argv)
+        end
+
+        gtd_apply_review_space \
+            --label gtd_review_wide \
+            --display wide \
+            --obsidian-grid 2:16:10:0:6:1
+        or exit 1
+
+        test "$__work_smoke_review_move_calls[1]" = "8,121"
+        or exit 2
+
+        contains -- "121,--grid,2:16:10:0:6:1" $__work_smoke_review_grid_calls
+        or exit 3
+
+        test (count $__work_smoke_review_destroy_calls) -eq 0
+        or exit 4
+
+        string match -q "*Obsidian*" -- "$__work_smoke_review_retarget_args"
+        or exit 5
+
+        for find_call in $__work_smoke_review_find_calls
+            string match -q "*obsidian*" -- "$find_call"
+            and exit 6
+        end
+
+        set -g __work_smoke_obsidian_space 8
+        set -g __work_smoke_review_move_calls
+        set -g __work_smoke_review_grid_calls
+
+        gtd_apply_review_space \
+            --label gtd_review_wide \
+            --display wide \
+            --obsidian-grid 2:16:10:0:6:1
+        or exit 7
+
+        test (count $__work_smoke_review_move_calls) -eq 0
+        or exit 8
+
+        contains -- "121,--grid,2:16:10:0:6:1" $__work_smoke_review_grid_calls
+        or exit 9
+
+        set -g __work_smoke_obsidian_present 0
+        set -g __work_smoke_review_find_calls
+
+        gtd_apply_review_space \
+            --label gtd_review_wide \
+            --display wide \
+            --obsidian-grid 2:16:10:0:6:1
+        or exit 10
+
+        for find_call in $__work_smoke_review_find_calls
+            string match -q "*obsidian*" -- "$find_call"
+            and exit 11
+        end
+
+        exit 0
+    '
+    fish -lc "$review_obsidian_smoke" >/tmp/work-review-obsidian-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      review Obsidian ownership and layout"
+    else
+        echo "FAIL    review Obsidian ownership and layout"
+        cat /tmp/work-review-obsidian-smoke.out
+        set failed 1
+    end
+
+    set -l review_obsidian_unmovable_smoke '
+        work_reload >/dev/null
+        if set -q WORKSPACE_TEST_SOURCE_ROOT
+            source "$WORKSPACE_TEST_SOURCE_ROOT/gtd/internal/gtd_apply_review_space.fish"
+        end
+
+        function workspace_run_cleanup_specs
+        end
+
+        function ws_query_windows
+            printf "%s\n" "[{
+                \"id\":121,
+                \"app\":\"Obsidian\",
+                \"space\":4,
+                \"display\":2,
+                \"can-move\":false,
+                \"is-minimized\":false,
+                \"title\":\"Obsidian\"
+            }]"
+        end
+
+        function workspace_find_app_key_window
+        end
+
+        function destroy_empty_labeled_space
+        end
+
+        gtd_apply_review_space \
+            --label gtd_review_wide \
+            --display wide \
+            --obsidian-grid 2:16:10:0:6:1 \
+            2>/tmp/work-review-obsidian-warning.out
+        test $status -ne 0
+        or exit 1
+
+        string match -q "*found Obsidian, but no movable window was available*" -- (cat /tmp/work-review-obsidian-warning.out)
+        or exit 2
+    '
+    fish -lc "$review_obsidian_unmovable_smoke" >/tmp/work-review-obsidian-unmovable-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      review unmovable Obsidian failure"
+    else
+        echo "FAIL    review unmovable Obsidian failure"
+        cat /tmp/work-review-obsidian-unmovable-smoke.out
+        set failed 1
+    end
+
     set -l review_preview_movable_precedence_smoke '
         work_reload >/dev/null
 
@@ -1584,6 +1763,9 @@ function work_smoke --description "Run read-only workspace smoke checks for help
 
     set -l review_preview_move_fallback_smoke '
         work_reload >/dev/null
+        if set -q WORKSPACE_TEST_SOURCE_ROOT
+            source "$WORKSPACE_TEST_SOURCE_ROOT/gtd/internal/gtd_apply_review_space.fish"
+        end
 
         set -g __work_smoke_review_move_calls
         set -g __work_smoke_preview_fallback_args ""
@@ -1603,28 +1785,32 @@ function work_smoke --description "Run read-only workspace smoke checks for help
                 printf "%s\n" "[
                     {\"id\": 11, \"app\": \"Notes\", \"space\": 7, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Notes\"},
                     {\"id\": 12, \"app\": \"Preview\", \"space\": 6, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Preview\"},
-                    {\"id\": 14, \"app\": \"Finder\", \"space\": 7, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Finder\"}
+                    {\"id\": 14, \"app\": \"Finder\", \"space\": 7, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Finder\"},
+                    {\"id\": 121, \"app\": \"Obsidian\", \"space\": 7, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Obsidian\"}
                 ]"
             else if test "$phase" = preview_move_fallback
                 printf "%s\n" "[
                     {\"id\": 11, \"app\": \"Notes\", \"space\": 6, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Notes\"},
                     {\"id\": 16, \"app\": \"Preview\", \"space\": 6, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Preview\"},
                     {\"id\": 17, \"app\": \"Preview\", \"space\": 6, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Preview\"},
-                    {\"id\": 14, \"app\": \"Finder\", \"space\": 6, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Finder\"}
+                    {\"id\": 14, \"app\": \"Finder\", \"space\": 6, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Finder\"},
+                    {\"id\": 121, \"app\": \"Obsidian\", \"space\": 6, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Obsidian\"}
                 ]"
             else if test "$phase" = preview_move_fallback_before_move
                 printf "%s\n" "[
                     {\"id\": 11, \"app\": \"Notes\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Notes\"},
                     {\"id\": 16, \"app\": \"Preview\", \"space\": 6, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Preview\"},
                     {\"id\": 17, \"app\": \"Preview\", \"space\": 9, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Preview\"},
-                    {\"id\": 14, \"app\": \"Finder\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Finder\"}
+                    {\"id\": 14, \"app\": \"Finder\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Finder\"},
+                    {\"id\": 121, \"app\": \"Obsidian\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Obsidian\"}
                 ]"
             else
                 printf "%s\n" "[
                     {\"id\": 11, \"app\": \"Notes\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Notes\"},
                     {\"id\": 16, \"app\": \"Preview\", \"space\": 6, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Preview\"},
                     {\"id\": 17, \"app\": \"Preview\", \"space\": 9, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Preview\"},
-                    {\"id\": 14, \"app\": \"Finder\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Finder\"}
+                    {\"id\": 14, \"app\": \"Finder\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Finder\"},
+                    {\"id\": 121, \"app\": \"Obsidian\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Obsidian\"}
                 ]"
             end
         end
@@ -1669,16 +1855,16 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         function cleanup_unlabeled_empty_spaces
         end
 
-        gtd_apply_review_space --label gtd_review_wide --display wide --finder-grid 1:1:0:0:1:1 --preview-grid 1:1:0:0:1:1 --notes-grid 1:1:0:0:1:1
+        gtd_apply_review_space --label gtd_review_wide --display wide --finder-grid 1:1:0:0:1:1 --preview-grid 1:1:0:0:1:1 --notes-grid 1:1:0:0:1:1 --obsidian-grid 1:1:0:0:1:1
         or exit 1
 
-        test "$__work_smoke_review_move_calls[1]" = "8,14,12,11"
+        test "$__work_smoke_review_move_calls[1]" = "8,14,12,121,11"
         or exit 2
 
         contains -- "8,16,17" $__work_smoke_review_move_calls
         or exit 3
 
-        contains -- "6,14,16,17,11" $__work_smoke_review_move_calls
+        contains -- "6,14,16,17,11,121" $__work_smoke_review_move_calls
         or exit 4
 
         string match -q "*--space 6*" -- "$__work_smoke_preview_fallback_args"
