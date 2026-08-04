@@ -37,10 +37,11 @@ function gtd_review_wide --description "Collect review-related windows onto the 
     gtd_apply_review_space \
         --label gtd_review_wide \
         --display wide \
-        --finder-grid 2:8:0:0:2:2 \
-        --preview-grid 2:8:2:0:3:2 \
-        --chatgpt-grid 2:8:5:0:3:1 \
-        --notes-grid 2:8:5:1:3:1 \
+        --finder-grid 2:16:0:0:4:2 \
+        --preview-grid 2:16:4:0:6:2 \
+        --obsidian-grid 2:16:10:0:6:1 \
+        --chatgpt-grid 2:16:10:1:3:1 \
+        --notes-grid 2:16:13:1:3:1 \
         gtd:tall gtd:solo $argv
 end
 
@@ -48,10 +49,11 @@ function gtd_review_tall --description "Collect review-related windows onto the 
     gtd_apply_review_space \
         --label gtd_review_tall \
         --display tall \
-        --finder-grid 2:3:0:0:1:1 \
-        --preview-grid 2:3:1:0:2:1 \
-        --chatgpt-grid 2:2:0:1:1:1 \
-        --notes-grid 2:2:1:1:1:1 \
+        --preview-grid 4:2:0:0:2:2 \
+        --finder-grid 4:2:0:2:1:1 \
+        --obsidian-grid 4:2:1:2:1:1 \
+        --chatgpt-grid 4:2:0:3:1:1 \
+        --notes-grid 4:2:1:3:1:1 \
         gtd:wide gtd:solo $argv
 end
 

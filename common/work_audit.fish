@@ -205,6 +205,7 @@ function __work_audit_ownership_policy_coverage --description "Audit static owne
         "gtd_review_*|Finder|all-movable-windows" \
         "gtd_review_*|Preview|all-movable-windows;fallback-space-owner" \
         "gtd_review_*|Notes|all-movable-windows;fallback-space-owner" \
+        "gtd_review_wide/tall|Obsidian|single-window" \
         "gtd_mail_*|Thunderbird|single-window;fallback-space-owner" \
         "gtd_mail_*|Microsoft Outlook|optional-helper" \
         "gtd_meeting_*|Zoom|all-movable-windows;fallback-space-owner" \

@@ -92,6 +92,31 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
+    set -l gtd_review_wide_dry_run (gtd_review_wide --dry-run)
+    set -l gtd_review_tall_dry_run (gtd_review_tall --dry-run)
+    set -l gtd_review_solo_dry_run (gtd_review_solo --dry-run)
+    if string match -q "*apps=Finder,Preview,ChatGPT,Notes,Obsidian*" -- "$gtd_review_wide_dry_run"
+            and string match -q "*finder_grid=2:16:0:0:4:2*" -- "$gtd_review_wide_dry_run"
+            and string match -q "*preview_grid=2:16:4:0:6:2*" -- "$gtd_review_wide_dry_run"
+            and string match -q "*obsidian_grid=2:16:10:0:6:1*" -- "$gtd_review_wide_dry_run"
+            and string match -q "*chatgpt_grid=2:16:10:1:3:1*" -- "$gtd_review_wide_dry_run"
+            and string match -q "*notes_grid=2:16:13:1:3:1*" -- "$gtd_review_wide_dry_run"
+            and string match -q "*preview_grid=4:2:0:0:2:2*" -- "$gtd_review_tall_dry_run"
+            and string match -q "*finder_grid=4:2:0:2:1:1*" -- "$gtd_review_tall_dry_run"
+            and string match -q "*obsidian_grid=4:2:1:2:1:1*" -- "$gtd_review_tall_dry_run"
+            and string match -q "*chatgpt_grid=4:2:0:3:1:1*" -- "$gtd_review_tall_dry_run"
+            and string match -q "*notes_grid=4:2:1:3:1:1*" -- "$gtd_review_tall_dry_run"
+            and not string match -q "*obsidian_grid=*" -- "$gtd_review_solo_dry_run"
+            and not string match -q "*Obsidian*" -- "$gtd_review_solo_dry_run"
+        echo "OK      GTD review wide/tall Obsidian layouts"
+    else
+        echo "FAIL    GTD review wide/tall Obsidian layouts"
+        printf "%s\n" $gtd_review_wide_dry_run
+        printf "%s\n" $gtd_review_tall_dry_run
+        printf "%s\n" $gtd_review_solo_dry_run
+        set failed 1
+    end
+
     set -l gtd_meeting_wide_dry_run (gtd_meeting_wide --dry-run)
     if string match -q "*apps=zoom.us|Zoom,Microsoft Teams|MSTeams*" -- "$gtd_meeting_wide_dry_run"
             and string match -q "*zoom_grid=1:2:0:0:1:1*" -- "$gtd_meeting_wide_dry_run"

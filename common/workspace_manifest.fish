@@ -52,7 +52,9 @@ function workspace_command_map_rows --description "Print declared workspace comm
     printf "%s\t%s\t%s\t%s\n" research_wide wide external "Zotero, Claude"
     printf "%s\t%s\t%s\t%s\n" research_tall tall external "Zotero, Claude"
     printf "%s\t%s\t%s\t%s\n" "gtd_support_*" all "mode target" Dia
-    printf "%s\t%s\t%s\t%s\n" "gtd_review_*" all "mode target" "Preview, Notes, ChatGPT, Finder"
+    printf "%s\t%s\t%s\t%s\n" gtd_review_solo solo primary "Preview, Notes, ChatGPT, Finder"
+    printf "%s\t%s\t%s\t%s\n" gtd_review_wide wide external "Preview, Obsidian, Notes, ChatGPT, Finder"
+    printf "%s\t%s\t%s\t%s\n" gtd_review_tall tall external "Preview, Obsidian, Notes, ChatGPT, Finder"
     printf "%s\t%s\t%s\t%s\n" "gtd_mail_*" all "mode target" "Thunderbird, Outlook"
     printf "%s\t%s\t%s\t%s\n" "gtd_meeting_*" all "mode target" "Zoom, Teams"
     printf "%s\t%s\t%s\t%s\n" gtd_ai auto "current mode target" "ChatGPT, Obsidian, Notes"

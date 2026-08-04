@@ -21,6 +21,7 @@ function workspace_ownership_policy_rows --description "Print static workspace a
     printf "%s\t%s\t%s\t%s\n" "gtd_review_*" "Preview" "all-movable-windows;fallback-space-owner" "movable windows; non-movable Preview can own fallback space"
     printf "%s\t%s\t%s\t%s\n" "gtd_review_*" "Notes" "all-movable-windows;fallback-space-owner" "movable windows; non-movable Notes can own fallback space"
     printf "%s\t%s\t%s\t%s\n" "gtd_review_*" "ChatGPT" "optional-helper" "snapshot-first helper; capture only if existing window misses target"
+    printf "%s\t%s\t%s\t%s\n" "gtd_review_wide/tall" "Obsidian" "single-window" "optional existing window; not launched; no fallback-space ownership"
     printf "%s\t%s\t%s\t%s\n" "gtd_mail_*" "Thunderbird" "single-window;fallback-space-owner" "required primary; current space can become mail workspace"
     printf "%s\t%s\t%s\t%s\n" "gtd_mail_*" "Microsoft Outlook" "optional-helper" "single helper window when present"
     printf "%s\t%s\t%s\t%s\n" "gtd_meeting_*" "Zoom" "all-movable-windows;fallback-space-owner" "meeting/video/share windows; current Zoom space fallback"

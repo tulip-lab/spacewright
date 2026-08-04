@@ -6,6 +6,7 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
         'preview-grid=' \
         'chatgpt-grid=' \
         'notes-grid=' \
+        'obsidian-grid=' \
         dry-run \
         -- $argv
     or return 1
@@ -21,11 +22,22 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
         printf "dry_run=gtd_apply_review_space\n"
         printf "label=%s\n" "$_flag_label"
         printf "display=%s\n" "$_flag_display"
-        printf "apps=%s,%s,%s,%s\n" (workspace_app_name finder) (workspace_app_name preview) (workspace_app_name chatgpt) (workspace_app_name notes)
+        set -l dry_run_apps \
+            (workspace_app_name finder) \
+            (workspace_app_name preview) \
+            (workspace_app_name chatgpt) \
+            (workspace_app_name notes)
+        if set -q _flag_obsidian_grid
+            set -a dry_run_apps (workspace_app_name obsidian)
+        end
+        printf "apps=%s\n" (string join , $dry_run_apps)
         printf "finder_grid=%s\n" "$_flag_finder_grid"
         printf "preview_grid=%s\n" "$_flag_preview_grid"
         printf "chatgpt_grid=%s\n" "$_flag_chatgpt_grid"
         printf "notes_grid=%s\n" "$_flag_notes_grid"
+        if set -q _flag_obsidian_grid
+            printf "obsidian_grid=%s\n" "$_flag_obsidian_grid"
+        end
         printf "cleanup=%s\n" "$cleanup_specs"
         return 0
     end
