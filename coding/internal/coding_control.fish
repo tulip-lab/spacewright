@@ -24,7 +24,7 @@ function __coding_control_flclash_windows --description "Return movable FlClash/
     end
 end
 
-function coding_control --description "Collect Warp, SmartGit, KeePassXC, and FlClash onto the internal coding control workspace and apply the standard control layout"
+function coding_control --description "Collect Warp, SmartGit, KeePassXC, FlClash, and Portfolio Performance onto the internal coding control workspace and apply the standard control layout"
     argparse dry-run -- $argv
     or return 1
 
@@ -52,6 +52,7 @@ function coding_control --description "Collect Warp, SmartGit, KeePassXC, and Fl
     #   - SmartGit
     #   - KeePassXC
     #   - FlClash
+    #   - Portfolio Performance
     #
     # Window selection rules:
     #   - Warp:
@@ -63,6 +64,9 @@ function coding_control --description "Collect Warp, SmartGit, KeePassXC, and Fl
     #   - FlClash:
     #       Optional. Never launch or activate it as a side effect.
     #       Use movable non-minimized FlClash/Thaw windows if available.
+    #   - Portfolio Performance:
+    #       Optional. Use the first non-minimized Portfolio Performance window
+    #       if available.
     #
     # Creation rule:
     #   The workspace is only created if at least one of the following exists:
@@ -70,12 +74,14 @@ function coding_control --description "Collect Warp, SmartGit, KeePassXC, and Fl
     #     - SmartGit
     #     - KeePassXC
     #     - FlClash
+    #     - Portfolio Performance
     #
     # Layout:
     #   - Warp     -> upper 2/3 of the screen
     #   - SmartGit -> fixed absolute position and size
     #   - KeePassXC -> moved to the same control space without forcing bounds
     #   - FlClash  -> lower 1/3 of the screen
+    #   - Portfolio Performance -> fixed cascade position and size
     #
     # Notes:
     #   - The function is re-runnable.
@@ -86,7 +92,7 @@ function coding_control --description "Collect Warp, SmartGit, KeePassXC, and Fl
     # -------------------------------------------------------------------------
 
     set -l label coding_control
-    set -l control_app_regex (workspace_app_regex warp smartgit keepassx flclash thaw)
+    set -l control_app_regex (workspace_app_regex warp smartgit keepassx flclash thaw portfolio_performance)
     or return 1
 
     # -------------------------------------------------------------------------
@@ -143,9 +149,15 @@ function coding_control --description "Collect Warp, SmartGit, KeePassXC, and Fl
     set -l flclash (printf "%s\n" "$windows_json" | __coding_control_flclash_windows)
     or return 1
 
+    set -l portfolio_performance (workspace_find_app_key_window --app-key portfolio_performance --caller $label)
+    set -l portfolio_performance_status $status
+    if test "$portfolio_performance_status" -eq 1
+        return 1
+    end
+
     # Do not create the workspace if neither helper window exists
-    if test -z "$warp" -a -z "$smartgit" -a -z "$smartgit_fallback_window" -a -z "$keepassx" -a -z "$flclash"
-        if test "$warp_status" -eq 2 -o "$smartgit_status" -eq 2 -o "$keepassx_status" -eq 2
+    if test -z "$warp" -a -z "$smartgit" -a -z "$smartgit_fallback_window" -a -z "$keepassx" -a -z "$flclash" -a -z "$portfolio_performance"
+        if test "$warp_status" -eq 2 -o "$smartgit_status" -eq 2 -o "$keepassx_status" -eq 2 -o "$portfolio_performance_status" -eq 2
             return 1
         end
 
@@ -209,11 +221,12 @@ function coding_control --description "Collect Warp, SmartGit, KeePassXC, and Fl
     set -l warp_initial $warp
     set -l smartgit_initial $smartgit
     set -l keepassx_initial $keepassx
+    set -l portfolio_performance_initial $portfolio_performance
 
     if test "$smartgit_space_fallback_used" -eq 1
-        ws_move_windows_to_space $target_space $warp $keepassx $flclash
+        ws_move_windows_to_space $target_space $warp $keepassx $flclash $portfolio_performance
     else
-        ws_move_windows_to_space $target_space $warp $smartgit $keepassx $flclash
+        ws_move_windows_to_space $target_space $warp $smartgit $keepassx $flclash $portfolio_performance
     end
 
     # -------------------------------------------------------------------------
@@ -224,6 +237,7 @@ function coding_control --description "Collect Warp, SmartGit, KeePassXC, and Fl
     set warp (workspace_find_app_key_window --app-key warp --caller $label --space $target_space --no-refresh --target-only)
     set smartgit (workspace_find_app_key_window --app-key smartgit --caller $label --space $target_space --no-refresh --target-only)
     set keepassx (workspace_find_app_key_window --app-key keepassx --caller $label --space $target_space --no-refresh --target-only)
+    set portfolio_performance (workspace_find_app_key_window --app-key portfolio_performance --caller $label --space $target_space --no-refresh --target-only)
 
     if test "$smartgit_space_fallback_used" -eq 1
         set -l smartgit_target_windows (echo $windows_json_final | workspace_app_key_windows --app-key smartgit --space $target_space)
@@ -273,6 +287,19 @@ function coding_control --description "Collect Warp, SmartGit, KeePassXC, and Fl
         end
     end
 
+    if test -z "$portfolio_performance" -a -n "$portfolio_performance_initial"
+        set portfolio_performance (workspace_find_app_key_window --app-key portfolio_performance --caller $label)
+        set portfolio_performance_status $status
+        if test "$portfolio_performance_status" -eq 1
+            return 1
+        end
+
+        if test -n "$portfolio_performance"
+            ws_move_windows_to_space $target_space $portfolio_performance
+            set portfolio_performance (workspace_find_app_key_window --app-key portfolio_performance --caller $label --space $target_space --no-refresh --target-only)
+        end
+    end
+
     set flclash (printf "%s\n" "$windows_json_final" | __coding_control_flclash_windows --space $target_space)
     or return 1
 
@@ -306,6 +333,11 @@ function coding_control --description "Collect Warp, SmartGit, KeePassXC, and Fl
             ws_window $wid --move abs:360:120
             ws_window $wid --resize abs:1200:1040
         end
+    end
+
+    if test -n "$portfolio_performance"
+        ws_window $portfolio_performance --move abs:420:180
+        ws_window $portfolio_performance --resize abs:1220:852
     end
 
     # -------------------------------------------------------------------------

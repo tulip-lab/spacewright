@@ -1908,6 +1908,89 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
+    set -l coding_control_portfolio_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_control_moves
+        set -g __work_smoke_control_bounds
+        set -g __work_smoke_portfolio_opened 0
+
+        function perl
+            if contains -- open $argv; and contains -- "Portfolio Performance" $argv
+                set -g __work_smoke_portfolio_opened 1
+                return 0
+            end
+
+            command perl $argv
+        end
+
+        function ws_query_windows
+            printf "%s\n" "[
+                {\"id\": 51, \"app\": \"Portfolio Performance\", \"space\": 8, \"display\": 1, \"can-move\": true, \"is-minimized\": false, \"is-visible\": true, \"title\": \"Portfolio Performance\"}
+            ]"
+        end
+
+        function workspace_find_app_key_window
+            argparse "app-key=" "space=" "caller=" no-refresh target-only visible quiet-unmovable -- $argv
+
+            if test "$_flag_app_key" = portfolio_performance
+                echo 51
+            end
+        end
+
+        function resolve_workspace_primary_display
+            echo 1
+        end
+
+        function find_or_create_labeled_space
+            echo 8
+        end
+
+        function workspace_retarget_contaminated_space
+            echo 8
+        end
+
+        function workspace_focus_labeled_space
+        end
+
+        function ws_move_windows_to_space
+            set -ga __work_smoke_control_moves (string join , -- $argv)
+        end
+
+        function ws_window
+            set -ga __work_smoke_control_bounds (string join " " -- $argv)
+        end
+
+        function ws_focus_space
+        end
+
+        function cleanup_unlabeled_empty_spaces
+        end
+
+        coding_control
+        or exit 1
+
+        test "$__work_smoke_portfolio_opened" = 0
+        or exit 2
+
+        contains -- "8,51" $__work_smoke_control_moves
+        or exit 3
+
+        contains -- "51 --move abs:420:180" $__work_smoke_control_bounds
+        or exit 4
+
+        contains -- "51 --resize abs:1220:852" $__work_smoke_control_bounds
+        or exit 5
+    '
+    fish -lc "$coding_control_portfolio_smoke" >/tmp/work-coding-control-portfolio-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      coding control Portfolio Performance optional layout"
+    else
+        echo "FAIL    coding control Portfolio Performance optional layout"
+        cat /tmp/work-coding-control-portfolio-smoke.out
+        set failed 1
+    end
+
     set -l coding_control_hidden_flclash_smoke '
         work_reload >/dev/null
 
