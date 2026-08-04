@@ -196,7 +196,8 @@ ChatGPT 占左上，第一个文档占右上，第二个文档占下半屏；三
 | 命令 | 作用 |
 |---|---|
 | `gtd_support_solo` / `gtd_support_wide` / `gtd_support_tall` | Dia 支撑工作区 |
-| `gtd_review_solo` / `gtd_review_wide` / `gtd_review_tall` | Finder、Preview、Notes、ChatGPT 的 review 工作区 |
+| `gtd_review_solo` | Finder、Preview、Notes、ChatGPT 的 solo review 工作区 |
+| `gtd_review_wide` / `gtd_review_tall` | Finder、Preview、Obsidian、Notes、ChatGPT 的 review 工作区 |
 | `gtd_mail_solo` / `gtd_mail_wide` / `gtd_mail_tall` | Thunderbird、Outlook 邮件工作区 |
 | `gtd_meeting_solo` / `gtd_meeting_wide` / `gtd_meeting_tall` | Zoom、Teams 会议工作区 |
 | `gtd_ai` / `gtd_ai_solo` / `gtd_ai_wide` / `gtd_ai_tall` | ChatGPT、Obsidian、Notes 的 AI 工作区 |
@@ -210,6 +211,15 @@ GTD 模块包含最多 app-specific 规则。Outlook、Zoom、Teams、Dia、Prev
 Notes、Thunderbird、DingTalk 等特殊行为仍保留在 fish helper 中，不由通用配置层接管。Mail
 workspace 以 Thunderbird 为必需主窗口，Outlook 存在时作为辅助窗口进入同一
 workspace；wide 左右分，tall 上下分。
+
+Review wide 使用 2×16 网格：Finder 占左侧 25% 全高，Preview 占中间 37.5%
+全高，Obsidian 占右侧 37.5% 的上半区，ChatGPT 和 Notes 平分右侧下半区。
+Review tall 使用 4×2 网格：Preview 占顶部 50% 全宽，中间一行是 Finder 和
+Obsidian，底部一行是 ChatGPT 和 Notes。
+
+Wide/tall review 只接管一个已经打开且可移动的 Obsidian 主窗口，不会启动 Obsidian；
+solo review 不接管 Obsidian。`gtd_ai` 与 wide/tall review 共享 Obsidian、Notes 和
+ChatGPT 时，最后调用的工作区拥有这些窗口。
 
 #### GTD AI Workspace
 
