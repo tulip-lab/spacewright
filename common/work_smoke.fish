@@ -1023,6 +1023,8 @@ function work_smoke --description "Run read-only workspace smoke checks for help
             string match -rq -- "--create|--destroy|--display" "$command_line"
             and exit 5
         end
+
+        exit 0
     '
     fish -lc "$workspace_order_spaces_smoke" >/tmp/work-order-spaces-smoke.out 2>&1
     if test $status -eq 0
