@@ -340,10 +340,70 @@ function __work_smoke_finalization_finalize
     test (count $__work_smoke_finalize_steps) -eq 0
 end
 
+function __work_smoke_finalization_runner
+    set -g __work_smoke_runner_body_calls 0
+    set -g __work_smoke_runner_final_modes
+    set -g __work_smoke_runner_body_status 0
+    set -g __work_smoke_runner_final_status 0
+
+    function __work_smoke_runner_leaf
+        set -g __work_smoke_runner_body_calls (math $__work_smoke_runner_body_calls + 1)
+        return $__work_smoke_runner_body_status
+    end
+    function __work_smoke_runner_nested
+        workspace_run_finalized_entry --mode tall --command __work_smoke_runner_leaf -- $argv
+        workspace_run_finalized_entry --mode auto --command __work_smoke_runner_leaf -- $argv
+    end
+    function workspace_finalize_mode
+        set -ga __work_smoke_runner_final_modes $argv[1]
+        return $__work_smoke_runner_final_status
+    end
+
+    workspace_run_finalized_entry --mode wide --command __work_smoke_runner_leaf --
+    or return 1
+    test $__work_smoke_runner_body_calls -eq 1; or return 2
+    test (string join ' ' -- $__work_smoke_runner_final_modes) = wide; or return 3
+
+    set -g __work_smoke_runner_body_calls 0
+    set -g __work_smoke_runner_final_modes
+    workspace_run_finalized_entry --mode wide --command __work_smoke_runner_nested --
+    or return 4
+    test $__work_smoke_runner_body_calls -eq 2; or return 5
+    test (string join ' ' -- $__work_smoke_runner_final_modes) = wide; or return 6
+
+    set -g __work_smoke_runner_body_calls 0
+    set -g __work_smoke_runner_final_modes
+    workspace_run_finalized_entry --mode solo --command __work_smoke_runner_nested --
+    or return 7
+    test $__work_smoke_runner_body_calls -eq 2; or return 8
+    test (count $__work_smoke_runner_final_modes) -eq 0; or return 9
+
+    set -g __work_smoke_runner_body_status 7
+    set -g __work_smoke_runner_final_modes
+    workspace_run_finalized_entry --mode wide --command __work_smoke_runner_leaf -- >/dev/null 2>&1
+    test $status -eq 7; or return 10
+    test (string join ' ' -- $__work_smoke_runner_final_modes) = wide; or return 11
+
+    set -g __work_smoke_runner_body_status 0
+    set -g __work_smoke_runner_final_status 9
+    workspace_run_finalized_entry --mode wide --command __work_smoke_runner_leaf -- >/dev/null 2>&1
+    test $status -eq 9; or return 12
+
+    set -g __work_smoke_runner_final_status 0
+    set -g __work_smoke_runner_final_modes
+    set -l dry_run (workspace_run_finalized_entry --mode tall --command __work_smoke_runner_leaf -- --dry-run)
+    string match -q '*finalization_mode=tall*' -- "$dry_run"; or return 13
+    string match -q '*finalization_steps=sandbox cleanup order_verify restore_focus*' -- "$dry_run"; or return 14
+    test (count $__work_smoke_runner_final_modes) -eq 0; or return 15
+
+    not set -q __WORKSPACE_FINALIZATION_DEPTH; or return 16
+    not set -q __WORKSPACE_FINALIZATION_MODE
+end
+
 function work_smoke_finalization --description "Run fixture-only workspace finalization smokes"
     set -l requested $argv
     if test (count $requested) -eq 0
-        set requested policy selection sandbox cleanup ordering finalize
+        set requested policy selection sandbox cleanup ordering finalize runner
     end
 
     set -l failed 0
@@ -361,8 +421,10 @@ function work_smoke_finalization --description "Run fixture-only workspace final
                 __work_smoke_finalization_ordering
             case finalize
                 __work_smoke_finalization_finalize
+            case runner
+                __work_smoke_finalization_runner
             case '*'
-                echo "usage: work_smoke_finalization [policy|selection|sandbox|cleanup|ordering|finalize ...]" >&2
+                echo "usage: work_smoke_finalization [policy|selection|sandbox|cleanup|ordering|finalize|runner ...]" >&2
                 return 2
         end
 

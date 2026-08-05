@@ -146,3 +146,52 @@ function workspace_finalize_mode --description "Collect Sandbox, clean, order, v
 
     return $failed
 end
+
+function workspace_run_finalized_entry --description "Run an entry and finalize only at the outermost scope"
+    argparse 'mode=' 'command=' -- $argv
+    or return 1
+
+    if not set -q _flag_mode; or not contains -- $_flag_mode solo wide tall auto
+        echo "usage: workspace_run_finalized_entry --mode <solo|wide|tall|auto> --command <function> -- [args...]" >&2
+        return 2
+    end
+    if not set -q _flag_command; or not functions -q $_flag_command
+        echo "usage: workspace_run_finalized_entry --mode <solo|wide|tall|auto> --command <function> -- [args...]" >&2
+        return 2
+    end
+
+    set -l outermost 0
+    if not set -q __WORKSPACE_FINALIZATION_DEPTH; or test "$__WORKSPACE_FINALIZATION_DEPTH" -eq 0
+        set outermost 1
+        set -g __WORKSPACE_FINALIZATION_MODE $_flag_mode
+        set -g __WORKSPACE_FINALIZATION_DEPTH 0
+    end
+    set -g __WORKSPACE_FINALIZATION_DEPTH (math $__WORKSPACE_FINALIZATION_DEPTH + 1)
+
+    $_flag_command $argv
+    set -l body_status $status
+    set -g __WORKSPACE_FINALIZATION_DEPTH (math $__WORKSPACE_FINALIZATION_DEPTH - 1)
+
+    set -l final_status 0
+    if test $outermost -eq 1
+        if contains -- --dry-run $argv
+            printf "finalization_mode=%s\n" "$__WORKSPACE_FINALIZATION_MODE"
+            if contains -- $__WORKSPACE_FINALIZATION_MODE wide tall auto
+                printf "finalization_steps=sandbox cleanup order_verify restore_focus\n"
+            else
+                printf "finalization_steps=none\n"
+            end
+        else if contains -- $__WORKSPACE_FINALIZATION_MODE wide tall auto
+            workspace_finalize_mode $__WORKSPACE_FINALIZATION_MODE
+            set final_status $status
+        end
+
+        set -e __WORKSPACE_FINALIZATION_MODE
+        set -e __WORKSPACE_FINALIZATION_DEPTH
+    end
+
+    if test $body_status -ne 0
+        return $body_status
+    end
+    return $final_status
+end
