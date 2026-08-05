@@ -1,7 +1,7 @@
 function workspace_top_level_entry_rows --description "Print declared top-level workspace entries"
     printf "%s\t%s\t%s\n" work_solo "Arrange solo primary-display workspaces" "coding_solo research_solo gtd_solo_all"
-    printf "%s\t%s\t%s\n" work_wide "Arrange wide external-display workspaces" "coding_wide research_wide office_wide gtd_wide gtd_chat gtd_calendar coding_control workspace_order_mode_spaces"
-    printf "%s\t%s\t%s\n" work_tall "Arrange tall external-display workspaces" "coding_tall research_tall office_tall gtd_tall gtd_chat gtd_calendar coding_control workspace_order_mode_spaces"
+    printf "%s\t%s\t%s\n" work_wide "Arrange and finalize wide external-display workspaces" "coding_wide research_wide office_wide gtd_wide gtd_chat gtd_calendar coding_control"
+    printf "%s\t%s\t%s\n" work_tall "Arrange and finalize tall external-display workspaces" "coding_tall research_tall office_tall gtd_tall gtd_chat gtd_calendar coding_control"
     printf "%s\t%s\t%s\n" work_status "Inspect current workspace/display/module state" "diagnostics plus module status snapshots"
     printf "%s\t%s\t%s\n" work_reload "Reload common, display, and module functions" "reload only"
     printf "%s\t%s\t%s\n" work_check "Run reload, diagnostics, and module mode status" "read-only status"
@@ -100,7 +100,20 @@ function workspace_common_helper_rows --description "Print declared common works
     printf "%s\t%s\n" office_apply_document_space "Office ChatGPT plus multi-document workspace flow"
     printf "%s\t%s\n" workspace_run_mode_steps "mode aggregate runner with shared cleanup suppression"
     printf "%s\t%s\n" workspace_run_cleanup_specs "family:mode cleanup-spec dispatcher"
+    printf "%s\t%s\n" workspace_run_finalized_entry "outermost-only wide/tall post-command runner"
+    printf "%s\t%s\n" workspace_finalize_mode "Sandbox, cleanup, verified ordering, and focus restoration"
+    printf "%s\t%s\n" workspace_apply_sandbox "policy-driven unmanaged-window Sandbox collection"
+    printf "%s\t%s\n" workspace_cleanup_empty_spaces "live-window empty-Space cleanup with Home protection"
     printf "%s\t%s\n" workspace_order_mode_spaces "label-based primary and external Space ordering"
+    printf "%s\t%s\n" workspace_order_and_verify_mode_spaces "Space ordering with one verification retry"
+    printf "%s\t%s\n" workspace_verify_mode_space_order "read-only managed Space order verification"
+    printf "%s\t%s\n" workspace_owned_app_keys "machine-readable ownership-policy app keys"
+    printf "%s\t%s\n" workspace_owned_app_names_json "policy-owned yabai app names"
+    printf "%s\t%s\n" workspace_home_space_info "leftmost unlabeled primary Home identity"
+    printf "%s\t%s\n" workspace_sandbox_candidate_window_ids "unmanaged movable-window selector"
+    printf "%s\t%s\n" workspace_detect_display_mode "solo/wide/tall display-mode detector"
+    printf "%s\t%s\n" workspace_primary_order_labels "declared primary Space order"
+    printf "%s\t%s\n" workspace_external_order_labels "declared mode-specific external Space order"
     printf "%s\t%s\n" workspace_print_app_status "shared app status printer for module status commands"
     printf "%s\t%s\n" workspace_prepare_labeled_space "find/create, normalize, and focus a labeled space"
     printf "%s\t%s\n" workspace_focus_labeled_space "normalize and focus an existing labeled space"
@@ -190,6 +203,7 @@ function workspace_required_command_names --description "Print documented worksp
         work_doctor \
         work_smoke \
         work_smoke_observability \
+        work_smoke_finalization \
         work_audit \
         workspace_top_level_entry_rows \
         workspace_top_level_commands \
@@ -238,7 +252,19 @@ function workspace_required_command_names --description "Print documented worksp
         workspace_run_step \
         workspace_run_cleanup_specs \
         workspace_run_mode_steps \
+        workspace_run_finalized_entry \
+        workspace_finalize_mode \
+        workspace_apply_sandbox \
+        workspace_cleanup_empty_spaces \
         workspace_order_mode_spaces \
+        workspace_order_and_verify_mode_spaces \
+        workspace_verify_mode_space_order \
+        workspace_primary_order_labels \
+        workspace_external_order_labels \
+        workspace_home_space_info \
+        workspace_sandbox_candidate_window_ids \
+        workspace_owned_app_keys \
+        workspace_owned_app_names_json \
         workspace_create_unlabeled_space_on_display \
         workspace_focus_labeled_space \
         workspace_focus_space_fallback \
@@ -262,6 +288,7 @@ function workspace_required_command_names --description "Print documented worksp
         set_workspace_primary_display_uuid \
         get_workspace_primary_display_uuid \
         workspace_resolve_display_role \
+        workspace_detect_display_mode \
         resolve_workspace_primary_display \
         resolve_workspace_external_display \
         gtd_reload \

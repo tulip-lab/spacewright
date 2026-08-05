@@ -433,7 +433,37 @@ end
 function work_smoke_finalization --description "Run fixture-only workspace finalization smokes"
     set -l requested $argv
     if test (count $requested) -eq 0
-        set requested policy selection sandbox cleanup ordering finalize runner entries
+        set -l cases policy selection sandbox cleanup ordering finalize runner entries
+        set -l failed 0
+        for case_name in $cases
+            if set -q WORKSPACE_TEST_SOURCE_ROOT
+                set -l child_commands \
+                    'work_reload >/dev/null' \
+                    "source \"$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_manifest.fish\"" \
+                    "source \"$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_ownership_policy.fish\"" \
+                    "source \"$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_sandbox.fish\"" \
+                    "source \"$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_order_spaces.fish\"" \
+                    "source \"$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_display_roles.fish\"" \
+                    "source \"$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_finalize.fish\"" \
+                    "source \"$WORKSPACE_TEST_SOURCE_ROOT/common/work_entries.fish\"" \
+                    "source \"$WORKSPACE_TEST_SOURCE_ROOT/coding/coding_entries.fish\"" \
+                    "source \"$WORKSPACE_TEST_SOURCE_ROOT/coding/internal/coding_control.fish\"" \
+                    "source \"$WORKSPACE_TEST_SOURCE_ROOT/research/research_entries.fish\"" \
+                    "source \"$WORKSPACE_TEST_SOURCE_ROOT/office/office_entries.fish\"" \
+                    "source \"$WORKSPACE_TEST_SOURCE_ROOT/gtd/internal/gtd_apply_ai_space.fish\"" \
+                    "source \"$WORKSPACE_TEST_SOURCE_ROOT/gtd/internal/gtd_chat.fish\"" \
+                    "source \"$WORKSPACE_TEST_SOURCE_ROOT/gtd/internal/gtd_calendar.fish\"" \
+                    "source \"$WORKSPACE_TEST_SOURCE_ROOT/gtd/gtd_entries.fish\"" \
+                    "source \"$WORKSPACE_TEST_SOURCE_ROOT/common/work_smoke_finalization.fish\"" \
+                    "work_smoke_finalization $case_name"
+                set -l child_command (string join '; ' -- $child_commands)
+                fish -lc "$child_command"
+            else
+                fish -lc "work_reload >/dev/null; work_smoke_finalization $case_name"
+            end
+            or set failed 1
+        end
+        return $failed
     end
 
     set -l failed 0

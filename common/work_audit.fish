@@ -295,6 +295,40 @@ function __work_audit_multi_window_helper_coverage --description "Audit multi-wi
     return $failed
 end
 
+function __work_audit_finalization_coverage --description "Audit finalization helpers and policy keys"
+    set -l failed 0
+    echo "===== FINALIZATION COVERAGE ====="
+
+    set -l helpers \
+        workspace_owned_app_keys workspace_owned_app_names_json \
+        workspace_home_space_info workspace_sandbox_candidate_window_ids workspace_apply_sandbox \
+        workspace_cleanup_empty_spaces workspace_detect_display_mode workspace_finalize_mode \
+        workspace_run_finalized_entry workspace_primary_order_labels workspace_external_order_labels \
+        workspace_verify_mode_space_order workspace_order_and_verify_mode_spaces
+
+    __work_audit_check_loaded_functions $helpers
+    or set failed 1
+
+    set -l required (workspace_required_command_names)
+    for helper in $helpers
+        if not contains -- $helper $required
+            echo "FAIL    finalization helper missing from manifest: $helper"
+            set failed 1
+        end
+    end
+
+    workspace_owned_app_keys >/dev/null
+    or begin
+        echo "FAIL    ownership policy app keys"
+        set failed 1
+    end
+
+    if test $failed -eq 0
+        echo "OK      finalization helper and policy coverage"
+    end
+    return $failed
+end
+
 function __work_audit_empty_label_allowlist_rows --description "Print labels that can legitimately be empty"
     printf "%s\t%s\n" "coding_control" "fixed internal control workspace; retained for visibility after tools close"
     printf "%s\t%s\n" "gtd_chat" "fixed primary-display chat workspace; optional chat apps may all be closed"
@@ -379,6 +413,10 @@ function work_audit --description "Run read-only workspace mode and policy audit
 
     echo
     __work_audit_multi_window_helper_coverage
+    or set failed 1
+
+    echo
+    __work_audit_finalization_coverage
     or set failed 1
 
     echo

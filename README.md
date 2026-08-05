@@ -135,15 +135,19 @@ work_tall
 
 顶层入口保持公开命令稳定，方便 shell、`skhd` 和肌肉记忆继续使用。
 
-`work_wide` 和 `work_tall` 在所有模块步骤结束后自动整理已有 Space。主显示器把当前
-索引最小的未标记 Space 认作 Home，通过 UUID 将它恢复到最左侧，然后依次排列 `coding_control`、`gtd_chat`、
-`gtd_calendar`。外接屏依次排列 `gtd_ai`、coding、research、office writing、
-office slides、GTD support、review、mail、meeting，其中模式化 label 使用当前
-`_wide` 或 `_tall` 后缀。
+所有公开 wide/tall 入口在最外层命令完成后运行同一套收尾；aggregate 内部的子命令不会
+重复收尾。无模式的 `coding_control`、`gtd_chat`、`gtd_calendar` 只有在可靠识别当前为
+wide/tall 时才收尾，solo 行为保持不变。
 
-排序只处理目标显示器上已经存在的 label；缺席项直接跳过，其他 Space 保持相对顺序并
-排在受管序列之后。如果主显示器没有未标记 Space，排序不会创建 Home，而是从第一位
-开始排列受管 label。排序不会创建、销毁或跨屏迁移 Space，也不会为了 `gtd_ai` 启动 app。
+收尾先把 ownership policy 中没有登记、可移动、非 sticky、非原生全屏的窗口放进外接屏
+`sandbox_wide` 或 `sandbox_tall`。主屏索引最小的未标记 Space 是 Home；Home 的 UUID 和
+其中窗口始终受保护。Sandbox 使用 `bsp` 并 balance；没有候选窗口时不会创建，变空后会
+清理。随后按 live windows 删除其他空 Space，但每个显示器至少保留一个 Space。
+
+最后通过 UUID 恢复焦点并验证 Space 顺序。主屏顺序为 Home、`coding_control`、`gtd_chat`、
+`gtd_calendar`；外接屏依次为 `gtd_ai`、coding、research、office writing、office slides、
+GTD support、review、mail、meeting、Sandbox。缺席 label 直接跳过；验证漂移时只重新排序
+一次，第二次仍失败则命令返回非零。如果主屏没有未标记 Space，不会自动创建 Home。
 macOS 的“根据最近使用情况自动重新排列 Spaces”应保持关闭；`work_diagnostics` 只读报告
 该设置，不会代替用户修改系统偏好。
 

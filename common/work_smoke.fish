@@ -6,6 +6,26 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     work_reload >/dev/null
     or set failed 1
 
+    if set -q WORKSPACE_TEST_SOURCE_ROOT
+        source "$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_manifest.fish"
+        source "$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_ownership_policy.fish"
+        source "$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_sandbox.fish"
+        source "$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_order_spaces.fish"
+        source "$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_display_roles.fish"
+        source "$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_finalize.fish"
+        source "$WORKSPACE_TEST_SOURCE_ROOT/common/work_entries.fish"
+        source "$WORKSPACE_TEST_SOURCE_ROOT/common/work_audit.fish"
+        source "$WORKSPACE_TEST_SOURCE_ROOT/common/work_smoke_finalization.fish"
+        source "$WORKSPACE_TEST_SOURCE_ROOT/coding/coding_entries.fish"
+        source "$WORKSPACE_TEST_SOURCE_ROOT/coding/internal/coding_control.fish"
+        source "$WORKSPACE_TEST_SOURCE_ROOT/research/research_entries.fish"
+        source "$WORKSPACE_TEST_SOURCE_ROOT/office/office_entries.fish"
+        source "$WORKSPACE_TEST_SOURCE_ROOT/gtd/internal/gtd_apply_ai_space.fish"
+        source "$WORKSPACE_TEST_SOURCE_ROOT/gtd/internal/gtd_chat.fish"
+        source "$WORKSPACE_TEST_SOURCE_ROOT/gtd/internal/gtd_calendar.fish"
+        source "$WORKSPACE_TEST_SOURCE_ROOT/gtd/gtd_entries.fish"
+    end
+
     work_command_check >/tmp/work-command-check.out
     if test $status -eq 0
         echo "OK      command check"
@@ -384,6 +404,15 @@ function work_smoke --description "Run read-only workspace smoke checks for help
 
     work_smoke_observability
     or set failed 1
+
+    work_smoke_finalization >/tmp/work-smoke-finalization.out 2>&1
+    if test $status -eq 0
+        echo "OK      workspace finalization fixtures"
+    else
+        echo "FAIL    workspace finalization fixtures"
+        cat /tmp/work-smoke-finalization.out
+        set failed 1
+    end
 
     set -l localized_preview_fixture '[
         {"id": 18, "app": "预览", "space": 6, "can-move": true, "is-minimized": false}
@@ -984,6 +1013,10 @@ function work_smoke --description "Run read-only workspace smoke checks for help
 
     set -l aggregate_space_order_smoke '
         work_reload >/dev/null
+        if set -q WORKSPACE_TEST_SOURCE_ROOT
+            source "$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_finalize.fish"
+            source "$WORKSPACE_TEST_SOURCE_ROOT/common/work_entries.fish"
+        end
 
         set -g __work_smoke_aggregate_calls
         set -g __work_smoke_fail_wide 1
@@ -997,29 +1030,29 @@ function work_smoke --description "Run read-only workspace smoke checks for help
             $argv
         end
 
-        function workspace_order_mode_spaces
-            set -ga __work_smoke_aggregate_calls order:$argv[1]
+        function workspace_finalize_mode
+            set -ga __work_smoke_aggregate_calls finalize:$argv[1]
         end
 
         work_wide
         set -l wide_status $status
         test "$wide_status" -ne 0
         or exit 1
-        test "$__work_smoke_aggregate_calls[-1]" = order:wide
+        test "$__work_smoke_aggregate_calls[-1]" = finalize:wide
         or exit 2
 
         set -g __work_smoke_aggregate_calls
         set -g __work_smoke_fail_wide 0
         work_tall
         or exit 3
-        test "$__work_smoke_aggregate_calls[-1]" = order:tall
+        test "$__work_smoke_aggregate_calls[-1]" = finalize:tall
         or exit 4
     '
     fish -lc "$aggregate_space_order_smoke" >/tmp/work-aggregate-space-order-smoke.out 2>&1
     if test $status -eq 0
-        echo "OK      aggregate commands finish with Space ordering"
+        echo "OK      aggregate commands finish with shared finalization"
     else
-        echo "FAIL    aggregate commands finish with Space ordering"
+        echo "FAIL    aggregate commands finish with shared finalization"
         cat /tmp/work-aggregate-space-order-smoke.out
         set failed 1
     end
