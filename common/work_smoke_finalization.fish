@@ -438,6 +438,7 @@ function work_smoke_finalization --description "Run fixture-only workspace final
         for case_name in $cases
             if set -q WORKSPACE_TEST_SOURCE_ROOT
                 set -l child_commands \
+                    'set -e WORKSPACE_SKIP_FINALIZATION' \
                     'work_reload >/dev/null' \
                     "source \"$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_manifest.fish\"" \
                     "source \"$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_ownership_policy.fish\"" \
@@ -459,7 +460,7 @@ function work_smoke_finalization --description "Run fixture-only workspace final
                 set -l child_command (string join '; ' -- $child_commands)
                 fish -lc "$child_command"
             else
-                fish -lc "work_reload >/dev/null; work_smoke_finalization $case_name"
+                fish -lc "set -e WORKSPACE_SKIP_FINALIZATION; work_reload >/dev/null; work_smoke_finalization $case_name"
             end
             or set failed 1
         end

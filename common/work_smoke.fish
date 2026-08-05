@@ -1,5 +1,6 @@
 function work_smoke --description "Run read-only workspace smoke checks for helper wiring and dry-run paths"
     set -l failed 0
+    set -lx WORKSPACE_SKIP_FINALIZATION 1
 
     echo "===== WORKSPACE SMOKE ====="
 
@@ -1013,6 +1014,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
 
     set -l aggregate_space_order_smoke '
         work_reload >/dev/null
+        set -e WORKSPACE_SKIP_FINALIZATION
         if set -q WORKSPACE_TEST_SOURCE_ROOT
             source "$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_finalize.fish"
             source "$WORKSPACE_TEST_SOURCE_ROOT/common/work_entries.fish"

@@ -181,7 +181,7 @@ function workspace_run_finalized_entry --description "Run an entry and finalize 
             else
                 printf "finalization_steps=none\n"
             end
-        else if contains -- $__WORKSPACE_FINALIZATION_MODE wide tall auto
+        else if contains -- $__WORKSPACE_FINALIZATION_MODE wide tall auto; and test "$WORKSPACE_SKIP_FINALIZATION" != 1
             workspace_finalize_mode $__WORKSPACE_FINALIZATION_MODE
             set final_status $status
         end
