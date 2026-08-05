@@ -24,7 +24,7 @@ function __coding_control_flclash_windows --description "Return movable FlClash/
     end
 end
 
-function coding_control --description "Collect Warp, SmartGit, KeePassXC, FlClash, and Portfolio Performance onto the internal coding control workspace and apply the standard control layout"
+function __coding_control_body --description "Collect Warp, SmartGit, KeePassXC, FlClash, and Portfolio Performance onto the internal coding control workspace and apply the standard control layout"
     argparse dry-run -- $argv
     or return 1
 
@@ -345,4 +345,8 @@ function coding_control --description "Collect Warp, SmartGit, KeePassXC, FlClas
     # -------------------------------------------------------------------------
     ws_focus_space $target_space
     cleanup_unlabeled_empty_spaces $target_space
+end
+
+function coding_control --description "Collect Warp, SmartGit, KeePassXC, FlClash, and Portfolio Performance onto the internal coding control workspace and apply the standard control layout"
+    workspace_run_finalized_entry --mode auto --command __coding_control_body -- $argv
 end

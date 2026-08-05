@@ -212,7 +212,7 @@ function office_apply_document_space --description "Apply an Office workspace fo
     cleanup_unlabeled_empty_spaces $target_space
 end
 
-function office_writing_wide --description "Collect Word and ChatGPT onto the wide office writing workspace and apply the standard writing layout"
+function __office_writing_wide_body --description "Collect Word and ChatGPT onto the wide office writing workspace and apply the standard writing layout"
     office_apply_document_space \
         --label office_writing_wide \
         --display wide \
@@ -221,7 +221,7 @@ function office_writing_wide --description "Collect Word and ChatGPT onto the wi
         office:tall $argv
 end
 
-function office_slides_wide --description "Collect PowerPoint and ChatGPT onto the wide office slides workspace and apply the standard slides layout"
+function __office_slides_wide_body --description "Collect PowerPoint and ChatGPT onto the wide office slides workspace and apply the standard slides layout"
     office_apply_document_space \
         --label office_slides_wide \
         --display wide \
@@ -230,11 +230,11 @@ function office_slides_wide --description "Collect PowerPoint and ChatGPT onto t
         office:tall $argv
 end
 
-function office_wide --description "Arrange all office wide workspaces and clean opposite-mode spaces"
+function __office_wide_body --description "Arrange all office wide workspaces and clean opposite-mode spaces"
     workspace_run_mode_steps office:tall -- office_writing_wide office_slides_wide $argv
 end
 
-function office_writing_tall --description "Collect Word and ChatGPT onto the tall office writing workspace and apply the standard writing layout"
+function __office_writing_tall_body --description "Collect Word and ChatGPT onto the tall office writing workspace and apply the standard writing layout"
     office_apply_document_space \
         --label office_writing_tall \
         --display tall \
@@ -243,7 +243,7 @@ function office_writing_tall --description "Collect Word and ChatGPT onto the ta
         office:wide $argv
 end
 
-function office_slides_tall --description "Collect PowerPoint and ChatGPT onto the tall office slides workspace and apply the standard slides layout"
+function __office_slides_tall_body --description "Collect PowerPoint and ChatGPT onto the tall office slides workspace and apply the standard slides layout"
     office_apply_document_space \
         --label office_slides_tall \
         --display tall \
@@ -252,6 +252,30 @@ function office_slides_tall --description "Collect PowerPoint and ChatGPT onto t
         office:wide $argv
 end
 
-function office_tall --description "Arrange all office tall workspaces and clean opposite-mode spaces"
+function __office_tall_body --description "Arrange all office tall workspaces and clean opposite-mode spaces"
     workspace_run_mode_steps office:wide -- office_writing_tall office_slides_tall $argv
+end
+
+function office_writing_wide --description "Collect Word and ChatGPT onto the wide office writing workspace and apply the standard writing layout"
+    workspace_run_finalized_entry --mode wide --command __office_writing_wide_body -- $argv
+end
+
+function office_slides_wide --description "Collect PowerPoint and ChatGPT onto the wide office slides workspace and apply the standard slides layout"
+    workspace_run_finalized_entry --mode wide --command __office_slides_wide_body -- $argv
+end
+
+function office_wide --description "Arrange all office wide workspaces and clean opposite-mode spaces"
+    workspace_run_finalized_entry --mode wide --command __office_wide_body -- $argv
+end
+
+function office_writing_tall --description "Collect Word and ChatGPT onto the tall office writing workspace and apply the standard writing layout"
+    workspace_run_finalized_entry --mode tall --command __office_writing_tall_body -- $argv
+end
+
+function office_slides_tall --description "Collect PowerPoint and ChatGPT onto the tall office slides workspace and apply the standard slides layout"
+    workspace_run_finalized_entry --mode tall --command __office_slides_tall_body -- $argv
+end
+
+function office_tall --description "Arrange all office tall workspaces and clean opposite-mode spaces"
+    workspace_run_finalized_entry --mode tall --command __office_tall_body -- $argv
 end

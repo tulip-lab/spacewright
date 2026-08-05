@@ -1,4 +1,4 @@
-function gtd_calendar --description "Collect Calendar and Reminders onto the workspace primary display and apply the standard GTD calendar layout"
+function __gtd_calendar_body --description "Collect Calendar and Reminders onto the workspace primary display and apply the standard GTD calendar layout"
     argparse dry-run -- $argv
     or return 1
 
@@ -233,4 +233,8 @@ function gtd_calendar --description "Collect Calendar and Reminders onto the wor
     # -------------------------------------------------------------------------
     ws_focus_space $target_space
     cleanup_unlabeled_empty_spaces $target_space
+end
+
+function gtd_calendar --description "Collect Calendar and Reminders onto the workspace primary display and apply the standard GTD calendar layout"
+    workspace_run_finalized_entry --mode auto --command __gtd_calendar_body -- $argv
 end

@@ -1,4 +1,4 @@
-function work_solo --description "Arrange solo primary-display workspaces"
+function __work_solo_body --description "Arrange solo primary-display workspaces"
     argparse dry-run -- $argv
     or return 1
 
@@ -22,7 +22,7 @@ function work_solo --description "Arrange solo primary-display workspaces"
     return $failed
 end
 
-function work_wide
+function __work_wide_body
     argparse dry-run -- $argv
     or return 1
 
@@ -55,13 +55,10 @@ function work_wide
     workspace_run_step "coding control" coding_control
     or set failed 1
 
-    workspace_run_step "Space order wide" workspace_order_mode_spaces wide
-    or set failed 1
-
     return $failed
 end
 
-function work_tall
+function __work_tall_body
     argparse dry-run -- $argv
     or return 1
 
@@ -94,8 +91,17 @@ function work_tall
     workspace_run_step "coding control" coding_control
     or set failed 1
 
-    workspace_run_step "Space order tall" workspace_order_mode_spaces tall
-    or set failed 1
-
     return $failed
+end
+
+function work_solo --description "Arrange solo primary-display workspaces"
+    workspace_run_finalized_entry --mode solo --command __work_solo_body -- $argv
+end
+
+function work_wide --description "Arrange wide external-display workspaces"
+    workspace_run_finalized_entry --mode wide --command __work_wide_body -- $argv
+end
+
+function work_tall --description "Arrange tall external-display workspaces"
+    workspace_run_finalized_entry --mode tall --command __work_tall_body -- $argv
 end

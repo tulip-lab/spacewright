@@ -6,7 +6,7 @@ function gtd_support_solo --description "Collect Dia onto the solo GTD support w
         gtd:wide gtd:tall $argv
 end
 
-function gtd_support_wide --description "Collect Dia onto the wide GTD support workspace and apply the standard support layout"
+function __gtd_support_wide_body --description "Collect Dia onto the wide GTD support workspace and apply the standard support layout"
     gtd_apply_support_space \
         --label gtd_support_wide \
         --display wide \
@@ -14,7 +14,7 @@ function gtd_support_wide --description "Collect Dia onto the wide GTD support w
         gtd:tall gtd:solo $argv
 end
 
-function gtd_support_tall --description "Collect Dia onto the tall GTD support workspace and apply the standard support layout"
+function __gtd_support_tall_body --description "Collect Dia onto the tall GTD support workspace and apply the standard support layout"
     gtd_apply_support_space \
         --label gtd_support_tall \
         --display tall \
@@ -33,7 +33,7 @@ function gtd_review_solo --description "Collect review-related windows onto the 
         gtd:wide gtd:tall $argv
 end
 
-function gtd_review_wide --description "Collect review-related windows onto the wide GTD review workspace and apply the standard review layout"
+function __gtd_review_wide_body --description "Collect review-related windows onto the wide GTD review workspace and apply the standard review layout"
     gtd_apply_review_space \
         --label gtd_review_wide \
         --display wide \
@@ -45,7 +45,7 @@ function gtd_review_wide --description "Collect review-related windows onto the 
         gtd:tall gtd:solo $argv
 end
 
-function gtd_review_tall --description "Collect review-related windows onto the tall GTD review workspace and apply the standard review layout"
+function __gtd_review_tall_body --description "Collect review-related windows onto the tall GTD review workspace and apply the standard review layout"
     gtd_apply_review_space \
         --label gtd_review_tall \
         --display tall \
@@ -70,7 +70,7 @@ function gtd_mail_solo --description "Collect Thunderbird and Outlook onto the s
         gtd:wide gtd:tall $argv
 end
 
-function gtd_mail_wide --description "Collect Thunderbird and Outlook onto the wide GTD mail workspace and apply the standard mail layout"
+function __gtd_mail_wide_body --description "Collect Thunderbird and Outlook onto the wide GTD mail workspace and apply the standard mail layout"
     workspace_apply_primary_helper_space \
         --label gtd_mail_wide \
         --display wide \
@@ -83,7 +83,7 @@ function gtd_mail_wide --description "Collect Thunderbird and Outlook onto the w
         gtd:tall gtd:solo $argv
 end
 
-function gtd_mail_tall --description "Collect Thunderbird and Outlook onto the tall GTD mail workspace and apply the standard tall mail layout"
+function __gtd_mail_tall_body --description "Collect Thunderbird and Outlook onto the tall GTD mail workspace and apply the standard tall mail layout"
     workspace_apply_primary_helper_space \
         --label gtd_mail_tall \
         --display tall \
@@ -105,7 +105,7 @@ function gtd_meeting_solo --description "Collect meeting apps onto the solo GTD 
         gtd:wide gtd:tall $argv
 end
 
-function gtd_meeting_wide --description "Collect Zoom and Teams onto the wide GTD meeting workspace and apply the standard meeting layout"
+function __gtd_meeting_wide_body --description "Collect Zoom and Teams onto the wide GTD meeting workspace and apply the standard meeting layout"
     gtd_apply_meeting_space \
         --label gtd_meeting_wide \
         --display wide \
@@ -114,7 +114,7 @@ function gtd_meeting_wide --description "Collect Zoom and Teams onto the wide GT
         gtd:tall gtd:solo $argv
 end
 
-function gtd_meeting_tall --description "Collect Zoom and Teams onto the tall GTD meeting workspace and apply the standard meeting layout"
+function __gtd_meeting_tall_body --description "Collect Zoom and Teams onto the tall GTD meeting workspace and apply the standard meeting layout"
     gtd_apply_meeting_space \
         --label gtd_meeting_tall \
         --display tall \
@@ -160,7 +160,7 @@ function gtd_ai_solo --description "Collect ChatGPT, Obsidian and Notes onto the
         gtd:wide gtd:tall $argv
 end
 
-function gtd_ai_wide --description "Collect ChatGPT, Obsidian and Notes onto the wide GTD AI workspace"
+function __gtd_ai_wide_body --description "Collect ChatGPT, Obsidian and Notes onto the wide GTD AI workspace"
     gtd_apply_ai_space \
         --label gtd_ai \
         --display wide \
@@ -170,7 +170,7 @@ function gtd_ai_wide --description "Collect ChatGPT, Obsidian and Notes onto the
         gtd:tall gtd:solo $argv
 end
 
-function gtd_ai_tall --description "Collect ChatGPT, Obsidian and Notes onto the tall GTD AI workspace"
+function __gtd_ai_tall_body --description "Collect ChatGPT, Obsidian and Notes onto the tall GTD AI workspace"
     gtd_apply_ai_space \
         --label gtd_ai \
         --display tall \
@@ -180,14 +180,66 @@ function gtd_ai_tall --description "Collect ChatGPT, Obsidian and Notes onto the
         gtd:wide gtd:solo $argv
 end
 
-function gtd_solo_all --description "Arrange GTD solo workspaces including internal fixed workspaces"
+function __gtd_solo_all_body --description "Arrange GTD solo workspaces including internal fixed workspaces"
     workspace_run_mode_steps gtd:wide gtd:tall -- gtd_support_solo gtd_mail_solo gtd_meeting_solo gtd_review_solo gtd_chat gtd_calendar $argv
 end
 
-function gtd_wide --description "Arrange all GTD wide workspaces and clean opposite-mode spaces"
+function __gtd_wide_body --description "Arrange all GTD wide workspaces and clean opposite-mode spaces"
     workspace_run_mode_steps gtd:tall gtd:solo -- gtd_support_wide gtd_review_wide gtd_mail_wide gtd_meeting_wide $argv
 end
 
-function gtd_tall --description "Arrange all GTD tall workspaces and clean opposite-mode spaces"
+function __gtd_tall_body --description "Arrange all GTD tall workspaces and clean opposite-mode spaces"
     workspace_run_mode_steps gtd:wide gtd:solo -- gtd_support_tall gtd_review_tall gtd_mail_tall gtd_meeting_tall $argv
+end
+
+function gtd_support_wide --description "Collect Dia onto the wide GTD support workspace and apply the standard support layout"
+    workspace_run_finalized_entry --mode wide --command __gtd_support_wide_body -- $argv
+end
+
+function gtd_support_tall --description "Collect Dia onto the tall GTD support workspace and apply the standard support layout"
+    workspace_run_finalized_entry --mode tall --command __gtd_support_tall_body -- $argv
+end
+
+function gtd_review_wide --description "Collect review-related windows onto the wide GTD review workspace and apply the standard review layout"
+    workspace_run_finalized_entry --mode wide --command __gtd_review_wide_body -- $argv
+end
+
+function gtd_review_tall --description "Collect review-related windows onto the tall GTD review workspace and apply the standard review layout"
+    workspace_run_finalized_entry --mode tall --command __gtd_review_tall_body -- $argv
+end
+
+function gtd_mail_wide --description "Collect Thunderbird and Outlook onto the wide GTD mail workspace and apply the standard mail layout"
+    workspace_run_finalized_entry --mode wide --command __gtd_mail_wide_body -- $argv
+end
+
+function gtd_mail_tall --description "Collect Thunderbird and Outlook onto the tall GTD mail workspace and apply the standard tall mail layout"
+    workspace_run_finalized_entry --mode tall --command __gtd_mail_tall_body -- $argv
+end
+
+function gtd_meeting_wide --description "Collect Zoom and Teams onto the wide GTD meeting workspace and apply the standard meeting layout"
+    workspace_run_finalized_entry --mode wide --command __gtd_meeting_wide_body -- $argv
+end
+
+function gtd_meeting_tall --description "Collect Zoom and Teams onto the tall GTD meeting workspace and apply the standard meeting layout"
+    workspace_run_finalized_entry --mode tall --command __gtd_meeting_tall_body -- $argv
+end
+
+function gtd_ai_wide --description "Collect ChatGPT, Obsidian and Notes onto the wide GTD AI workspace"
+    workspace_run_finalized_entry --mode wide --command __gtd_ai_wide_body -- $argv
+end
+
+function gtd_ai_tall --description "Collect ChatGPT, Obsidian and Notes onto the tall GTD AI workspace"
+    workspace_run_finalized_entry --mode tall --command __gtd_ai_tall_body -- $argv
+end
+
+function gtd_solo_all --description "Arrange GTD solo workspaces including internal fixed workspaces"
+    workspace_run_finalized_entry --mode solo --command __gtd_solo_all_body -- $argv
+end
+
+function gtd_wide --description "Arrange all GTD wide workspaces and clean opposite-mode spaces"
+    workspace_run_finalized_entry --mode wide --command __gtd_wide_body -- $argv
+end
+
+function gtd_tall --description "Arrange all GTD tall workspaces and clean opposite-mode spaces"
+    workspace_run_finalized_entry --mode tall --command __gtd_tall_body -- $argv
 end

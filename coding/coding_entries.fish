@@ -7,7 +7,7 @@ function coding_editor_solo --description "Collect VS Code onto the solo coding 
         coding:wide coding:tall $argv
 end
 
-function coding_editor_wide --description "Collect VS Code and optional ChatGPT onto the wide coding editor workspace"
+function __coding_editor_wide_body --description "Collect VS Code and optional ChatGPT onto the wide coding editor workspace"
     workspace_apply_primary_helper_space \
         --label coding_editor_wide \
         --display wide \
@@ -19,7 +19,7 @@ function coding_editor_wide --description "Collect VS Code and optional ChatGPT 
         coding:tall coding:solo $argv
 end
 
-function coding_editor_tall --description "Collect VS Code and optional ChatGPT onto the tall coding editor workspace"
+function __coding_editor_tall_body --description "Collect VS Code and optional ChatGPT onto the tall coding editor workspace"
     workspace_apply_primary_helper_space \
         --label coding_editor_tall \
         --display tall \
@@ -31,14 +31,34 @@ function coding_editor_tall --description "Collect VS Code and optional ChatGPT 
         coding:wide coding:solo $argv
 end
 
-function coding_solo --description "Arrange coding solo workspaces and internal coding controls"
+function __coding_solo_body --description "Arrange coding solo workspaces and internal coding controls"
     workspace_run_mode_steps coding:wide coding:tall -- coding_editor_solo coding_control $argv
 end
 
-function coding_wide --description "Arrange all coding wide workspaces and clean opposite-mode spaces"
+function __coding_wide_body --description "Arrange all coding wide workspaces and clean opposite-mode spaces"
     workspace_run_mode_steps coding:tall coding:solo -- coding_editor_wide $argv
 end
 
-function coding_tall --description "Arrange all coding tall workspaces and clean opposite-mode spaces"
+function __coding_tall_body --description "Arrange all coding tall workspaces and clean opposite-mode spaces"
     workspace_run_mode_steps coding:wide coding:solo -- coding_editor_tall $argv
+end
+
+function coding_editor_wide --description "Collect VS Code and optional ChatGPT onto the wide coding editor workspace"
+    workspace_run_finalized_entry --mode wide --command __coding_editor_wide_body -- $argv
+end
+
+function coding_editor_tall --description "Collect VS Code and optional ChatGPT onto the tall coding editor workspace"
+    workspace_run_finalized_entry --mode tall --command __coding_editor_tall_body -- $argv
+end
+
+function coding_solo --description "Arrange coding solo workspaces and internal coding controls"
+    workspace_run_finalized_entry --mode solo --command __coding_solo_body -- $argv
+end
+
+function coding_wide --description "Arrange all coding wide workspaces and clean opposite-mode spaces"
+    workspace_run_finalized_entry --mode wide --command __coding_wide_body -- $argv
+end
+
+function coding_tall --description "Arrange all coding tall workspaces and clean opposite-mode spaces"
+    workspace_run_finalized_entry --mode tall --command __coding_tall_body -- $argv
 end

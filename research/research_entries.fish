@@ -10,7 +10,7 @@ function research_solo --description "Collect Zotero and ChatGPT onto the solo r
         research:wide research:tall $argv
 end
 
-function research_wide --description "Collect Zotero and Claude onto the wide research workspace and apply the standard research layout"
+function __research_wide_body --description "Collect Zotero and Claude onto the wide research workspace and apply the standard research layout"
     workspace_apply_primary_helper_space \
         --label research_wide \
         --display wide \
@@ -21,7 +21,7 @@ function research_wide --description "Collect Zotero and Claude onto the wide re
         research:tall research:solo $argv
 end
 
-function research_tall --description "Collect Zotero and Claude onto the tall research workspace and apply the standard research layout"
+function __research_tall_body --description "Collect Zotero and Claude onto the tall research workspace and apply the standard research layout"
     workspace_apply_primary_helper_space \
         --label research_tall \
         --display tall \
@@ -30,4 +30,12 @@ function research_tall --description "Collect Zotero and Claude onto the tall re
         --primary-grid 2:1:0:0:1:1 \
         --helper-grid 2:1:0:1:1:1 \
         research:wide research:solo $argv
+end
+
+function research_wide --description "Collect Zotero and Claude onto the wide research workspace and apply the standard research layout"
+    workspace_run_finalized_entry --mode wide --command __research_wide_body -- $argv
+end
+
+function research_tall --description "Collect Zotero and Claude onto the tall research workspace and apply the standard research layout"
+    workspace_run_finalized_entry --mode tall --command __research_tall_body -- $argv
 end

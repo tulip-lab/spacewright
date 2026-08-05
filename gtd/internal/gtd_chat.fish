@@ -1,4 +1,4 @@
-function gtd_chat --description "Fast GTD chat workspace layout on workspace primary display"
+function __gtd_chat_body --description "Fast GTD chat workspace layout on workspace primary display"
     argparse dry-run -- $argv
     or return 1
 
@@ -344,4 +344,8 @@ function gtd_chat --description "Fast GTD chat workspace layout on workspace pri
 
     ws_focus_space $target_space
     cleanup_unlabeled_empty_spaces $target_space
+end
+
+function gtd_chat --description "Fast GTD chat workspace layout on workspace primary display"
+    workspace_run_finalized_entry --mode auto --command __gtd_chat_body -- $argv
 end
