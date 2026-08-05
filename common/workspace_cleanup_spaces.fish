@@ -146,7 +146,7 @@ function workspace_cleanup_mode_spaces --description "Destroy empty labeled spac
 end
 
 function workspace_cleanup_known_labeled_spaces --description "Destroy empty spaces with known workspace labels"
-    set -l workspace_label_pattern '^(coding_.*_(solo|wide|tall)|coding_control|gtd_.*_(solo|wide|tall)|gtd_ai|gtd_chat|gtd_calendar|office_.*_(solo|wide|tall)|research(_.*)?_(solo|wide|tall))$'
+    set -l workspace_label_pattern '^(coding_.*_(solo|wide|tall)|coding_control|gtd_.*_(solo|wide|tall)|gtd_ai|gtd_chat|gtd_calendar|office_.*_(solo|wide|tall)|research(_.*)?_(solo|wide|tall)|sandbox_(wide|tall))$'
 
     cleanup_labeled_empty_spaces "$workspace_label_pattern" "workspace labeled"
 end

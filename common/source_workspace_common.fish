@@ -19,6 +19,7 @@ function source_workspace_common --description "Source shared workspace helper f
     source ~/.config/fish/functions/workspace/common/workspace_ownership_policy.fish
     source ~/.config/fish/functions/workspace/common/workspace_sandbox.fish
     source ~/.config/fish/functions/workspace/common/workspace_cleanup_spaces.fish
+    source ~/.config/fish/functions/workspace/common/workspace_finalize.fish
     source ~/.config/fish/functions/workspace/common/ws_move_windows_to_space.fish
     source ~/.config/fish/functions/workspace/common/ws_window.fish
 

@@ -134,10 +134,64 @@ function __work_smoke_finalization_sandbox
     test $status -ne 0
 end
 
+function __work_smoke_finalization_cleanup
+    set -g __work_smoke_cleanup_scenario normal
+    set -g __work_smoke_cleanup_destroyed
+    set -g __work_smoke_cleanup_focused
+
+    function ws_query_spaces
+        if test "$__work_smoke_cleanup_scenario" = failure
+            return 1
+        end
+        echo '[
+          {"index":1,"uuid":"HOME","display":1,"label":""},
+          {"index":2,"uuid":"CONTROL","display":1,"label":"coding_control"},
+          {"index":3,"uuid":"OLD","display":2,"label":"sandbox_tall"},
+          {"index":4,"uuid":"FOCUSED","display":2,"label":""},
+          {"index":5,"uuid":"STICKY","display":2,"label":""},
+          {"index":6,"uuid":"KEPT","display":2,"label":"gtd_review_wide"},
+          {"index":7,"uuid":"ONLY","display":3,"label":""}
+        ]'
+    end
+
+    function ws_query_windows
+        echo '[
+          {"id":21,"space":2,"is-sticky":false},
+          {"id":50,"space":5,"is-sticky":true},
+          {"id":60,"space":6,"is-sticky":false}
+        ]'
+    end
+
+    function ws_focus_space
+        set -ga __work_smoke_cleanup_focused $argv[1]
+    end
+
+    function ws_yabai
+        if contains -- --destroy $argv
+            set -ga __work_smoke_cleanup_destroyed $argv[3]
+        end
+    end
+
+    workspace_cleanup_empty_spaces --home-uuid HOME --focus-uuid FOCUSED
+    or return 1
+    test (string join ' ' -- $__work_smoke_cleanup_destroyed) = 'STICKY FOCUSED OLD'
+    or return 2
+    test (string join ' ' -- $__work_smoke_cleanup_focused) = '6'
+    or return 3
+    not contains -- HOME $__work_smoke_cleanup_destroyed; or return 4
+    not contains -- ONLY $__work_smoke_cleanup_destroyed; or return 5
+
+    set -g __work_smoke_cleanup_scenario failure
+    set -g __work_smoke_cleanup_destroyed
+    workspace_cleanup_empty_spaces --home-uuid HOME --focus-uuid FOCUSED >/dev/null 2>&1
+    test $status -ne 0; or return 6
+    test (count $__work_smoke_cleanup_destroyed) -eq 0
+end
+
 function work_smoke_finalization --description "Run fixture-only workspace finalization smokes"
     set -l requested $argv
     if test (count $requested) -eq 0
-        set requested policy selection sandbox
+        set requested policy selection sandbox cleanup
     end
 
     set -l failed 0
@@ -149,8 +203,10 @@ function work_smoke_finalization --description "Run fixture-only workspace final
                 __work_smoke_finalization_selection
             case sandbox
                 __work_smoke_finalization_sandbox
+            case cleanup
+                __work_smoke_finalization_cleanup
             case '*'
-                echo "usage: work_smoke_finalization [policy|selection|sandbox ...]" >&2
+                echo "usage: work_smoke_finalization [policy|selection|sandbox|cleanup ...]" >&2
                 return 2
         end
 
