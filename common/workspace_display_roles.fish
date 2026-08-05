@@ -204,3 +204,36 @@ function workspace_resolve_display_role --description "Resolve a workspace displ
             return 2
     end
 end
+
+function workspace_detect_display_mode --description "Detect solo, wide, or tall from connected displays"
+    set -l displays_json (ws_query_displays workspace_detect_display_mode display_mode)
+    or return 1
+
+    set -l display_count (echo $displays_json | ws_jq -r 'length')
+    if test -z "$display_count" -o "$display_count" -le 1
+        echo solo
+        return 0
+    end
+
+    set -l primary_uuid (get_workspace_primary_display_uuid 2>/dev/null)
+    if test -z "$primary_uuid"
+        echo "[WARN] workspace_detect_display_mode: primary display UUID is not configured" >&2
+        return 1
+    end
+
+    set -l primary_present (echo $displays_json | ws_jq -r --arg uuid "$primary_uuid" '
+        first(.[] | select(.uuid==$uuid) | .uuid) // empty
+    ')
+    if test -z "$primary_present"
+        echo "[WARN] workspace_detect_display_mode: configured primary display is not connected: $primary_uuid" >&2
+        return 1
+    end
+
+    echo $displays_json | ws_jq -r --arg uuid "$primary_uuid" '
+        (first(.[] | select(.uuid!=$uuid and .["has-focus"]==true)) // first(.[] | select(.uuid!=$uuid))) as $target
+        | if $target == null then "solo"
+          elif $target.frame.w > $target.frame.h then "wide"
+          elif $target.frame.h > $target.frame.w then "tall"
+          else "solo" end
+    '
+end

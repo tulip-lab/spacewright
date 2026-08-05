@@ -73,3 +73,76 @@ function workspace_cleanup_empty_spaces --description "Destroy live-empty Spaces
         or return 1
     end
 end
+
+function workspace_finalize_mode --description "Collect Sandbox, clean, order, verify, and restore focus"
+    set -l mode $argv[1]
+    if test "$mode" = auto
+        set mode (workspace_detect_display_mode)
+        or return 1
+    end
+    if test "$mode" = solo
+        echo "[WARN] workspace finalization skipped in solo mode" >&2
+        return 0
+    end
+    if not contains -- $mode wide tall
+        echo "usage: workspace_finalize_mode <wide|tall|auto>" >&2
+        return 2
+    end
+
+    set -l primary_display (resolve_workspace_primary_display)
+    or return 1
+    set -l external_display (workspace_resolve_display_role $mode)
+    or return 1
+    set -l spaces_json (ws_query_spaces workspace_finalize_mode initial_spaces)
+    or return 1
+
+    set -l home_info (echo $spaces_json | workspace_home_space_info --display $primary_display)
+    or return 1
+    set -l home_uuid ""
+    set -l home_index 0
+    if test -n "$home_info"
+        set -l home_parts (string split \t -- "$home_info")
+        set home_uuid $home_parts[1]
+        set home_index $home_parts[2]
+    end
+
+    set -l current_json (ws_query_current_space workspace_finalize_mode focus)
+    or return 1
+    set -l focus_uuid (echo $current_json | ws_jq -r '.uuid // empty')
+    or return 1
+
+    set -l failed 0
+    workspace_apply_sandbox --mode $mode --home-space $home_index --display $external_display
+    or set failed 1
+
+    set -l cleanup_args --focus-uuid $focus_uuid
+    if test -n "$home_uuid"
+        set -a cleanup_args --home-uuid $home_uuid
+    end
+    if test $failed -eq 0
+        workspace_cleanup_empty_spaces $cleanup_args
+        or set failed 1
+    end
+    if test $failed -eq 0
+        workspace_order_and_verify_mode_spaces $mode
+        or set failed 1
+    end
+
+    set spaces_json (ws_query_spaces workspace_finalize_mode final_spaces)
+    or return 1
+    set -l focus_index (echo $spaces_json | ws_jq -r \
+        --arg focus "$focus_uuid" \
+        --arg home "$home_uuid" '
+            first(.[] | select(.uuid==$focus) | .index)
+            // first(.[] | select($home!="" and .uuid==$home) | .index)
+            // (sort_by(.index) | first | .index)
+            // empty
+        ')
+    or return 1
+    if test -n "$focus_index"
+        ws_focus_space $focus_index >/dev/null 2>&1
+        or return 1
+    end
+
+    return $failed
+end

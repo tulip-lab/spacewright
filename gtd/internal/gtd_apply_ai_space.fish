@@ -95,47 +95,7 @@ function __gtd_ai_capture_app --description "Capture or open one GTD AI app wind
 end
 
 function gtd_ai_detect_display_mode --description "Detect the current GTD AI display mode"
-    set -l displays_json (ws_query_displays gtd_ai display_mode)
-    or return 1
-
-    set -l display_count (echo $displays_json | ws_jq -r 'length')
-    if test -z "$display_count"
-        echo solo
-        return 0
-    end
-
-    if test "$display_count" -le 1
-        echo solo
-        return 0
-    end
-
-    set -l primary_uuid (get_workspace_primary_display_uuid 2>/dev/null)
-    if test -z "$primary_uuid"
-        echo "[WARN] gtd_ai cannot detect display mode because WORKSPACE_PRIMARY_DISPLAY_UUID is not configured" >&2
-        return 1
-    end
-
-    set -l primary_present (echo $displays_json | ws_jq -r --arg uuid "$primary_uuid" '
-        first(.[] | select(.uuid==$uuid) | .uuid) // empty
-    ')
-
-    if test -z "$primary_present"
-        echo "[WARN] gtd_ai cannot detect display mode because the configured workspace primary display is not connected: $primary_uuid" >&2
-        return 1
-    end
-
-    echo $displays_json | ws_jq -r --arg uuid "$primary_uuid" '
-        (first(.[] | select(.uuid!=$uuid and .["has-focus"]==true)) // first(.[] | select(.uuid!=$uuid))) as $target
-        | if $target == null then
-            "solo"
-          elif $target.frame.w > $target.frame.h then
-            "wide"
-          elif $target.frame.h > $target.frame.w then
-            "tall"
-          else
-            "solo"
-          end
-    '
+    workspace_detect_display_mode
 end
 
 function gtd_apply_ai_space --description "Apply a GTD AI workspace for ChatGPT, Obsidian and Notes"

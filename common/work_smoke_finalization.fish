@@ -260,10 +260,90 @@ function __work_smoke_finalization_ordering
     test $__work_smoke_order_calls -eq 2 -a $__work_smoke_verify_calls -eq 2
 end
 
+function __work_smoke_finalization_finalize
+    set -g __work_smoke_finalize_steps
+    set -g __work_smoke_finalize_failure none
+    set -g __work_smoke_detected_mode wide
+
+    function workspace_detect_display_mode
+        echo $__work_smoke_detected_mode
+    end
+    function resolve_workspace_primary_display
+        echo 1
+    end
+    function workspace_resolve_display_role
+        echo 2
+    end
+    function ws_query_spaces
+        if test "$argv[2]" = final_spaces
+            echo '[
+              {"index":1,"uuid":"HOME","display":1,"label":""},
+              {"index":9,"uuid":"TARGET","display":2,"label":"gtd_review_wide"}
+            ]'
+        else
+            echo '[
+              {"index":1,"uuid":"HOME","display":1,"label":""},
+              {"index":8,"uuid":"TARGET","display":2,"label":"gtd_review_wide"}
+            ]'
+        end
+    end
+    function ws_query_current_space
+        echo '{"index":8,"uuid":"TARGET"}'
+    end
+    function workspace_apply_sandbox
+        set -ga __work_smoke_finalize_steps sandbox
+        test "$__work_smoke_finalize_failure" != sandbox
+    end
+    function workspace_cleanup_empty_spaces
+        set -ga __work_smoke_finalize_steps cleanup
+        test "$__work_smoke_finalize_failure" != cleanup
+    end
+    function workspace_order_and_verify_mode_spaces
+        set -ga __work_smoke_finalize_steps order
+        test "$__work_smoke_finalize_failure" != order
+    end
+    function ws_focus_space
+        set -ga __work_smoke_finalize_steps focus:$argv[1]
+    end
+
+    workspace_finalize_mode wide
+    or return 1
+    test (string join ' ' -- $__work_smoke_finalize_steps) = 'sandbox cleanup order focus:9'
+    or return 2
+
+    set -g __work_smoke_finalize_steps
+    set -g __work_smoke_finalize_failure sandbox
+    workspace_finalize_mode wide >/dev/null 2>&1
+    test $status -ne 0; or return 3
+    test (string join ' ' -- $__work_smoke_finalize_steps) = 'sandbox focus:9'
+    or return 4
+
+    set -g __work_smoke_finalize_steps
+    set -g __work_smoke_finalize_failure order
+    workspace_finalize_mode wide >/dev/null 2>&1
+    test $status -ne 0; or return 5
+    test (string join ' ' -- $__work_smoke_finalize_steps) = 'sandbox cleanup order focus:9'
+    or return 6
+
+    set -g __work_smoke_finalize_steps
+    set -g __work_smoke_finalize_failure none
+    set -g __work_smoke_detected_mode wide
+    workspace_finalize_mode auto
+    or return 7
+    test (string join ' ' -- $__work_smoke_finalize_steps) = 'sandbox cleanup order focus:9'
+    or return 8
+
+    set -g __work_smoke_finalize_steps
+    set -g __work_smoke_detected_mode solo
+    workspace_finalize_mode auto >/dev/null 2>&1
+    or return 9
+    test (count $__work_smoke_finalize_steps) -eq 0
+end
+
 function work_smoke_finalization --description "Run fixture-only workspace finalization smokes"
     set -l requested $argv
     if test (count $requested) -eq 0
-        set requested policy selection sandbox cleanup ordering
+        set requested policy selection sandbox cleanup ordering finalize
     end
 
     set -l failed 0
@@ -279,8 +359,10 @@ function work_smoke_finalization --description "Run fixture-only workspace final
                 __work_smoke_finalization_cleanup
             case ordering
                 __work_smoke_finalization_ordering
+            case finalize
+                __work_smoke_finalization_finalize
             case '*'
-                echo "usage: work_smoke_finalization [policy|selection|sandbox|cleanup|ordering ...]" >&2
+                echo "usage: work_smoke_finalization [policy|selection|sandbox|cleanup|ordering|finalize ...]" >&2
                 return 2
         end
 
