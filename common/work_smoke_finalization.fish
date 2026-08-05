@@ -188,10 +188,82 @@ function __work_smoke_finalization_cleanup
     test (count $__work_smoke_cleanup_destroyed) -eq 0
 end
 
+function __work_smoke_finalization_ordering
+    set -l dry_run (workspace_order_mode_spaces --dry-run wide)
+    string match -q '*external=gtd_ai,coding_editor_wide,research_wide,office_writing_wide,office_slides_wide,gtd_support_wide,gtd_review_wide,gtd_mail_wide,gtd_meeting_wide,sandbox_wide*' -- "$dry_run"
+    or return 1
+
+    set -g __work_smoke_order_scenario good
+    function resolve_workspace_primary_display
+        echo 1
+    end
+    function workspace_resolve_display_role
+        echo 2
+    end
+    function ws_query_spaces
+        switch "$__work_smoke_order_scenario"
+            case interleaved
+                echo '[
+                  {"index":1,"uuid":"HOME","display":1,"label":""},
+                  {"index":2,"uuid":"CONTROL","display":1,"label":"coding_control"},
+                  {"index":3,"uuid":"CHAT","display":1,"label":"gtd_chat"},
+                  {"index":4,"uuid":"CAL","display":1,"label":"gtd_calendar"},
+                  {"index":5,"uuid":"AI","display":2,"label":"gtd_ai"},
+                  {"index":6,"uuid":"OTHER","display":2,"label":"other"},
+                  {"index":7,"uuid":"CODE","display":2,"label":"coding_editor_wide"},
+                  {"index":8,"uuid":"SANDBOX","display":2,"label":"sandbox_wide"}
+                ]'
+            case '*'
+                echo '[
+                  {"index":1,"uuid":"HOME","display":1,"label":""},
+                  {"index":2,"uuid":"CONTROL","display":1,"label":"coding_control"},
+                  {"index":3,"uuid":"CHAT","display":1,"label":"gtd_chat"},
+                  {"index":4,"uuid":"CAL","display":1,"label":"gtd_calendar"},
+                  {"index":5,"uuid":"AI","display":2,"label":"gtd_ai"},
+                  {"index":6,"uuid":"CODE","display":2,"label":"coding_editor_wide"},
+                  {"index":7,"uuid":"SANDBOX","display":2,"label":"sandbox_wide"},
+                  {"index":8,"uuid":"OTHER","display":2,"label":"other"}
+                ]'
+        end
+    end
+
+    workspace_verify_mode_space_order wide
+    or return 2
+    set -g __work_smoke_order_scenario interleaved
+    workspace_verify_mode_space_order wide >/dev/null 2>&1
+    test $status -ne 0; or return 3
+
+    set -g __work_smoke_order_calls 0
+    set -g __work_smoke_verify_calls 0
+    set -g __work_smoke_retry_scenario second_pass
+    function workspace_order_mode_spaces
+        set -g __work_smoke_order_calls (math $__work_smoke_order_calls + 1)
+    end
+    function workspace_verify_mode_space_order
+        set -g __work_smoke_verify_calls (math $__work_smoke_verify_calls + 1)
+        if test "$__work_smoke_retry_scenario" = second_pass -a $__work_smoke_verify_calls -eq 2
+            return 0
+        end
+        return 1
+    end
+
+    workspace_order_and_verify_mode_spaces wide >/dev/null 2>&1
+    or return 4
+    test $__work_smoke_order_calls -eq 2 -a $__work_smoke_verify_calls -eq 2
+    or return 5
+
+    set -g __work_smoke_order_calls 0
+    set -g __work_smoke_verify_calls 0
+    set -g __work_smoke_retry_scenario always_fail
+    workspace_order_and_verify_mode_spaces wide >/dev/null 2>&1
+    test $status -ne 0; or return 6
+    test $__work_smoke_order_calls -eq 2 -a $__work_smoke_verify_calls -eq 2
+end
+
 function work_smoke_finalization --description "Run fixture-only workspace finalization smokes"
     set -l requested $argv
     if test (count $requested) -eq 0
-        set requested policy selection sandbox cleanup
+        set requested policy selection sandbox cleanup ordering
     end
 
     set -l failed 0
@@ -205,8 +277,10 @@ function work_smoke_finalization --description "Run fixture-only workspace final
                 __work_smoke_finalization_sandbox
             case cleanup
                 __work_smoke_finalization_cleanup
+            case ordering
+                __work_smoke_finalization_ordering
             case '*'
-                echo "usage: work_smoke_finalization [policy|selection|sandbox|cleanup ...]" >&2
+                echo "usage: work_smoke_finalization [policy|selection|sandbox|cleanup|ordering ...]" >&2
                 return 2
         end
 
