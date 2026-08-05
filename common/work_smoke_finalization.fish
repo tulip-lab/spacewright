@@ -58,10 +58,86 @@ function __work_smoke_finalization_selection
     test (string join ' ' -- $ids) = '11 17'
 end
 
+function __work_smoke_finalization_sandbox
+    set -g __work_smoke_sandbox_scenario normal
+    set -g __work_smoke_sandbox_queries 0
+    set -g __work_smoke_sandbox_create
+    set -g __work_smoke_sandbox_prepare
+    set -g __work_smoke_sandbox_moves
+    set -g __work_smoke_sandbox_yabai
+
+    function ws_query_windows
+        set -g __work_smoke_sandbox_queries (math $__work_smoke_sandbox_queries + 1)
+        switch "$__work_smoke_sandbox_scenario"
+            case empty
+                echo '[]'
+            case missing
+                if test $__work_smoke_sandbox_queries -eq 1
+                    echo '[{"id":11,"app":"Safari","space":6,"can-move":true,"is-sticky":false,"is-native-fullscreen":false}]'
+                else
+                    echo '[{"id":11,"app":"Safari","space":6,"can-move":true,"is-sticky":false,"is-native-fullscreen":false}]'
+                end
+            case '*'
+                if test $__work_smoke_sandbox_queries -eq 1
+                    echo '[
+                      {"id":11,"app":"Safari","space":6,"can-move":true,"is-sticky":false,"is-native-fullscreen":false},
+                      {"id":17,"app":"Discord","space":7,"can-move":true,"is-sticky":false,"is-native-fullscreen":false}
+                    ]'
+                else
+                    echo '[
+                      {"id":11,"app":"Safari","space":8,"can-move":true,"is-sticky":false,"is-native-fullscreen":false},
+                      {"id":17,"app":"Discord","space":8,"can-move":true,"is-sticky":false,"is-native-fullscreen":false}
+                    ]'
+                end
+        end
+    end
+
+    function find_or_create_labeled_space
+        set -g __work_smoke_sandbox_create (string join ' ' -- $argv)
+        echo 8
+    end
+
+    function prepare_labeled_space
+        set -g __work_smoke_sandbox_prepare (string join ' ' -- $argv)
+    end
+
+    function ws_move_windows_to_space
+        set -g __work_smoke_sandbox_moves (string join ' ' -- $argv)
+    end
+
+    function ws_yabai
+        set -ga __work_smoke_sandbox_yabai (string join ' ' -- $argv)
+    end
+
+    workspace_apply_sandbox --mode wide --home-space 1 --display 2
+    or return 1
+    test "$__work_smoke_sandbox_create" = 'sandbox_wide 2'; or return 2
+    test "$__work_smoke_sandbox_prepare" = '8 sandbox_wide bsp'; or return 3
+    test "$__work_smoke_sandbox_moves" = '8 11 17'; or return 4
+    contains -- '-m space 8 --layout bsp' $__work_smoke_sandbox_yabai; or return 5
+    contains -- '-m space 8 --balance' $__work_smoke_sandbox_yabai; or return 6
+
+    set -g __work_smoke_sandbox_scenario empty
+    set -g __work_smoke_sandbox_queries 0
+    set -g __work_smoke_sandbox_create
+    set -g __work_smoke_sandbox_prepare
+    set -g __work_smoke_sandbox_moves
+    set -g __work_smoke_sandbox_yabai
+    workspace_apply_sandbox --mode wide --home-space 1 --display 2
+    or return 7
+    test -z "$__work_smoke_sandbox_create$__work_smoke_sandbox_prepare$__work_smoke_sandbox_moves$__work_smoke_sandbox_yabai"
+    or return 8
+
+    set -g __work_smoke_sandbox_scenario missing
+    set -g __work_smoke_sandbox_queries 0
+    workspace_apply_sandbox --mode wide --home-space 1 --display 2 >/dev/null 2>&1
+    test $status -ne 0
+end
+
 function work_smoke_finalization --description "Run fixture-only workspace finalization smokes"
     set -l requested $argv
     if test (count $requested) -eq 0
-        set requested policy selection
+        set requested policy selection sandbox
     end
 
     set -l failed 0
@@ -71,8 +147,10 @@ function work_smoke_finalization --description "Run fixture-only workspace final
                 __work_smoke_finalization_policy
             case selection
                 __work_smoke_finalization_selection
+            case sandbox
+                __work_smoke_finalization_sandbox
             case '*'
-                echo "usage: work_smoke_finalization [policy|selection ...]" >&2
+                echo "usage: work_smoke_finalization [policy|selection|sandbox ...]" >&2
                 return 2
         end
 
