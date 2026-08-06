@@ -169,7 +169,7 @@ ChatGPT。ChatGPT 不存在时，VS Code 使用整个 workspace；`coding_editor
 
 | 命令 | 作用 |
 |---|---|
-| `research_solo` | Zotero + ChatGPT，主显示器 |
+| `research_solo` | Zotero + Claude，主显示器 |
 | `research_wide` | Zotero + Claude，wide 外接屏 |
 | `research_tall` | Zotero + Claude，tall 外接屏 |
 

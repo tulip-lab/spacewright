@@ -1,9 +1,9 @@
-function research_solo --description "Collect Zotero and ChatGPT onto the solo research workspace"
+function research_solo --description "Collect Zotero and Claude onto the solo research workspace"
     workspace_apply_primary_helper_space \
         --label research_solo \
         --display primary \
         --primary-app-key zotero \
-        --helper-app-key chatgpt \
+        --helper-app-key claude \
         --helper-visible \
         --primary-grid 1:3:0:0:2:1 \
         --helper-grid 1:3:2:0:1:1 \

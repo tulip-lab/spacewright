@@ -178,6 +178,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
+    set -l research_solo_dry_run (research_solo --dry-run)
+    if string match -q "*primary_app=Zotero*" -- "$research_solo_dry_run"
+            and string match -q "*helper_app=Claude*" -- "$research_solo_dry_run"
+            and not string match -q "*helper_app=ChatGPT*" -- "$research_solo_dry_run"
+        echo "OK      research solo Zotero/Claude layout"
+    else
+        echo "FAIL    research solo Zotero/Claude layout"
+        printf "%s\n" $research_solo_dry_run
+        set failed 1
+    end
+
     set -l gtd_ai_wide_dry_run (gtd_ai_wide --dry-run)
     if string match -q "*apps=ChatGPT,Obsidian,Notes*" -- "$gtd_ai_wide_dry_run"
             and string match -q "*chatgpt_grid=1:3:2:0:1:1*" -- "$gtd_ai_wide_dry_run"
@@ -1274,8 +1285,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         "*coding_editor_wide/tall*ChatGPT*optional-helper*" \
         "*coding_control*SmartGit*single-window;fallback-space-owner*" \
         "*coding_control*Portfolio Performance*single-window*" \
-        "*research_solo*ChatGPT*optional-helper*" \
-        "*research_wide/tall*Claude*optional-helper*" \
+        "*research_*Claude*optional-helper*" \
         "*office_writing_*Microsoft Word*all-movable-windows*" \
         "*office_slides_*Microsoft PowerPoint*all-movable-windows*"
 

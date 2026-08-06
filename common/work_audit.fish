@@ -195,8 +195,7 @@ function __work_audit_ownership_policy_coverage --description "Audit static owne
         "coding_editor_wide/tall|ChatGPT|optional-helper" \
         "coding_control|FlClash/Thaw|all-movable-windows" \
         "research_*|Zotero|single-window" \
-        "research_solo|ChatGPT|optional-helper" \
-        "research_wide/tall|Claude|optional-helper" \
+        "research_*|Claude|optional-helper" \
         "office_writing_*|Microsoft Word|all-movable-windows" \
         "office_writing_*|ChatGPT|optional-helper" \
         "office_slides_*|Microsoft PowerPoint|all-movable-windows" \

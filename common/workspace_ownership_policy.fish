@@ -8,8 +8,7 @@ function workspace_ownership_policy_rows --description "Print static workspace a
     printf "%s\t%s\t%s\t%s\t%s\n" "coding_control" "Portfolio Performance" "single-window" "optional control app" portfolio_performance
 
     printf "%s\t%s\t%s\t%s\t%s\n" "research_*" "Zotero" "single-window" "required primary; first movable app-key window" zotero
-    printf "%s\t%s\t%s\t%s\t%s\n" "research_solo" "ChatGPT" "optional-helper" "single visible helper window when present" chatgpt
-    printf "%s\t%s\t%s\t%s\t%s\n" "research_wide/tall" "Claude" "optional-helper" "single helper window when present" claude
+    printf "%s\t%s\t%s\t%s\t%s\n" "research_*" "Claude" "optional-helper" "single helper window when present; solo requires visibility" claude
 
     printf "%s\t%s\t%s\t%s\t%s\n" "office_writing_*" "Microsoft Word" "all-movable-windows" "required document windows; layout adapts to count" word
     printf "%s\t%s\t%s\t%s\t%s\n" "office_writing_*" "ChatGPT" "optional-helper" "single helper window when present" chatgpt
