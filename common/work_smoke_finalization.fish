@@ -117,6 +117,17 @@ function __work_smoke_finalization_sandbox
     contains -- '-m space 8 --layout bsp' $__work_smoke_sandbox_yabai; or return 5
     contains -- '-m space 8 --balance' $__work_smoke_sandbox_yabai; or return 6
 
+    set -g __work_smoke_sandbox_queries 0
+    set -g __work_smoke_sandbox_create
+    set -g __work_smoke_sandbox_prepare
+    set -g __work_smoke_sandbox_moves
+    set -g __work_smoke_sandbox_yabai
+    workspace_apply_sandbox --mode solo --home-space 1 --display 1
+    or return 20
+    test "$__work_smoke_sandbox_create" = 'sandbox_solo 1'; or return 21
+    test "$__work_smoke_sandbox_prepare" = '8 sandbox_solo bsp'; or return 22
+    test "$__work_smoke_sandbox_moves" = '8 11 17'; or return 23
+
     set -g __work_smoke_sandbox_scenario empty
     set -g __work_smoke_sandbox_queries 0
     set -g __work_smoke_sandbox_create
@@ -150,7 +161,9 @@ function __work_smoke_finalization_cleanup
           {"index":4,"uuid":"FOCUSED","display":2,"label":""},
           {"index":5,"uuid":"STICKY","display":2,"label":""},
           {"index":6,"uuid":"KEPT","display":2,"label":"gtd_review_wide"},
-          {"index":7,"uuid":"ONLY","display":3,"label":""}
+          {"index":7,"uuid":"ONLY","display":3,"label":""},
+          {"index":8,"uuid":"OFFICE_GHOST","display":2,"label":""},
+          {"index":9,"uuid":"OTHER_IMMOVABLE","display":2,"label":""}
         ]'
     end
 
@@ -158,7 +171,9 @@ function __work_smoke_finalization_cleanup
         echo '[
           {"id":21,"space":2,"is-sticky":false},
           {"id":50,"space":5,"is-sticky":true},
-          {"id":60,"space":6,"is-sticky":false}
+          {"id":60,"space":6,"is-sticky":false},
+          {"id":80,"app":"Microsoft Word","title":"","role":"","subrole":"","space":8,"can-move":false,"is-sticky":false},
+          {"id":90,"app":"Terminal","title":"","role":"","subrole":"","space":9,"can-move":false,"is-sticky":false}
         ]'
     end
 
@@ -172,9 +187,16 @@ function __work_smoke_finalization_cleanup
         end
     end
 
+    set -l occupant_windows (ws_query_windows | workspace_space_occupant_windows_json)
+    or return 7
+    set -l occupant_ids (echo $occupant_windows | ws_jq -r '.[].id')
+    or return 8
+    test (string join ' ' -- $occupant_ids) = '21 60 90'
+    or return 9
+
     workspace_cleanup_empty_spaces --home-uuid HOME --focus-uuid FOCUSED
     or return 1
-    test (string join ' ' -- $__work_smoke_cleanup_destroyed) = 'STICKY FOCUSED OLD'
+    test (string join ' ' -- $__work_smoke_cleanup_destroyed) = 'OFFICE_GHOST STICKY FOCUSED OLD'
     or return 2
     test (string join ' ' -- $__work_smoke_cleanup_focused) = '6'
     or return 3
@@ -189,6 +211,10 @@ function __work_smoke_finalization_cleanup
 end
 
 function __work_smoke_finalization_ordering
+    set -l solo_dry_run (workspace_order_mode_spaces --dry-run solo)
+    string match -q '*primary=coding_control,gtd_chat,gtd_calendar,gtd_ai,coding_editor_solo,research_solo,gtd_support_solo,gtd_review_solo,gtd_mail_solo,gtd_meeting_solo,sandbox_solo*' -- "$solo_dry_run"
+    or return 10
+
     set -l dry_run (workspace_order_mode_spaces --dry-run wide)
     string match -q '*external=gtd_ai,coding_editor_wide,research_wide,office_writing_wide,office_slides_wide,gtd_support_wide,gtd_review_wide,gtd_mail_wide,gtd_meeting_wide,sandbox_wide*' -- "$dry_run"
     or return 1
@@ -258,6 +284,33 @@ function __work_smoke_finalization_ordering
     workspace_order_and_verify_mode_spaces wide >/dev/null 2>&1
     test $status -ne 0; or return 6
     test $__work_smoke_order_calls -eq 2 -a $__work_smoke_verify_calls -eq 2
+end
+
+function __work_smoke_finalization_diagnostics
+    function ws_query_displays
+        echo '[]'
+    end
+    function ws_query_spaces
+        echo '[{"index":8,"uuid":"OFFICE_GHOST","display":2,"label":"","windows":[80]}]'
+    end
+    function ws_query_windows
+        echo '[{"id":80,"app":"Microsoft Word","title":"","role":"","subrole":"","space":8,"can-move":false,"is-sticky":false}]'
+    end
+    function work_display_health
+    end
+    function workspace_space_order_health
+    end
+    function ws_query_current_display
+        echo '{}'
+    end
+    function ws_query_current_space
+        echo '{}'
+    end
+    function work_bad_windows
+    end
+
+    set -l output (string join \n -- (work_diagnostics))
+    string match -q '*===== EMPTY UNLABELED SPACES =====*"index": 8*' -- "$output"
 end
 
 function __work_smoke_finalization_finalize
@@ -335,9 +388,9 @@ function __work_smoke_finalization_finalize
 
     set -g __work_smoke_finalize_steps
     set -g __work_smoke_detected_mode solo
-    workspace_finalize_mode auto >/dev/null 2>&1
+    workspace_finalize_mode auto
     or return 9
-    test (count $__work_smoke_finalize_steps) -eq 0
+    test "$(string join ' ' -- $__work_smoke_finalize_steps)" = 'sandbox cleanup order focus:9'
 end
 
 function __work_smoke_finalization_runner
@@ -376,7 +429,7 @@ function __work_smoke_finalization_runner
     workspace_run_finalized_entry --mode solo --command __work_smoke_runner_nested --
     or return 7
     test $__work_smoke_runner_body_calls -eq 2; or return 8
-    test (count $__work_smoke_runner_final_modes) -eq 0; or return 9
+    test "$(string join ' ' -- $__work_smoke_runner_final_modes)" = solo; or return 9
 
     set -g __work_smoke_runner_body_status 7
     set -g __work_smoke_runner_final_modes
@@ -402,7 +455,9 @@ end
 
 function __work_smoke_finalization_entries
     set -l mappings \
-        'work_solo|solo' 'coding_solo|solo' 'gtd_solo_all|solo' \
+        'work_solo|solo' 'coding_editor_solo|solo' 'coding_solo|solo' 'research_solo|solo' \
+        'gtd_support_solo|solo' 'gtd_review_solo|solo' 'gtd_mail_solo|solo' \
+        'gtd_meeting_solo|solo' 'gtd_ai_solo|solo' 'gtd_solo_all|solo' \
         'work_wide|wide' 'coding_editor_wide|wide' 'coding_wide|wide' 'research_wide|wide' \
         'office_writing_wide|wide' 'office_slides_wide|wide' 'office_wide|wide' \
         'gtd_support_wide|wide' 'gtd_review_wide|wide' 'gtd_mail_wide|wide' \
@@ -430,10 +485,154 @@ function __work_smoke_finalization_entries
     not string match -q '*workspace_order_mode_spaces*' -- "$tall_definition"
 end
 
+function __work_smoke_staged_top_level
+    set -g __work_smoke_staged_calls
+    set -g __work_smoke_staged_fail ""
+
+    for command_name in \
+            research_wide office_wide gtd_support_wide gtd_review_wide coding_editor_wide \
+            gtd_mail_wide gtd_meeting_wide \
+            research_tall office_tall gtd_support_tall gtd_review_tall coding_editor_tall \
+            gtd_mail_tall gtd_meeting_tall gtd_chat gtd_calendar coding_control
+        eval "function $command_name; set -ga __work_smoke_staged_calls $command_name; if test \"\$__work_smoke_staged_fail\" = \"$command_name\"; return 1; end; end"
+    end
+
+    function workspace_reconcile_primary_fixed_spaces
+        set -ga __work_smoke_staged_calls reconcile
+    end
+
+    function workspace_run_step
+        set -e argv[1]
+        $argv
+    end
+
+    function workspace_finalize_mode
+        set -ga __work_smoke_staged_calls finalize:$argv[1]
+    end
+
+    set -e WORKSPACE_SKIP_FINALIZATION
+    work_wide
+    or return 1
+    test (string join , -- $__work_smoke_staged_calls) = \
+        "research_wide,office_wide,gtd_support_wide,gtd_review_wide,coding_editor_wide,gtd_mail_wide,gtd_meeting_wide,gtd_chat,gtd_calendar,coding_control,reconcile,finalize:wide"
+    or return 2
+
+    set -g __work_smoke_staged_calls
+    work_tall
+    or return 3
+    test (string join , -- $__work_smoke_staged_calls) = \
+        "research_tall,office_tall,gtd_support_tall,gtd_review_tall,coding_editor_tall,gtd_mail_tall,gtd_meeting_tall,gtd_chat,gtd_calendar,coding_control,reconcile,finalize:tall"
+    or return 4
+
+    set -g __work_smoke_staged_calls
+    set -g __work_smoke_staged_fail gtd_review_wide
+    work_wide
+    set -l failed_status $status
+    test $failed_status -ne 0
+    or return 5
+    test "$__work_smoke_staged_calls[-1]" = finalize:wide
+end
+
+function __work_smoke_primary_fixed_separation
+    if set -q WORKSPACE_TEST_SOURCE_ROOT
+        source "$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_primary_fixed_separation.fish"
+    else
+        source ~/.config/fish/functions/workspace/common/workspace_primary_fixed_separation.fish
+    end
+
+    set -g __work_smoke_primary_fixture valid
+    set -g __work_smoke_primary_calls
+    set -g __work_smoke_primary_space_queries 0
+    set -g __work_smoke_primary_window_queries 0
+
+    function ws_query_spaces
+        set -g __work_smoke_primary_space_queries (math $__work_smoke_primary_space_queries + 1)
+        switch $__work_smoke_primary_fixture
+            case missing
+                printf '%s\n' '[{"index":1,"uuid":"HOME","display":1,"label":""}]'
+            case shared
+                printf '%s\n' '[{"index":2,"uuid":"MIXED","display":1,"label":"gtd_chat"},{"index":2,"uuid":"MIXED","display":1,"label":"coding_control"}]'
+            case duplicate
+                printf '%s\n' '[{"index":2,"uuid":"CHAT-A","display":1,"label":"gtd_chat"},{"index":3,"uuid":"CHAT-B","display":1,"label":"gtd_chat"}]'
+            case misplaced
+                printf '%s\n' '[{"index":2,"uuid":"CHAT","display":1,"label":"gtd_chat"},{"index":3,"uuid":"CONTROL","display":2,"label":"coding_control"}]'
+            case '*'
+                printf '%s\n' '[{"index":2,"uuid":"CHAT","display":1,"label":"gtd_chat"},{"index":3,"uuid":"CONTROL","display":1,"label":"coding_control"}]'
+        end
+    end
+
+    function ws_query_windows
+        set -g __work_smoke_primary_window_queries (math $__work_smoke_primary_window_queries + 1)
+        switch $__work_smoke_primary_fixture
+            case cross_owned persistent reconcile_failure
+                printf '%s\n' '[{"id":11,"app":"WeChat","space":2,"is-sticky":false},{"id":12,"app":"Warp","space":2,"is-sticky":false},{"id":13,"app":"SmartGit","space":3,"is-sticky":false}]'
+            case shared duplicate
+                printf '%s\n' '[{"id":11,"app":"WeChat","space":2,"is-sticky":false},{"id":12,"app":"Warp","space":2,"is-sticky":false}]'
+            case '*'
+                printf '%s\n' '[{"id":11,"app":"WeChat","space":2,"is-sticky":false},{"id":12,"app":"FaceTime","space":2,"is-sticky":true},{"id":13,"app":"Warp","space":3,"is-sticky":false},{"id":14,"app":"KeePassX","space":3,"is-sticky":false}]'
+        end
+    end
+
+    function gtd_chat
+        set -ga __work_smoke_primary_calls gtd_chat
+        if test "$__work_smoke_primary_fixture" = reconcile_failure
+            set -g __work_smoke_primary_fixture valid
+            return 1
+        end
+        if test "$__work_smoke_primary_fixture" != persistent
+            set -g __work_smoke_primary_fixture valid
+        end
+    end
+
+    function coding_control
+        set -ga __work_smoke_primary_calls coding_control
+    end
+
+    function resolve_workspace_primary_display
+        echo 1
+    end
+
+    workspace_verify_primary_fixed_separation
+    or return 1
+    test $__work_smoke_primary_space_queries -eq 1
+    and test $__work_smoke_primary_window_queries -eq 1
+    or return 2
+
+    set -g __work_smoke_primary_fixture missing
+    workspace_verify_primary_fixed_separation
+    or return 3
+
+    for invalid_fixture in shared duplicate misplaced cross_owned
+        set -g __work_smoke_primary_fixture $invalid_fixture
+        workspace_verify_primary_fixed_separation >/dev/null 2>&1
+        and return 4
+    end
+
+    set -g __work_smoke_primary_fixture cross_owned
+    set -g __work_smoke_primary_calls
+    workspace_reconcile_primary_fixed_spaces
+    or return 5
+    test (string join , -- $__work_smoke_primary_calls) = gtd_chat,coding_control
+    or return 6
+
+    set -g __work_smoke_primary_fixture persistent
+    set -g __work_smoke_primary_calls
+    workspace_reconcile_primary_fixed_spaces >/dev/null 2>&1
+    and return 7
+    test (string join , -- $__work_smoke_primary_calls) = gtd_chat,coding_control
+    or return 8
+
+    set -g __work_smoke_primary_fixture reconcile_failure
+    set -g __work_smoke_primary_calls
+    workspace_reconcile_primary_fixed_spaces >/dev/null 2>&1
+    and return 9
+    test (string join , -- $__work_smoke_primary_calls) = gtd_chat,coding_control
+end
+
 function work_smoke_finalization --description "Run fixture-only workspace finalization smokes"
     set -l requested $argv
     if test (count $requested) -eq 0
-        set -l cases policy selection sandbox cleanup ordering finalize runner entries
+        set -l cases policy selection sandbox cleanup ordering diagnostics finalize runner entries staged primary_separation
         set -l failed 0
         for case_name in $cases
             if set -q WORKSPACE_TEST_SOURCE_ROOT
@@ -446,6 +645,7 @@ function work_smoke_finalization --description "Run fixture-only workspace final
                     "source \"$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_order_spaces.fish\"" \
                     "source \"$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_display_roles.fish\"" \
                     "source \"$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_finalize.fish\"" \
+                    "source \"$WORKSPACE_TEST_SOURCE_ROOT/common/work_diagnostics.fish\"" \
                     "source \"$WORKSPACE_TEST_SOURCE_ROOT/common/work_entries.fish\"" \
                     "source \"$WORKSPACE_TEST_SOURCE_ROOT/coding/coding_entries.fish\"" \
                     "source \"$WORKSPACE_TEST_SOURCE_ROOT/coding/internal/coding_control.fish\"" \
@@ -480,14 +680,20 @@ function work_smoke_finalization --description "Run fixture-only workspace final
                 __work_smoke_finalization_cleanup
             case ordering
                 __work_smoke_finalization_ordering
+            case diagnostics
+                __work_smoke_finalization_diagnostics
             case finalize
                 __work_smoke_finalization_finalize
             case runner
                 __work_smoke_finalization_runner
             case entries
                 __work_smoke_finalization_entries
+            case staged
+                __work_smoke_staged_top_level
+            case primary_separation
+                __work_smoke_primary_fixed_separation
             case '*'
-                echo "usage: work_smoke_finalization [policy|selection|sandbox|cleanup|ordering|finalize|runner|entries ...]" >&2
+                echo "usage: work_smoke_finalization [policy|selection|sandbox|cleanup|ordering|diagnostics|finalize|runner|entries|staged|primary_separation ...]" >&2
                 return 2
         end
 

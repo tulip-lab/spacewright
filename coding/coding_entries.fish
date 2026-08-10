@@ -1,4 +1,4 @@
-function coding_editor_solo --description "Collect VS Code onto the solo coding editor workspace"
+function __coding_editor_solo_body --description "Collect VS Code onto the solo coding editor workspace"
     workspace_apply_primary_helper_space \
         --label coding_editor_solo \
         --display primary \
@@ -49,6 +49,10 @@ end
 
 function coding_editor_tall --description "Collect VS Code and optional ChatGPT onto the tall coding editor workspace"
     workspace_run_finalized_entry --mode tall --command __coding_editor_tall_body -- $argv
+end
+
+function coding_editor_solo --description "Collect VS Code onto the solo coding editor workspace"
+    workspace_run_finalized_entry --mode solo --command __coding_editor_solo_body -- $argv
 end
 
 function coding_solo --description "Arrange coding solo workspaces and internal coding controls"

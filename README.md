@@ -130,8 +130,14 @@ work_tall
 | 命令 | 包含内容 |
 |---|---|
 | `work_solo` | `coding_solo`、`research_solo`、`gtd_solo_all` |
-| `work_wide` | `coding_wide`、`research_wide`、`office_wide`、`gtd_wide`、`gtd_chat`、`gtd_calendar`、`coding_control` |
-| `work_tall` | `coding_tall`、`research_tall`、`office_tall`、`gtd_tall`、`gtd_chat`、`gtd_calendar`、`coding_control` |
+| `work_wide` | `research_wide`、`office_wide`、`gtd_support_wide`、`gtd_review_wide`、`coding_editor_wide`、`gtd_mail_wide`、`gtd_meeting_wide`、`gtd_chat`、`gtd_calendar`、`coding_control` |
+| `work_tall` | `research_tall`、`office_tall`、`gtd_support_tall`、`gtd_review_tall`、`coding_editor_tall`、`gtd_mail_tall`、`gtd_meeting_tall`、`gtd_chat`、`gtd_calendar`、`coding_control` |
+
+Wide/tall 顶层流程把 Coding Editor 固定在 GTD Review 之后，因此共享的 ChatGPT
+窗口最终由 Coding Editor 接管；执行顺序不等于最终 Space 顺序，最终排序仍由统一收尾完成。
+第一轮结束后会检查 `gtd_chat` 与 `coding_control` 的 label 唯一性、主屏 Space 分离和非 sticky
+窗口 ownership；不满足时只按 `gtd_chat`、`coding_control` 的顺序重排一次，再次失败则命令返回非零。
+相关 app 未运行而 label 不存在时不会创建空 Space。
 
 顶层入口保持公开命令稳定，方便 shell、`skhd` 和肌肉记忆继续使用。
 

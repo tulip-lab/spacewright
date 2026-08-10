@@ -48,12 +48,12 @@ function workspace_apply_sandbox --description "Collect unmanaged windows into a
     argparse 'mode=' 'home-space=' 'display=' -- $argv
     or return 1
 
-    if not set -q _flag_mode; or not contains -- $_flag_mode wide tall
-        echo "usage: workspace_apply_sandbox --mode <wide|tall> --home-space <index> --display <index>" >&2
+    if not set -q _flag_mode; or not contains -- $_flag_mode solo wide tall
+        echo "usage: workspace_apply_sandbox --mode <solo|wide|tall> --home-space <index> --display <index>" >&2
         return 2
     end
     if not set -q _flag_home_space; or not set -q _flag_display
-        echo "usage: workspace_apply_sandbox --mode <wide|tall> --home-space <index> --display <index>" >&2
+        echo "usage: workspace_apply_sandbox --mode <solo|wide|tall> --home-space <index> --display <index>" >&2
         return 2
     end
 

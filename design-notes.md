@@ -100,7 +100,18 @@ Mode entry is a two-step contract:
 
 The whole-workspace hotkeys intentionally use `;` rather than `and` so `work_*` still runs if the display verification step reports a display mismatch.
 
-In top-level `work_wide` and `work_tall`, GTD remains the final ChatGPT-owning aggregate, but `coding_control` runs after GTD. This is intentional: when SmartGit is present without a movable AX window, the only reliable recovery is to make SmartGit's current Space the fixed control Space, so it must run after meeting fallback paths that may temporarily own the same unmovable-window Space.
+In top-level `work_wide` and `work_tall`, the explicit staged sequence runs
+`coding_editor_<mode>` immediately after `gtd_review_<mode>`. Coding Editor is
+therefore the last ChatGPT-owning stage; mail and meeting run afterwards but do
+not claim ChatGPT. Execution order remains independent from the label order
+enforced by the shared finalizer.
+
+After the first staged pass, a common verifier requires unique `gtd_chat` and
+`coding_control` labels, both labels on the workspace primary display, distinct
+UUIDs when both exist, and only policy-owned non-sticky windows on either Space.
+A missing label is valid. Invalid state gets one bounded `gtd_chat` then
+`coding_control` reconciliation pass and one fresh verification; persistent
+invalid state returns nonzero while outer finalization still runs.
 
 Every public wide/tall entry uses `workspace_run_finalized_entry`. Nested module calls share a depth guard, so only the outermost entry collects Sandbox windows, cleans empty Spaces, orders and verifies labels, and restores focus. Solo aggregates establish a non-finalizing scope; direct mode-less primary entries finalize only when `workspace_detect_display_mode` reliably returns wide or tall.
 
@@ -407,6 +418,10 @@ ChatGPT-owning workspaces capture a movable `ChatGPT` window through `workspace_
 Wide/tall coding editor modes may own one already-open ChatGPT window as an optional helper. Wide places ChatGPT in the left third and VS Code in the right two thirds; tall places ChatGPT above VS Code. When ChatGPT is absent, VS Code uses the full workspace. Solo remains VS Code-only. All research modes may own one already-open Claude window as an optional helper.
 
 `gtd_ai` owns ChatGPT when invoked directly. In `gtd_solo_all`, review runs after meeting so GTD review is the final SOLO owner for ChatGPT.
+
+For whole-workspace wide/tall entry points, the staged order makes Coding Editor
+the final ChatGPT owner. Direct module commands retain the general last-invoked
+ownership rule, and solo ordering is unchanged.
 
 ### Notes, Obsidian, And Dia
 

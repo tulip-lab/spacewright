@@ -34,16 +34,25 @@ function __work_wide_body
 
     set -l failed 0
 
-    workspace_run_step "coding wide" coding_wide
-    or set failed 1
-
     workspace_run_step "research wide" research_wide
     or set failed 1
 
     workspace_run_step "office wide" office_wide
     or set failed 1
 
-    workspace_run_step "GTD wide" gtd_wide
+    workspace_run_step "GTD support wide" gtd_support_wide
+    or set failed 1
+
+    workspace_run_step "GTD review wide" gtd_review_wide
+    or set failed 1
+
+    workspace_run_step "coding editor wide" coding_editor_wide
+    or set failed 1
+
+    workspace_run_step "GTD mail wide" gtd_mail_wide
+    or set failed 1
+
+    workspace_run_step "GTD meeting wide" gtd_meeting_wide
     or set failed 1
 
     workspace_run_step "GTD chat" gtd_chat
@@ -53,6 +62,9 @@ function __work_wide_body
     or set failed 1
 
     workspace_run_step "coding control" coding_control
+    or set failed 1
+
+    workspace_run_step "primary fixed-space separation" workspace_reconcile_primary_fixed_spaces
     or set failed 1
 
     return $failed
@@ -70,16 +82,25 @@ function __work_tall_body
 
     set -l failed 0
 
-    workspace_run_step "coding tall" coding_tall
-    or set failed 1
-
     workspace_run_step "research tall" research_tall
     or set failed 1
 
     workspace_run_step "office tall" office_tall
     or set failed 1
 
-    workspace_run_step "GTD tall" gtd_tall
+    workspace_run_step "GTD support tall" gtd_support_tall
+    or set failed 1
+
+    workspace_run_step "GTD review tall" gtd_review_tall
+    or set failed 1
+
+    workspace_run_step "coding editor tall" coding_editor_tall
+    or set failed 1
+
+    workspace_run_step "GTD mail tall" gtd_mail_tall
+    or set failed 1
+
+    workspace_run_step "GTD meeting tall" gtd_meeting_tall
     or set failed 1
 
     workspace_run_step "GTD chat" gtd_chat
@@ -89,6 +110,9 @@ function __work_tall_body
     or set failed 1
 
     workspace_run_step "coding control" coding_control
+    or set failed 1
+
+    workspace_run_step "primary fixed-space separation" workspace_reconcile_primary_fixed_spaces
     or set failed 1
 
     return $failed

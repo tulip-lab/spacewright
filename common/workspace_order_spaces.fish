@@ -70,6 +70,19 @@ function workspace_primary_order_labels --description "Print primary-display wor
     printf "%s\n" coding_control gtd_chat gtd_calendar
 end
 
+function workspace_solo_order_labels --description "Print solo primary-display workspace labels in order"
+    printf "%s\n" \
+        (workspace_primary_order_labels) \
+        gtd_ai \
+        coding_editor_solo \
+        research_solo \
+        gtd_support_solo \
+        gtd_review_solo \
+        gtd_mail_solo \
+        gtd_meeting_solo \
+        sandbox_solo
+end
+
 function workspace_external_order_labels --description "Print external workspace labels in mode order"
     set -l mode $argv[1]
     if not contains -- $mode wide tall
@@ -95,31 +108,44 @@ function workspace_order_mode_spaces --description "Order existing primary and e
     or return 1
 
     set -l mode $argv[1]
-    if not contains -- "$mode" wide tall
-        echo "usage: workspace_order_mode_spaces [--dry-run] <wide|tall>" >&2
+    if not contains -- "$mode" solo wide tall
+        echo "usage: workspace_order_mode_spaces [--dry-run] <solo|wide|tall>" >&2
         return 2
     end
 
-    set -l primary_labels (workspace_primary_order_labels)
-    set -l external_labels (workspace_external_order_labels $mode)
+    set -l primary_labels
+    set -l external_labels
+    if test "$mode" = solo
+        set primary_labels (workspace_solo_order_labels)
+    else
+        set primary_labels (workspace_primary_order_labels)
+        set external_labels (workspace_external_order_labels $mode)
+    end
 
     if set -q _flag_dry_run
         printf "dry_run=workspace_order_mode_spaces\n"
         printf "mode=%s\n" "$mode"
         printf "primary=%s\n" (string join , $primary_labels)
-        printf "external=%s\n" (string join , $external_labels)
+        if test "$mode" != solo
+            printf "external=%s\n" (string join , $external_labels)
+        end
         return 0
     end
 
     set -l primary_display (resolve_workspace_primary_display)
-    or return 1
-    set -l external_display (workspace_resolve_display_role $mode)
     or return 1
 
     __workspace_order_labels_on_display \
         --display $primary_display \
         --preserve-leading-unlabeled \
         $primary_labels
+    or return 1
+
+    if test "$mode" = solo
+        return 0
+    end
+
+    set -l external_display (workspace_resolve_display_role $mode)
     or return 1
 
     __workspace_order_labels_on_display \
@@ -170,23 +196,33 @@ end
 
 function workspace_verify_mode_space_order --description "Verify Home and managed label prefixes for a mode"
     set -l mode $argv[1]
-    if not contains -- $mode wide tall
-        echo "usage: workspace_verify_mode_space_order <wide|tall>" >&2
+    if not contains -- $mode solo wide tall
+        echo "usage: workspace_verify_mode_space_order <solo|wide|tall>" >&2
         return 2
     end
 
     set -l primary_display (resolve_workspace_primary_display)
     or return 1
-    set -l external_display (workspace_resolve_display_role $mode)
-    or return 1
     set -l spaces_json (ws_query_spaces workspace_verify_mode_space_order verify)
     or return 1
+
+    set -l primary_labels (workspace_primary_order_labels)
+    if test "$mode" = solo
+        set primary_labels (workspace_solo_order_labels)
+    end
 
     __workspace_verify_order_prefix \
         --display $primary_display \
         --spaces-json "$spaces_json" \
         --preserve-leading-home \
-        (workspace_primary_order_labels)
+        $primary_labels
+    or return 1
+
+    if test "$mode" = solo
+        return 0
+    end
+
+    set -l external_display (workspace_resolve_display_role $mode)
     or return 1
 
     __workspace_verify_order_prefix \
@@ -197,8 +233,8 @@ end
 
 function workspace_order_and_verify_mode_spaces --description "Order and verify mode Spaces with one retry"
     set -l mode $argv[1]
-    if not contains -- $mode wide tall
-        echo "usage: workspace_order_and_verify_mode_spaces <wide|tall>" >&2
+    if not contains -- $mode solo wide tall
+        echo "usage: workspace_order_and_verify_mode_spaces <solo|wide|tall>" >&2
         return 2
     end
 

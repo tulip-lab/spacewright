@@ -1,4 +1,4 @@
-function research_solo --description "Collect Zotero and Claude onto the solo research workspace"
+function __research_solo_body --description "Collect Zotero and Claude onto the solo research workspace"
     workspace_apply_primary_helper_space \
         --label research_solo \
         --display primary \
@@ -30,6 +30,10 @@ function __research_tall_body --description "Collect Zotero and Claude onto the 
         --primary-grid 2:1:0:0:1:1 \
         --helper-grid 2:1:0:1:1:1 \
         research:wide research:solo $argv
+end
+
+function research_solo --description "Collect Zotero and Claude onto the solo research workspace"
+    workspace_run_finalized_entry --mode solo --command __research_solo_body -- $argv
 end
 
 function research_wide --description "Collect Zotero and Claude onto the wide research workspace and apply the standard research layout"

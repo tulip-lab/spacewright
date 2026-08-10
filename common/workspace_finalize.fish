@@ -1,3 +1,27 @@
+function workspace_space_occupant_windows_json --description "Return non-sticky windows that make a Space nonempty"
+    set -l windows_json
+    read -lz windows_json
+    if test -z "$windows_json"
+        set windows_json '[]'
+    end
+
+    set -l office_ghost_apps (workspace_app_names_json word powerpoint)
+    or return 1
+
+    echo $windows_json | ws_jq -c --argjson office_ghost_apps "$office_ghost_apps" '
+        def office_ghost:
+            (.app as $app | $office_ghost_apps | index($app)) != null
+            and ((.title // "") == "")
+            and ((.role // "") == "")
+            and ((.subrole // "") == "")
+            and (.["can-move"] != true);
+
+        [.[]
+            | select(.["is-sticky"] != true)
+            | select(office_ghost | not)]
+    '
+end
+
 function workspace_cleanup_empty_spaces --description "Destroy live-empty Spaces except Home and one survivor per display"
     argparse 'home-uuid=' 'focus-uuid=' -- $argv
     or return 1
@@ -16,12 +40,14 @@ function workspace_cleanup_empty_spaces --description "Destroy live-empty Spaces
     or return 1
     set -l windows_json (ws_query_windows workspace_cleanup_empty_spaces windows)
     or return 1
+    set -l occupant_windows_json (echo $windows_json | workspace_space_occupant_windows_json)
+    or return 1
 
     set -l candidates (echo $spaces_json | ws_jq -r \
         --arg home "$home_uuid" \
-        --argjson windows "$windows_json" '
+        --argjson windows "$occupant_windows_json" '
             def ordinary_count($space):
-                [$windows[] | select(.space==$space.index and .["is-sticky"]!=true)] | length;
+                [$windows[] | select(.space==$space.index)] | length;
 
             group_by(.display)
             | map(
@@ -51,9 +77,9 @@ function workspace_cleanup_empty_spaces --description "Destroy live-empty Spaces
                 --argjson display $display \
                 --arg uuid "$uuid" \
                 --arg home "$home_uuid" \
-                --argjson windows "$windows_json" '
+                --argjson windows "$occupant_windows_json" '
                     def ordinary_count($space):
-                        [$windows[] | select(.space==$space.index and .["is-sticky"]!=true)] | length;
+                        [$windows[] | select(.space==$space.index)] | length;
 
                     first(.[]
                         | select(.display==$display and .uuid!=$uuid)
@@ -80,19 +106,18 @@ function workspace_finalize_mode --description "Collect Sandbox, clean, order, v
         set mode (workspace_detect_display_mode)
         or return 1
     end
-    if test "$mode" = solo
-        echo "[WARN] workspace finalization skipped in solo mode" >&2
-        return 0
-    end
-    if not contains -- $mode wide tall
-        echo "usage: workspace_finalize_mode <wide|tall|auto>" >&2
+    if not contains -- $mode solo wide tall
+        echo "usage: workspace_finalize_mode <solo|wide|tall|auto>" >&2
         return 2
     end
 
     set -l primary_display (resolve_workspace_primary_display)
     or return 1
-    set -l external_display (workspace_resolve_display_role $mode)
-    or return 1
+    set -l target_display $primary_display
+    if test "$mode" != solo
+        set target_display (workspace_resolve_display_role $mode)
+        or return 1
+    end
     set -l spaces_json (ws_query_spaces workspace_finalize_mode initial_spaces)
     or return 1
 
@@ -112,7 +137,7 @@ function workspace_finalize_mode --description "Collect Sandbox, clean, order, v
     or return 1
 
     set -l failed 0
-    workspace_apply_sandbox --mode $mode --home-space $home_index --display $external_display
+    workspace_apply_sandbox --mode $mode --home-space $home_index --display $target_display
     or set failed 1
 
     set -l cleanup_args --focus-uuid $focus_uuid
@@ -176,12 +201,12 @@ function workspace_run_finalized_entry --description "Run an entry and finalize 
     if test $outermost -eq 1
         if contains -- --dry-run $argv
             printf "finalization_mode=%s\n" "$__WORKSPACE_FINALIZATION_MODE"
-            if contains -- $__WORKSPACE_FINALIZATION_MODE wide tall auto
+            if contains -- $__WORKSPACE_FINALIZATION_MODE solo wide tall auto
                 printf "finalization_steps=sandbox cleanup order_verify restore_focus\n"
             else
                 printf "finalization_steps=none\n"
             end
-        else if contains -- $__WORKSPACE_FINALIZATION_MODE wide tall auto; and test "$WORKSPACE_SKIP_FINALIZATION" != 1
+        else if contains -- $__WORKSPACE_FINALIZATION_MODE solo wide tall auto; and test "$WORKSPACE_SKIP_FINALIZATION" != 1
             workspace_finalize_mode $__WORKSPACE_FINALIZATION_MODE
             set final_status $status
         end

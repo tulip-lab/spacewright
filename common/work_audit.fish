@@ -179,7 +179,7 @@ function __work_audit_mode_symmetry --description "Audit read-only solo/wide/tal
     end
 
     if test "$failed" -eq 0
-        echo "OK      mode symmetry: wide/tall aggregate commands"
+        echo "OK      mode symmetry: solo/wide/tall aggregate commands"
     end
 
     return $failed
@@ -301,8 +301,10 @@ function __work_audit_finalization_coverage --description "Audit finalization he
     set -l helpers \
         workspace_owned_app_keys workspace_owned_app_names_json \
         workspace_home_space_info workspace_sandbox_candidate_window_ids workspace_apply_sandbox \
-        workspace_cleanup_empty_spaces workspace_detect_display_mode workspace_finalize_mode \
-        workspace_run_finalized_entry workspace_primary_order_labels workspace_external_order_labels \
+        workspace_space_occupant_windows_json workspace_cleanup_empty_spaces \
+        workspace_detect_display_mode workspace_finalize_mode \
+        workspace_run_finalized_entry workspace_primary_order_labels workspace_solo_order_labels \
+        workspace_external_order_labels \
         workspace_verify_mode_space_order workspace_order_and_verify_mode_spaces
 
     __work_audit_check_loaded_functions $helpers
@@ -355,9 +357,20 @@ function __work_audit_empty_labeled_spaces --description "Audit empty labeled-sp
         return 0
     end
 
-    set -l empty_rows (echo $spaces_json | ws_jq -r '
-        .[]
-        | select(.label != "" and ((.windows // []) | length) == 0)
+    set -l windows_json (ws_query_windows work_audit empty-labeled-windows)
+    if test $status -ne 0 -o -z "$windows_json"
+        echo "WARN    live empty labeled-space check skipped: yabai windows query failed"
+        return 0
+    end
+    set -l occupant_windows_json (echo $windows_json | workspace_space_occupant_windows_json)
+    if test $status -ne 0 -o -z "$occupant_windows_json"
+        echo "WARN    live empty labeled-space check skipped: occupant-window filtering failed"
+        return 0
+    end
+
+    set -l empty_rows (echo $spaces_json | ws_jq -r --argjson windows "$occupant_windows_json" '
+        .[] | . as $space
+        | select(.label != "" and ([$windows[] | select(.space==$space.index)] | length) == 0)
         | "\(.index)\t\(.label)\t\(.display)"')
     if test $status -ne 0
         echo "WARN    live empty labeled-space check skipped: spaces JSON parse failed"

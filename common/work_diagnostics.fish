@@ -23,6 +23,10 @@ function work_diagnostics --description "Show workspace diagnostics without chan
     if test $status -ne 0 -o -z "$windows_json"
         set windows_json "[]"
     end
+    set -l occupant_windows_json (echo $windows_json | workspace_space_occupant_windows_json)
+    if test $status -ne 0 -o -z "$occupant_windows_json"
+        set occupant_windows_json "[]"
+    end
 
     echo "===== DISPLAY SUMMARY ====="
     echo $displays_json | ws_jq '.[] | {
@@ -81,8 +85,14 @@ function work_diagnostics --description "Show workspace diagnostics without chan
 
     echo
     echo "===== EMPTY LABELED SPACES ====="
-    if echo $spaces_json | ws_jq -e 'any(.[]; .label != "" and (.windows | length) == 0)' >/dev/null
-        echo $spaces_json | ws_jq '.[] | select(.label != "" and (.windows | length) == 0) | {index, label, display}'
+    if echo $spaces_json | ws_jq -e --argjson windows "$occupant_windows_json" '
+        any(.[]; . as $space
+            | .label != ""
+            and ([$windows[] | select(.space==$space.index)] | length) == 0)' >/dev/null
+        echo $spaces_json | ws_jq --argjson windows "$occupant_windows_json" '
+            .[] | . as $space
+            | select(.label != "" and ([$windows[] | select(.space==$space.index)] | length) == 0)
+            | {index, label, display}'
     else
         echo "none"
     end
@@ -114,8 +124,14 @@ function work_diagnostics --description "Show workspace diagnostics without chan
 
     echo
     echo "===== EMPTY UNLABELED SPACES ====="
-    if echo $spaces_json | ws_jq -e 'any(.[]; .label == "" and (.windows | length) == 0)' >/dev/null
-        echo $spaces_json | ws_jq '.[] | select(.label == "" and (.windows | length) == 0) | {index, display}'
+    if echo $spaces_json | ws_jq -e --argjson windows "$occupant_windows_json" '
+        any(.[]; . as $space
+            | .label == ""
+            and ([$windows[] | select(.space==$space.index)] | length) == 0)' >/dev/null
+        echo $spaces_json | ws_jq --argjson windows "$occupant_windows_json" '
+            .[] | . as $space
+            | select(.label == "" and ([$windows[] | select(.space==$space.index)] | length) == 0)
+            | {index, display}'
     else
         echo "none"
     end

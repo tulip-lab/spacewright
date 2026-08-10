@@ -1034,8 +1034,13 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set -g __work_smoke_aggregate_calls
         set -g __work_smoke_fail_wide 1
 
-        for command_name in coding_wide research_wide office_wide gtd_wide gtd_chat gtd_calendar coding_control coding_tall research_tall office_tall gtd_tall
-            eval "function $command_name; set -ga __work_smoke_aggregate_calls $command_name; if test \"$command_name\" = coding_wide -a \"\$__work_smoke_fail_wide\" = 1; return 1; end; end"
+        for command_name in \
+                research_wide office_wide gtd_support_wide gtd_review_wide coding_editor_wide \
+                gtd_mail_wide gtd_meeting_wide \
+                research_tall office_tall gtd_support_tall gtd_review_tall coding_editor_tall \
+                gtd_mail_tall gtd_meeting_tall \
+                gtd_chat gtd_calendar coding_control workspace_reconcile_primary_fixed_spaces
+            eval "function $command_name; set -ga __work_smoke_aggregate_calls $command_name; if test \"$command_name\" = research_wide -a \"\$__work_smoke_fail_wide\" = 1; return 1; end; end"
         end
 
         function workspace_run_step
@@ -1312,7 +1317,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
 
     if test "$audit_status" -eq 0
             and string match -q "*===== WORKSPACE AUDIT =====*" -- "$audit_output"
-            and string match -q "*OK      mode symmetry: wide/tall aggregate commands*" -- "$audit_output"
+            and string match -q "*OK      mode symmetry: solo/wide/tall aggregate commands*" -- "$audit_output"
             and string match -q "*OK      ownership policy coverage*" -- "$audit_output"
             and string match -q "*OK      fallback helper coverage*" -- "$audit_output"
             and string match -q "*OK      empty labeled-space allowlist*" -- "$audit_output"
