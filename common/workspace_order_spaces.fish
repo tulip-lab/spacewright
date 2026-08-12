@@ -188,9 +188,11 @@ function __workspace_verify_order_prefix --description "Verify managed labels fo
         and set -a expected $label
     end
 
-    for index in (seq (count $expected))
-        test "$actual[$index]" = "$expected[$index]"
-        or return 1
+    if test (count $expected) -gt 0
+        for index in (seq (count $expected))
+            test "$actual[$index]" = "$expected[$index]"
+            or return 1
+        end
     end
 end
 

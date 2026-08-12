@@ -141,9 +141,12 @@ Wide/tall 顶层流程把 Coding Editor 固定在 GTD Review 之后，因此共�
 
 顶层入口保持公开命令稳定，方便 shell、`skhd` 和肌肉记忆继续使用。
 
-所有公开 wide/tall 入口在最外层命令完成后运行同一套收尾；aggregate 内部的子命令不会
-重复收尾。无模式的 `coding_control`、`gtd_chat`、`gtd_calendar` 只有在可靠识别当前为
-wide/tall 时才收尾，solo 行为保持不变。
+所有公开、会改变 workspace 的 solo/wide/tall 入口在最外层命令完成后运行同一套收尾；
+因此从 `skhd` 快捷键或命令行调用的结果一致，aggregate 内部的子命令不会重复收尾。
+无模式的 `coding_control`、`gtd_chat`、`gtd_calendar` 会先可靠识别当前模式再收尾；
+`gtd_ai` 则分派到对应的 mode entry。只读、reload、diagnostics、display 和内部 helper
+不触发 workspace 收尾。公开入口与 finalization mode 的契约集中在
+`workspace_finalized_entry_rows`，fixture smoke 会检查每个入口都接入统一 finalizer。
 
 收尾先把 ownership policy 中没有登记、可移动、非 sticky、非原生全屏的窗口放进外接屏
 `sandbox_wide` 或 `sandbox_tall`。主屏索引最小的未标记 Space 是 Home；Home 的 UUID 和

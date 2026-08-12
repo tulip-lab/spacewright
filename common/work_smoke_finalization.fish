@@ -228,6 +228,12 @@ function __work_smoke_finalization_ordering
     end
     function ws_query_spaces
         switch "$__work_smoke_order_scenario"
+            case empty_managed
+                echo '[
+                  {"index":1,"uuid":"HOME","display":1,"label":""},
+                  {"index":2,"uuid":"CONTROL","display":1,"label":"coding_control"},
+                  {"index":3,"uuid":"OTHER","display":2,"label":""}
+                ]'
             case interleaved
                 echo '[
                   {"index":1,"uuid":"HOME","display":1,"label":""},
@@ -255,6 +261,9 @@ function __work_smoke_finalization_ordering
 
     workspace_verify_mode_space_order wide
     or return 2
+    set -g __work_smoke_order_scenario empty_managed
+    workspace_verify_mode_space_order wide
+    or return 7
     set -g __work_smoke_order_scenario interleaved
     workspace_verify_mode_space_order wide >/dev/null 2>&1
     test $status -ne 0; or return 3
@@ -454,34 +463,30 @@ function __work_smoke_finalization_runner
 end
 
 function __work_smoke_finalization_entries
-    set -l mappings \
-        'work_solo|solo' 'coding_editor_solo|solo' 'coding_solo|solo' 'research_solo|solo' \
-        'gtd_support_solo|solo' 'gtd_review_solo|solo' 'gtd_mail_solo|solo' \
-        'gtd_meeting_solo|solo' 'gtd_ai_solo|solo' 'gtd_solo_all|solo' \
-        'work_wide|wide' 'coding_editor_wide|wide' 'coding_wide|wide' 'research_wide|wide' \
-        'office_writing_wide|wide' 'office_slides_wide|wide' 'office_wide|wide' \
-        'gtd_support_wide|wide' 'gtd_review_wide|wide' 'gtd_mail_wide|wide' \
-        'gtd_meeting_wide|wide' 'gtd_ai_wide|wide' 'gtd_wide|wide' \
-        'work_tall|tall' 'coding_editor_tall|tall' 'coding_tall|tall' 'research_tall|tall' \
-        'office_writing_tall|tall' 'office_slides_tall|tall' 'office_tall|tall' \
-        'gtd_support_tall|tall' 'gtd_review_tall|tall' 'gtd_mail_tall|tall' \
-        'gtd_meeting_tall|tall' 'gtd_ai_tall|tall' 'gtd_tall|tall' \
-        'coding_control|auto' 'gtd_chat|auto' 'gtd_calendar|auto'
+    functions -q workspace_finalized_entry_rows
+    or begin
+        echo "missing finalized-entry manifest" >&2
+        return 1
+    end
+
+    set -l mappings (workspace_finalized_entry_rows)
+    test (count $mappings) -gt 0
+    or return 2
 
     for mapping in $mappings
-        set -l parts (string split '|' -- "$mapping")
+        set -l parts (string split \t -- "$mapping")
         set -l definition (string join \n -- (functions $parts[1]))
         string match -q "*workspace_run_finalized_entry --mode $parts[2]*" -- "$definition"
         or begin
             echo "missing finalization wrapper: $parts[1] mode=$parts[2]" >&2
-            return 1
+            return 3
         end
     end
 
     set -l wide_definition (string join \n -- (functions __work_wide_body))
     set -l tall_definition (string join \n -- (functions __work_tall_body))
     not string match -q '*workspace_order_mode_spaces*' -- "$wide_definition"
-    or return 2
+    or return 4
     not string match -q '*workspace_order_mode_spaces*' -- "$tall_definition"
 end
 

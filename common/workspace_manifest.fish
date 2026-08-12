@@ -65,6 +65,49 @@ function workspace_command_map_rows --description "Print declared workspace comm
     printf "%s\t%s\t%s\t%s\n" "office_slides_*" "wide/tall" external "PowerPoint, ChatGPT"
 end
 
+function workspace_finalized_entry_rows --description "Print public mutating workspace entries and their finalization modes"
+    printf "%s\t%s\n" \
+        work_solo solo \
+        coding_editor_solo solo \
+        coding_solo solo \
+        research_solo solo \
+        gtd_support_solo solo \
+        gtd_review_solo solo \
+        gtd_mail_solo solo \
+        gtd_meeting_solo solo \
+        gtd_ai_solo solo \
+        gtd_solo_all solo \
+        work_wide wide \
+        coding_editor_wide wide \
+        coding_wide wide \
+        research_wide wide \
+        office_writing_wide wide \
+        office_slides_wide wide \
+        office_wide wide \
+        gtd_support_wide wide \
+        gtd_review_wide wide \
+        gtd_mail_wide wide \
+        gtd_meeting_wide wide \
+        gtd_ai_wide wide \
+        gtd_wide wide \
+        work_tall tall \
+        coding_editor_tall tall \
+        coding_tall tall \
+        research_tall tall \
+        office_writing_tall tall \
+        office_slides_tall tall \
+        office_tall tall \
+        gtd_support_tall tall \
+        gtd_review_tall tall \
+        gtd_mail_tall tall \
+        gtd_meeting_tall tall \
+        gtd_ai_tall tall \
+        gtd_tall tall \
+        coding_control auto \
+        gtd_chat auto \
+        gtd_calendar auto
+end
+
 function workspace_display_entry_rows --description "Print declared display entry rows"
     printf "%s\t%s\n" display_apply_solo "apply solo display profile, reload, verify solo health"
     printf "%s\t%s\n" display_apply_wide_left "resolve current wide external display, reload, verify wide health"
@@ -103,6 +146,7 @@ function workspace_common_helper_rows --description "Print declared common works
     printf "%s\t%s\n" workspace_run_mode_steps "mode aggregate runner with shared cleanup suppression"
     printf "%s\t%s\n" workspace_run_cleanup_specs "family:mode cleanup-spec dispatcher"
     printf "%s\t%s\n" workspace_run_finalized_entry "outermost-only solo/wide/tall post-command runner"
+    printf "%s\t%s\n" workspace_finalized_entry_rows "public mutating entries and required finalization modes"
     printf "%s\t%s\n" workspace_finalize_mode "Sandbox, cleanup, verified ordering, and focus restoration"
     printf "%s\t%s\n" workspace_apply_sandbox "policy-driven unmanaged-window Sandbox collection"
     printf "%s\t%s\n" workspace_space_occupant_windows_json "shared sticky and Office-ghost occupancy filter"
@@ -213,6 +257,7 @@ function workspace_required_command_names --description "Print documented worksp
         workspace_top_level_commands \
         workspace_module_entry_rows \
         workspace_command_map_rows \
+        workspace_finalized_entry_rows \
         workspace_display_entry_rows \
         workspace_common_helper_rows \
         workspace_dependency_rows \

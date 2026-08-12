@@ -303,7 +303,8 @@ function __work_audit_finalization_coverage --description "Audit finalization he
         workspace_home_space_info workspace_sandbox_candidate_window_ids workspace_apply_sandbox \
         workspace_space_occupant_windows_json workspace_cleanup_empty_spaces \
         workspace_detect_display_mode workspace_finalize_mode \
-        workspace_run_finalized_entry workspace_primary_order_labels workspace_solo_order_labels \
+        workspace_run_finalized_entry workspace_finalized_entry_rows \
+        workspace_primary_order_labels workspace_solo_order_labels \
         workspace_external_order_labels \
         workspace_verify_mode_space_order workspace_order_and_verify_mode_spaces
 
