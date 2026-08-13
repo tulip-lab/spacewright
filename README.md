@@ -136,8 +136,9 @@ work_tall
 Wide/tall 顶层流程把 Coding Editor 固定在 GTD Review 之后，因此共享的 ChatGPT
 窗口最终由 Coding Editor 接管；执行顺序不等于最终 Space 顺序，最终排序仍由统一收尾完成。
 第一轮结束后会检查 `gtd_chat` 与 `coding_control` 的 label 唯一性、主屏 Space 分离和非 sticky
-窗口 ownership；不满足时只按 `gtd_chat`、`coding_control` 的顺序重排一次，再次失败则命令返回非零。
-相关 app 未运行而 label 不存在时不会创建空 Space。
+窗口 ownership；只要相关窗口存在，就必须位于各自唯一的 labeled Space。不满足时只按
+`gtd_chat`、`coding_control` 的顺序重排一次，再次失败则命令返回非零。相关 app 未运行而
+label 不存在时不会创建空 Space。
 
 顶层入口保持公开命令稳定，方便 shell、`skhd` 和肌肉记忆继续使用。
 

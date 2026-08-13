@@ -149,6 +149,7 @@ function __work_smoke_finalization_cleanup
     set -g __work_smoke_cleanup_scenario normal
     set -g __work_smoke_cleanup_destroyed
     set -g __work_smoke_cleanup_focused
+    set -g __work_smoke_cleanup_window_queries 0
 
     function ws_query_spaces
         if test "$__work_smoke_cleanup_scenario" = failure
@@ -163,11 +164,20 @@ function __work_smoke_finalization_cleanup
           {"index":6,"uuid":"KEPT","display":2,"label":"gtd_review_wide"},
           {"index":7,"uuid":"ONLY","display":3,"label":""},
           {"index":8,"uuid":"OFFICE_GHOST","display":2,"label":""},
-          {"index":9,"uuid":"OTHER_IMMOVABLE","display":2,"label":""}
+          {"index":9,"uuid":"OTHER_IMMOVABLE","display":2,"label":""},
+          {"index":10,"uuid":"EMPTY_CONTROL","display":1,"label":"coding_control"}
         ]'
     end
 
     function ws_query_windows
+        set -g __work_smoke_cleanup_window_queries (math $__work_smoke_cleanup_window_queries + 1)
+        if test "$__work_smoke_cleanup_scenario" = settled -a $__work_smoke_cleanup_window_queries -gt 1
+            echo '[
+              {"id":21,"space":2,"is-sticky":false},
+              {"id":30,"space":3,"is-sticky":false}
+            ]'
+            return 0
+        end
         echo '[
           {"id":21,"space":2,"is-sticky":false},
           {"id":50,"space":5,"is-sticky":true},
@@ -196,12 +206,21 @@ function __work_smoke_finalization_cleanup
 
     workspace_cleanup_empty_spaces --home-uuid HOME --focus-uuid FOCUSED
     or return 1
-    test (string join ' ' -- $__work_smoke_cleanup_destroyed) = 'OFFICE_GHOST STICKY FOCUSED OLD'
+    test (string join ' ' -- $__work_smoke_cleanup_destroyed) = '8 5 4 3'
     or return 2
     test (string join ' ' -- $__work_smoke_cleanup_focused) = '6'
     or return 3
-    not contains -- HOME $__work_smoke_cleanup_destroyed; or return 4
-    not contains -- ONLY $__work_smoke_cleanup_destroyed; or return 5
+    not contains -- 1 $__work_smoke_cleanup_destroyed; or return 4
+    not contains -- 7 $__work_smoke_cleanup_destroyed; or return 5
+    not contains -- 10 $__work_smoke_cleanup_destroyed; or return 12
+
+    set -g __work_smoke_cleanup_scenario settled
+    set -g __work_smoke_cleanup_destroyed
+    set -g __work_smoke_cleanup_window_queries 0
+    workspace_cleanup_empty_spaces --home-uuid HOME --focus-uuid FOCUSED
+    or return 10
+    not contains -- 3 $__work_smoke_cleanup_destroyed
+    or return 11
 
     set -g __work_smoke_cleanup_scenario failure
     set -g __work_smoke_cleanup_destroyed
@@ -553,7 +572,7 @@ function __work_smoke_primary_fixed_separation
     function ws_query_spaces
         set -g __work_smoke_primary_space_queries (math $__work_smoke_primary_space_queries + 1)
         switch $__work_smoke_primary_fixture
-            case missing
+            case missing missing_with_apps
                 printf '%s\n' '[{"index":1,"uuid":"HOME","display":1,"label":""}]'
             case shared
                 printf '%s\n' '[{"index":2,"uuid":"MIXED","display":1,"label":"gtd_chat"},{"index":2,"uuid":"MIXED","display":1,"label":"coding_control"}]'
@@ -569,6 +588,10 @@ function __work_smoke_primary_fixed_separation
     function ws_query_windows
         set -g __work_smoke_primary_window_queries (math $__work_smoke_primary_window_queries + 1)
         switch $__work_smoke_primary_fixture
+            case missing
+                printf '%s\n' '[]'
+            case missing_with_apps
+                printf '%s\n' '[{"id":11,"app":"WeChat","space":1,"is-sticky":false},{"id":12,"app":"Warp","space":1,"is-sticky":false}]'
             case cross_owned persistent reconcile_failure
                 printf '%s\n' '[{"id":11,"app":"WeChat","space":2,"is-sticky":false},{"id":12,"app":"Warp","space":2,"is-sticky":false},{"id":13,"app":"SmartGit","space":3,"is-sticky":false}]'
             case shared duplicate
@@ -607,7 +630,7 @@ function __work_smoke_primary_fixed_separation
     workspace_verify_primary_fixed_separation
     or return 3
 
-    for invalid_fixture in shared duplicate misplaced cross_owned
+    for invalid_fixture in missing_with_apps shared duplicate misplaced cross_owned
         set -g __work_smoke_primary_fixture $invalid_fixture
         workspace_verify_primary_fixed_separation >/dev/null 2>&1
         and return 4

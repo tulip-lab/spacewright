@@ -59,6 +59,9 @@ function workspace_cleanup_empty_spaces --description "Destroy live-empty Spaces
                   ) as $survivor
                 | [$group[]
                     | select(.uuid != $survivor.uuid)
+                    | select(.label != "coding_control")
+                    | select(.label != "gtd_chat")
+                    | select(.label != "gtd_calendar")
                     | select(ordinary_count(.)==0)]
               )
             | add // []
@@ -70,14 +73,34 @@ function workspace_cleanup_empty_spaces --description "Destroy live-empty Spaces
     for candidate in $candidates
         set -l parts (string split \t -- "$candidate")
         set -l uuid $parts[1]
-        set -l display $parts[3]
+        set -l live_spaces (ws_query_spaces workspace_cleanup_empty_spaces "before-destroy-$uuid")
+        or return 1
+        set -l live_windows (ws_query_windows workspace_cleanup_empty_spaces "before-destroy-$uuid")
+        or return 1
+        set -l live_occupant_windows (echo $live_windows | workspace_space_occupant_windows_json)
+        or return 1
+
+        set -l live_info (echo $live_spaces | ws_jq -r --arg uuid "$uuid" '
+            first(.[] | select(.uuid==$uuid) | [.index, .display] | @tsv) // empty
+        ')
+        or return 1
+        if test -z "$live_info"
+            continue
+        end
+
+        set -l live_parts (string split \t -- "$live_info")
+        set -l live_index $live_parts[1]
+        set -l display $live_parts[2]
+        echo $live_occupant_windows | ws_jq -e --argjson space $live_index \
+            'any(.[]; .space==$space)' >/dev/null
+        and continue
 
         if test -n "$focus_uuid" -a "$uuid" = "$focus_uuid"
-            set -l safe_index (echo $spaces_json | ws_jq -r \
+            set -l safe_index (echo $live_spaces | ws_jq -r \
                 --argjson display $display \
                 --arg uuid "$uuid" \
                 --arg home "$home_uuid" \
-                --argjson windows "$occupant_windows_json" '
+                --argjson windows "$live_occupant_windows" '
                     def ordinary_count($space):
                         [$windows[] | select(.space==$space.index)] | length;
 
@@ -95,7 +118,7 @@ function workspace_cleanup_empty_spaces --description "Destroy live-empty Spaces
             or return 1
         end
 
-        ws_yabai -m space $uuid --destroy >/dev/null 2>&1
+        ws_yabai -m space $live_index --destroy >/dev/null 2>&1
         or return 1
     end
 end

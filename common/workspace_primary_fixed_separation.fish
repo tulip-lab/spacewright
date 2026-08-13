@@ -26,12 +26,26 @@ function workspace_verify_primary_fixed_separation --description "Verify distinc
                     | (($window["is-sticky"] // false) == true)
                     or (([$spaces[].index] | index($window.space)) == null)
                     or ($apps | index($window.app) != null));
+            def app_windows($apps):
+                [$windows[]
+                    | . as $window
+                    | select(($apps | index($window.app)) != null)
+                    | select((.["is-sticky"] // false) != true)];
+            def assigned($spaces; $owned_windows):
+                if ($owned_windows | length) == 0 then true
+                else ($spaces | length) == 1
+                    and all($owned_windows[]; .space == $spaces[0].index)
+                end;
             (labeled("gtd_chat")) as $chat
             | (labeled("coding_control")) as $control
+            | app_windows($chat_apps) as $chat_windows
+            | app_windows($control_apps) as $control_windows
             | ($chat | length) <= 1
             and ($control | length) <= 1
             and all(($chat + $control)[]; .display == $primary_display)
             and (($chat | length) == 0 or ($control | length) == 0 or $chat[0].uuid != $control[0].uuid)
+            and assigned($chat; $chat_windows)
+            and assigned($control; $control_windows)
             and owned($chat; $chat_apps)
             and owned($control; $control_apps)
         ' >/dev/null
