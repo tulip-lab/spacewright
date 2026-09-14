@@ -106,10 +106,12 @@ therefore the last ChatGPT-owning stage; mail and meeting run afterwards but do
 not claim ChatGPT. Execution order remains independent from the label order
 enforced by the shared finalizer.
 
-After the first staged pass, a common verifier requires unique `gtd_chat` and
-`coding_control` labels, both labels on the workspace primary display, distinct
-UUIDs when both exist, and only policy-owned non-sticky windows on either Space.
-A label may be missing only when no non-sticky window owned by that workspace exists; otherwise every owned window must be on its unique labeled Space. Invalid state gets one bounded `gtd_chat` then
+After the business steps of each top-level solo, wide, or tall pass, a common
+verifier requires unique `gtd_chat` and `coding_control` labels, both labels on
+the workspace primary display, distinct UUIDs when both exist, and only
+policy-owned non-sticky windows on either Space. A label may be missing only
+when no non-sticky window owned by that workspace exists; otherwise every owned
+window must be on its unique labeled Space. Invalid state gets one bounded `gtd_chat` then
 `coding_control` reconciliation pass and one fresh verification; persistent
 invalid state returns nonzero while outer finalization still runs.
 
@@ -117,7 +119,7 @@ Every public mutating solo/wide/tall entry uses `workspace_run_finalized_entry`,
 
 The ownership policy's machine-readable app keys define the Sandbox exclusion boundary. A managed app is excluded in full even when its policy selects only one window. Other movable windows are collected unless they are on Home, sticky, or native fullscreen. The current-mode Sandbox is `sandbox_wide` or `sandbox_tall` on the external display, uses balanced BSP layout, and follows the meeting workspace in external order. Opposite-mode Sandbox windows migrate because their apps remain unmanaged, after which strict cleanup deletes the empty old Sandbox.
 
-Finalization captures the lowest-index unlabeled primary Space as Home by UUID. Home and its windows are protected; no Home is created when absent. The structural `coding_control`, `gtd_chat`, and `gtd_calendar` Spaces are also excluded from global empty-Space destruction, matching the fixed-label retention policy. Other empty-Space cleanup uses a live window snapshot, treats sticky-only Spaces as empty, and retains at least one survivor on every display. The initial snapshot only identifies candidates: immediately before each destroy, cleanup re-queries Spaces and live windows by UUID, resolves the candidate's current Mission Control index, and skips a candidate that has gained an ordinary window. Destruction uses that refreshed index because yabai Space mutation selectors do not accept UUIDs. This prevents a stale selector or settling window membership from deleting the focused newly populated Space. Ordering then places Home before `coding_control`, `gtd_chat`, and `gtd_calendar`, and places existing external labels in the business order ending with Sandbox. Verification rejects unmanaged interleaving, retries ordering once, and fails after a second drift. Final focus is resolved by UUID rather than a stale Mission Control index. `work_diagnostics` reports whether macOS recent-use Space reordering is disabled but does not modify the preference.
+Finalization captures the lowest-index unlabeled primary Space as Home by UUID. Home and its windows are protected; no Home is created when absent. The structural `coding_control`, `gtd_chat`, and `gtd_calendar` Spaces are also excluded from global empty-Space destruction, matching the fixed-label retention policy. Other empty-Space cleanup uses a live window snapshot, treats sticky-only Spaces as empty, and retains at least one survivor on every display. The initial snapshot only identifies candidates: immediately before each destroy, cleanup re-queries Spaces and live windows by UUID, resolves the candidate's current Mission Control index, and skips a candidate that has gained an ordinary window. Destruction uses that refreshed index because yabai Space mutation selectors do not accept UUIDs. This prevents a stale selector or settling window membership from deleting the focused newly populated Space. Ordering likewise identifies Home by UUID but passes its current Mission Control index to yabai, then places Home before `coding_control`, `gtd_chat`, and `gtd_calendar` and places existing external labels in the business order ending with Sandbox. Verification rejects unmanaged interleaving, retries ordering once, and fails after a second drift. Final focus is resolved by UUID rather than a stale Mission Control index. `work_diagnostics` reports whether macOS recent-use Space reordering is disabled but does not modify the preference.
 
 `display_apply_*` commands:
 

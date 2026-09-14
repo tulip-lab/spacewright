@@ -514,6 +514,7 @@ function __work_smoke_staged_top_level
     set -g __work_smoke_staged_fail ""
 
     for command_name in \
+            coding_solo research_solo gtd_solo_all \
             research_wide office_wide gtd_support_wide gtd_review_wide coding_editor_wide \
             gtd_mail_wide gtd_meeting_wide \
             research_tall office_tall gtd_support_tall gtd_review_tall coding_editor_tall \
@@ -535,25 +536,32 @@ function __work_smoke_staged_top_level
     end
 
     set -e WORKSPACE_SKIP_FINALIZATION
-    work_wide
+    work_solo
     or return 1
     test (string join , -- $__work_smoke_staged_calls) = \
-        "research_wide,office_wide,gtd_support_wide,gtd_review_wide,coding_editor_wide,gtd_mail_wide,gtd_meeting_wide,gtd_chat,gtd_calendar,coding_control,reconcile,finalize:wide"
+        "coding_solo,research_solo,gtd_solo_all,reconcile,finalize:solo"
     or return 2
 
     set -g __work_smoke_staged_calls
-    work_tall
+    work_wide
     or return 3
     test (string join , -- $__work_smoke_staged_calls) = \
-        "research_tall,office_tall,gtd_support_tall,gtd_review_tall,coding_editor_tall,gtd_mail_tall,gtd_meeting_tall,gtd_chat,gtd_calendar,coding_control,reconcile,finalize:tall"
+        "research_wide,office_wide,gtd_support_wide,gtd_review_wide,coding_editor_wide,gtd_mail_wide,gtd_meeting_wide,gtd_chat,gtd_calendar,coding_control,reconcile,finalize:wide"
     or return 4
+
+    set -g __work_smoke_staged_calls
+    work_tall
+    or return 5
+    test (string join , -- $__work_smoke_staged_calls) = \
+        "research_tall,office_tall,gtd_support_tall,gtd_review_tall,coding_editor_tall,gtd_mail_tall,gtd_meeting_tall,gtd_chat,gtd_calendar,coding_control,reconcile,finalize:tall"
+    or return 6
 
     set -g __work_smoke_staged_calls
     set -g __work_smoke_staged_fail gtd_review_wide
     work_wide
     set -l failed_status $status
     test $failed_status -ne 0
-    or return 5
+    or return 7
     test "$__work_smoke_staged_calls[-1]" = finalize:wide
 end
 

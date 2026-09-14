@@ -19,6 +19,9 @@ function __work_solo_body --description "Arrange solo primary-display workspaces
     workspace_run_step "GTD solo all" gtd_solo_all
     or set failed 1
 
+    workspace_run_step "primary fixed-space separation" workspace_reconcile_primary_fixed_spaces
+    or set failed 1
+
     return $failed
 end
 

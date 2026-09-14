@@ -36,7 +36,7 @@ function __workspace_order_labels_on_display --description "Order existing label
             end
 
             if test "$home_index" -ne "$target_index"
-                ws_yabai -m space "$home_uuid" --move "$target_index"
+                ws_yabai -m space "$home_index" --move "$target_index"
                 or return 1
             end
 

@@ -1035,6 +1035,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set -g __work_smoke_fail_wide 1
 
         for command_name in \
+                coding_solo research_solo gtd_solo_all \
                 research_wide office_wide gtd_support_wide gtd_review_wide coding_editor_wide \
                 gtd_mail_wide gtd_meeting_wide \
                 research_tall office_tall gtd_support_tall gtd_review_tall coding_editor_tall \
@@ -1065,6 +1066,12 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         or exit 3
         test "$__work_smoke_aggregate_calls[-1]" = finalize:tall
         or exit 4
+
+        set -g __work_smoke_aggregate_calls
+        work_solo
+        or exit 5
+        test "$__work_smoke_aggregate_calls[-1]" = finalize:solo
+        or exit 6
     '
     fish -lc "$aggregate_space_order_smoke" >/tmp/work-aggregate-space-order-smoke.out 2>&1
     if test $status -eq 0
@@ -1149,10 +1156,10 @@ function work_smoke --description "Run read-only workspace smoke checks for help
             set -g __work_smoke_order_spaces (echo $__work_smoke_order_spaces | ws_jq -c \
                 --arg selector "$selector" \
                 --argjson target "$target" "
-                    (first(.[] | select(.label == \$selector or .uuid == \$selector)).display) as \$display
+                    (first(.[] | select(.label == \$selector or (.index | tostring) == \$selector)).display) as \$display
                     | ([.[] | select(.display == \$display)] | sort_by(.index)) as \$display_spaces
                     | (\$display_spaces | map(.index) | min) as \$first_index
-                    | (first(\$display_spaces[] | select(.label == \$selector or .uuid == \$selector))) as \$selected
+                    | (first(\$display_spaces[] | select(.label == \$selector or (.index | tostring) == \$selector))) as \$selected
                     | (\$display_spaces | map(select(.uuid != \$selected.uuid))) as \$remaining
                     | (\$target - \$first_index) as \$offset
                     | (\$remaining[0:\$offset] + [\$selected] + \$remaining[\$offset:]) as \$ordered
@@ -1168,7 +1175,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
             "first(.[] | select(.display == 1) | .uuid)") = home
         or exit 2
 
-        test "$__work_smoke_order_commands[1]" = "-m space home --move 1"
+        test "$__work_smoke_order_commands[1]" = "-m space 4 --move 1"
         or exit 3
 
         test (echo $__work_smoke_order_spaces | ws_jq -r \
@@ -1201,7 +1208,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         or exit 8
 
         for command_line in $__work_smoke_order_commands
-            string match -q -- "-m space home --move *" "$command_line"
+            string match -q -- "-m space 1 --move *" "$command_line"
             and exit 9
         end
 
@@ -1231,6 +1238,54 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
+    set -l workspace_order_all_modes_home_selector_smoke '
+        work_reload >/dev/null
+        if set -q WORKSPACE_TEST_SOURCE_ROOT
+            source "$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_order_spaces.fish"
+        end
+
+        set -g __work_smoke_home_selectors
+
+        function resolve_workspace_primary_display
+            echo 1
+        end
+
+        function workspace_resolve_display_role
+            echo 2
+        end
+
+        function ws_query_spaces
+            echo "[
+                {\"index\":1,\"display\":1,\"label\":\"coding_control\",\"uuid\":\"CONTROL\"},
+                {\"index\":2,\"display\":1,\"label\":\"gtd_chat\",\"uuid\":\"CHAT\"},
+                {\"index\":3,\"display\":1,\"label\":\"gtd_calendar\",\"uuid\":\"CALENDAR\"},
+                {\"index\":4,\"display\":1,\"label\":\"\",\"uuid\":\"HOME-UUID\"}
+            ]"
+        end
+
+        function ws_yabai
+            set -ga __work_smoke_home_selectors $argv[3]
+        end
+
+        for mode in solo wide tall
+            set -g __work_smoke_home_selectors
+            workspace_order_mode_spaces $mode
+            or exit 1
+            test "$__work_smoke_home_selectors[1]" = 4
+            or exit 2
+            not contains -- HOME-UUID $__work_smoke_home_selectors
+            or exit 3
+        end
+    '
+    fish -lc "$workspace_order_all_modes_home_selector_smoke" >/tmp/work-order-all-modes-home-selector-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      solo/wide/tall Home ordering uses live index"
+    else
+        echo "FAIL    solo/wide/tall Home ordering uses live index"
+        cat /tmp/work-order-all-modes-home-selector-smoke.out
+        set failed 1
+    end
+
     set -l workspace_order_home_failure_smoke '
         work_reload >/dev/null
         if set -q WORKSPACE_TEST_SOURCE_ROOT
@@ -1254,7 +1309,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         end
 
         function ws_yabai
-            if test "$argv[3]" = home
+            if test "$argv[3]" = 2
                 return 1
             end
         end
