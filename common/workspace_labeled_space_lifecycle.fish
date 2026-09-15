@@ -49,6 +49,37 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
         return 1
     end
 
+    set -l windows_json (ws_query_windows find_or_create_labeled_space reusable_space)
+    if test $status -ne 0 -o -z "$windows_json"
+        return 1
+    end
+
+    set -l reusable_space (echo $spaces_json | ws_jq -r \
+        --argjson display "$target_display" \
+        --argjson windows "$windows_json" '
+            [
+                .[]
+                | select(.display==$display)
+                | select(.label=="")
+                | select(.["is-visible"]!=true and .["has-focus"]!=true)
+                | . as $space
+                | select([
+                    $windows[]
+                    | select(.space==$space.index)
+                    | select(.["is-sticky"]!=true)
+                ] | length == 0)
+            ]
+            | sort_by(.index)
+            | last
+            | .index // empty
+        ')
+    or return 1
+
+    if test -n "$reusable_space"
+        echo $reusable_space
+        return 0
+    end
+
     set -l before_uuids (echo $spaces_json | ws_jq -r '.[].uuid')
     if test -z "$before_uuids"
         return 1
@@ -58,24 +89,31 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
     if test $status -ne 0
         return 1
     end
-    sleep 0.8
 
-    set spaces_json (ws_query_spaces find_or_create_labeled_space after_create)
-    if test $status -ne 0 -o -z "$spaces_json"
-        return 1
+    set -l new_space_uuid ""
+    for attempt in (seq 1 16)
+        sleep 0.25
+        set spaces_json (ws_query_spaces find_or_create_labeled_space after_create_$attempt)
+        if test $status -ne 0 -o -z "$spaces_json"
+            continue
+        end
+
+        set new_space_uuid (
+            echo $spaces_json | ws_jq -r '.[].uuid' \
+            | while read -l u
+                if not contains -- $u $before_uuids
+                    echo $u
+                end
+              end \
+            | head -n 1
+        )
+        if test -n "$new_space_uuid"
+            break
+        end
     end
 
-    set -l new_space_uuid (
-        echo $spaces_json | ws_jq -r '.[].uuid' \
-        | while read -l u
-            if not contains -- $u $before_uuids
-                echo $u
-            end
-          end \
-        | head -n 1
-    )
-
     if test -z "$new_space_uuid"
+        echo "[WARN] find_or_create_labeled_space: yabai accepted Space creation but no new Space appeared; check scripting-addition compatibility" >&2
         return 1
     end
 
@@ -101,6 +139,10 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
 
     if test "$new_space_display" != "$target_display"
         ws_yabai -m space $new_space_index --display $target_display >/dev/null 2>&1
+        or begin
+            echo "[WARN] find_or_create_labeled_space: could not move new Space to display $target_display" >&2
+            return 1
+        end
         sleep 0.8
     end
 
@@ -112,8 +154,9 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
     set -l final_space_index (
             echo $spaces_json | ws_jq -r \
             --arg uuid "$new_space_uuid" \
+            --argjson display "$target_display" \
             '.[]
-             | select(.uuid==$uuid)
+             | select(.uuid==$uuid and .display==$display)
              | .index'
     )
 
@@ -122,6 +165,7 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
         return 0
     end
 
+    echo "[WARN] find_or_create_labeled_space: new Space did not settle on display $target_display" >&2
     return 1
 end
 

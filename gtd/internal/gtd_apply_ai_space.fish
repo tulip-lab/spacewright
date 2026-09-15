@@ -1,7 +1,7 @@
 function __gtd_ai_allowed_app_regex --description "Return app regex for GTD AI owned windows"
     set -l app_names
 
-    for app_key in chatgpt obsidian notes
+    for app_key in hermes chatgpt obsidian notes
         set -a app_names (workspace_app_names $app_key)
         or return 1
     end
@@ -98,10 +98,11 @@ function gtd_ai_detect_display_mode --description "Detect the current GTD AI dis
     workspace_detect_display_mode
 end
 
-function gtd_apply_ai_space --description "Apply a GTD AI workspace for ChatGPT, Obsidian and Notes"
+function gtd_apply_ai_space --description "Apply a GTD AI workspace for Hermes, ChatGPT, Obsidian and Notes"
     argparse \
         'label=' \
         'display=' \
+        'hermes-grid=' \
         'chatgpt-grid=' \
         'obsidian-grid=' \
         'notes-grid=' \
@@ -120,7 +121,8 @@ function gtd_apply_ai_space --description "Apply a GTD AI workspace for ChatGPT,
         printf "dry_run=gtd_apply_ai_space\n"
         printf "label=%s\n" "$_flag_label"
         printf "display=%s\n" "$_flag_display"
-        printf "apps=%s,%s,%s\n" (workspace_app_name chatgpt) (workspace_app_name obsidian) (workspace_app_name notes)
+        printf "apps=%s,%s,%s,%s\n" (workspace_app_name hermes) (workspace_app_name chatgpt) (workspace_app_name obsidian) (workspace_app_name notes)
+        printf "hermes_grid=%s\n" "$_flag_hermes_grid"
         printf "chatgpt_grid=%s\n" "$_flag_chatgpt_grid"
         printf "obsidian_grid=%s\n" "$_flag_obsidian_grid"
         printf "notes_grid=%s\n" "$_flag_notes_grid"
@@ -153,6 +155,9 @@ function gtd_apply_ai_space --description "Apply a GTD AI workspace for ChatGPT,
     workspace_focus_labeled_space $_flag_label $target_space $target_display float
     or return 1
 
+    set -l hermes (__gtd_ai_capture_app --app-key hermes --caller $_flag_label --space $target_space)
+    or return 1
+
     set -l chatgpt (__gtd_ai_capture_app --app-key chatgpt --caller $_flag_label --space $target_space)
     or return 1
 
@@ -162,9 +167,13 @@ function gtd_apply_ai_space --description "Apply a GTD AI workspace for ChatGPT,
     set -l notes (__gtd_ai_capture_app --app-key notes --caller $_flag_label --space $target_space)
     or return 1
 
-    if test -z "$chatgpt" -a -z "$obsidian" -a -z "$notes"
+    if test -z "$hermes" -a -z "$chatgpt" -a -z "$obsidian" -a -z "$notes"
         destroy_empty_labeled_space $_flag_label
         return 0
+    end
+
+    if test -n "$hermes" -a -n "$_flag_hermes_grid"
+        ws_window $hermes --grid $_flag_hermes_grid
     end
 
     if test -n "$chatgpt" -a -n "$_flag_chatgpt_grid"

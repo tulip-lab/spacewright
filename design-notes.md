@@ -100,8 +100,9 @@ Mode entry is a two-step contract:
 
 The whole-workspace hotkeys intentionally use `;` rather than `and` so `work_*` still runs if the display verification step reports a display mismatch.
 
-In top-level `work_wide` and `work_tall`, the explicit staged sequence runs
-`coding_editor_<mode>` immediately after `gtd_review_<mode>`. Coding Editor is
+In top-level `work_wide` and `work_tall`, the explicit staged sequence creates
+`gtd_ai` before review, then runs `coding_editor_<mode>` immediately after
+`gtd_review_<mode>`. Coding Editor is
 therefore the last ChatGPT-owning stage; mail and meeting run afterwards but do
 not claim ChatGPT. Execution order remains independent from the label order
 enforced by the shared finalizer.
@@ -115,9 +116,9 @@ window must be on its unique labeled Space. Invalid state gets one bounded `gtd_
 `coding_control` reconciliation pass and one fresh verification; persistent
 invalid state returns nonzero while outer finalization still runs.
 
-Every public mutating solo/wide/tall entry uses `workspace_run_finalized_entry`, whether invoked by `skhd` or directly from the command line. `workspace_finalized_entry_rows` is the machine-readable coverage contract. Nested module calls share a depth guard, so only the outermost entry collects Sandbox windows, cleans empty Spaces, orders and verifies labels, and restores focus. Direct mode-less primary entries finalize after `workspace_detect_display_mode` reliably resolves the current mode; `gtd_ai` dispatches through its matching mode entry. Read-only, reload, diagnostics, display, and internal helper commands do not finalize.
+Every public mutating solo/wide/tall entry uses `workspace_run_finalized_entry`, whether invoked by `skhd` or directly from the command line. `workspace_finalized_entry_rows` is the machine-readable coverage contract. Nested module calls share a depth guard, so only the outermost entry collects Sandbox windows, cleans empty Spaces, orders and verifies labels, and restores focus. If shared recovery restarts yabai during the business pass, the outermost transaction detects the changed restart generation, disables further automatic restarts, and replays the complete business pass once before finalization. This bounded replay is required because a yabai restart discards runtime Space labels; rebuilding only the remaining stages would leave earlier ownership and labels missing. Direct mode-less primary entries finalize after `workspace_detect_display_mode` reliably resolves the current mode; `gtd_ai` dispatches through its matching mode entry. Read-only, reload, diagnostics, display, and internal helper commands do not finalize.
 
-The ownership policy's machine-readable app keys define the Sandbox exclusion boundary. A managed app is excluded in full even when its policy selects only one window. Other movable windows are collected unless they are on Home, sticky, or native fullscreen. The current-mode Sandbox is `sandbox_wide` or `sandbox_tall` on the external display, uses balanced BSP layout, and follows the meeting workspace in external order. Opposite-mode Sandbox windows migrate because their apps remain unmanaged, after which strict cleanup deletes the empty old Sandbox.
+The ownership policy's machine-readable app keys define the Sandbox exclusion boundary. A managed app is excluded in full even when its policy selects only one window. Other movable windows are collected unless they are on Home, sticky, or native fullscreen. The current-mode Sandbox is `sandbox_wide` or `sandbox_tall` on the external display, uses balanced BSP layout, and follows the meeting workspace in external order. Opposite-mode Sandbox windows migrate because their apps remain unmanaged, after which strict cleanup deletes the empty old Sandbox. Labeled-Space creation first reuses a non-current unlabeled Space on the target display when it contains no non-sticky windows. A real create is polled until its UUID appears, and a cross-display move is accepted only after a fresh query confirms the requested display; command exit status alone is not treated as proof because an unavailable scripting addition can acknowledge a Space mutation without applying it.
 
 Finalization captures the lowest-index unlabeled primary Space as Home by UUID. Home and its windows are protected; no Home is created when absent. The structural `coding_control`, `gtd_chat`, and `gtd_calendar` Spaces are also excluded from global empty-Space destruction, matching the fixed-label retention policy. Other empty-Space cleanup uses a live window snapshot, treats sticky-only Spaces as empty, and retains at least one survivor on every display. The initial snapshot only identifies candidates: immediately before each destroy, cleanup re-queries Spaces and live windows by UUID, resolves the candidate's current Mission Control index, and skips a candidate that has gained an ordinary window. Destruction uses that refreshed index because yabai Space mutation selectors do not accept UUIDs. This prevents a stale selector or settling window membership from deleting the focused newly populated Space. Ordering likewise identifies Home by UUID but passes its current Mission Control index to yabai, then places Home before `coding_control`, `gtd_chat`, and `gtd_calendar` and places existing external labels in the business order ending with Sandbox. Verification rejects unmanaged interleaving, retries ordering once, and fails after a second drift. Final focus is resolved by UUID rather than a stale Mission Control index. `work_diagnostics` reports whether macOS recent-use Space reordering is disabled but does not modify the preference.
 
@@ -327,7 +328,7 @@ page and requires the user to re-add `/opt/homebrew/bin/yabai`.
 
 `work_command_check` validates function availability after `work_reload`. It does not move windows, switch displays, or validate app presence.
 
-Workspace layout commands may use `ws_recover_yabai_once` to restart yabai once when shared queries fail after normal retry or when a present app remains non-movable after activation/polling. The helper is cooldown-guarded so multiple failures in one run do not repeatedly restart yabai. Its restart boundary supports the loaded legacy `com.asmvik.yabai` LaunchAgent as well as yabai's standard service. Read-only commands are excluded through the shared recovery allowlist.
+Workspace layout commands may use `ws_recover_yabai_once` to restart yabai once when shared queries fail after normal retry or when a present app remains non-movable after activation/polling. Each successful restart advances a process-local restart generation. The helper is cooldown-guarded so multiple failures in one run do not repeatedly restart yabai, while the outermost finalized entry uses the generation change to trigger its one bounded replay. Its restart boundary supports the loaded legacy `com.asmvik.yabai` LaunchAgent as well as yabai's standard service. Read-only commands are excluded through the shared recovery allowlist.
 
 ### Read-Only Workspace Observability
 
@@ -419,7 +420,7 @@ ChatGPT-owning workspaces capture a movable `ChatGPT` window through `workspace_
 
 Wide/tall coding editor modes may own one already-open ChatGPT window as an optional helper. Wide places ChatGPT in the left third and VS Code in the right two thirds; tall places ChatGPT above VS Code. When ChatGPT is absent, VS Code uses the full workspace. Solo remains VS Code-only. All research modes may own one already-open Claude window as an optional helper.
 
-`gtd_ai` owns ChatGPT when invoked directly. In `gtd_solo_all`, review runs after meeting so GTD review is the final SOLO owner for ChatGPT.
+`gtd_ai` owns ChatGPT when invoked directly. In `gtd_solo_all`, AI runs first and review runs after meeting, so GTD review is the final SOLO owner for ChatGPT while Hermes remains in `gtd_ai`.
 
 For whole-workspace wide/tall entry points, the staged order makes Coding Editor
 the final ChatGPT owner. Direct module commands retain the general last-invoked
@@ -459,17 +460,17 @@ This multi-window policy is deliberately scoped to GTD support. Meeting and revi
 
 `gtd_ai` uses a single labeled Space, `gtd_ai`, across solo, wide, and tall layouts. The mode-specific entry points are `gtd_ai_solo`, `gtd_ai_wide`, and `gtd_ai_tall`; the convenience `gtd_ai` entry detects the current display mode and dispatches to one of those explicit entries.
 
-The owned apps are ChatGPT, Obsidian, and Notes.
+The owned apps are Hermes, ChatGPT, Obsidian, and Notes. Hermes is the primary AI window; the other apps form the supporting reference area.
 
 The AI workspace uses `workspace_retarget_contaminated_space` before preparing `gtd_ai`, so an old AI label mixed with unrelated apps is cleared and replaced with a clean target. Missing apps are opened when `gtd_ai_*` is invoked directly. If an app still has no movable layout window, the helper warns and skips that app instead of failing the whole workspace.
 
 Layouts:
 
-- wide: Notes left third, Obsidian middle third, ChatGPT right third
-- tall: Notes top-left, Obsidian top-right, ChatGPT bottom half
-- solo: Notes top-left, Obsidian top-right, ChatGPT bottom half
+- wide: Notes and Obsidian stack in the left quarter, Hermes occupies the middle half, and ChatGPT occupies the right quarter
+- tall: Hermes occupies the top half, ChatGPT the third quarter, and Obsidian and Notes split the bottom quarter
+- solo: Hermes occupies the top half; ChatGPT, Obsidian, and Notes share the bottom reference band
 
-`gtd_ai` is intentionally not included in aggregate `work_*` entries because those entries should not launch the AI app set as a side effect of switching the whole display mode.
+`gtd_ai_*` runs near the start of every aggregate `work_*` entry. This guarantees a stable owned Space for Hermes. Later review and coding stages intentionally reclaim their shared Notes, Obsidian, and ChatGPT windows according to the last-invoked ownership rule, leaving Hermes in `gtd_ai`.
 
 ### Office ChatGPT And Documents
 

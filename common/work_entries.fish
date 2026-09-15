@@ -43,6 +43,9 @@ function __work_wide_body
     workspace_run_step "office wide" office_wide
     or set failed 1
 
+    workspace_run_step "GTD AI wide" gtd_ai_wide
+    or set failed 1
+
     workspace_run_step "GTD support wide" gtd_support_wide
     or set failed 1
 
@@ -89,6 +92,9 @@ function __work_tall_body
     or set failed 1
 
     workspace_run_step "office tall" office_tall
+    or set failed 1
+
+    workspace_run_step "GTD AI tall" gtd_ai_tall
     or set failed 1
 
     workspace_run_step "GTD support tall" gtd_support_tall

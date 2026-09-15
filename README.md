@@ -130,10 +130,10 @@ work_tall
 | 命令 | 包含内容 |
 |---|---|
 | `work_solo` | `coding_solo`、`research_solo`、`gtd_solo_all` |
-| `work_wide` | `research_wide`、`office_wide`、`gtd_support_wide`、`gtd_review_wide`、`coding_editor_wide`、`gtd_mail_wide`、`gtd_meeting_wide`、`gtd_chat`、`gtd_calendar`、`coding_control` |
-| `work_tall` | `research_tall`、`office_tall`、`gtd_support_tall`、`gtd_review_tall`、`coding_editor_tall`、`gtd_mail_tall`、`gtd_meeting_tall`、`gtd_chat`、`gtd_calendar`、`coding_control` |
+| `work_wide` | `research_wide`、`office_wide`、`gtd_ai_wide`、`gtd_support_wide`、`gtd_review_wide`、`coding_editor_wide`、`gtd_mail_wide`、`gtd_meeting_wide`、`gtd_chat`、`gtd_calendar`、`coding_control` |
+| `work_tall` | `research_tall`、`office_tall`、`gtd_ai_tall`、`gtd_support_tall`、`gtd_review_tall`、`coding_editor_tall`、`gtd_mail_tall`、`gtd_meeting_tall`、`gtd_chat`、`gtd_calendar`、`coding_control` |
 
-Wide/tall 顶层流程把 Coding Editor 固定在 GTD Review 之后，因此共享的 ChatGPT
+三种顶层流程都会先建立 GTD AI Space；wide/tall 把 Coding Editor 固定在 GTD Review 之后，因此共享的 ChatGPT
 窗口最终由 Coding Editor 接管；执行顺序不等于最终 Space 顺序，最终排序仍由统一收尾完成。
 所有三种顶层模式结束业务步骤后都会检查 `gtd_chat` 与 `coding_control` 的 label 唯一性、
 主屏 Space 分离和非 sticky 窗口 ownership；只要相关窗口存在，就必须位于各自唯一的 labeled Space。不满足时只按
@@ -149,10 +149,19 @@ label 不存在时不会创建空 Space。
 不触发 workspace 收尾。公开入口与 finalization mode 的契约集中在
 `workspace_finalized_entry_rows`，fixture smoke 会检查每个入口都接入统一 finalizer。
 
+如果业务步骤中的共享恢复逻辑重启了 yabai，最外层入口会检测 restart generation，禁用
+进一步自动重启，并把整套业务步骤重放一次。因为 yabai 重启会丢失运行时 Space 标签，
+这次有界重放用于重新建立全部 label 和 ownership；之后才执行统一 cleanup、排序与验证。
+`work_solo`、`work_wide`、`work_tall` 以及各模式模块入口共用这一事务规则。
+
 收尾先把 ownership policy 中没有登记、可移动、非 sticky、非原生全屏的窗口放进外接屏
 `sandbox_wide` 或 `sandbox_tall`。主屏索引最小的未标记 Space 是 Home；Home 的 UUID 和
 其中窗口始终受保护。Sandbox 使用 `bsp` 并 balance；没有候选窗口时不会创建，变空后会
 清理。随后按 live windows 删除其他空 Space，但每个显示器至少保留一个 Space。
+
+创建 labeled Space 时优先复用目标显示器上非当前、仅含 sticky 窗口的空白 Space；没有可
+复用目标时才调用 yabai 创建，并轮询确认新 UUID。跨屏迁移后还必须重新查询并确认目标
+display，避免 scripting addition 不兼容时 yabai 返回成功、实际却没有改变 Space。
 
 最后通过 UUID 恢复焦点并验证 Space 顺序。主屏顺序为 Home、`coding_control`、`gtd_chat`、
 `gtd_calendar`；外接屏依次为 `gtd_ai`、coding、research、office writing、office slides、
@@ -215,7 +224,7 @@ ChatGPT 占左上，第一个文档占右上，第二个文档占下半屏；三
 | `gtd_review_wide` / `gtd_review_tall` | Finder、Preview、Obsidian、Notes、ChatGPT 的 review 工作区 |
 | `gtd_mail_solo` / `gtd_mail_wide` / `gtd_mail_tall` | Thunderbird、Outlook 邮件工作区 |
 | `gtd_meeting_solo` / `gtd_meeting_wide` / `gtd_meeting_tall` | Zoom、Teams 会议工作区 |
-| `gtd_ai` / `gtd_ai_solo` / `gtd_ai_wide` / `gtd_ai_tall` | ChatGPT、Obsidian、Notes 的 AI 工作区 |
+| `gtd_ai` / `gtd_ai_solo` / `gtd_ai_wide` / `gtd_ai_tall` | Hermes、ChatGPT、Obsidian、Notes 的 AI 工作区 |
 | `gtd_chat` | primary display 上的聊天工作区；已有 FaceTime 窗口会被收集并居中 |
 | `gtd_calendar` | primary display 上的 Calendar + Reminders |
 | `gtd_solo_all` | solo 模式下的 GTD 聚合入口 |
@@ -240,7 +249,7 @@ ChatGPT 时，最后调用的工作区拥有这些窗口。
 
 Shortcut: `9`
 
-Apps: ChatGPT, Obsidian, Notes.
+Apps: Hermes, ChatGPT, Obsidian, Notes.
 
 Entrypoints:
 
@@ -255,14 +264,15 @@ gtd_ai_solo
 entry. The explicit skhd bindings use the same mode-specific pattern as the
 other numbered workspaces.
 
-Wide layout: Notes left third, Obsidian middle third, ChatGPT right third.
+Wide layout: Notes and Obsidian stack in the left quarter, Hermes uses the middle half, and ChatGPT uses the right quarter.
 
-Tall layout: Notes top-left, Obsidian top-right, ChatGPT bottom half.
+Tall layout: Hermes uses the top half, ChatGPT the next quarter, and Obsidian and Notes split the bottom quarter.
 
-Solo layout: Notes top-left, Obsidian top-right, ChatGPT bottom half.
+Solo layout: Hermes uses the top half; ChatGPT, Obsidian, and Notes share the bottom reference band.
 
-`gtd_ai` is not part of the aggregate `work_*` entries because it opens missing
-apps when invoked directly.
+`gtd_ai_*` runs near the start of aggregate `work_*` entries so Hermes always has
+an owned AI Space. Later review and coding stages remain the final owners of their
+shared Notes, Obsidian, and ChatGPT windows.
 
 ## 快捷键
 

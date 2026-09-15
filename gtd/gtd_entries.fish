@@ -150,46 +150,49 @@ function gtd_ai --description "Collect AI work apps onto the current GTD AI work
     end
 end
 
-function __gtd_ai_solo_body --description "Collect ChatGPT, Obsidian and Notes onto the solo GTD AI workspace"
+function __gtd_ai_solo_body --description "Collect Hermes and AI support apps onto the solo GTD AI workspace"
     gtd_apply_ai_space \
         --label gtd_ai \
         --display primary \
-        --notes-grid 2:2:0:0:1:1 \
-        --obsidian-grid 2:2:1:0:1:1 \
-        --chatgpt-grid 2:1:0:1:1:1 \
+        --hermes-grid 2:3:0:0:3:1 \
+        --chatgpt-grid 2:3:0:1:1:1 \
+        --obsidian-grid 2:3:1:1:1:1 \
+        --notes-grid 2:3:2:1:1:1 \
         gtd:wide gtd:tall $argv
 end
 
-function __gtd_ai_wide_body --description "Collect ChatGPT, Obsidian and Notes onto the wide GTD AI workspace"
+function __gtd_ai_wide_body --description "Collect Hermes and AI support apps onto the wide GTD AI workspace"
     gtd_apply_ai_space \
         --label gtd_ai \
         --display wide \
-        --notes-grid 1:3:0:0:1:1 \
-        --obsidian-grid 1:3:1:0:1:1 \
-        --chatgpt-grid 1:3:2:0:1:1 \
+        --notes-grid 2:4:0:0:1:1 \
+        --obsidian-grid 2:4:0:1:1:1 \
+        --hermes-grid 1:4:1:0:2:1 \
+        --chatgpt-grid 1:4:3:0:1:1 \
         gtd:tall gtd:solo $argv
 end
 
-function __gtd_ai_tall_body --description "Collect ChatGPT, Obsidian and Notes onto the tall GTD AI workspace"
+function __gtd_ai_tall_body --description "Collect Hermes and AI support apps onto the tall GTD AI workspace"
     gtd_apply_ai_space \
         --label gtd_ai \
         --display tall \
-        --notes-grid 2:2:0:0:1:1 \
-        --obsidian-grid 2:2:1:0:1:1 \
-        --chatgpt-grid 2:1:0:1:1:1 \
+        --hermes-grid 4:2:0:0:2:2 \
+        --chatgpt-grid 4:2:0:2:2:1 \
+        --obsidian-grid 4:2:0:3:1:1 \
+        --notes-grid 4:2:1:3:1:1 \
         gtd:wide gtd:solo $argv
 end
 
 function __gtd_solo_all_body --description "Arrange GTD solo workspaces including internal fixed workspaces"
-    workspace_run_mode_steps gtd:wide gtd:tall -- gtd_support_solo gtd_mail_solo gtd_meeting_solo gtd_review_solo gtd_chat gtd_calendar $argv
+    workspace_run_mode_steps gtd:wide gtd:tall -- gtd_ai_solo gtd_support_solo gtd_mail_solo gtd_meeting_solo gtd_review_solo gtd_chat gtd_calendar $argv
 end
 
 function __gtd_wide_body --description "Arrange all GTD wide workspaces and clean opposite-mode spaces"
-    workspace_run_mode_steps gtd:tall gtd:solo -- gtd_support_wide gtd_review_wide gtd_mail_wide gtd_meeting_wide $argv
+    workspace_run_mode_steps gtd:tall gtd:solo -- gtd_ai_wide gtd_support_wide gtd_review_wide gtd_mail_wide gtd_meeting_wide $argv
 end
 
 function __gtd_tall_body --description "Arrange all GTD tall workspaces and clean opposite-mode spaces"
-    workspace_run_mode_steps gtd:wide gtd:solo -- gtd_support_tall gtd_review_tall gtd_mail_tall gtd_meeting_tall $argv
+    workspace_run_mode_steps gtd:wide gtd:solo -- gtd_ai_tall gtd_support_tall gtd_review_tall gtd_mail_tall gtd_meeting_tall $argv
 end
 
 function gtd_support_wide --description "Collect Dia onto the wide GTD support workspace and apply the standard support layout"
@@ -240,15 +243,15 @@ function gtd_meeting_tall --description "Collect Zoom and Teams onto the tall GT
     workspace_run_finalized_entry --mode tall --command __gtd_meeting_tall_body -- $argv
 end
 
-function gtd_ai_solo --description "Collect ChatGPT, Obsidian and Notes onto the solo GTD AI workspace"
+function gtd_ai_solo --description "Collect Hermes and AI support apps onto the solo GTD AI workspace"
     workspace_run_finalized_entry --mode solo --command __gtd_ai_solo_body -- $argv
 end
 
-function gtd_ai_wide --description "Collect ChatGPT, Obsidian and Notes onto the wide GTD AI workspace"
+function gtd_ai_wide --description "Collect Hermes and AI support apps onto the wide GTD AI workspace"
     workspace_run_finalized_entry --mode wide --command __gtd_ai_wide_body -- $argv
 end
 
-function gtd_ai_tall --description "Collect ChatGPT, Obsidian and Notes onto the tall GTD AI workspace"
+function gtd_ai_tall --description "Collect Hermes and AI support apps onto the tall GTD AI workspace"
     workspace_run_finalized_entry --mode tall --command __gtd_ai_tall_body -- $argv
 end
 

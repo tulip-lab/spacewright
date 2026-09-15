@@ -68,13 +68,14 @@ function ws_restart_yabai --description "Restart the yabai service through the b
         return 1
     end
 
+    set -l status_code 1
     set -l legacy_service "gui/"(id -u)"/com.asmvik.yabai"
     if command -q launchctl; and launchctl print "$legacy_service" >/dev/null 2>&1
         launchctl kickstart -k "$legacy_service" >/dev/null 2>&1
-        set -l status_code $status
+        set status_code $status
     else
         ws_yabai --restart-service >/dev/null 2>&1
-        set -l status_code $status
+        set status_code $status
     end
 
     if test "$status_code" -ne 0
@@ -102,6 +103,7 @@ function ws_yabai_auto_restart_allowed --description "Return success when a call
             work_doctor \
             work_smoke \
             work_status \
+            yabai_doctor \
             workspace_plan \
             workspace_snapshot \
             workspace_verify \
@@ -154,6 +156,10 @@ function ws_recover_yabai_once --description "Restart yabai at most once within 
     or return 1
 
     set -g __WORKSPACE_YABAI_AUTO_RESTART_AT $now
+    if not set -q __WORKSPACE_YABAI_RESTART_GENERATION
+        set -g __WORKSPACE_YABAI_RESTART_GENERATION 0
+    end
+    set -g __WORKSPACE_YABAI_RESTART_GENERATION (math $__WORKSPACE_YABAI_RESTART_GENERATION + 1)
 
     set -l settle_seconds "$WORKSPACE_YABAI_RESTART_SETTLE_SECONDS"
     if test -z "$settle_seconds"

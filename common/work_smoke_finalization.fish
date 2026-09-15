@@ -426,9 +426,19 @@ function __work_smoke_finalization_runner
     set -g __work_smoke_runner_final_modes
     set -g __work_smoke_runner_body_status 0
     set -g __work_smoke_runner_final_status 0
+    set -g __work_smoke_runner_restart_on_call 0
+    set -g __work_smoke_runner_replay_restart_disabled 0
+    set -g __WORKSPACE_YABAI_RESTART_GENERATION 0
 
     function __work_smoke_runner_leaf
         set -g __work_smoke_runner_body_calls (math $__work_smoke_runner_body_calls + 1)
+        if test "$__work_smoke_runner_body_calls" -eq "$__work_smoke_runner_restart_on_call"
+            set -g __WORKSPACE_YABAI_RESTART_GENERATION (math $__WORKSPACE_YABAI_RESTART_GENERATION + 1)
+        else if test "$__work_smoke_runner_restart_on_call" -gt 0
+            and test "$__work_smoke_runner_body_calls" -gt "$__work_smoke_runner_restart_on_call"
+            and test "$WORKSPACE_DISABLE_YABAI_AUTO_RESTART" = 1
+            set -g __work_smoke_runner_replay_restart_disabled 1
+        end
         return $__work_smoke_runner_body_status
     end
     function __work_smoke_runner_nested
@@ -477,8 +487,76 @@ function __work_smoke_finalization_runner
     string match -q '*finalization_steps=sandbox cleanup order_verify restore_focus*' -- "$dry_run"; or return 14
     test (count $__work_smoke_runner_final_modes) -eq 0; or return 15
 
-    not set -q __WORKSPACE_FINALIZATION_DEPTH; or return 16
+    set -g __work_smoke_runner_body_calls 0
+    set -g __work_smoke_runner_final_modes
+    set -g __work_smoke_runner_restart_on_call 1
+    set -g __work_smoke_runner_replay_restart_disabled 0
+    set -g __WORKSPACE_YABAI_RESTART_GENERATION 0
+    workspace_run_finalized_entry --mode wide --command __work_smoke_runner_leaf -- >/dev/null 2>&1
+    or return 16
+    test $__work_smoke_runner_body_calls -eq 2; or return 17
+    test $__work_smoke_runner_replay_restart_disabled -eq 1; or return 18
+    test (string join ' ' -- $__work_smoke_runner_final_modes) = wide; or return 19
+
+    not set -q __WORKSPACE_FINALIZATION_DEPTH; or return 20
     not set -q __WORKSPACE_FINALIZATION_MODE
+end
+
+function __work_smoke_labeled_space_creation
+    set -g __work_smoke_labeled_scenario reuse
+    set -g __work_smoke_labeled_create_calls 0
+    set -g __work_smoke_labeled_after_create_queries 0
+
+    function ws_query_spaces
+        set -l phase $argv[2]
+
+        if test "$__work_smoke_labeled_scenario" = delayed_create
+            if string match -q 'after_create_*' -- "$phase"
+                set -g __work_smoke_labeled_after_create_queries (math $__work_smoke_labeled_after_create_queries + 1)
+            end
+
+            if test "$__work_smoke_labeled_after_create_queries" -ge 3
+                echo '[{"index":8,"uuid":"old","display":2,"label":"","is-visible":true,"has-focus":true},{"index":9,"uuid":"new","display":2,"label":"","is-visible":false,"has-focus":false}]'
+            else
+                echo '[{"index":8,"uuid":"old","display":2,"label":"","is-visible":true,"has-focus":true}]'
+            end
+            return 0
+        end
+
+        echo '[{"index":8,"uuid":"occupied","display":2,"label":"","is-visible":true,"has-focus":true},{"index":9,"uuid":"empty","display":2,"label":"","is-visible":false,"has-focus":false}]'
+    end
+
+    function ws_query_windows
+        if test "$__work_smoke_labeled_scenario" = delayed_create
+            echo '[{"id":1,"space":8,"is-sticky":false}]'
+        else
+            echo '[{"id":1,"space":8,"is-sticky":false},{"id":2,"space":9,"is-sticky":true}]'
+        end
+    end
+
+    function ws_yabai
+        if test "$argv[1]" = -m -a "$argv[2]" = space -a "$argv[3]" = --create
+            set -g __work_smoke_labeled_create_calls (math $__work_smoke_labeled_create_calls + 1)
+            return 0
+        end
+        return 1
+    end
+
+    function sleep
+    end
+
+    test (find_or_create_labeled_space test_wide 2) = 9
+    or return 1
+    test $__work_smoke_labeled_create_calls -eq 0
+    or return 2
+
+    set -g __work_smoke_labeled_scenario delayed_create
+    set -g __work_smoke_labeled_after_create_queries 0
+    test (find_or_create_labeled_space test_wide 2) = 9
+    or return 3
+    test $__work_smoke_labeled_create_calls -eq 1
+    or return 4
+    test $__work_smoke_labeled_after_create_queries -eq 3
 end
 
 function __work_smoke_finalization_entries
@@ -668,7 +746,7 @@ end
 function work_smoke_finalization --description "Run fixture-only workspace finalization smokes"
     set -l requested $argv
     if test (count $requested) -eq 0
-        set -l cases policy selection sandbox cleanup ordering diagnostics finalize runner entries staged primary_separation
+        set -l cases policy selection sandbox cleanup ordering diagnostics finalize runner labeled_space entries staged primary_separation
         set -l failed 0
         for case_name in $cases
             if set -q WORKSPACE_TEST_SOURCE_ROOT
@@ -722,6 +800,8 @@ function work_smoke_finalization --description "Run fixture-only workspace final
                 __work_smoke_finalization_finalize
             case runner
                 __work_smoke_finalization_runner
+            case labeled_space
+                __work_smoke_labeled_space_creation
             case entries
                 __work_smoke_finalization_entries
             case staged
@@ -729,7 +809,7 @@ function work_smoke_finalization --description "Run fixture-only workspace final
             case primary_separation
                 __work_smoke_primary_fixed_separation
             case '*'
-                echo "usage: work_smoke_finalization [policy|selection|sandbox|cleanup|ordering|diagnostics|finalize|runner|entries|staged|primary_separation ...]" >&2
+                echo "usage: work_smoke_finalization [policy|selection|sandbox|cleanup|ordering|diagnostics|finalize|runner|labeled_space|entries|staged|primary_separation ...]" >&2
                 return 2
         end
 

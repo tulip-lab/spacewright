@@ -1,7 +1,7 @@
 function workspace_top_level_entry_rows --description "Print declared top-level workspace entries"
     printf "%s\t%s\t%s\n" work_solo "Arrange and finalize solo primary-display workspaces" "coding_solo research_solo gtd_solo_all"
-    printf "%s\t%s\t%s\n" work_wide "Arrange and finalize wide external-display workspaces" "research_wide office_wide gtd_support_wide gtd_review_wide coding_editor_wide gtd_mail_wide gtd_meeting_wide gtd_chat gtd_calendar coding_control"
-    printf "%s\t%s\t%s\n" work_tall "Arrange and finalize tall external-display workspaces" "research_tall office_tall gtd_support_tall gtd_review_tall coding_editor_tall gtd_mail_tall gtd_meeting_tall gtd_chat gtd_calendar coding_control"
+    printf "%s\t%s\t%s\n" work_wide "Arrange and finalize wide external-display workspaces" "research_wide office_wide gtd_ai_wide gtd_support_wide gtd_review_wide coding_editor_wide gtd_mail_wide gtd_meeting_wide gtd_chat gtd_calendar coding_control"
+    printf "%s\t%s\t%s\n" work_tall "Arrange and finalize tall external-display workspaces" "research_tall office_tall gtd_ai_tall gtd_support_tall gtd_review_tall coding_editor_tall gtd_mail_tall gtd_meeting_tall gtd_chat gtd_calendar coding_control"
     printf "%s\t%s\t%s\n" work_status "Inspect current workspace/display/module state" "diagnostics plus module status snapshots"
     printf "%s\t%s\t%s\n" work_reload "Reload common, display, and module functions" "reload only"
     printf "%s\t%s\t%s\n" work_check "Run reload, diagnostics, and module mode status" "read-only status"
@@ -39,7 +39,7 @@ end
 function workspace_module_entry_rows --description "Print declared workspace module entries"
     printf "%s\t%s\t%s\n" coding "solo, wide, tall" "Code; optional ChatGPT on wide/tall; primary-display coding_control"
     printf "%s\t%s\t%s\n" research "solo, wide, tall" "Zotero; optional Claude helper"
-    printf "%s\t%s\t%s\n" gtd "solo_all, wide, tall, ai" "Dia, Finder, Preview, Notes, ChatGPT, Obsidian, Thunderbird, Outlook, Zoom, Teams; primary-display chat/calendar"
+    printf "%s\t%s\t%s\n" gtd "solo_all, wide, tall, ai" "Hermes, Dia, Finder, Preview, Notes, ChatGPT, Obsidian, Thunderbird, Outlook, Zoom, Teams; primary-display chat/calendar"
     printf "%s\t%s\t%s\n" office "wide, tall" "Word, PowerPoint, ChatGPT"
 end
 
@@ -57,8 +57,8 @@ function workspace_command_map_rows --description "Print declared workspace comm
     printf "%s\t%s\t%s\t%s\n" gtd_review_tall tall external "Preview, Obsidian, Notes, ChatGPT, Finder"
     printf "%s\t%s\t%s\t%s\n" "gtd_mail_*" all "mode target" "Thunderbird, Outlook"
     printf "%s\t%s\t%s\t%s\n" "gtd_meeting_*" all "mode target" "Zoom, Teams"
-    printf "%s\t%s\t%s\t%s\n" gtd_ai auto "current mode target" "ChatGPT, Obsidian, Notes"
-    printf "%s\t%s\t%s\t%s\n" "gtd_ai_*" all "mode target" "ChatGPT, Obsidian, Notes"
+    printf "%s\t%s\t%s\t%s\n" gtd_ai auto "current mode target" "Hermes, ChatGPT, Obsidian, Notes"
+    printf "%s\t%s\t%s\t%s\n" "gtd_ai_*" all "mode target" "Hermes, ChatGPT, Obsidian, Notes"
     printf "%s\t%s\t%s\t%s\n" gtd_chat primary primary "Messages/chat helper windows, FaceTime"
     printf "%s\t%s\t%s\t%s\n" gtd_calendar primary primary Calendar
     printf "%s\t%s\t%s\t%s\n" "office_writing_*" "wide/tall" external "Word, ChatGPT"

@@ -25,6 +25,7 @@ function workspace_ownership_policy_rows --description "Print static workspace a
     printf "%s\t%s\t%s\t%s\t%s\n" "gtd_mail_*" "Microsoft Outlook" "optional-helper" "single helper window when present" outlook
     printf "%s\t%s\t%s\t%s\t%s\n" "gtd_meeting_*" "Zoom" "all-movable-windows;fallback-space-owner" "meeting/video/share windows; current Zoom space fallback" zoom
     printf "%s\t%s\t%s\t%s\t%s\n" "gtd_meeting_*" "Microsoft Teams/MSTeams" "all-movable-windows;fallback-space-owner" "meeting/video/call/share windows; non-movable companion space fallback" teams
+    printf "%s\t%s\t%s\t%s\t%s\n" "gtd_ai" "Hermes" "single-window" "primary AI window; first movable app-key window; opened when missing" hermes
     printf "%s\t%s\t%s\t%s\t%s\n" "gtd_ai" "ChatGPT" "single-window" "first movable app-key window; opened when missing" chatgpt
     printf "%s\t%s\t%s\t%s\t%s\n" "gtd_ai" "Obsidian" "single-window" "first movable app-key window; opened when missing" obsidian
     printf "%s\t%s\t%s\t%s\t%s\n" "gtd_ai" "Notes" "single-window" "first movable app-key window; opened when missing" notes

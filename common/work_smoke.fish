@@ -189,16 +189,29 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
+    set -l gtd_ai_solo_dry_run (gtd_ai_solo --dry-run)
     set -l gtd_ai_wide_dry_run (gtd_ai_wide --dry-run)
-    if string match -q "*apps=ChatGPT,Obsidian,Notes*" -- "$gtd_ai_wide_dry_run"
-            and string match -q "*chatgpt_grid=1:3:2:0:1:1*" -- "$gtd_ai_wide_dry_run"
-            and string match -q "*obsidian_grid=1:3:1:0:1:1*" -- "$gtd_ai_wide_dry_run"
-            and string match -q "*notes_grid=1:3:0:0:1:1*" -- "$gtd_ai_wide_dry_run"
+    set -l gtd_ai_tall_dry_run (gtd_ai_tall --dry-run)
+    if string match -q "*apps=Hermes,ChatGPT,Obsidian,Notes*" -- "$gtd_ai_wide_dry_run"
+            and string match -q "*hermes_grid=1:4:1:0:2:1*" -- "$gtd_ai_wide_dry_run"
+            and string match -q "*chatgpt_grid=1:4:3:0:1:1*" -- "$gtd_ai_wide_dry_run"
+            and string match -q "*obsidian_grid=2:4:0:1:1:1*" -- "$gtd_ai_wide_dry_run"
+            and string match -q "*notes_grid=2:4:0:0:1:1*" -- "$gtd_ai_wide_dry_run"
+            and string match -q "*hermes_grid=4:2:0:0:2:2*" -- "$gtd_ai_tall_dry_run"
+            and string match -q "*chatgpt_grid=4:2:0:2:2:1*" -- "$gtd_ai_tall_dry_run"
+            and string match -q "*obsidian_grid=4:2:0:3:1:1*" -- "$gtd_ai_tall_dry_run"
+            and string match -q "*notes_grid=4:2:1:3:1:1*" -- "$gtd_ai_tall_dry_run"
+            and string match -q "*hermes_grid=2:3:0:0:3:1*" -- "$gtd_ai_solo_dry_run"
+            and string match -q "*chatgpt_grid=2:3:0:1:1:1*" -- "$gtd_ai_solo_dry_run"
+            and string match -q "*obsidian_grid=2:3:1:1:1:1*" -- "$gtd_ai_solo_dry_run"
+            and string match -q "*notes_grid=2:3:2:1:1:1*" -- "$gtd_ai_solo_dry_run"
             and not string match -q "*codex_grid=*" -- "$gtd_ai_wide_dry_run"
-        echo "OK      GTD AI wide ChatGPT-only layout"
+        echo "OK      GTD AI Hermes-first mode layouts"
     else
-        echo "FAIL    GTD AI wide ChatGPT-only layout"
+        echo "FAIL    GTD AI Hermes-first mode layouts"
+        printf "%s\n" $gtd_ai_solo_dry_run
         printf "%s\n" $gtd_ai_wide_dry_run
+        printf "%s\n" $gtd_ai_tall_dry_run
         set failed 1
     end
 
@@ -803,6 +816,13 @@ function work_smoke --description "Run read-only workspace smoke checks for help
 
         test "$__work_smoke_restart_calls" -eq 0
         or exit 2
+
+        if ws_query_spaces yabai_doctor read-only >/dev/null 2>&1
+            exit 3
+        end
+
+        test "$__work_smoke_restart_calls" -eq 0
+        or exit 4
     '
     fish -lc "$readonly_query_no_restart_smoke" >/tmp/work-readonly-query-no-restart-smoke.out 2>&1
     if test $status -eq 0
@@ -1338,6 +1358,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         "*gtd_meeting_*Microsoft Teams/MSTeams*all-movable-windows;fallback-space-owner*" \
         "*gtd_mail_*Thunderbird*single-window;fallback-space-owner*" \
         "*gtd_mail_*Microsoft Outlook*optional-helper*" \
+        "*gtd_ai*Hermes*single-window*" \
         "*gtd_ai*ChatGPT*single-window*" \
         "*gtd_ai*Obsidian*single-window*" \
         "*gtd_calendar*Calendar*single-window;fallback-space-owner*" \

@@ -209,15 +209,33 @@ function workspace_run_finalized_entry --description "Run an entry and finalize 
     end
 
     set -l outermost 0
+    set -l restart_generation_before 0
     if not set -q __WORKSPACE_FINALIZATION_DEPTH; or test "$__WORKSPACE_FINALIZATION_DEPTH" -eq 0
         set outermost 1
         set -g __WORKSPACE_FINALIZATION_MODE $_flag_mode
         set -g __WORKSPACE_FINALIZATION_DEPTH 0
+        if set -q __WORKSPACE_YABAI_RESTART_GENERATION
+            set restart_generation_before $__WORKSPACE_YABAI_RESTART_GENERATION
+        end
     end
     set -g __WORKSPACE_FINALIZATION_DEPTH (math $__WORKSPACE_FINALIZATION_DEPTH + 1)
 
     $_flag_command $argv
     set -l body_status $status
+
+    set -l restart_generation_after 0
+    if set -q __WORKSPACE_YABAI_RESTART_GENERATION
+        set restart_generation_after $__WORKSPACE_YABAI_RESTART_GENERATION
+    end
+    if test $outermost -eq 1
+        and not contains -- --dry-run $argv
+        and test "$restart_generation_after" -ne "$restart_generation_before"
+        echo "[INFO] workspace yabai restarted during layout; replaying the complete workspace once" >&2
+        set -lx WORKSPACE_DISABLE_YABAI_AUTO_RESTART 1
+        $_flag_command $argv
+        set body_status $status
+    end
+
     set -g __WORKSPACE_FINALIZATION_DEPTH (math $__WORKSPACE_FINALIZATION_DEPTH - 1)
 
     set -l final_status 0
