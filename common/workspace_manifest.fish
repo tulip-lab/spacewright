@@ -1,7 +1,7 @@
 function workspace_top_level_entry_rows --description "Print declared top-level workspace entries"
     printf "%s\t%s\t%s\n" work_solo "Arrange and finalize solo primary-display workspaces" "coding_solo research_solo gtd_solo_all"
-    printf "%s\t%s\t%s\n" work_wide "Arrange and finalize wide external-display workspaces" "research_wide office_wide gtd_ai_wide gtd_support_wide gtd_review_wide coding_editor_wide gtd_mail_wide gtd_meeting_wide gtd_chat gtd_calendar coding_control"
-    printf "%s\t%s\t%s\n" work_tall "Arrange and finalize tall external-display workspaces" "research_tall office_tall gtd_ai_tall gtd_support_tall gtd_review_tall coding_editor_tall gtd_mail_tall gtd_meeting_tall gtd_chat gtd_calendar coding_control"
+    printf "%s\t%s\t%s\n" work_wide "Arrange and finalize wide external-display workspaces" "research_wide office_wide gtd_ai_wide gtd_support_wide gtd_review_wide coding_editor_wide gtd_ai_expand_hermes_when_alone gtd_mail_wide gtd_meeting_wide gtd_chat gtd_calendar coding_control"
+    printf "%s\t%s\t%s\n" work_tall "Arrange and finalize tall external-display workspaces" "research_tall office_tall gtd_ai_tall gtd_support_tall gtd_review_tall coding_editor_tall gtd_ai_expand_hermes_when_alone gtd_mail_tall gtd_meeting_tall gtd_chat gtd_calendar coding_control"
     printf "%s\t%s\t%s\n" work_status "Inspect current workspace/display/module state" "diagnostics plus module status snapshots"
     printf "%s\t%s\t%s\n" work_reload "Reload common, display, and module functions" "reload only"
     printf "%s\t%s\t%s\n" work_check "Run reload, diagnostics, and module mode status" "read-only status"
@@ -149,8 +149,8 @@ function workspace_common_helper_rows --description "Print declared common works
     printf "%s\t%s\n" workspace_finalized_entry_rows "public mutating entries and required finalization modes"
     printf "%s\t%s\n" workspace_finalize_mode "Sandbox, cleanup, verified ordering, and focus restoration"
     printf "%s\t%s\n" workspace_apply_sandbox "policy-driven unmanaged-window Sandbox collection"
-    printf "%s\t%s\n" workspace_space_occupant_windows_json "shared sticky and Office-ghost occupancy filter"
-    printf "%s\t%s\n" workspace_cleanup_empty_spaces "live-window empty-Space cleanup with Home protection and Office-ghost filtering"
+    printf "%s\t%s\n" workspace_space_occupant_windows_json "shared sticky and nonoccupying-ghost occupancy filter"
+    printf "%s\t%s\n" workspace_cleanup_empty_spaces "unlabeled/Sandbox empty-Space cleanup with Home, managed-label, and ghost protection"
     printf "%s\t%s\n" workspace_order_mode_spaces "label-based solo, primary, and external Space ordering"
     printf "%s\t%s\n" workspace_order_and_verify_mode_spaces "Space ordering with one verification retry"
     printf "%s\t%s\n" workspace_verify_mode_space_order "read-only managed Space order verification"
@@ -390,6 +390,7 @@ function workspace_required_command_names --description "Print documented worksp
         gtd_apply_review_space \
         gtd_apply_ai_space \
         gtd_ai_detect_display_mode \
+        gtd_ai_expand_hermes_when_alone \
         gtd_support_find_dia_windows \
         gtd_support_layout_dia_windows \
         gtd_chat \

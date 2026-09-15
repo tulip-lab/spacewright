@@ -157,7 +157,8 @@ label 不存在时不会创建空 Space。
 收尾先把 ownership policy 中没有登记、可移动、非 sticky、非原生全屏的窗口放进外接屏
 `sandbox_wide` 或 `sandbox_tall`。主屏索引最小的未标记 Space 是 Home；Home 的 UUID 和
 其中窗口始终受保护。Sandbox 使用 `bsp` 并 balance；没有候选窗口时不会创建，变空后会
-清理。随后按 live windows 删除其他空 Space，但每个显示器至少保留一个 Space。
+清理。随后按 live windows 删除其他未标记空 Space，但每个显示器至少保留一个 Space。
+业务 label 的空 Space 仍由对应模块的 cleanup 负责，统一收尾不会越权删除。
 
 创建 labeled Space 时优先复用目标显示器上非当前、仅含 sticky 窗口的空白 Space；没有可
 复用目标时才调用 yabai 创建，并轮询确认新 UUID。跨屏迁移后还必须重新查询并确认目标
@@ -272,7 +273,9 @@ Solo layout: Hermes uses the top half; ChatGPT, Obsidian, and Notes share the bo
 
 `gtd_ai_*` runs near the start of aggregate `work_*` entries so Hermes always has
 an owned AI Space. Later review and coding stages remain the final owners of their
-shared Notes, Obsidian, and ChatGPT windows.
+shared Notes, Obsidian, and ChatGPT windows. After those ownership transfers,
+Hermes automatically expands to the full `gtd_ai` Space when it is the only
+effective window left there.
 
 ## 快捷键
 

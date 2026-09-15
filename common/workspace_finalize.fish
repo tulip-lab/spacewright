@@ -5,12 +5,12 @@ function workspace_space_occupant_windows_json --description "Return non-sticky 
         set windows_json '[]'
     end
 
-    set -l office_ghost_apps (workspace_app_names_json word powerpoint)
+    set -l nonoccupying_ghost_apps (workspace_app_names_json word powerpoint input_source_pro)
     or return 1
 
-    echo $windows_json | ws_jq -c --argjson office_ghost_apps "$office_ghost_apps" '
-        def office_ghost:
-            (.app as $app | $office_ghost_apps | index($app)) != null
+    echo $windows_json | ws_jq -c --argjson ghost_apps "$nonoccupying_ghost_apps" '
+        def nonoccupying_ghost:
+            (.app as $app | $ghost_apps | index($app)) != null
             and ((.title // "") == "")
             and ((.role // "") == "")
             and ((.subrole // "") == "")
@@ -18,7 +18,7 @@ function workspace_space_occupant_windows_json --description "Return non-sticky 
 
         [.[]
             | select(.["is-sticky"] != true)
-            | select(office_ghost | not)]
+            | select(nonoccupying_ghost | not)]
     '
 end
 
@@ -59,6 +59,7 @@ function workspace_cleanup_empty_spaces --description "Destroy live-empty Spaces
                   ) as $survivor
                 | [$group[]
                     | select(.uuid != $survivor.uuid)
+                    | select((.label // "") == "" or ((.label // "") | test("^sandbox_(solo|wide|tall)$")))
                     | select(.label != "coding_control")
                     | select(.label != "gtd_chat")
                     | select(.label != "gtd_calendar")

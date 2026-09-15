@@ -184,15 +184,15 @@ function __gtd_ai_tall_body --description "Collect Hermes and AI support apps on
 end
 
 function __gtd_solo_all_body --description "Arrange GTD solo workspaces including internal fixed workspaces"
-    workspace_run_mode_steps gtd:wide gtd:tall -- gtd_ai_solo gtd_support_solo gtd_mail_solo gtd_meeting_solo gtd_review_solo gtd_chat gtd_calendar $argv
+    workspace_run_mode_steps gtd:wide gtd:tall -- gtd_ai_solo gtd_support_solo gtd_mail_solo gtd_meeting_solo gtd_review_solo gtd_chat gtd_calendar gtd_ai_expand_hermes_when_alone $argv
 end
 
 function __gtd_wide_body --description "Arrange all GTD wide workspaces and clean opposite-mode spaces"
-    workspace_run_mode_steps gtd:tall gtd:solo -- gtd_ai_wide gtd_support_wide gtd_review_wide gtd_mail_wide gtd_meeting_wide $argv
+    workspace_run_mode_steps gtd:tall gtd:solo -- gtd_ai_wide gtd_support_wide gtd_review_wide gtd_mail_wide gtd_meeting_wide gtd_ai_expand_hermes_when_alone $argv
 end
 
 function __gtd_tall_body --description "Arrange all GTD tall workspaces and clean opposite-mode spaces"
-    workspace_run_mode_steps gtd:wide gtd:solo -- gtd_ai_tall gtd_support_tall gtd_review_tall gtd_mail_tall gtd_meeting_tall $argv
+    workspace_run_mode_steps gtd:wide gtd:solo -- gtd_ai_tall gtd_support_tall gtd_review_tall gtd_mail_tall gtd_meeting_tall gtd_ai_expand_hermes_when_alone $argv
 end
 
 function gtd_support_wide --description "Collect Dia onto the wide GTD support workspace and apply the standard support layout"

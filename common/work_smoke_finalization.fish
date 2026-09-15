@@ -1,7 +1,7 @@
 function __work_smoke_finalization_policy
     set -l expected code chatgpt warp smartgit keepassx flclash thaw portfolio_performance \
         zotero claude word powerpoint dia finder preview notes obsidian thunderbird outlook \
-        zoom teams wechat keybase dingtalk messages whatsapp facetime calendar reminders
+        zoom teams hermes wechat keybase dingtalk messages whatsapp facetime calendar reminders
 
     set -l actual (workspace_owned_app_keys)
     or return 1
@@ -165,7 +165,8 @@ function __work_smoke_finalization_cleanup
           {"index":7,"uuid":"ONLY","display":3,"label":""},
           {"index":8,"uuid":"OFFICE_GHOST","display":2,"label":""},
           {"index":9,"uuid":"OTHER_IMMOVABLE","display":2,"label":""},
-          {"index":10,"uuid":"EMPTY_CONTROL","display":1,"label":"coding_control"}
+          {"index":10,"uuid":"EMPTY_CONTROL","display":1,"label":"coding_control"},
+          {"index":11,"uuid":"EMPTY_MANAGED","display":2,"label":"gtd_ai"}
         ]'
     end
 
@@ -183,6 +184,7 @@ function __work_smoke_finalization_cleanup
           {"id":50,"space":5,"is-sticky":true},
           {"id":60,"space":6,"is-sticky":false},
           {"id":80,"app":"Microsoft Word","title":"","role":"","subrole":"","space":8,"can-move":false,"is-sticky":false},
+          {"id":81,"app":"Input Source Pro","title":"","role":"","subrole":"","space":8,"can-move":false,"is-sticky":false},
           {"id":90,"app":"Terminal","title":"","role":"","subrole":"","space":9,"can-move":false,"is-sticky":false}
         ]'
     end
@@ -213,6 +215,7 @@ function __work_smoke_finalization_cleanup
     not contains -- 1 $__work_smoke_cleanup_destroyed; or return 4
     not contains -- 7 $__work_smoke_cleanup_destroyed; or return 5
     not contains -- 10 $__work_smoke_cleanup_destroyed; or return 12
+    not contains -- 11 $__work_smoke_cleanup_destroyed; or return 13
 
     set -g __work_smoke_cleanup_scenario settled
     set -g __work_smoke_cleanup_destroyed
@@ -227,6 +230,49 @@ function __work_smoke_finalization_cleanup
     workspace_cleanup_empty_spaces --home-uuid HOME --focus-uuid FOCUSED >/dev/null 2>&1
     test $status -ne 0; or return 6
     test (count $__work_smoke_cleanup_destroyed) -eq 0
+end
+
+function __work_smoke_gtd_ai_reflow
+    set -g __work_smoke_ai_reflow_scenario alone
+    set -g __work_smoke_ai_reflow_grid
+
+    function ws_query_spaces
+        if test "$__work_smoke_ai_reflow_scenario" = duplicate
+            echo '[{"index":3,"label":"gtd_ai"},{"index":4,"label":"gtd_ai"}]'
+        else
+            echo '[{"index":3,"label":"gtd_ai"}]'
+        end
+    end
+
+    function ws_query_windows
+        if test "$__work_smoke_ai_reflow_scenario" = mixed
+            echo '[{"id":31,"app":"Hermes","space":3,"can-move":true,"is-sticky":false},{"id":32,"app":"ChatGPT","space":3,"can-move":true,"is-sticky":false}]'
+        else
+            echo '[{"id":31,"app":"Hermes","space":3,"can-move":true,"is-sticky":false}]'
+        end
+    end
+
+    function ws_window
+        set -g __work_smoke_ai_reflow_grid (string join ' ' -- $argv)
+    end
+
+    gtd_ai_expand_hermes_when_alone
+    or return 1
+    test "$__work_smoke_ai_reflow_grid" = '31 --grid 1:1:0:0:1:1'
+    or return 2
+
+    set -g __work_smoke_ai_reflow_scenario mixed
+    set -g __work_smoke_ai_reflow_grid
+    gtd_ai_expand_hermes_when_alone
+    or return 3
+    test -z "$__work_smoke_ai_reflow_grid"
+    or return 4
+
+    set -g __work_smoke_ai_reflow_scenario duplicate
+    gtd_ai_expand_hermes_when_alone >/dev/null 2>&1
+    and return 5
+
+    return 0
 end
 
 function __work_smoke_finalization_ordering
@@ -746,7 +792,7 @@ end
 function work_smoke_finalization --description "Run fixture-only workspace finalization smokes"
     set -l requested $argv
     if test (count $requested) -eq 0
-        set -l cases policy selection sandbox cleanup ordering diagnostics finalize runner labeled_space entries staged primary_separation
+        set -l cases policy selection sandbox cleanup ordering diagnostics finalize runner labeled_space entries staged primary_separation ai_reflow
         set -l failed 0
         for case_name in $cases
             if set -q WORKSPACE_TEST_SOURCE_ROOT
@@ -808,8 +854,10 @@ function work_smoke_finalization --description "Run fixture-only workspace final
                 __work_smoke_staged_top_level
             case primary_separation
                 __work_smoke_primary_fixed_separation
+            case ai_reflow
+                __work_smoke_gtd_ai_reflow
             case '*'
-                echo "usage: work_smoke_finalization [policy|selection|sandbox|cleanup|ordering|diagnostics|finalize|runner|labeled_space|entries|staged|primary_separation ...]" >&2
+                echo "usage: work_smoke_finalization [policy|selection|sandbox|cleanup|ordering|diagnostics|finalize|runner|labeled_space|entries|staged|primary_separation|ai_reflow ...]" >&2
                 return 2
         end
 

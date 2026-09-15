@@ -98,6 +98,44 @@ function gtd_ai_detect_display_mode --description "Detect the current GTD AI dis
     workspace_detect_display_mode
 end
 
+function gtd_ai_expand_hermes_when_alone --description "Expand Hermes when it is the only effective GTD AI window"
+    set -l spaces_json (ws_query_spaces gtd_ai_expand_hermes_when_alone spaces)
+    or return 1
+    set -l windows_json (ws_query_windows gtd_ai_expand_hermes_when_alone windows)
+    or return 1
+
+    set -l ai_spaces (echo $spaces_json | ws_jq -r '.[] | select(.label == "gtd_ai") | .index')
+    or return 1
+    if test (count $ai_spaces) -eq 0
+        return 0
+    end
+    if test (count $ai_spaces) -ne 1
+        echo "[WARN] gtd_ai has duplicate labeled Spaces; cannot safely reflow Hermes" >&2
+        return 1
+    end
+
+    set -l occupant_windows (echo $windows_json | workspace_space_occupant_windows_json)
+    or return 1
+    set -l hermes_apps_json (workspace_app_names_json hermes)
+    or return 1
+    set -l hermes_id (echo $occupant_windows | ws_jq -r \
+        --argjson space $ai_spaces[1] \
+        --argjson apps "$hermes_apps_json" '
+            [.[] | select(.space == $space)] as $ai_windows
+            | if ($ai_windows | length) == 1
+                and ($ai_windows[0].app as $app | $apps | index($app)) != null
+                and $ai_windows[0]["can-move"] == true
+            then $ai_windows[0].id
+            else empty
+            end
+        ')
+    or return 1
+
+    if test -n "$hermes_id"
+        ws_window $hermes_id --grid 1:1:0:0:1:1
+    end
+end
+
 function gtd_apply_ai_space --description "Apply a GTD AI workspace for Hermes, ChatGPT, Obsidian and Notes"
     argparse \
         'label=' \

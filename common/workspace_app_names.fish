@@ -10,6 +10,8 @@ function workspace_app_names --description "Print known yabai app names for a wo
             printf "%s\n" ChatGPT
         case hermes
             printf "%s\n" Hermes
+        case input_source_pro
+            printf "%s\n" "Input Source Pro"
         case obsidian
             printf "%s\n" Obsidian
         case zotero

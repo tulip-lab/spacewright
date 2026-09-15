@@ -55,6 +55,9 @@ function __work_wide_body
     workspace_run_step "coding editor wide" coding_editor_wide
     or set failed 1
 
+    workspace_run_step "GTD AI final layout" gtd_ai_expand_hermes_when_alone
+    or set failed 1
+
     workspace_run_step "GTD mail wide" gtd_mail_wide
     or set failed 1
 
@@ -104,6 +107,9 @@ function __work_tall_body
     or set failed 1
 
     workspace_run_step "coding editor tall" coding_editor_tall
+    or set failed 1
+
+    workspace_run_step "GTD AI final layout" gtd_ai_expand_hermes_when_alone
     or set failed 1
 
     workspace_run_step "GTD mail tall" gtd_mail_tall
