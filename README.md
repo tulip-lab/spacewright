@@ -46,6 +46,7 @@ See:
 - [Repository boundary and file inventory](docs/repository-boundary.md)
 - [Compatibility contract](docs/compatibility.md)
 - [Migration plan](docs/migration.md)
+- [Import provenance](docs/import-provenance.md)
 - [Security and publication](docs/security-and-publication.md)
 
 ## Git Flow
