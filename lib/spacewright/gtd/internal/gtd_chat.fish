@@ -347,5 +347,13 @@ function __gtd_chat_body --description "Fast GTD chat workspace layout on worksp
 end
 
 function gtd_chat --description "Fast GTD chat workspace layout on workspace primary display"
-    workspace_run_finalized_entry --mode auto --command __gtd_chat_body -- $argv
+    if test "$SPACEWRIGHT_CONFIG_DISABLE" = 1
+        workspace_run_finalized_entry --mode auto --command __gtd_chat_body -- $argv
+    else
+        workspace_run_finalized_entry --mode auto --command __gtd_chat_configured_body -- $argv
+    end
+end
+
+function __gtd_chat_configured_body --description "Run the configured GTD chat adapter"
+    workspace_run_configured gtd_chat $argv
 end

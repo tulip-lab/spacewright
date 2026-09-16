@@ -34,43 +34,444 @@
     "portfolio_performance": { "names": ["Portfolio Performance"] }
   },
   "layouts": {
+    "single_full": [
+      { "role": "primary", "grid": "1:1:0:0:1:1" }
+    ],
     "coding_editor_wide": [
       { "role": "primary", "grid": "1:3:1:0:2:1" },
       { "role": "helper", "grid": "1:3:0:0:1:1" }
     ],
-    "single_full": [
-      { "role": "primary", "grid": "1:1:0:0:1:1" }
+    "coding_editor_tall": [
+      { "role": "primary", "grid": "2:1:0:1:1:1" },
+      { "role": "helper", "grid": "2:1:0:0:1:1" }
+    ],
+    "research_horizontal": [
+      { "role": "primary", "grid": "1:3:0:0:2:1" },
+      { "role": "helper", "grid": "1:3:2:0:1:1" }
+    ],
+    "research_tall": [
+      { "role": "primary", "grid": "2:1:0:0:1:1" },
+      { "role": "helper", "grid": "2:1:0:1:1:1" }
+    ],
+    "office_wide_profile": [
+      { "role": "helper", "grid": "1:3:0:0:1:1" },
+      { "role": "primary", "grid": "1:3:1:0:2:1" }
+    ],
+    "office_tall_profile": [
+      { "role": "helper", "grid": "2:1:0:0:1:1" },
+      { "role": "primary", "grid": "2:1:0:1:1:1" }
+    ],
+    "gtd_support_solo_profile": [
+      { "role": "dia", "grid": "1:1:0:0:1:1" }
+    ],
+    "gtd_support_wide_profile": [
+      { "role": "dia", "grid": "1:2:0:0:1:1" }
+    ],
+    "gtd_support_tall_profile": [
+      { "role": "dia", "grid": "2:1:0:1:1:1" }
+    ],
+    "gtd_review_solo": [
+      { "role": "finder", "grid": "2:3:0:0:1:1" },
+      { "role": "preview", "grid": "2:3:1:0:2:1" },
+      { "role": "chatgpt", "grid": "2:2:0:1:1:1" },
+      { "role": "notes", "grid": "2:2:1:1:1:1" }
+    ],
+    "gtd_review_wide": [
+      { "role": "finder", "grid": "2:16:0:0:4:2" },
+      { "role": "preview", "grid": "2:16:4:0:6:2" },
+      { "role": "obsidian", "grid": "2:16:10:0:6:1" },
+      { "role": "chatgpt", "grid": "2:16:10:1:3:1" },
+      { "role": "notes", "grid": "2:16:13:1:3:1" }
+    ],
+    "gtd_review_tall": [
+      { "role": "preview", "grid": "4:2:0:0:2:2" },
+      { "role": "finder", "grid": "4:2:0:2:1:1" },
+      { "role": "obsidian", "grid": "4:2:1:2:1:1" },
+      { "role": "chatgpt", "grid": "4:2:0:3:1:1" },
+      { "role": "notes", "grid": "4:2:1:3:1:1" }
+    ],
+    "gtd_mail_solo": [
+      { "role": "helper", "grid": "2:1:0:0:1:1" },
+      { "role": "primary", "grid": "2:1:0:1:1:1" }
+    ],
+    "gtd_mail_wide": [
+      { "role": "helper", "grid": "1:2:0:0:1:1" },
+      { "role": "primary", "grid": "1:2:1:0:1:1" }
+    ],
+    "gtd_meeting_solo": [
+      { "role": "zoom", "grid": "2:1:0:0:1:1" },
+      { "role": "teams", "grid": "2:1:0:1:1:1" }
+    ],
+    "gtd_meeting_wide": [
+      { "role": "zoom", "grid": "1:2:0:0:1:1" },
+      { "role": "teams", "grid": "1:2:1:0:1:1" }
+    ],
+    "gtd_ai_solo": [
+      { "role": "hermes", "grid": "2:3:0:0:3:1" },
+      { "role": "chatgpt", "grid": "2:3:0:1:1:1" },
+      { "role": "obsidian", "grid": "2:3:1:1:1:1" },
+      { "role": "notes", "grid": "2:3:2:1:1:1" }
+    ],
+    "gtd_ai_wide": [
+      { "role": "notes", "grid": "2:4:0:0:1:1" },
+      { "role": "obsidian", "grid": "2:4:0:1:1:1" },
+      { "role": "hermes", "grid": "1:4:1:0:2:1" },
+      { "role": "chatgpt", "grid": "1:4:3:0:1:1" }
+    ],
+    "gtd_ai_tall": [
+      { "role": "hermes", "grid": "4:2:0:0:2:2" },
+      { "role": "chatgpt", "grid": "4:2:0:2:2:1" },
+      { "role": "obsidian", "grid": "4:2:0:3:1:1" },
+      { "role": "notes", "grid": "4:2:1:3:1:1" }
+    ],
+    "coding_control": [
+      { "role": "warp", "grid": "3:1:0:0:1:2" },
+      { "role": "smartgit", "move_abs": "abs:300:60", "resize_abs": "abs:1200:1040" },
+      { "role": "flclash", "move_abs": "abs:360:120", "resize_abs": "abs:1200:1040" },
+      { "role": "thaw", "move_abs": "abs:360:120", "resize_abs": "abs:1200:1040" },
+      { "role": "portfolio_performance", "move_abs": "abs:420:180", "resize_abs": "abs:1220:852" }
+    ],
+    "gtd_chat": [
+      { "role": "keybase", "grid": "2:2:0:0:1:1" },
+      { "role": "wechat", "grid": "2:2:0:1:1:1" },
+      { "role": "dingtalk", "grid": "2:2:1:0:1:1" },
+      { "role": "messages", "grid": "2:2:1:1:1:1" },
+      { "role": "whatsapp", "move_abs": "abs:458:190", "resize_abs": "abs:885:560" },
+      { "role": "facetime", "move_abs": "abs:458:190", "resize_abs": "abs:885:560" }
+    ],
+    "gtd_calendar": [
+      { "role": "calendar", "grid": "1:2:0:0:1:1" },
+      { "role": "reminders", "grid": "1:2:1:0:1:1" }
     ]
   },
   "workspaces": {
+    "coding_editor_solo": {
+      "runner": "primary_helper", "label": "coding_editor_solo", "display_role": "primary", "space_layout": "float",
+      "windows": [{ "role": "primary", "app_key": "code", "required": true, "selector": { "movable": true } }],
+      "layout_ref": "single_full", "cleanup": { "family": "coding", "opposite_modes": ["wide", "tall"] }
+    },
     "coding_editor_wide": {
-      "runner": "primary_helper",
-      "label": "coding_editor_wide",
-      "display_role": "wide",
-      "space_layout": "float",
+      "runner": "primary_helper", "label": "coding_editor_wide", "display_role": "wide", "space_layout": "float",
       "windows": [
-        {
-          "role": "primary",
-          "app_key": "code",
-          "required": true,
-          "selector": { "movable": true }
-        },
-        {
-          "role": "helper",
-          "app_key": "chatgpt",
-          "required": false,
-          "selector": { "movable": true }
-        }
+        { "role": "primary", "app_key": "code", "required": true, "selector": { "movable": true } },
+        { "role": "helper", "app_key": "chatgpt", "required": false, "selector": { "movable": true } }
       ],
-      "layout_ref": "coding_editor_wide",
-      "primary_alone_layout_ref": "single_full",
-      "cleanup": {
-        "family": "coding",
-        "opposite_modes": ["tall", "solo"]
-      }
+      "layout_ref": "coding_editor_wide", "primary_alone_layout_ref": "single_full",
+      "cleanup": { "family": "coding", "opposite_modes": ["tall", "solo"] }
+    },
+    "coding_editor_tall": {
+      "runner": "primary_helper", "label": "coding_editor_tall", "display_role": "tall", "space_layout": "float",
+      "windows": [
+        { "role": "primary", "app_key": "code", "required": true, "selector": { "movable": true } },
+        { "role": "helper", "app_key": "chatgpt", "required": false, "selector": { "movable": true } }
+      ],
+      "layout_ref": "coding_editor_tall", "primary_alone_layout_ref": "single_full",
+      "cleanup": { "family": "coding", "opposite_modes": ["wide", "solo"] }
+    },
+    "coding_control": {
+      "runner": "fixed_adapter", "runner_options": { "adapter": "coding_control" },
+      "label": "coding_control", "display_role": "primary", "space_layout": "float",
+      "windows": [
+        { "role": "warp", "app_key": "warp", "required": false },
+        { "role": "smartgit", "app_key": "smartgit", "required": false },
+        { "role": "keepassx", "app_key": "keepassx", "required": false },
+        { "role": "flclash", "app_key": "flclash", "required": false },
+        { "role": "thaw", "app_key": "thaw", "required": false },
+        { "role": "portfolio_performance", "app_key": "portfolio_performance", "required": false }
+      ],
+      "layout_ref": "coding_control"
+    },
+    "research_solo": {
+      "runner": "primary_helper", "label": "research_solo", "display_role": "primary", "space_layout": "float",
+      "windows": [
+        { "role": "primary", "app_key": "zotero", "required": true, "selector": { "movable": true } },
+        { "role": "helper", "app_key": "claude", "required": false, "selector": { "movable": true, "visible": true } }
+      ],
+      "layout_ref": "research_horizontal", "cleanup": { "family": "research", "opposite_modes": ["wide", "tall"] }
+    },
+    "research_wide": {
+      "runner": "primary_helper", "label": "research_wide", "display_role": "wide", "space_layout": "float",
+      "windows": [
+        { "role": "primary", "app_key": "zotero", "required": true, "selector": { "movable": true } },
+        { "role": "helper", "app_key": "claude", "required": false, "selector": { "movable": true } }
+      ],
+      "layout_ref": "research_horizontal", "cleanup": { "family": "research", "opposite_modes": ["tall", "solo"] }
+    },
+    "research_tall": {
+      "runner": "primary_helper", "label": "research_tall", "display_role": "tall", "space_layout": "float",
+      "windows": [
+        { "role": "primary", "app_key": "zotero", "required": true, "selector": { "movable": true } },
+        { "role": "helper", "app_key": "claude", "required": false, "selector": { "movable": true } }
+      ],
+      "layout_ref": "research_tall", "cleanup": { "family": "research", "opposite_modes": ["wide", "solo"] }
+    },
+    "office_writing_wide": {
+      "runner": "office_document", "runner_options": { "mode": "wide" },
+      "label": "office_writing_wide", "display_role": "wide", "space_layout": "float",
+      "windows": [
+        { "role": "primary", "app_key": "word", "required": false, "selector": { "movable": true } },
+        { "role": "helper", "app_key": "chatgpt", "required": false, "selector": { "movable": true } }
+      ],
+      "layout_ref": "office_wide_profile", "cleanup": { "family": "office", "opposite_modes": ["tall"] }
+    },
+    "office_slides_wide": {
+      "runner": "office_document", "runner_options": { "mode": "wide" },
+      "label": "office_slides_wide", "display_role": "wide", "space_layout": "float",
+      "windows": [
+        { "role": "primary", "app_key": "powerpoint", "required": false, "selector": { "movable": true } },
+        { "role": "helper", "app_key": "chatgpt", "required": false, "selector": { "movable": true } }
+      ],
+      "layout_ref": "office_wide_profile", "cleanup": { "family": "office", "opposite_modes": ["tall"] }
+    },
+    "office_writing_tall": {
+      "runner": "office_document", "runner_options": { "mode": "tall" },
+      "label": "office_writing_tall", "display_role": "tall", "space_layout": "float",
+      "windows": [
+        { "role": "primary", "app_key": "word", "required": false, "selector": { "movable": true } },
+        { "role": "helper", "app_key": "chatgpt", "required": false, "selector": { "movable": true } }
+      ],
+      "layout_ref": "office_tall_profile", "cleanup": { "family": "office", "opposite_modes": ["wide"] }
+    },
+    "office_slides_tall": {
+      "runner": "office_document", "runner_options": { "mode": "tall" },
+      "label": "office_slides_tall", "display_role": "tall", "space_layout": "float",
+      "windows": [
+        { "role": "primary", "app_key": "powerpoint", "required": false, "selector": { "movable": true } },
+        { "role": "helper", "app_key": "chatgpt", "required": false, "selector": { "movable": true } }
+      ],
+      "layout_ref": "office_tall_profile", "cleanup": { "family": "office", "opposite_modes": ["wide"] }
+    },
+    "gtd_support_solo": {
+      "runner": "gtd_support", "runner_options": { "mode": "solo" },
+      "label": "gtd_support_solo", "display_role": "primary", "space_layout": "float",
+      "windows": [{ "role": "dia", "app_key": "dia", "required": false, "selector": { "movable": true } }],
+      "layout_ref": "gtd_support_solo_profile", "cleanup": { "family": "gtd", "opposite_modes": ["wide", "tall"] }
+    },
+    "gtd_support_wide": {
+      "runner": "gtd_support", "runner_options": { "mode": "wide" },
+      "label": "gtd_support_wide", "display_role": "wide", "space_layout": "float",
+      "windows": [{ "role": "dia", "app_key": "dia", "required": false, "selector": { "movable": true } }],
+      "layout_ref": "gtd_support_wide_profile", "cleanup": { "family": "gtd", "opposite_modes": ["tall", "solo"] }
+    },
+    "gtd_support_tall": {
+      "runner": "gtd_support", "runner_options": { "mode": "tall" },
+      "label": "gtd_support_tall", "display_role": "tall", "space_layout": "float",
+      "windows": [{ "role": "dia", "app_key": "dia", "required": false, "selector": { "movable": true } }],
+      "layout_ref": "gtd_support_tall_profile", "cleanup": { "family": "gtd", "opposite_modes": ["wide", "solo"] }
+    },
+    "gtd_review_solo": {
+      "runner": "gtd_review", "label": "gtd_review_solo", "display_role": "primary", "space_layout": "float",
+      "windows": [
+        { "role": "finder", "app_key": "finder", "required": false },
+        { "role": "preview", "app_key": "preview", "required": false },
+        { "role": "chatgpt", "app_key": "chatgpt", "required": false },
+        { "role": "notes", "app_key": "notes", "required": false }
+      ],
+      "layout_ref": "gtd_review_solo", "cleanup": { "family": "gtd", "opposite_modes": ["wide", "tall"] }
+    },
+    "gtd_review_wide": {
+      "runner": "gtd_review", "label": "gtd_review_wide", "display_role": "wide", "space_layout": "float",
+      "windows": [
+        { "role": "finder", "app_key": "finder", "required": false },
+        { "role": "preview", "app_key": "preview", "required": false },
+        { "role": "obsidian", "app_key": "obsidian", "required": false },
+        { "role": "chatgpt", "app_key": "chatgpt", "required": false },
+        { "role": "notes", "app_key": "notes", "required": false }
+      ],
+      "layout_ref": "gtd_review_wide", "cleanup": { "family": "gtd", "opposite_modes": ["tall", "solo"] }
+    },
+    "gtd_review_tall": {
+      "runner": "gtd_review", "label": "gtd_review_tall", "display_role": "tall", "space_layout": "float",
+      "windows": [
+        { "role": "finder", "app_key": "finder", "required": false },
+        { "role": "preview", "app_key": "preview", "required": false },
+        { "role": "obsidian", "app_key": "obsidian", "required": false },
+        { "role": "chatgpt", "app_key": "chatgpt", "required": false },
+        { "role": "notes", "app_key": "notes", "required": false }
+      ],
+      "layout_ref": "gtd_review_tall", "cleanup": { "family": "gtd", "opposite_modes": ["wide", "solo"] }
+    },
+    "gtd_mail_solo": {
+      "runner": "primary_helper", "runner_options": { "primary_space_fallback": true },
+      "label": "gtd_mail_solo", "display_role": "primary", "space_layout": "float",
+      "windows": [
+        { "role": "primary", "app_key": "thunderbird", "required": true },
+        { "role": "helper", "app_key": "outlook", "required": false }
+      ],
+      "layout_ref": "gtd_mail_solo", "primary_alone_layout_ref": "single_full",
+      "cleanup": { "family": "gtd", "opposite_modes": ["wide", "tall"] }
+    },
+    "gtd_mail_wide": {
+      "runner": "primary_helper", "runner_options": { "primary_space_fallback": true },
+      "label": "gtd_mail_wide", "display_role": "wide", "space_layout": "float",
+      "windows": [
+        { "role": "primary", "app_key": "thunderbird", "required": true },
+        { "role": "helper", "app_key": "outlook", "required": false }
+      ],
+      "layout_ref": "gtd_mail_wide", "primary_alone_layout_ref": "single_full",
+      "cleanup": { "family": "gtd", "opposite_modes": ["tall", "solo"] }
+    },
+    "gtd_mail_tall": {
+      "runner": "primary_helper", "runner_options": { "primary_space_fallback": true },
+      "label": "gtd_mail_tall", "display_role": "tall", "space_layout": "float",
+      "windows": [
+        { "role": "primary", "app_key": "thunderbird", "required": true },
+        { "role": "helper", "app_key": "outlook", "required": false }
+      ],
+      "layout_ref": "gtd_mail_solo", "primary_alone_layout_ref": "single_full",
+      "cleanup": { "family": "gtd", "opposite_modes": ["wide", "solo"] }
+    },
+    "gtd_meeting_solo": {
+      "runner": "gtd_meeting", "label": "gtd_meeting_solo", "display_role": "primary", "space_layout": "float",
+      "windows": [
+        { "role": "zoom", "app_key": "zoom", "required": false },
+        { "role": "teams", "app_key": "teams", "required": false }
+      ],
+      "layout_ref": "gtd_meeting_solo", "cleanup": { "family": "gtd", "opposite_modes": ["wide", "tall"] }
+    },
+    "gtd_meeting_wide": {
+      "runner": "gtd_meeting", "label": "gtd_meeting_wide", "display_role": "wide", "space_layout": "float",
+      "windows": [
+        { "role": "zoom", "app_key": "zoom", "required": false },
+        { "role": "teams", "app_key": "teams", "required": false }
+      ],
+      "layout_ref": "gtd_meeting_wide", "cleanup": { "family": "gtd", "opposite_modes": ["tall", "solo"] }
+    },
+    "gtd_meeting_tall": {
+      "runner": "gtd_meeting", "label": "gtd_meeting_tall", "display_role": "tall", "space_layout": "float",
+      "windows": [
+        { "role": "zoom", "app_key": "zoom", "required": false },
+        { "role": "teams", "app_key": "teams", "required": false }
+      ],
+      "layout_ref": "gtd_meeting_solo", "cleanup": { "family": "gtd", "opposite_modes": ["wide", "solo"] }
+    },
+    "gtd_ai_solo": {
+      "runner": "gtd_ai", "label": "gtd_ai", "display_role": "primary", "space_layout": "float",
+      "windows": [
+        { "role": "hermes", "app_key": "hermes", "required": false },
+        { "role": "chatgpt", "app_key": "chatgpt", "required": false },
+        { "role": "obsidian", "app_key": "obsidian", "required": false },
+        { "role": "notes", "app_key": "notes", "required": false }
+      ],
+      "layout_ref": "gtd_ai_solo", "cleanup": { "family": "gtd", "opposite_modes": ["wide", "tall"] }
+    },
+    "gtd_ai_wide": {
+      "runner": "gtd_ai", "label": "gtd_ai", "display_role": "wide", "space_layout": "float",
+      "windows": [
+        { "role": "hermes", "app_key": "hermes", "required": false },
+        { "role": "chatgpt", "app_key": "chatgpt", "required": false },
+        { "role": "obsidian", "app_key": "obsidian", "required": false },
+        { "role": "notes", "app_key": "notes", "required": false }
+      ],
+      "layout_ref": "gtd_ai_wide", "cleanup": { "family": "gtd", "opposite_modes": ["tall", "solo"] }
+    },
+    "gtd_ai_tall": {
+      "runner": "gtd_ai", "label": "gtd_ai", "display_role": "tall", "space_layout": "float",
+      "windows": [
+        { "role": "hermes", "app_key": "hermes", "required": false },
+        { "role": "chatgpt", "app_key": "chatgpt", "required": false },
+        { "role": "obsidian", "app_key": "obsidian", "required": false },
+        { "role": "notes", "app_key": "notes", "required": false }
+      ],
+      "layout_ref": "gtd_ai_tall", "cleanup": { "family": "gtd", "opposite_modes": ["wide", "solo"] }
+    },
+    "gtd_chat": {
+      "runner": "fixed_adapter", "runner_options": { "adapter": "gtd_chat" },
+      "label": "gtd_chat", "display_role": "primary", "space_layout": "float",
+      "windows": [
+        { "role": "wechat", "app_key": "wechat", "required": false },
+        { "role": "keybase", "app_key": "keybase", "required": false },
+        { "role": "dingtalk", "app_key": "dingtalk", "required": false },
+        { "role": "messages", "app_key": "messages", "required": false },
+        { "role": "whatsapp", "app_key": "whatsapp", "required": false },
+        { "role": "facetime", "app_key": "facetime", "required": false }
+      ],
+      "layout_ref": "gtd_chat"
+    },
+    "gtd_calendar": {
+      "runner": "fixed_adapter", "runner_options": { "adapter": "gtd_calendar" },
+      "label": "gtd_calendar", "display_role": "primary", "space_layout": "float",
+      "windows": [
+        { "role": "calendar", "app_key": "calendar", "required": false },
+        { "role": "reminders", "app_key": "reminders", "required": false }
+      ],
+      "layout_ref": "gtd_calendar"
     }
   },
   "modes": {
-    "coding_wide": ["coding_editor_wide"]
+    "coding_solo": {
+      "display_mode": "solo", "cleanup": ["coding:wide", "coding:tall"],
+      "steps": [{ "workspace": "coding_editor_solo" }, { "workspace": "coding_control" }]
+    },
+    "coding_wide": {
+      "display_mode": "wide", "cleanup": ["coding:tall", "coding:solo"],
+      "steps": [{ "workspace": "coding_editor_wide" }]
+    },
+    "coding_tall": {
+      "display_mode": "tall", "cleanup": ["coding:wide", "coding:solo"],
+      "steps": [{ "workspace": "coding_editor_tall" }]
+    },
+    "office_wide": {
+      "display_mode": "wide", "cleanup": ["office:tall"],
+      "steps": [{ "workspace": "office_writing_wide" }, { "workspace": "office_slides_wide" }]
+    },
+    "office_tall": {
+      "display_mode": "tall", "cleanup": ["office:wide"],
+      "steps": [{ "workspace": "office_writing_tall" }, { "workspace": "office_slides_tall" }]
+    },
+    "gtd_solo_all": {
+      "display_mode": "solo", "cleanup": ["gtd:wide", "gtd:tall"],
+      "steps": [
+        { "workspace": "gtd_ai_solo" }, { "workspace": "gtd_support_solo" },
+        { "workspace": "gtd_mail_solo" }, { "workspace": "gtd_meeting_solo" },
+        { "workspace": "gtd_review_solo" }, { "workspace": "gtd_chat" },
+        { "workspace": "gtd_calendar" }, { "postprocessor": "gtd_ai_expand_hermes_when_alone" }
+      ]
+    },
+    "gtd_wide": {
+      "display_mode": "wide", "cleanup": ["gtd:tall", "gtd:solo"],
+      "steps": [
+        { "workspace": "gtd_ai_wide" }, { "workspace": "gtd_support_wide" },
+        { "workspace": "gtd_review_wide" }, { "workspace": "gtd_mail_wide" },
+        { "workspace": "gtd_meeting_wide" }, { "postprocessor": "gtd_ai_expand_hermes_when_alone" }
+      ]
+    },
+    "gtd_tall": {
+      "display_mode": "tall", "cleanup": ["gtd:wide", "gtd:solo"],
+      "steps": [
+        { "workspace": "gtd_ai_tall" }, { "workspace": "gtd_support_tall" },
+        { "workspace": "gtd_review_tall" }, { "workspace": "gtd_mail_tall" },
+        { "workspace": "gtd_meeting_tall" }, { "postprocessor": "gtd_ai_expand_hermes_when_alone" }
+      ]
+    },
+    "work_solo": {
+      "display_mode": "solo", "steps": [
+        { "mode": "coding_solo" }, { "workspace": "research_solo" },
+        { "mode": "gtd_solo_all" },
+        { "postprocessor": "workspace_reconcile_primary_fixed_spaces" }
+      ]
+    },
+    "work_wide": {
+      "display_mode": "wide", "steps": [
+        { "workspace": "research_wide" }, { "mode": "office_wide" },
+        { "workspace": "gtd_ai_wide" },
+        { "workspace": "gtd_support_wide" }, { "workspace": "gtd_review_wide" },
+        { "workspace": "coding_editor_wide" }, { "postprocessor": "gtd_ai_expand_hermes_when_alone" },
+        { "workspace": "gtd_mail_wide" }, { "workspace": "gtd_meeting_wide" },
+        { "workspace": "gtd_chat" }, { "workspace": "gtd_calendar" },
+        { "workspace": "coding_control" }, { "postprocessor": "workspace_reconcile_primary_fixed_spaces" }
+      ]
+    },
+    "work_tall": {
+      "display_mode": "tall", "steps": [
+        { "workspace": "research_tall" }, { "mode": "office_tall" },
+        { "workspace": "gtd_ai_tall" },
+        { "workspace": "gtd_support_tall" }, { "workspace": "gtd_review_tall" },
+        { "workspace": "coding_editor_tall" }, { "postprocessor": "gtd_ai_expand_hermes_when_alone" },
+        { "workspace": "gtd_mail_tall" }, { "workspace": "gtd_meeting_tall" },
+        { "workspace": "gtd_chat" }, { "workspace": "gtd_calendar" },
+        { "workspace": "coding_control" }, { "postprocessor": "workspace_reconcile_primary_fixed_spaces" }
+      ]
+    }
   }
 }

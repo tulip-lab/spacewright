@@ -1,4 +1,8 @@
 function __research_solo_body --description "Collect Zotero and Claude onto the solo research workspace"
+    if test "$SPACEWRIGHT_CONFIG_DISABLE" != 1
+        workspace_run_configured research_solo $argv
+        return $status
+    end
     workspace_apply_primary_helper_space \
         --label research_solo \
         --display primary \
@@ -11,6 +15,10 @@ function __research_solo_body --description "Collect Zotero and Claude onto the 
 end
 
 function __research_wide_body --description "Collect Zotero and Claude onto the wide research workspace and apply the standard research layout"
+    if test "$SPACEWRIGHT_CONFIG_DISABLE" != 1
+        workspace_run_configured research_wide $argv
+        return $status
+    end
     workspace_apply_primary_helper_space \
         --label research_wide \
         --display wide \
@@ -22,6 +30,10 @@ function __research_wide_body --description "Collect Zotero and Claude onto the 
 end
 
 function __research_tall_body --description "Collect Zotero and Claude onto the tall research workspace and apply the standard research layout"
+    if test "$SPACEWRIGHT_CONFIG_DISABLE" != 1
+        workspace_run_configured research_tall $argv
+        return $status
+    end
     workspace_apply_primary_helper_space \
         --label research_tall \
         --display tall \

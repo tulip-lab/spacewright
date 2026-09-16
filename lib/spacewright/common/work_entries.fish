@@ -1,4 +1,8 @@
 function __work_solo_body --description "Arrange solo primary-display workspaces"
+    if test "$SPACEWRIGHT_CONFIG_DISABLE" != 1
+        workspace_run_configured_mode work_solo $argv
+        return $status
+    end
     argparse dry-run -- $argv
     or return 1
 
@@ -26,6 +30,10 @@ function __work_solo_body --description "Arrange solo primary-display workspaces
 end
 
 function __work_wide_body
+    if test "$SPACEWRIGHT_CONFIG_DISABLE" != 1
+        workspace_run_configured_mode work_wide $argv
+        return $status
+    end
     argparse dry-run -- $argv
     or return 1
 
@@ -80,6 +88,10 @@ function __work_wide_body
 end
 
 function __work_tall_body
+    if test "$SPACEWRIGHT_CONFIG_DISABLE" != 1
+        workspace_run_configured_mode work_tall $argv
+        return $status
+    end
     argparse dry-run -- $argv
     or return 1
 

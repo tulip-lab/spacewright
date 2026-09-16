@@ -73,14 +73,14 @@ repair in a command documented as read-only.
 
 ## Consumer Compatibility
 
-Mackup continues to expose the existing command names to Fish and skhd. During
-the pilot it can choose between:
+Mackup continues to expose the existing command names to Fish and skhd. It can
+choose between:
 
 - the legacy in-repository runtime; and
-- a pinned SpaceWright build.
+- a pinned SpaceWright release whose complete workspace matrix is configured.
 
 An emergency bypass restores the legacy path without rewriting user
-configuration. The legacy runtime is removed only after configured paths pass
+configuration. The legacy runtime is removed only after all configured paths pass
 fixture checks, read-only checks, dry-run comparisons, and a real-use
 observation period.
 

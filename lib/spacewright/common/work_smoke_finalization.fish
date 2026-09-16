@@ -551,6 +551,7 @@ end
 function __work_smoke_labeled_space_creation
     set -g __work_smoke_labeled_scenario reuse
     set -g __work_smoke_labeled_create_calls 0
+    set -g __work_smoke_labeled_create_args
     set -g __work_smoke_labeled_after_create_queries 0
 
     function ws_query_spaces
@@ -583,6 +584,7 @@ function __work_smoke_labeled_space_creation
     function ws_yabai
         if test "$argv[1]" = -m -a "$argv[2]" = space -a "$argv[3]" = --create
             set -g __work_smoke_labeled_create_calls (math $__work_smoke_labeled_create_calls + 1)
+            set -g __work_smoke_labeled_create_args (string join ' ' -- $argv)
             return 0
         end
         return 1
@@ -603,6 +605,8 @@ function __work_smoke_labeled_space_creation
     test $__work_smoke_labeled_create_calls -eq 1
     or return 4
     test $__work_smoke_labeled_after_create_queries -eq 3
+    or return 5
+    test "$__work_smoke_labeled_create_args" = '-m space --create 2'
 end
 
 function __work_smoke_finalization_entries

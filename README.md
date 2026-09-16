@@ -3,8 +3,8 @@
 Configurable macOS workspace orchestration for yabai.
 
 > Status: private pre-release. The history-preserving runtime import,
-> relocatable bootstrap, v1 configuration, and first configured workspace
-> pilot are complete.
+> relocatable bootstrap, packaging, and full v1 workspace configuration are
+> complete.
 
 SpaceWright turns named work contexts into repeatable macOS Space and window
 layouts. It is intended to preserve stable commands such as `work_wide` or
@@ -108,8 +108,11 @@ spacewright config-check
 1. Complete — import the current runtime with relevant history.
 2. Complete — separate package, configuration, and state roots.
 3. Complete — add v1 schema, validation, inspection, and read-only planning.
-4. Complete — run `coding_editor_wide` from configuration with a legacy bypass.
-5. In progress — package a private prerelease and integrate the Mackup consumer.
+4. Complete — prove `coding_editor_wide` with a configured runner and legacy bypass.
+5. Complete — package `v0.1.0-alpha.1` and integrate the Mackup consumer.
+6. Complete — package `v0.2.0-alpha.1` with every shipped workspace and ordered
+   solo/wide/tall composition, exhaustive dry-run parity, read-only observation,
+   and target-display Space creation.
 
 ## Safety
 
