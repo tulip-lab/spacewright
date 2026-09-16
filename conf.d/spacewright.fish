@@ -1,3 +1,7 @@
+if test "$SPACEWRIGHT_USE_LEGACY" = 1
+    return 0
+end
+
 set -l spacewright_bootstrap_file (path resolve (status filename))
 set -l spacewright_package_root (path dirname (path dirname $spacewright_bootstrap_file))
 

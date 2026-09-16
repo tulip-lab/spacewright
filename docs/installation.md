@@ -52,6 +52,9 @@ set `SPACEWRIGHT_CONFIG_DISABLE=1` to use the built-in definition for the
 configured pilot. Mackup's consumer adapter also supports
 `SPACEWRIGHT_USE_LEGACY=1` to load its retained legacy runtime.
 
+The installed Fish bootstrap honors `SPACEWRIGHT_USE_LEGACY=1` by returning
+without loading SpaceWright, allowing the consumer adapter to take over.
+
 ## Uninstall
 
 ```fish
