@@ -78,6 +78,20 @@ User configuration will describe app aliases, window roles, workspace labels,
 display roles, layout actions, mode composition, and simple cleanup policy. It
 will not contain arbitrary shell or jq programs.
 
+## Checkout Bootstrap
+
+For development and read-only validation, source the checkout bootstrap:
+
+```fish
+source /path/to/spacewright/conf.d/spacewright.fish
+work_command_check
+```
+
+The bootstrap resolves `lib/spacewright` from its own location. User config,
+state, and optional integration roots can be overridden with the corresponding
+`SPACEWRIGHT_*_ROOT` variables documented in
+[Architecture](docs/architecture.md).
+
 ## Roadmap
 
 1. Import the current runtime with relevant history as a legacy baseline.

@@ -693,7 +693,7 @@ function __work_smoke_primary_fixed_separation
     if set -q WORKSPACE_TEST_SOURCE_ROOT
         source "$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_primary_fixed_separation.fish"
     else
-        source ~/.config/fish/functions/workspace/common/workspace_primary_fixed_separation.fish
+        source "$SPACEWRIGHT_ROOT/common/workspace_primary_fixed_separation.fish"
     end
 
     set -g __work_smoke_primary_fixture valid

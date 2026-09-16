@@ -16,8 +16,8 @@ function work_doctor --description "Run read-only workspace system checks"
         set failed 1
     end
 
-    set -l workspace_root ~/.config/fish/functions/workspace
-    set -l displayprofiles_root ~/.config/displayprofiles
+    set -l workspace_root "$SPACEWRIGHT_ROOT"
+    set -l displayprofiles_root "$SPACEWRIGHT_DISPLAY_PROFILES_ROOT"
 
     echo "===== WORK DOCTOR ====="
     echo
@@ -33,7 +33,7 @@ function work_doctor --description "Run read-only workspace system checks"
 
     echo
     echo "===== PATH CHECKS ====="
-    for path in $workspace_root $displayprofiles_root ~/.config/skhd ~/.config/yabai
+    for path in $workspace_root $displayprofiles_root $SPACEWRIGHT_SKHD_ROOT $SPACEWRIGHT_YABAI_ROOT
         if test -e $path
             if test -L $path
                 __work_doctor_ok "$path exists (symlink)"

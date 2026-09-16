@@ -84,8 +84,18 @@ The final runtime will distinguish:
 - **configuration root**: user-authored portable configuration;
 - **state root**: machine-local UUIDs, caches, and runtime observations.
 
-The exact installer paths are a Phase 2 decision. Regardless of location, the
-runtime must resolve them explicitly and must not infer one root from another.
+The runtime now exposes explicit root variables:
+
+- `SPACEWRIGHT_ROOT`: package runtime (`lib/spacewright`);
+- `SPACEWRIGHT_CONFIG_ROOT`: user configuration (XDG config fallback);
+- `SPACEWRIGHT_STATE_ROOT`: machine-local state (XDG state fallback);
+- `SPACEWRIGHT_DISPLAY_PROFILES_ROOT`: optional display integration;
+- `SPACEWRIGHT_SKHD_ROOT` and `SPACEWRIGHT_YABAI_ROOT`: diagnostic-only
+  integration locations.
+
+The Fish bootstrap resolves the package root from its own real path, so a
+checkout or installed symlink can move without rewriting runtime source files.
+Consumer configuration may override any integration root explicitly.
 
 ## Integration Boundary
 

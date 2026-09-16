@@ -1,5 +1,5 @@
 function display_reload --description "Reload display workspace functions"
-    source ~/.config/fish/functions/workspace/display/display_entries.fish
+    source "$SPACEWRIGHT_ROOT/display/display_entries.fish"
 end
 
 function display_verify_mode --description "Wait briefly and verify the current display role for a workspace mode"
@@ -48,13 +48,13 @@ function display_apply_profile_mode --description "Apply a display profile, relo
 end
 
 function display_apply_solo --description "Apply solo primary-display layout and reload display/workspace functions"
-    display_apply_profile_mode ~/.config/displayprofiles/display-solo-primary.fish solo
+    display_apply_profile_mode "$SPACEWRIGHT_DISPLAY_PROFILES_ROOT/display-solo-primary.fish" solo
 end
 
 function display_apply_wide_left --description "Apply wide-left display layout and reload display/workspace functions"
-    display_apply_profile_mode ~/.config/displayprofiles/display-primary-plus-wide-left.fish wide
+    display_apply_profile_mode "$SPACEWRIGHT_DISPLAY_PROFILES_ROOT/display-primary-plus-wide-left.fish" wide
 end
 
 function display_apply_tall_left --description "Apply tall-left display layout and reload display/workspace functions"
-    display_apply_profile_mode ~/.config/displayprofiles/display-primary-plus-tall-left.fish tall
+    display_apply_profile_mode "$SPACEWRIGHT_DISPLAY_PROFILES_ROOT/display-primary-plus-tall-left.fish" tall
 end
