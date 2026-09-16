@@ -263,6 +263,10 @@ function workspace_required_command_names --description "Print documented worksp
         workspace_dependency_rows \
         workspace_dry_run_commands \
         workspace_required_command_names \
+        workspace_config_check \
+        workspace_config_get \
+        workspace_config_plan \
+        spacewright_config_effective \
         ws_yabai \
         ws_restart_yabai \
         ws_yabai_auto_restart_allowed \

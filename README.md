@@ -43,6 +43,7 @@ depend on its directory layout or read its source files directly.
 See:
 
 - [Architecture](docs/architecture.md)
+- [Configuration](docs/configuration.md)
 - [Repository boundary and file inventory](docs/repository-boundary.md)
 - [Compatibility contract](docs/compatibility.md)
 - [Migration plan](docs/migration.md)

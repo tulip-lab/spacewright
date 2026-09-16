@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tulip-lab/spacewright/schemas/spacewright.schema.json",
+  "title": "SpaceWright configuration",
+  "type": "object",
+  "required": ["version"],
+  "properties": {
+    "version": { "const": 1 },
+    "apps": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["names"],
+        "properties": {
+          "names": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 },
+            "uniqueItems": true
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "layouts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "required": ["role"],
+          "properties": {
+            "role": { "type": "string", "minLength": 1 },
+            "grid": { "type": "string", "pattern": "^[0-9]+:[0-9]+:[0-9]+:[0-9]+:[0-9]+:[0-9]+$" },
+            "move_abs": { "type": "string" },
+            "resize_abs": { "type": "string" }
+          },
+          "anyOf": [
+            { "required": ["grid"] },
+            { "required": ["move_abs"] },
+            { "required": ["resize_abs"] }
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "workspaces": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["label", "display_role", "space_layout", "windows", "layout_ref"],
+        "properties": {
+          "label": { "type": "string", "minLength": 1 },
+          "display_role": { "enum": ["primary", "external", "solo", "wide", "tall", "auto_external"] },
+          "space_layout": { "enum": ["float", "bsp", "stack"] },
+          "windows": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["role", "app_key", "required"],
+              "properties": {
+                "role": { "type": "string", "minLength": 1 },
+                "app_key": { "type": "string", "minLength": 1 },
+                "required": { "type": "boolean" },
+                "selector": {
+                  "type": "object",
+                  "properties": {
+                    "movable": { "type": "boolean" },
+                    "visible": { "type": "boolean" },
+                    "non_empty_title": { "type": "boolean" },
+                    "title_include": { "type": "string" },
+                    "title_exclude": { "type": "string" }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "layout_ref": { "type": "string", "minLength": 1 },
+          "primary_alone_layout_ref": { "type": "string", "minLength": 1 },
+          "cleanup": {
+            "type": "object",
+            "properties": {
+              "family": { "type": "string", "minLength": 1 },
+              "opposite_modes": {
+                "type": "array",
+                "items": { "enum": ["solo", "wide", "tall"] },
+                "uniqueItems": true
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "modes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string", "minLength": 1 },
+        "uniqueItems": true
+      }
+    }
+  },
+  "additionalProperties": false
+}

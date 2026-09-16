@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "apps": {
+    "code": {
+      "names": ["Code", "Visual Studio Code"]
+    }
+  }
+}

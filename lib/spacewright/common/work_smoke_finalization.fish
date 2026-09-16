@@ -639,9 +639,10 @@ function __work_smoke_staged_top_level
 
     for command_name in \
             coding_solo research_solo gtd_solo_all \
-            research_wide office_wide gtd_support_wide gtd_review_wide coding_editor_wide \
+            research_wide office_wide gtd_ai_wide gtd_support_wide gtd_review_wide coding_editor_wide \
+            gtd_ai_expand_hermes_when_alone \
             gtd_mail_wide gtd_meeting_wide \
-            research_tall office_tall gtd_support_tall gtd_review_tall coding_editor_tall \
+            research_tall office_tall gtd_ai_tall gtd_support_tall gtd_review_tall coding_editor_tall \
             gtd_mail_tall gtd_meeting_tall gtd_chat gtd_calendar coding_control
         eval "function $command_name; set -ga __work_smoke_staged_calls $command_name; if test \"\$__work_smoke_staged_fail\" = \"$command_name\"; return 1; end; end"
     end
@@ -670,14 +671,14 @@ function __work_smoke_staged_top_level
     work_wide
     or return 3
     test (string join , -- $__work_smoke_staged_calls) = \
-        "research_wide,office_wide,gtd_support_wide,gtd_review_wide,coding_editor_wide,gtd_mail_wide,gtd_meeting_wide,gtd_chat,gtd_calendar,coding_control,reconcile,finalize:wide"
+        "research_wide,office_wide,gtd_ai_wide,gtd_support_wide,gtd_review_wide,coding_editor_wide,gtd_ai_expand_hermes_when_alone,gtd_mail_wide,gtd_meeting_wide,gtd_chat,gtd_calendar,coding_control,reconcile,finalize:wide"
     or return 4
 
     set -g __work_smoke_staged_calls
     work_tall
     or return 5
     test (string join , -- $__work_smoke_staged_calls) = \
-        "research_tall,office_tall,gtd_support_tall,gtd_review_tall,coding_editor_tall,gtd_mail_tall,gtd_meeting_tall,gtd_chat,gtd_calendar,coding_control,reconcile,finalize:tall"
+        "research_tall,office_tall,gtd_ai_tall,gtd_support_tall,gtd_review_tall,coding_editor_tall,gtd_ai_expand_hermes_when_alone,gtd_mail_tall,gtd_meeting_tall,gtd_chat,gtd_calendar,coding_control,reconcile,finalize:tall"
     or return 6
 
     set -g __work_smoke_staged_calls
@@ -798,6 +799,9 @@ function work_smoke_finalization --description "Run fixture-only workspace final
             if set -q WORKSPACE_TEST_SOURCE_ROOT
                 set -l child_commands \
                     'set -e WORKSPACE_SKIP_FINALIZATION' \
+                    "set -gx SPACEWRIGHT_ROOT \"$WORKSPACE_TEST_SOURCE_ROOT\"" \
+                    "source \"$WORKSPACE_TEST_SOURCE_ROOT/common/spacewright_paths.fish\"" \
+                    "source \"$WORKSPACE_TEST_SOURCE_ROOT/common/work_reload.fish\"" \
                     'work_reload >/dev/null' \
                     "source \"$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_manifest.fish\"" \
                     "source \"$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_ownership_policy.fish\"" \

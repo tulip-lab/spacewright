@@ -2,6 +2,11 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     set -l failed 0
     set -lx WORKSPACE_SKIP_FINALIZATION 1
 
+    if set -q WORKSPACE_TEST_SOURCE_ROOT
+        set -lx fish_function_path "$WORKSPACE_TEST_SOURCE_ROOT/common" $fish_function_path
+        set -lx XDG_CONFIG_HOME "$SPACEWRIGHT_PACKAGE_ROOT/tests/fixtures/xdg-empty"
+    end
+
     echo "===== WORKSPACE SMOKE ====="
 
     work_reload >/dev/null
@@ -33,6 +38,21 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     else
         echo "FAIL    command check"
         cat /tmp/work-command-check.out
+        set failed 1
+    end
+
+    if workspace_config_check
+        echo "OK      configured workspace schema"
+    else
+        echo "FAIL    configured workspace schema"
+        set failed 1
+    end
+
+    set -l configured_plan (workspace_config_plan coding_editor_wide | string collect)
+    if test $status -eq 0; and printf "%s\n" "$configured_plan" | jq -e '.kind=="workspace" and .mutates==false and .label=="coding_editor_wide"' >/dev/null
+        echo "OK      configured workspace read-only plan"
+    else
+        echo "FAIL    configured workspace read-only plan"
         set failed 1
     end
 
@@ -1056,11 +1076,11 @@ function work_smoke --description "Run read-only workspace smoke checks for help
 
         for command_name in \
                 coding_solo research_solo gtd_solo_all \
-                research_wide office_wide gtd_support_wide gtd_review_wide coding_editor_wide \
+                research_wide office_wide gtd_ai_wide gtd_support_wide gtd_review_wide coding_editor_wide \
                 gtd_mail_wide gtd_meeting_wide \
-                research_tall office_tall gtd_support_tall gtd_review_tall coding_editor_tall \
+                research_tall office_tall gtd_ai_tall gtd_support_tall gtd_review_tall coding_editor_tall \
                 gtd_mail_tall gtd_meeting_tall \
-                gtd_chat gtd_calendar coding_control workspace_reconcile_primary_fixed_spaces
+                gtd_ai_expand_hermes_when_alone gtd_chat gtd_calendar coding_control workspace_reconcile_primary_fixed_spaces
             eval "function $command_name; set -ga __work_smoke_aggregate_calls $command_name; if test \"$command_name\" = research_wide -a \"\$__work_smoke_fail_wide\" = 1; return 1; end; end"
         end
 
