@@ -5,6 +5,7 @@ end
 
 function source_workspace_common --description "Source shared workspace helper functions"
     source "$SPACEWRIGHT_ROOT/common/ws_core.fish"
+    source "$SPACEWRIGHT_ROOT/common/spacewright_config.fish"
     source "$SPACEWRIGHT_ROOT/common/workspace_manifest.fish"
     source "$SPACEWRIGHT_ROOT/common/workspace_app_names.fish"
     source "$SPACEWRIGHT_ROOT/common/workspace_observability.fish"

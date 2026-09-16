@@ -4,6 +4,10 @@ function spacewright_initialize_paths --description "Resolve SpaceWright package
         set -gx SPACEWRIGHT_ROOT (path dirname (path dirname $this_file))
     end
 
+    if not set -q SPACEWRIGHT_PACKAGE_ROOT; or test -z "$SPACEWRIGHT_PACKAGE_ROOT"
+        set -gx SPACEWRIGHT_PACKAGE_ROOT (path dirname (path dirname "$SPACEWRIGHT_ROOT"))
+    end
+
     if not set -q SPACEWRIGHT_CONFIG_ROOT; or test -z "$SPACEWRIGHT_CONFIG_ROOT"
         if set -q XDG_CONFIG_HOME; and test -n "$XDG_CONFIG_HOME"
             set -gx SPACEWRIGHT_CONFIG_ROOT "$XDG_CONFIG_HOME/spacewright"

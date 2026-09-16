@@ -32,6 +32,14 @@ function work_doctor --description "Run read-only workspace system checks"
     end
 
     echo
+    echo "===== CONFIG CHECK ====="
+    if workspace_config_check
+        __work_doctor_ok "SpaceWright configuration v1"
+    else
+        __work_doctor_fail "SpaceWright configuration invalid"
+    end
+
+    echo
     echo "===== PATH CHECKS ====="
     for path in $workspace_root $displayprofiles_root $SPACEWRIGHT_SKHD_ROOT $SPACEWRIGHT_YABAI_ROOT
         if test -e $path

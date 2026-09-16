@@ -2,6 +2,19 @@ function work_inventory --description "Print a read-only workspace workflow inve
     echo "===== WORKSPACE INVENTORY ====="
     echo
 
+    echo "===== SPACEWRIGHT CONFIG ====="
+    if workspace_config_check
+        set -l config (spacewright_config_effective | string collect)
+        printf "version=%s\n" (printf "%s\n" "$config" | jq -r '.version')
+        printf "apps=%s\n" (printf "%s\n" "$config" | jq -r '.apps | length')
+        printf "workspaces=%s\n" (printf "%s\n" "$config" | jq -r '.workspaces | length')
+        printf "modes=%s\n" (printf "%s\n" "$config" | jq -r '.modes | length')
+        printf "user_config=%s\n" (spacewright_config_user_file)
+    else
+        echo "invalid"
+    end
+    echo
+
     echo "===== TOP-LEVEL ENTRIES ====="
     for row in (workspace_top_level_entry_rows)
         set -l parts (string split \t -- "$row")
