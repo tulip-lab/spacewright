@@ -110,8 +110,9 @@ spacewright config-check
 3. Complete — add v1 schema, validation, inspection, and read-only planning.
 4. Complete — prove `coding_editor_wide` with a configured runner and legacy bypass.
 5. Complete — package `v0.1.0-alpha.1` and integrate the Mackup consumer.
-6. In progress — configure every shipped workspace and ordered solo/wide/tall
-   composition with exhaustive dry-run parity and read-only observation.
+6. Complete — package `v0.2.0-alpha.1` with every shipped workspace and ordered
+   solo/wide/tall composition, exhaustive dry-run parity, read-only observation,
+   and target-display Space creation.
 
 ## Safety
 
