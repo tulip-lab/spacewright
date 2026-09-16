@@ -63,17 +63,16 @@ function ws_restart_yabai --description "Restart the yabai service through the b
         set caller workspace
     end
 
-    if not command -q yabai
-        echo "[WARN] $caller cannot restart yabai because the yabai command is not available" >&2
-        return 1
-    end
-
     set -l status_code 1
     set -l legacy_service "gui/"(id -u)"/com.asmvik.yabai"
     if command -q launchctl; and launchctl print "$legacy_service" >/dev/null 2>&1
         launchctl kickstart -k "$legacy_service" >/dev/null 2>&1
         set status_code $status
     else
+        if not command -q yabai
+            echo "[WARN] $caller cannot restart yabai because neither its LaunchAgent nor command is available" >&2
+            return 1
+        end
         ws_yabai --restart-service >/dev/null 2>&1
         set status_code $status
     end
