@@ -7,7 +7,7 @@ function __coding_editor_solo_body --description "Collect VS Code onto the solo 
         coding:wide coding:tall $argv
 end
 
-function __coding_editor_wide_body --description "Collect VS Code and optional ChatGPT onto the wide coding editor workspace"
+function __coding_editor_wide_legacy_body --description "Collect VS Code and optional ChatGPT using the legacy wide coding definition"
     workspace_apply_primary_helper_space \
         --label coding_editor_wide \
         --display wide \
@@ -17,6 +17,14 @@ function __coding_editor_wide_body --description "Collect VS Code and optional C
         --helper-app-key chatgpt \
         --helper-grid 1:3:0:0:1:1 \
         coding:tall coding:solo $argv
+end
+
+function __coding_editor_wide_body --description "Collect VS Code and optional ChatGPT onto the configured wide coding workspace"
+    if test "$SPACEWRIGHT_CONFIG_DISABLE" = 1
+        __coding_editor_wide_legacy_body $argv
+    else
+        workspace_run_configured coding_editor_wide $argv
+    end
 end
 
 function __coding_editor_tall_body --description "Collect VS Code and optional ChatGPT onto the tall coding editor workspace"

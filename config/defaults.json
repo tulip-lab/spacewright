@@ -44,6 +44,7 @@
   },
   "workspaces": {
     "coding_editor_wide": {
+      "runner": "primary_helper",
       "label": "coding_editor_wide",
       "display_role": "wide",
       "space_layout": "float",
@@ -52,20 +53,20 @@
           "role": "primary",
           "app_key": "code",
           "required": true,
-          "selector": { "movable": true, "visible": true }
+          "selector": { "movable": true }
         },
         {
           "role": "helper",
           "app_key": "chatgpt",
           "required": false,
-          "selector": { "movable": true, "visible": true }
+          "selector": { "movable": true }
         }
       ],
       "layout_ref": "coding_editor_wide",
       "primary_alone_layout_ref": "single_full",
       "cleanup": {
         "family": "coding",
-        "opposite_modes": ["solo", "tall"]
+        "opposite_modes": ["tall", "solo"]
       }
     }
   },

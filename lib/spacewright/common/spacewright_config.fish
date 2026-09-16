@@ -56,6 +56,7 @@ function workspace_config_check --description "Validate the effective SpaceWrigh
         and (.workspaces | type == "object")
         and (. as $root | [.workspaces[] |
             (.label | type == "string" and length > 0)
+            and ((.runner // "primary_helper") == "primary_helper")
             and (.display_role | IN("primary", "external", "solo", "wide", "tall", "auto_external"))
             and (.space_layout | IN("float", "bsp", "stack"))
             and (.windows | type == "array" and length > 0 and all(.[]; valid_window($root.apps)))
@@ -100,6 +101,7 @@ function workspace_config_plan --description "Print a read-only configured works
             {
                 kind: "workspace",
                 id: $target,
+                runner: (.workspaces[$target].runner // "primary_helper"),
                 label: .workspaces[$target].label,
                 display_role: .workspaces[$target].display_role,
                 space_layout: .workspaces[$target].space_layout,

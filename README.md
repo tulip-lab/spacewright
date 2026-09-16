@@ -2,8 +2,9 @@
 
 Configurable macOS workspace orchestration for yabai.
 
-> Status: pre-alpha migration. The repository currently contains the product
-> contract and roadmap; the existing runtime has not yet been imported.
+> Status: private pre-release. The history-preserving runtime import,
+> relocatable bootstrap, v1 configuration, and first configured workspace
+> pilot are complete.
 
 SpaceWright turns named work contexts into repeatable macOS Space and window
 layouts. It is intended to preserve stable commands such as `work_wide` or
@@ -61,7 +62,7 @@ See:
 The git-flow CLI is not required; the branch model can be followed with plain
 Git.
 
-## Configuration Direction
+## Configuration Model
 
 The target configuration boundary is:
 
@@ -75,7 +76,7 @@ package defaults + user configuration -> validated effective config
                                   yabai query / plan / apply
 ```
 
-User configuration will describe app aliases, window roles, workspace labels,
+User configuration describes app aliases, window roles, workspace labels,
 display roles, layout actions, mode composition, and simple cleanup policy. It
 will not contain arbitrary shell or jq programs.
 
@@ -93,14 +94,13 @@ state, and optional integration roots can be overridden with the corresponding
 `SPACEWRIGHT_*_ROOT` variables documented in
 [Architecture](docs/architecture.md).
 
-## Roadmap
+## Migration Progress
 
-1. Import the current runtime with relevant history as a legacy baseline.
-2. Remove fixed installation paths and separate package/config/state roots.
-3. Add JSON Schema, validation, inspection, and read-only planning.
-4. Prove one configured workspace while retaining a legacy bypass.
-5. Integrate a pinned SpaceWright build into the Mackup consumer.
-6. Add installer, CI, versioning, and optional integrations.
+1. Complete — import the current runtime with relevant history.
+2. Complete — separate package, configuration, and state roots.
+3. Complete — add v1 schema, validation, inspection, and read-only planning.
+4. Complete — run `coding_editor_wide` from configuration with a legacy bypass.
+5. In progress — package a private prerelease and integrate the Mackup consumer.
 
 ## Safety
 

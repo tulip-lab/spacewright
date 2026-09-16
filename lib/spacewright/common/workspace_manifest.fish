@@ -142,6 +142,7 @@ function workspace_common_helper_rows --description "Print declared common works
     printf "%s\t%s\n" workspace_space_non_owned_windows "window ids outside a workspace ownership regex"
     printf "%s\t%s\n" workspace_evict_non_owned_windows_from_space "move movable non-owned fallback-space windows to a holding space"
     printf "%s\t%s\n" workspace_apply_primary_helper_space "required primary app plus optional helper workspace flow"
+    printf "%s\t%s\n" workspace_run_configured "validated configured-workspace runner with required-window preflight"
     printf "%s\t%s\n" office_apply_document_space "Office ChatGPT plus multi-document workspace flow"
     printf "%s\t%s\n" workspace_run_mode_steps "mode aggregate runner with shared cleanup suppression"
     printf "%s\t%s\n" workspace_run_cleanup_specs "family:mode cleanup-spec dispatcher"
@@ -266,6 +267,7 @@ function workspace_required_command_names --description "Print documented worksp
         workspace_config_check \
         workspace_config_get \
         workspace_config_plan \
+        workspace_run_configured \
         spacewright_config_effective \
         ws_yabai \
         ws_restart_yabai \
