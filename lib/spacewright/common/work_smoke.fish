@@ -1,10 +1,25 @@
 function work_smoke --description "Run read-only workspace smoke checks for helper wiring and dry-run paths"
     set -l failed 0
     set -lx WORKSPACE_SKIP_FINALIZATION 1
+    set -l had_fish_function 0
+
+    if functions -q fish
+        set had_fish_function 1
+        functions -c fish __spacewright_saved_fish_function
+    end
 
     if set -q WORKSPACE_TEST_SOURCE_ROOT
         set -lx fish_function_path "$WORKSPACE_TEST_SOURCE_ROOT/common" $fish_function_path
         set -lx XDG_CONFIG_HOME "$SPACEWRIGHT_PACKAGE_ROOT/tests/fixtures/xdg-empty"
+    end
+
+    set -l smoke_fish_binary (command -s fish)
+    function fish --inherit-variable smoke_fish_binary
+        if test "$argv[1]" = -lc; and set -q WORKSPACE_TEST_SOURCE_ROOT
+            set -l escaped_source_root (string escape -- "$WORKSPACE_TEST_SOURCE_ROOT")
+            set argv[2] "set -gx SPACEWRIGHT_ROOT $escaped_source_root; source $escaped_source_root/common/spacewright_paths.fish; source $escaped_source_root/common/work_reload.fish; $argv[2]"
+        end
+        command $smoke_fish_binary $argv
     end
 
     echo "===== WORKSPACE SMOKE ====="
@@ -4011,6 +4026,12 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         echo "result=ok"
     else
         echo "result=fail"
+    end
+
+    functions -e fish
+    if test "$had_fish_function" -eq 1
+        functions -c __spacewright_saved_fish_function fish
+        functions -e __spacewright_saved_fish_function
     end
 
     return $failed
