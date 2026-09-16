@@ -45,6 +45,8 @@ See:
 
 - [Architecture](docs/architecture.md)
 - [Configuration](docs/configuration.md)
+- [Installation and upgrades](docs/installation.md)
+- [Release process](docs/releasing.md)
 - [Repository boundary and file inventory](docs/repository-boundary.md)
 - [Compatibility contract](docs/compatibility.md)
 - [Migration plan](docs/migration.md)
@@ -93,6 +95,13 @@ The bootstrap resolves `lib/spacewright` from its own location. User config,
 state, and optional integration roots can be overridden with the corresponding
 `SPACEWRIGHT_*_ROOT` variables documented in
 [Architecture](docs/architecture.md).
+
+For a versioned installation from a trusted private checkout:
+
+```fish
+fish scripts/install.fish
+spacewright config-check
+```
 
 ## Migration Progress
 

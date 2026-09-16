@@ -1,0 +1,40 @@
+#!/usr/bin/env fish
+
+set -l executable_file (path resolve (status filename))
+set -l package_root (path dirname (path dirname $executable_file))
+source "$package_root/conf.d/spacewright.fish"
+or exit 1
+
+set -l command_name $argv[1]
+if test -n "$command_name"
+    set -e argv[1]
+else
+    set command_name help
+end
+
+switch "$command_name"
+    case version --version -v
+        string trim < "$package_root/VERSION"
+    case config-check
+        workspace_config_check
+    case config-plan
+        workspace_config_plan $argv
+    case doctor
+        work_doctor $argv
+    case smoke
+        set -gx WORKSPACE_TEST_SOURCE_ROOT "$SPACEWRIGHT_ROOT"
+        work_smoke $argv
+    case help --help -h
+        printf '%s\n' \
+            'usage: spacewright <command>' \
+            '' \
+            'commands:' \
+            '  version                 print installed version' \
+            '  config-check            validate effective configuration' \
+            '  config-plan <target>    print a read-only workspace or mode plan' \
+            '  doctor                  run read-only dependency and config checks' \
+            '  smoke                   run isolated regression checks'
+    case '*'
+        echo "spacewright: unknown command: $command_name" >&2
+        exit 2
+end

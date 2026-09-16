@@ -97,6 +97,12 @@ commands and hotkeys.
 The repository remains private until a separate publication decision and a
 complete history audit.
 
+Acceptance for the first private prerelease is the scripted, marker-guarded
+install layout, config-preserving uninstall, CLI, CI release check, semantic
+version, changelog, optional integration examples, and immutable GitHub
+prerelease. A Homebrew formula remains deliberately deferred until this layout
+has survived prerelease upgrades.
+
 ## Cross-Repository Delivery Order
 
 For a change spanning both repositories:
