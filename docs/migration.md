@@ -103,6 +103,23 @@ version, changelog, optional integration examples, and immutable GitHub
 prerelease. A Homebrew formula remains deliberately deferred until this layout
 has survived prerelease upgrades.
 
+## Phase 6 — Full Configuration Parity
+
+- configure every coding, research, Office, and GTD workspace;
+- encode ordered solo/wide/tall aggregate composition;
+- route public entries through a closed set of configured runners;
+- retain specialized Fish recovery adapters for Office and GTD behavior;
+- generate read-only observation contracts for every configured workspace;
+- compare every configured workspace and mode dry-run with the imported
+  definition;
+- keep `SPACEWRIGHT_CONFIG_DISABLE=1` as the whole-runtime rollback switch;
+- release and update the Mackup consumer pin only after package checks and
+  authorized live validation pass.
+
+Phase 6 deliberately configures facts without translating recovery programs
+into JSON. This preserves the pre-extraction behavior while making personal
+apps, labels, layouts, and composition consumer-configurable.
+
 ## Cross-Repository Delivery Order
 
 For a change spanning both repositories:

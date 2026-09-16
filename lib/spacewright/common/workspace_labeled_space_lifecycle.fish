@@ -1,4 +1,40 @@
-function find_or_create_labeled_space --description "Find an existing labeled space on target display or create and move one there"
+function __workspace_rollback_created_space --description "Destroy an empty Space created by a failed placement attempt"
+    set -l space_uuid $argv[1]
+    if test -z "$space_uuid"
+        return 2
+    end
+
+    set -l spaces_json (ws_query_spaces __workspace_rollback_created_space spaces)
+    or return 1
+    set -l windows_json (ws_query_windows __workspace_rollback_created_space windows)
+    or return 1
+    set -l rollback_index (printf "%s\n" "$spaces_json" | ws_jq -r \
+        --arg uuid "$space_uuid" \
+        --argjson windows "$windows_json" '
+            first(
+                .[]
+                | select(.uuid==$uuid)
+                | select((.label // "") == "")
+                | . as $space
+                | select([
+                    $windows[]
+                    | select(.space==$space.index)
+                    | select(.["is-sticky"]!=true)
+                ] | length == 0)
+                | .index
+            ) // empty
+        ')
+    or return 1
+
+    if test -z "$rollback_index"
+        echo "[WARN] refusing to roll back created Space $space_uuid because it is no longer empty and unlabeled" >&2
+        return 1
+    end
+
+    ws_yabai -m space $rollback_index --destroy >/dev/null 2>&1
+end
+
+function find_or_create_labeled_space --description "Find an existing labeled space on target display or create it there"
     set -l label $argv[1]
     set -l target_display $argv[2]
 
@@ -85,7 +121,10 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
         return 1
     end
 
-    ws_yabai -m space --create >/dev/null 2>&1
+    # Current yabai supports creating directly on the selected display. This is
+    # safer than creating on the focused display and transferring afterward,
+    # which can leave orphan Spaces when macOS display assignments are stale.
+    ws_yabai -m space --create $target_display >/dev/null 2>&1
     if test $status -ne 0
         return 1
     end
@@ -141,6 +180,7 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
         ws_yabai -m space $new_space_index --display $target_display >/dev/null 2>&1
         or begin
             echo "[WARN] find_or_create_labeled_space: could not move new Space to display $target_display" >&2
+            __workspace_rollback_created_space "$new_space_uuid"
             return 1
         end
         sleep 0.8
@@ -166,6 +206,7 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
     end
 
     echo "[WARN] find_or_create_labeled_space: new Space did not settle on display $target_display" >&2
+    __workspace_rollback_created_space "$new_space_uuid"
     return 1
 end
 

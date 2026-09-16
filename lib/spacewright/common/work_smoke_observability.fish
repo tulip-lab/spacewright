@@ -165,9 +165,10 @@ function work_smoke_observability --description "Run focused workspace observabi
             .read_only == true
             and .status == \"drift\"
             and .ok == false
-            and (.results | length) == 2
+            and (.results | length) > 2
             and (first(.results[] | select(.workspace == \"gtd_meeting_wide\") | .status) == \"satisfied\")
             and (first(.results[] | select(.workspace == \"coding_control\") | .status) == \"drift\")
+            and all(.results[] | select(.workspace != \"gtd_meeting_wide\" and .workspace != \"coding_control\"); .status == \"not_applicable\")
         " >/dev/null
         or exit 12
 
