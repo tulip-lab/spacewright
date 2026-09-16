@@ -51,6 +51,7 @@
         "type": "object",
         "required": ["label", "display_role", "space_layout", "windows", "layout_ref"],
         "properties": {
+          "runner": { "enum": ["primary_helper"] },
           "label": { "type": "string", "minLength": 1 },
           "display_role": { "enum": ["primary", "external", "solo", "wide", "tall", "auto_external"] },
           "space_layout": { "enum": ["float", "bsp", "stack"] },

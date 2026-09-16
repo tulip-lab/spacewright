@@ -23,6 +23,7 @@ function source_workspace_common --description "Source shared workspace helper f
     source "$SPACEWRIGHT_ROOT/common/workspace_space_fallback.fish"
     source "$SPACEWRIGHT_ROOT/common/workspace_retarget_contaminated_space.fish"
     source "$SPACEWRIGHT_ROOT/common/workspace_apply_primary_helper_space.fish"
+    source "$SPACEWRIGHT_ROOT/common/workspace_config_runtime.fish"
     source "$SPACEWRIGHT_ROOT/common/workspace_ownership_policy.fish"
     source "$SPACEWRIGHT_ROOT/common/workspace_sandbox.fish"
     source "$SPACEWRIGHT_ROOT/common/workspace_cleanup_spaces.fish"

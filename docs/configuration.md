@@ -33,6 +33,14 @@ workspace_config_plan coding_wide
 These commands validate or render configuration only. They do not query or
 change live desktop state.
 
+`coding_editor_wide` is the first configured runtime pilot. Its default output
+matches the legacy definition, and `SPACEWRIGHT_CONFIG_DISABLE=1` switches that
+entry back to the built-in legacy path for rollback.
+
+Before the configured runner performs cleanup or creates a Space, it verifies
+that the required primary app window exists. A failed preflight returns
+non-zero without changing workspace state.
+
 ## Version 1 Boundary
 
 Configuration owns:

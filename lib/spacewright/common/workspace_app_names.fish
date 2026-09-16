@@ -1,73 +1,18 @@
 function workspace_app_names --description "Print known yabai app names for a workspace app key"
     set -l key $argv[1]
 
-    switch "$key"
-        case code
-            printf "%s\n" Code
-        case claude
-            printf "%s\n" Claude
-        case chatgpt
-            printf "%s\n" ChatGPT
-        case hermes
-            printf "%s\n" Hermes
-        case input_source_pro
-            printf "%s\n" "Input Source Pro"
-        case obsidian
-            printf "%s\n" Obsidian
-        case zotero
-            printf "%s\n" Zotero
-        case thunderbird
-            printf "%s\n" Thunderbird thunderbird
-        case word
-            printf "%s\n" "Microsoft Word"
-        case powerpoint
-            printf "%s\n" "Microsoft PowerPoint"
-        case outlook
-            printf "%s\n" "Microsoft Outlook"
-        case zoom
-            printf "%s\n" "zoom.us" Zoom
-        case teams
-            printf "%s\n" "Microsoft Teams" MSTeams
-        case dia
-            printf "%s\n" Dia
-        case finder
-            printf "%s\n" Finder
-        case preview
-            printf "%s\n" Preview 预览
-        case notes
-            printf "%s\n" Notes
-        case calendar
-            printf "%s\n" Calendar
-        case reminders
-            printf "%s\n" Reminders
-        case wechat
-            printf "%s\n" WeChat
-        case keybase
-            printf "%s\n" Keybase
-        case messages
-            printf "%s\n" Messages
-        case dingtalk
-            printf "%s\n" DingTalk 钉钉
-        case whatsapp
-            printf "%s\n" WhatsApp
-        case facetime
-            printf "%s\n" FaceTime
-        case warp
-            printf "%s\n" Warp
-        case smartgit
-            printf "%s\n" SmartGit
-        case keepassx
-            printf "%s\n" KeePassXC KeePassX
-        case flclash
-            printf "%s\n" FlClash
-        case thaw
-            printf "%s\n" Thaw
-        case portfolio_performance
-            printf "%s\n" "Portfolio Performance"
-        case '*'
-            echo "[WARN] workspace_app_names: unknown app key: $key" >&2
-            return 2
+    if test -z "$key"
+        echo "usage: workspace_app_names <app-key>" >&2
+        return 2
     end
+
+    set -l names (spacewright_config_effective | jq -r --arg key "$key" '.apps[$key].names[]? // empty')
+    if test $status -ne 0; or test (count $names) -eq 0
+        echo "[WARN] workspace_app_names: unknown app key: $key" >&2
+        return 2
+    end
+
+    printf "%s\n" $names
 end
 
 function workspace_app_name --description "Print the primary yabai app name for a workspace app key"
