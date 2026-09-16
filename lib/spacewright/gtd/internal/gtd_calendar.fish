@@ -236,5 +236,13 @@ function __gtd_calendar_body --description "Collect Calendar and Reminders onto 
 end
 
 function gtd_calendar --description "Collect Calendar and Reminders onto the workspace primary display and apply the standard GTD calendar layout"
-    workspace_run_finalized_entry --mode auto --command __gtd_calendar_body -- $argv
+    if test "$SPACEWRIGHT_CONFIG_DISABLE" = 1
+        workspace_run_finalized_entry --mode auto --command __gtd_calendar_body -- $argv
+    else
+        workspace_run_finalized_entry --mode auto --command __gtd_calendar_configured_body -- $argv
+    end
+end
+
+function __gtd_calendar_configured_body --description "Run the configured GTD calendar adapter"
+    workspace_run_configured gtd_calendar $argv
 end

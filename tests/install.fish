@@ -24,10 +24,12 @@ or exit 4
 test ("$bin_root/spacewright" version) = (string trim < "$package_root/VERSION")
 or exit 5
 
-env HOME="$test_root" XDG_CONFIG_HOME="$test_root/xdg" fish --no-config -c \
+env -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT -u SPACEWRIGHT_CONFIG_ROOT \
+    HOME="$test_root" XDG_CONFIG_HOME="$test_root/xdg" fish --no-config -c \
     "source '$fish_root/conf.d/spacewright.fish'; test \"\$SPACEWRIGHT_PACKAGE_ROOT\" = '$installed_release_root'"
 or exit 6
-env HOME="$test_root" XDG_CONFIG_HOME="$test_root/xdg" fish --no-config -c \
+env -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT -u SPACEWRIGHT_CONFIG_ROOT \
+    HOME="$test_root" XDG_CONFIG_HOME="$test_root/xdg" fish --no-config -c \
     "set -gx SPACEWRIGHT_USE_LEGACY 1; source '$fish_root/conf.d/spacewright.fish'; not set -q SPACEWRIGHT_ROOT"
 or exit 7
 

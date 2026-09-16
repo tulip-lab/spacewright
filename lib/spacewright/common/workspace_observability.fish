@@ -26,7 +26,21 @@ function workspace_snapshot --description "Capture one read-only workspace displ
 end
 
 function workspace_observation_workspaces --description "Print workspaces with read-only observation contracts"
-    printf "%s\n" gtd_meeting_wide coding_control
+    set -l mode (workspace_detect_display_mode 2>/dev/null)
+    if not contains -- $mode solo wide tall
+        set mode wide
+    end
+
+    spacewright_config_effective | ws_jq -r --arg mode "$mode" '
+        .workspaces
+        | keys[]
+        | select(
+            (endswith("_solo") and $mode == "solo")
+            or (endswith("_wide") and $mode == "wide")
+            or (endswith("_tall") and $mode == "tall")
+            or ((endswith("_solo") or endswith("_wide") or endswith("_tall")) | not)
+        )
+    '
 end
 
 function workspace_observation_spec --description "Print the read-only observation contract for a supported workspace"
@@ -166,8 +180,60 @@ function workspace_observation_spec --description "Print the read-only observati
                     ]
                 }'
         case '*'
-            echo "[WARN] workspace observation is not configured for: $workspace" >&2
-            return 2
+            set -l plan_json (workspace_config_plan $workspace | string collect)
+            if test $status -ne 0
+                echo "[WARN] workspace observation is not configured for: $workspace" >&2
+                return 2
+            end
+
+            printf "%s\n" "$plan_json" | ws_jq '
+                def selection($runner; $role):
+                    if $runner == "gtd_support" or $runner == "gtd_meeting" then "all"
+                    elif $runner == "office_document" and $role == "primary" then "all"
+                    elif $runner == "gtd_review" and ($role == "finder" or $role == "preview" or $role == "notes") then "all"
+                    else "first"
+                    end;
+                def fallback_owner($runner; $role; $options):
+                    ($runner == "primary_helper" and $role == "primary" and ($options.primary_space_fallback // false))
+                    or ($runner == "gtd_review" and ($role == "preview" or $role == "notes"))
+                    or ($runner == "gtd_meeting")
+                    or ($runner == "fixed_adapter" and ($role == "smartgit" or $role == "dingtalk" or $role == "calendar"));
+                def absolute_value($text; $index):
+                    ($text // "") | split(":") | .[$index] | tonumber?;
+                def action_layout($action):
+                    if $action == null then {kind: "none"}
+                    elif $action.grid != null then {kind: "grid", grid: $action.grid}
+                    elif $action.move_abs != null and $action.resize_abs != null then {
+                        kind: "absolute",
+                        x: absolute_value($action.move_abs; 1),
+                        y: absolute_value($action.move_abs; 2),
+                        width: absolute_value($action.resize_abs; 1),
+                        height: absolute_value($action.resize_abs; 2),
+                        tolerance: 8
+                    }
+                    else {kind: "none"}
+                    end;
+
+                . as $plan
+                | {
+                    version: 1,
+                    workspace: $plan.id,
+                    label: $plan.label,
+                    display_role: $plan.display_role,
+                    roles: [
+                        $plan.windows[] as $window
+                        | (first($plan.layout[] | select(.role == $window.role)) // null) as $action
+                        | {
+                            role: $window.role,
+                            app_names: $window.app_names,
+                            selection: selection($plan.runner; $window.role),
+                            exclude_mini_title: ($plan.runner == "gtd_meeting"),
+                            fallback_space_owner: fallback_owner($plan.runner; $window.role; $plan.runner_options),
+                            layout: action_layout($action)
+                        }
+                    ]
+                }
+            '
     end
 end
 
@@ -218,6 +284,15 @@ function __workspace_observation_plan_json --description "Build a read-only work
                   )
                   // first($displays[] | select(.uuid != $primary_uuid) | .index)
                   // null
+              elif $role == "tall" then
+                  first(
+                      $displays[]
+                      | select(.uuid != $primary_uuid)
+                      | select(.frame.h > .frame.w)
+                      | .index
+                  )
+                  // first($displays[] | select(.uuid != $primary_uuid) | .index)
+                  // null
               else null
               end;
 
@@ -256,7 +331,7 @@ function __workspace_observation_plan_json --description "Build a read-only work
         | [$snapshot.spaces[] | select((.label // "") == $spec.label)] as $label_spaces
         | (if ($label_spaces | length) == 1 then $label_spaces[0] else null end) as $target_space_info
         | ($target_space_info.index // null) as $target_space
-        | [$spec.roles[].app_names[]] | unique as $allowed_apps
+        | ([$spec.roles[].app_names[]] | unique) as $allowed_apps
         | [
             $snapshot.windows[]
             | select($target_space != null and .space == $target_space)
@@ -264,7 +339,7 @@ function __workspace_observation_plan_json --description "Build a read-only work
             | select(.app as $app | ($allowed_apps | index($app)) == null)
             | window_summary
         ] as $foreign_windows
-        | ([$roles[] | (.selected_ids + .fallback_candidate_ids)[]] | length) as $actionable_count
+        | ($roles | map((.selected_ids + .fallback_candidate_ids) | length) | add // 0) as $actionable_count
         | {
             version: 1,
             workspace: $spec.workspace,
@@ -293,9 +368,11 @@ function __workspace_observation_plan_json --description "Build a read-only work
                 if $target_display == null then "target_display_unresolved" else empty end,
                 if ($label_spaces | length) > 1 then "duplicate_workspace_label" else empty end,
                 if ($foreign_windows | length) > 0 then "foreign_windows_on_target" else empty end,
-                $roles[]
-                | select((.fallback_candidate_ids | length) > 0)
-                | "fallback_candidate:" + .role
+                (
+                    $roles[]
+                    | select((.fallback_candidate_ids | length) > 0)
+                    | "fallback_candidate:" + .role
+                )
             ],
             actions: [
                 if $actionable_count > 0 and $target_display != null then {
@@ -304,22 +381,26 @@ function __workspace_observation_plan_json --description "Build a read-only work
                     target_display: $target_display,
                     existing_space: $target_space
                 } else empty end,
-                $roles[]
-                | select((.selected_ids | length) > 0)
-                | {
-                    action: "move_and_layout",
-                    role,
-                    window_ids: .selected_ids,
-                    layout
-                },
-                $roles[]
-                | select((.fallback_candidate_ids | length) > 0)
-                | {
-                    action: "fallback_space_candidate",
-                    role,
-                    window_ids: .fallback_candidate_ids,
-                    layout
-                }
+                (
+                    $roles[]
+                    | select((.selected_ids | length) > 0)
+                    | {
+                        action: "move_and_layout",
+                        role,
+                        window_ids: .selected_ids,
+                        layout
+                    }
+                ),
+                (
+                    $roles[]
+                    | select((.fallback_candidate_ids | length) > 0)
+                    | {
+                        action: "fallback_space_candidate",
+                        role,
+                        window_ids: .fallback_candidate_ids,
+                        layout
+                    }
+                )
             ]
         }'
 end
@@ -389,6 +470,22 @@ function __workspace_observation_verify_json --description "Verify a workspace p
                 and ((.frame.y - $layout.y) | absolute_value) <= ($layout.tolerance // 8)
                 and ((.frame.w - $layout.width) | absolute_value) <= ($layout.tolerance // 8)
                 and ((.frame.h - $layout.height) | absolute_value) <= ($layout.tolerance // 8)
+            elif $layout.kind == "grid" then
+                ($layout.grid | split(":") | map(tonumber)) as $grid
+                | ($grid[0]) as $rows
+                | ($grid[1]) as $columns
+                | ($grid[2]) as $column
+                | ($grid[3]) as $row
+                | ($grid[4]) as $column_span
+                | ($grid[5]) as $row_span
+                | (.frame.x + (.frame.w / 2)) as $center_x
+                | (.frame.y + (.frame.h / 2)) as $center_y
+                | ($display_frame.x + ($display_frame.w * $column / $columns)) as $min_x
+                | ($display_frame.x + ($display_frame.w * ($column + $column_span) / $columns)) as $max_x
+                | ($display_frame.y + ($display_frame.h * $row / $rows)) as $min_y
+                | ($display_frame.y + ($display_frame.h * ($row + $row_span) / $rows)) as $max_y
+                | $center_x >= $min_x and $center_x <= $max_x
+                and $center_y >= $min_y and $center_y <= $max_y
             else false
             end;
 

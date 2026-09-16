@@ -18,7 +18,8 @@ or exit 1
 fish tests/install.fish
 or exit 1
 
-fish -c 'source conf.d/spacewright.fish; set -gx WORKSPACE_TEST_SOURCE_ROOT "$SPACEWRIGHT_ROOT"; work_smoke'
+env -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT -u SPACEWRIGHT_CONFIG_ROOT \
+    fish --no-config -c 'source conf.d/spacewright.fish; set -gx WORKSPACE_TEST_SOURCE_ROOT "$SPACEWRIGHT_ROOT"; work_smoke'
 or exit 1
 
 echo "OK      SpaceWright release checks"

@@ -348,5 +348,13 @@ function __coding_control_body --description "Collect Warp, SmartGit, KeePassXC,
 end
 
 function coding_control --description "Collect Warp, SmartGit, KeePassXC, FlClash, and Portfolio Performance onto the internal coding control workspace and apply the standard control layout"
-    workspace_run_finalized_entry --mode auto --command __coding_control_body -- $argv
+    if test "$SPACEWRIGHT_CONFIG_DISABLE" = 1
+        workspace_run_finalized_entry --mode auto --command __coding_control_body -- $argv
+    else
+        workspace_run_finalized_entry --mode auto --command __coding_control_configured_body -- $argv
+    end
+end
+
+function __coding_control_configured_body --description "Run the configured coding control adapter"
+    workspace_run_configured coding_control $argv
 end

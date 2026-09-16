@@ -213,6 +213,10 @@ function office_apply_document_space --description "Apply an Office workspace fo
 end
 
 function __office_writing_wide_body --description "Collect Word and ChatGPT onto the wide office writing workspace and apply the standard writing layout"
+    if test "$SPACEWRIGHT_CONFIG_DISABLE" != 1
+        workspace_run_configured office_writing_wide $argv
+        return $status
+    end
     office_apply_document_space \
         --label office_writing_wide \
         --display wide \
@@ -222,6 +226,10 @@ function __office_writing_wide_body --description "Collect Word and ChatGPT onto
 end
 
 function __office_slides_wide_body --description "Collect PowerPoint and ChatGPT onto the wide office slides workspace and apply the standard slides layout"
+    if test "$SPACEWRIGHT_CONFIG_DISABLE" != 1
+        workspace_run_configured office_slides_wide $argv
+        return $status
+    end
     office_apply_document_space \
         --label office_slides_wide \
         --display wide \
@@ -231,10 +239,18 @@ function __office_slides_wide_body --description "Collect PowerPoint and ChatGPT
 end
 
 function __office_wide_body --description "Arrange all office wide workspaces and clean opposite-mode spaces"
+    if test "$SPACEWRIGHT_CONFIG_DISABLE" != 1
+        workspace_run_configured_mode office_wide $argv
+        return $status
+    end
     workspace_run_mode_steps office:tall -- office_writing_wide office_slides_wide $argv
 end
 
 function __office_writing_tall_body --description "Collect Word and ChatGPT onto the tall office writing workspace and apply the standard writing layout"
+    if test "$SPACEWRIGHT_CONFIG_DISABLE" != 1
+        workspace_run_configured office_writing_tall $argv
+        return $status
+    end
     office_apply_document_space \
         --label office_writing_tall \
         --display tall \
@@ -244,6 +260,10 @@ function __office_writing_tall_body --description "Collect Word and ChatGPT onto
 end
 
 function __office_slides_tall_body --description "Collect PowerPoint and ChatGPT onto the tall office slides workspace and apply the standard slides layout"
+    if test "$SPACEWRIGHT_CONFIG_DISABLE" != 1
+        workspace_run_configured office_slides_tall $argv
+        return $status
+    end
     office_apply_document_space \
         --label office_slides_tall \
         --display tall \
@@ -253,6 +273,10 @@ function __office_slides_tall_body --description "Collect PowerPoint and ChatGPT
 end
 
 function __office_tall_body --description "Arrange all office tall workspaces and clean opposite-mode spaces"
+    if test "$SPACEWRIGHT_CONFIG_DISABLE" != 1
+        workspace_run_configured_mode office_tall $argv
+        return $status
+    end
     workspace_run_mode_steps office:wide -- office_writing_tall office_slides_tall $argv
 end
 

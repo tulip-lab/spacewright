@@ -56,14 +56,32 @@ function workspace_config_check --description "Validate the effective SpaceWrigh
         and (.workspaces | type == "object")
         and (. as $root | [.workspaces[] |
             (.label | type == "string" and length > 0)
-            and ((.runner // "primary_helper") == "primary_helper")
+            and (.runner | IN("primary_helper", "office_document", "gtd_support", "gtd_review", "gtd_meeting", "gtd_ai", "fixed_adapter"))
             and (.display_role | IN("primary", "external", "solo", "wide", "tall", "auto_external"))
             and (.space_layout | IN("float", "bsp", "stack"))
             and (.windows | type == "array" and length > 0 and all(.[]; valid_window($root.apps)))
             and (.layout_ref | type == "string" and $root.layouts[.] != null)
             and ((.primary_alone_layout_ref // null) as $ref | $ref == null or $root.layouts[$ref] != null)
+            and (
+                if (.runner | IN("office_document", "gtd_support")) then
+                    (.runner_options.mode | IN("solo", "wide", "tall"))
+                elif .runner == "fixed_adapter" then
+                    (.runner_options.adapter | IN("coding_control", "gtd_chat", "gtd_calendar"))
+                else true
+                end
+            )
         ] | all)
-        and (. as $root | [.modes[]? | type == "array" and all(.[]; $root.workspaces[.] != null)] | all)
+        and (. as $root | [.modes[]? |
+            type == "object"
+            and (.display_mode | IN("solo", "wide", "tall", "auto"))
+            and (.steps | type == "array" and length > 0)
+            and (all(.steps[];
+                (has("workspace") and ($root.workspaces[.workspace] != null))
+                or (has("mode") and ($root.modes[.mode] != null) and (.mode | IN("coding_solo", "gtd_solo_all", "office_wide", "office_tall")))
+                or (has("postprocessor") and (.postprocessor | IN("gtd_ai_expand_hermes_when_alone", "workspace_reconcile_primary_fixed_spaces")))
+            ))
+            and ((.cleanup // []) | type == "array" and all(.[]; type == "string" and test("^[a-z_]+:(solo|wide|tall)$")))
+        ] | all)
     ' >/dev/null
     or begin
         echo "[WARN] SpaceWright configuration failed v1 validation" >&2
@@ -101,13 +119,14 @@ function workspace_config_plan --description "Print a read-only configured works
             {
                 kind: "workspace",
                 id: $target,
-                runner: (.workspaces[$target].runner // "primary_helper"),
+                runner: .workspaces[$target].runner,
                 label: .workspaces[$target].label,
                 display_role: .workspaces[$target].display_role,
                 space_layout: .workspaces[$target].space_layout,
                 windows: [.workspaces[$target].windows[] as $window | $window + {app_names: .apps[$window.app_key].names}],
                 layout: .layouts[.workspaces[$target].layout_ref],
                 primary_alone_layout: (.workspaces[$target].primary_alone_layout_ref as $ref | if $ref then .layouts[$ref] else null end),
+                runner_options: (.workspaces[$target].runner_options // {}),
                 cleanup: (.workspaces[$target].cleanup // null),
                 mutates: false
             }
@@ -115,7 +134,9 @@ function workspace_config_plan --description "Print a read-only configured works
             {
                 kind: "mode",
                 id: $target,
-                members: [.modes[$target][] as $id | {id: $id, workspace: .workspaces[$id]}],
+                display_mode: .modes[$target].display_mode,
+                steps: .modes[$target].steps,
+                cleanup: (.modes[$target].cleanup // []),
                 mutates: false
             }
         else
