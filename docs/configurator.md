@@ -55,6 +55,39 @@ Saving configuration does not move windows, create Spaces, apply display
 profiles, or reload skhd. Live changes still require an explicit workspace or
 display command.
 
+## Configuration data flow
+
+The portable v2 file is the authoritative configuration source:
+
+```text
+$SPACEWRIGHT_CONFIG_ROOT/config.v2.json
+  -> configurator service readConfig()
+  -> GET /api/config
+  -> Configuration GUI state
+
+Configuration GUI state
+  -> POST /api/validate and POST /api/save
+  -> validateV2() and atomicWrite()
+  -> $SPACEWRIGHT_CONFIG_ROOT/config.v2.json
+```
+
+The service reads the file for every `GET /api/config`; it does not keep a
+configuration cache. The GUI reads the API when the page loads, validates the
+complete in-memory document before saving, and writes only a valid v2 document.
+After an external file edit, reload the page to fetch the authoritative value.
+Restarting the configurator does not affect persistence because the JSON file,
+not the server process, owns the state.
+
+Machine-local display bindings follow the same pattern through `GET
+/api/machine` and `POST /api/display-bindings`, with
+`$SPACEWRIGHT_STATE_ROOT/machine.json` as their separate authoritative source.
+
+The browser integration test uses a temporary real config root, starts the
+actual configurator service, edits a reversible display name in Chromium,
+checks the JSON file directly, verifies page reload and service restart, applies
+an external file edit, and restores the original document. No API or config
+backend is mocked.
+
 ## Read-only CLI
 
 ```fish
