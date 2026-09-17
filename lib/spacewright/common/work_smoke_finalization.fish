@@ -731,6 +731,8 @@ function __work_smoke_primary_fixed_separation
                 printf '%s\n' '[{"id":11,"app":"WeChat","space":1,"is-sticky":false},{"id":12,"app":"Warp","space":1,"is-sticky":false}]'
             case cross_owned persistent reconcile_failure
                 printf '%s\n' '[{"id":11,"app":"WeChat","space":2,"is-sticky":false},{"id":12,"app":"Warp","space":2,"is-sticky":false},{"id":13,"app":"SmartGit","space":3,"is-sticky":false}]'
+            case minimized_off_target
+                printf '%s\n' '[{"id":11,"app":"WeChat","space":2,"is-sticky":false,"is-minimized":false},{"id":12,"app":"Warp","space":3,"is-sticky":false,"is-minimized":false},{"id":14,"app":"KeePassX","space":4,"is-sticky":false,"is-minimized":true}]'
             case shared duplicate
                 printf '%s\n' '[{"id":11,"app":"WeChat","space":2,"is-sticky":false},{"id":12,"app":"Warp","space":2,"is-sticky":false}]'
             case '*'
@@ -762,6 +764,10 @@ function __work_smoke_primary_fixed_separation
     test $__work_smoke_primary_space_queries -eq 1
     and test $__work_smoke_primary_window_queries -eq 1
     or return 2
+
+    set -g __work_smoke_primary_fixture minimized_off_target
+    workspace_verify_primary_fixed_separation
+    or return 10
 
     set -g __work_smoke_primary_fixture missing
     workspace_verify_primary_fixed_separation
