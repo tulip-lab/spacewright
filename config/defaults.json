@@ -445,14 +445,24 @@
       ]
     },
     "work_solo": {
-      "display_mode": "solo", "steps": [
+      "display_mode": "solo",
+      "cleanup": [
+        "coding:wide", "coding:tall", "research:wide", "research:tall",
+        "office:wide", "office:tall", "gtd:wide", "gtd:tall"
+      ],
+      "steps": [
         { "mode": "coding_solo" }, { "workspace": "research_solo" },
         { "mode": "gtd_solo_all" },
         { "postprocessor": "workspace_reconcile_primary_fixed_spaces" }
       ]
     },
     "work_wide": {
-      "display_mode": "wide", "steps": [
+      "display_mode": "wide",
+      "cleanup": [
+        "coding:tall", "coding:solo", "research:tall", "research:solo",
+        "office:tall", "gtd:tall", "gtd:solo"
+      ],
+      "steps": [
         { "workspace": "research_wide" }, { "mode": "office_wide" },
         { "workspace": "gtd_ai_wide" },
         { "workspace": "gtd_support_wide" }, { "workspace": "gtd_review_wide" },
@@ -463,7 +473,12 @@
       ]
     },
     "work_tall": {
-      "display_mode": "tall", "steps": [
+      "display_mode": "tall",
+      "cleanup": [
+        "coding:wide", "coding:solo", "research:wide", "research:solo",
+        "office:wide", "gtd:wide", "gtd:solo"
+      ],
+      "steps": [
         { "workspace": "research_tall" }, { "mode": "office_tall" },
         { "workspace": "gtd_ai_tall" },
         { "workspace": "gtd_support_tall" }, { "workspace": "gtd_review_tall" },
