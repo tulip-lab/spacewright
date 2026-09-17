@@ -5,6 +5,11 @@ configuration and installation contracts may still change before 1.0.
 
 ## Unreleased
 
+## 0.2.0-alpha.5 — 2026-09-17
+
+- Treat Spaces containing only sticky windows as empty during inactive-mode
+  label cleanup, while retaining fail-closed live window checks.
+
 ## 0.2.0-alpha.4 — 2026-09-17
 
 - Ignore minimized control/chat windows when verifying fixed-space separation,

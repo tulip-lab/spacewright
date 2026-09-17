@@ -652,19 +652,28 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     set -l cleanup_specs_shared_query_smoke '
         work_reload >/dev/null
 
-        set -g __work_smoke_cleanup_query_calls 0
+        set -g __work_smoke_cleanup_space_query_calls 0
+        set -g __work_smoke_cleanup_window_query_calls 0
+        set -g __work_smoke_cleanup_destroy_calls
 
         function ws_yabai
             if test (count $argv) -eq 3 -a "$argv[1]" = "-m" -a "$argv[2]" = "query" -a "$argv[3]" = "--spaces"
-                set -g __work_smoke_cleanup_query_calls (math $__work_smoke_cleanup_query_calls + 1)
+                set -g __work_smoke_cleanup_space_query_calls (math $__work_smoke_cleanup_space_query_calls + 1)
                 printf "%s\n" "[
-                    {\"index\": 3, \"display\": 2, \"label\": \"gtd_review_tall\", \"windows\": []},
+                    {\"index\": 3, \"display\": 2, \"label\": \"gtd_review_tall\", \"windows\": [99]},
                     {\"index\": 4, \"display\": 2, \"label\": \"gtd_review_solo\", \"windows\": []}
                 ]"
                 return 0
             end
 
+            if test (count $argv) -eq 3 -a "$argv[1]" = "-m" -a "$argv[2]" = "query" -a "$argv[3]" = "--windows"
+                set -g __work_smoke_cleanup_window_query_calls (math $__work_smoke_cleanup_window_query_calls + 1)
+                printf "%s\n" "[{\"id\":99,\"app\":\"Teams\",\"space\":3,\"is-sticky\":true}]"
+                return 0
+            end
+
             if test (count $argv) -eq 4 -a "$argv[1]" = "-m" -a "$argv[2]" = "space" -a "$argv[4]" = "--destroy"
+                set -ga __work_smoke_cleanup_destroy_calls $argv[3]
                 return 0
             end
 
@@ -674,14 +683,20 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         workspace_run_cleanup_specs gtd:tall gtd:solo >/dev/null
         or exit 1
 
-        test "$__work_smoke_cleanup_query_calls" -eq 1
+        test "$__work_smoke_cleanup_space_query_calls" -eq 1
         or exit 2
+
+        test "$__work_smoke_cleanup_window_query_calls" -eq 1
+        or exit 3
+
+        test (string join , -- $__work_smoke_cleanup_destroy_calls) = 3,4
+        or exit 4
     '
     fish -lc "$cleanup_specs_shared_query_smoke" >/tmp/work-cleanup-specs-shared-query-smoke.out 2>&1
     if test $status -eq 0
-        echo "OK      cleanup specs share Space query"
+        echo "OK      cleanup specs share Space/window query"
     else
-        echo "FAIL    cleanup specs share Space query"
+        echo "FAIL    cleanup specs share Space/window query"
         cat /tmp/work-cleanup-specs-shared-query-smoke.out
         set failed 1
     end
