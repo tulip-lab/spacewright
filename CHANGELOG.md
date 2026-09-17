@@ -5,6 +5,8 @@ configuration and installation contracts may still change before 1.0.
 
 ## Unreleased
 
+## 0.2.0-alpha.4 — 2026-09-17
+
 - Ignore minimized control/chat windows when verifying fixed-space separation,
   matching the runtime's active-window selection rules.
 
