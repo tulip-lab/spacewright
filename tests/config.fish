@@ -48,6 +48,22 @@ set -l actual_modes (spacewright_config_effective | jq -r '.modes | keys[]')
 test (string join ' ' -- $actual_modes) = (string join ' ' -- $expected_modes)
 or exit 21
 
+spacewright_config_effective | jq -e '
+    .modes.work_solo.cleanup == [
+        "coding:wide", "coding:tall", "research:wide", "research:tall",
+        "office:wide", "office:tall", "gtd:wide", "gtd:tall"
+    ]
+    and .modes.work_wide.cleanup == [
+        "coding:tall", "coding:solo", "research:tall", "research:solo",
+        "office:tall", "gtd:tall", "gtd:solo"
+    ]
+    and .modes.work_tall.cleanup == [
+        "coding:wide", "coding:solo", "research:wide", "research:solo",
+        "office:wide", "gtd:wide", "gtd:solo"
+    ]
+' >/dev/null
+or exit 30
+
 set -l workspace_body_rows \
     coding_editor_solo:__coding_editor_solo_body \
     coding_editor_wide:__coding_editor_wide_legacy_body \
