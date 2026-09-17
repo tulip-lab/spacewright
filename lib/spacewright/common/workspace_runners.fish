@@ -33,10 +33,16 @@ end
 function workspace_run_cleanup_specs --description "Run workspace cleanup specs such as gtd:tall or legacy cleanup functions"
     set -l had_cleanup_spaces_cache 0
     set -l old_cleanup_spaces_cache
+    set -l had_cleanup_windows_cache 0
+    set -l old_cleanup_windows_cache
 
     if set -q __WORKSPACE_CLEANUP_SPACES_JSON
         set had_cleanup_spaces_cache 1
         set old_cleanup_spaces_cache "$__WORKSPACE_CLEANUP_SPACES_JSON"
+    end
+    if set -q __WORKSPACE_CLEANUP_WINDOWS_JSON
+        set had_cleanup_windows_cache 1
+        set old_cleanup_windows_cache "$__WORKSPACE_CLEANUP_WINDOWS_JSON"
     end
 
     set -l needs_cleanup_spaces_cache 0
@@ -51,8 +57,15 @@ function workspace_run_cleanup_specs --description "Run workspace cleanup specs 
         set -l cleanup_spaces_json (workspace_cleanup_query_spaces)
         if test $status -eq 0
             set -g __WORKSPACE_CLEANUP_SPACES_JSON "$cleanup_spaces_json"
+            set -l cleanup_windows_json (workspace_cleanup_query_windows)
+            if test $status -eq 0
+                set -g __WORKSPACE_CLEANUP_WINDOWS_JSON "$cleanup_windows_json"
+            else
+                set -g __WORKSPACE_CLEANUP_WINDOWS_JSON ""
+            end
         else
             set -g __WORKSPACE_CLEANUP_SPACES_JSON ""
+            set -g __WORKSPACE_CLEANUP_WINDOWS_JSON ""
         end
     end
 
@@ -82,6 +95,11 @@ function workspace_run_cleanup_specs --description "Run workspace cleanup specs 
         set -g __WORKSPACE_CLEANUP_SPACES_JSON "$old_cleanup_spaces_cache"
     else
         set -e __WORKSPACE_CLEANUP_SPACES_JSON
+    end
+    if test "$had_cleanup_windows_cache" -eq 1
+        set -g __WORKSPACE_CLEANUP_WINDOWS_JSON "$old_cleanup_windows_cache"
+    else
+        set -e __WORKSPACE_CLEANUP_WINDOWS_JSON
     end
 
     return $failed
