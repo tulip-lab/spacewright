@@ -5,6 +5,13 @@ configuration and installation contracts may still change before 1.0.
 
 ## Unreleased
 
+## 0.2.0-alpha.2 — 2026-09-17
+
+- Bootstrap isolated `work_smoke` child shells from the installed package, so
+  `work_doctor` validates an installation without reporting missing commands.
+- Exercise the full smoke suite from an installer-produced package in release
+  checks.
+
 ## 0.2.0-alpha.1 — 2026-09-17
 
 - Configure the complete coding, research, Office, and GTD workspace matrix.
