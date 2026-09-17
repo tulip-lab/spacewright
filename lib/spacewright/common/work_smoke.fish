@@ -2911,6 +2911,112 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
+    set -l coding_control_smartgit_failed_move_fallback_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_control_fallback_args ""
+        set -g __work_smoke_control_moves
+        set -g __work_smoke_control_fallback_used 0
+
+        function ws_query_windows
+            printf "%s\n" "[
+                {\"id\": 21, \"app\": \"Warp\", \"space\": 4, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"is-visible\": true, \"title\": \"Warp\"},
+                {\"id\": 22, \"app\": \"SmartGit\", \"space\": 6, \"display\": 1, \"can-move\": true, \"is-minimized\": false, \"is-visible\": true, \"title\": \"SmartGit\"}
+            ]"
+        end
+
+        function workspace_find_app_key_window
+            argparse "app-key=" "space=" "caller=" no-refresh target-only visible quiet-unmovable -- $argv
+
+            switch "$_flag_app_key"
+                case warp
+                    if set -q _flag_space; and test "$__work_smoke_control_fallback_used" -eq 1; and test "$_flag_space" = 6
+                        echo 21
+                    else if not set -q _flag_space
+                        echo 21
+                    end
+                    return 0
+                case smartgit
+                    if set -q _flag_space
+                        if test "$__work_smoke_control_fallback_used" -eq 1; and test "$_flag_space" = 6
+                            echo 22
+                        end
+                    else
+                        echo 22
+                    end
+                    return 0
+                case keepassx
+                    return 0
+            end
+        end
+
+        function resolve_workspace_primary_display
+            echo 2
+        end
+
+        function find_or_create_labeled_space
+            echo 4
+        end
+
+        function workspace_retarget_contaminated_space
+            echo 4
+        end
+
+        function workspace_focus_labeled_space
+        end
+
+        function workspace_focus_space_fallback
+            set -g __work_smoke_control_fallback_args (string join " " -- $argv)
+            set -g __work_smoke_control_fallback_used 1
+            echo 6
+        end
+
+        function workspace_evict_non_owned_windows_from_space
+        end
+
+        function ws_move_windows_to_space
+            set -ga __work_smoke_control_moves (string join , -- $argv)
+        end
+
+        function ws_window
+        end
+
+        function workspace_apply_app_key_absolute_bounds
+        end
+
+        function ws_focus_space
+        end
+
+        function cleanup_unlabeled_empty_spaces
+        end
+
+        coding_control
+        or exit 1
+
+        test "$__work_smoke_control_fallback_used" -eq 1
+        or exit 2
+
+        string match -q "*--space 6*" -- "$__work_smoke_control_fallback_args"
+        or exit 3
+
+        string match -q "*--source-display 1*" -- "$__work_smoke_control_fallback_args"
+        or exit 4
+
+        string match -q "*--target-display 2*" -- "$__work_smoke_control_fallback_args"
+        or exit 5
+
+        contains -- "6,21" $__work_smoke_control_moves
+        or exit 6
+    '
+    fish -lc "$coding_control_smartgit_failed_move_fallback_smoke" >/tmp/work-coding-control-smartgit-failed-move-fallback-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      coding control SmartGit failed-move fallback"
+    else
+        echo "FAIL    coding control SmartGit failed-move fallback"
+        cat /tmp/work-coding-control-smartgit-failed-move-fallback-smoke.out
+        set failed 1
+    end
+
     set -l meeting_zoom_settle_smoke '
         work_reload >/dev/null
 

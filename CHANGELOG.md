@@ -5,6 +5,12 @@ configuration and installation contracts may still change before 1.0.
 
 ## Unreleased
 
+## 0.2.0-alpha.6 — 2026-09-17
+
+- Fall back to moving SmartGit's owning Space when macOS accepts but does not
+  apply a cross-display window move, keeping `coding_control` on the workspace
+  primary display.
+
 ## 0.2.0-alpha.5 — 2026-09-17
 
 - Treat Spaces containing only sticky windows as empty during inactive-mode
