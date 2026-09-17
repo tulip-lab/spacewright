@@ -56,6 +56,12 @@
   temporarily non-movable.
 - Installed alpha.7 and confirmed clean and stale-inherited Fish environments
   both resolve the pinned release through the Mackup startup adapter.
-- The final full live aggregate replay requires one login/restart because the
-  pre-alpha.7 recovery attempt restarted yabai while applications were open,
-  leaving their AX references unavailable for the rest of the current login.
+- Released `v0.2.0-alpha.8` after live verification showed fixed control
+  bounds must be relative to the built-in display origin when the Mi Monitor
+  occupies the global left origin. The release also reconciles coding control
+  before GTD chat so a SmartGit-owned Space move cannot erase the final chat
+  label.
+- Installed alpha.8 and completed the post-restart live wide aggregate with a
+  zero exit status. Display health, fixed-space separation, every configured
+  module, and final cleanup passed. A final direct `gtd_ai_wide` run confirmed
+  Hermes, ChatGPT, Obsidian, and Notes together on the external GTD AI Space.

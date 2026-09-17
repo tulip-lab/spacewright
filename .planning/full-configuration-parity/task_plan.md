@@ -52,11 +52,10 @@ to trusted Fish adapters; configuration cannot name arbitrary commands.
 
 ## Status
 
-Implementation and release are complete through `v0.2.0-alpha.7`. The Mackup
+Complete. Implementation and release are complete through `v0.2.0-alpha.8`. The Mackup
 consumer is pinned to the immutable release and validated in installed and
 rollback modes. Live wide, tall, and solo workspace runs exposed and verified
-the cleanup, display-role, SmartGit, and Hermes fallback fixes. The Mi Monitor
-is re-enumerated and the external-left role is healthy. One final full live
-aggregate replay remains after the next login/restart because an earlier yabai
-recovery attempt invalidated existing application AX references for the rest
-of the current login.
+the cleanup, display-role, display-relative control bounds, SmartGit, and
+Hermes fallback fixes. The Mi Monitor external-left role is healthy, the Dock
+is on its outer-left edge, fixed internal Spaces are separated, and a final
+direct GTD AI run grouped Hermes with ChatGPT, Obsidian, and Notes.
