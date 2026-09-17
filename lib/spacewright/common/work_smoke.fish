@@ -252,6 +252,113 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
+    set -l gtd_ai_hermes_space_fallback_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_ai_fallback_args ""
+        set -g __work_smoke_ai_eviction_args ""
+        set -g __work_smoke_ai_capture_spaces
+        set -g __work_smoke_ai_bounds ""
+
+        function workspace_run_cleanup_specs
+        end
+
+        function workspace_resolve_display_role
+            echo 2
+        end
+
+        function ws_query_windows
+            printf "%s\n" "[
+                {\"id\": 30, \"app\": \"Hermes\", \"space\": 6, \"display\": 1, \"can-move\": false, \"is-minimized\": false, \"is-visible\": true, \"title\": \"Hermes\"}
+            ]"
+        end
+
+        function find_or_create_labeled_space
+            exit 8
+        end
+
+        function workspace_retarget_contaminated_space
+            exit 9
+        end
+
+        function workspace_focus_labeled_space
+            exit 10
+        end
+
+        function workspace_focus_space_fallback
+            set -g __work_smoke_ai_fallback_args (string join " " -- $argv)
+            echo 6
+        end
+
+        function workspace_evict_non_owned_windows_from_space
+            set -g __work_smoke_ai_eviction_args (string join " " -- $argv)
+        end
+
+        function workspace_capture_app_window
+            argparse "app-key=" "caller=" "space=" -- $argv
+            set -ga __work_smoke_ai_capture_spaces "$_flag_app_key:$_flag_space"
+            switch "$_flag_app_key"
+                case chatgpt
+                    echo 31
+                case obsidian
+                    echo 32
+                case notes
+                    echo 33
+            end
+        end
+
+        function workspace_apply_app_key_grid_bounds
+            set -g __work_smoke_ai_bounds (string join " " -- $argv)
+        end
+
+        function ws_window
+        end
+
+        function ws_focus_space
+        end
+
+        function cleanup_unlabeled_empty_spaces
+        end
+
+        gtd_apply_ai_space \
+            --label gtd_ai \
+            --display wide \
+            --hermes-grid 1:4:1:0:2:1 \
+            --chatgpt-grid 1:4:3:0:1:1 \
+            --obsidian-grid 2:4:0:1:1:1 \
+            --notes-grid 2:4:0:0:1:1
+        or exit 1
+
+        string match -q "*--space 6*" -- "$__work_smoke_ai_fallback_args"
+        or exit 2
+
+        string match -q "*--source-display 1*" -- "$__work_smoke_ai_fallback_args"
+        or exit 3
+
+        string match -q "*--target-display 2*" -- "$__work_smoke_ai_fallback_args"
+        or exit 4
+
+        string match -q "*--space 6*" -- "$__work_smoke_ai_eviction_args"
+        or exit 5
+
+        contains -- chatgpt:6 $__work_smoke_ai_capture_spaces
+        and contains -- obsidian:6 $__work_smoke_ai_capture_spaces
+        and contains -- notes:6 $__work_smoke_ai_capture_spaces
+        or exit 6
+
+        string match -q "*--app-key hermes*" -- "$__work_smoke_ai_bounds"
+        and string match -q "*--grid 1:4:1:0:2:1*" -- "$__work_smoke_ai_bounds"
+        or exit 7
+    '
+    fish -lc "$gtd_ai_hermes_space_fallback_smoke" >/tmp/work-gtd-ai-hermes-space-fallback-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      GTD AI Hermes space fallback"
+    else
+        echo "FAIL    GTD AI Hermes space fallback"
+        cat /tmp/work-gtd-ai-hermes-space-fallback-smoke.out
+        set failed 1
+    end
+
     set -l gtd_review_wide_dry_run (gtd_review_wide --dry-run)
     set -l gtd_review_tall_dry_run (gtd_review_tall --dry-run)
     set -l gtd_review_solo_dry_run (gtd_review_solo --dry-run)
