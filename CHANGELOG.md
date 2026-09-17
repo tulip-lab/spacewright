@@ -5,6 +5,12 @@ configuration and installation contracts may still change before 1.0.
 
 ## Unreleased
 
+## 0.2.0-alpha.7 — 2026-09-17
+
+- Preserve an unmovable Hermes window by moving its owning Space to the target
+  display and collecting the remaining GTD AI apps there, avoiding a disruptive
+  yabai restart during workspace entry.
+
 ## 0.2.0-alpha.6 — 2026-09-17
 
 - Fall back to moving SmartGit's owning Space when macOS accepts but does not

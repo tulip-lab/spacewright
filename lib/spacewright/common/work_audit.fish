@@ -209,7 +209,7 @@ function __work_audit_ownership_policy_coverage --description "Audit static owne
         "gtd_mail_*|Microsoft Outlook|optional-helper" \
         "gtd_meeting_*|Zoom|all-movable-windows;fallback-space-owner" \
         "gtd_meeting_*|Microsoft Teams/MSTeams|all-movable-windows;fallback-space-owner" \
-        "gtd_ai|Hermes|single-window" \
+        "gtd_ai|Hermes|single-window;fallback-space-owner" \
         "gtd_ai|ChatGPT|single-window" \
         "gtd_ai|Obsidian|single-window" \
         "gtd_ai|Notes|single-window" \
