@@ -1,0 +1,265 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spacewright.local/schemas/spacewright-v2.schema.json",
+  "title": "SpaceWright portable user configuration v2",
+  "type": "object",
+  "required": ["version", "apps", "displayRoles", "workspaces", "modes"],
+  "properties": {
+    "version": { "const": 2 },
+    "metadata": {
+      "type": "object",
+      "properties": { "name": { "type": "string", "minLength": 1 } },
+      "additionalProperties": false
+    },
+    "apps": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/id" },
+      "additionalProperties": { "$ref": "#/$defs/app" }
+    },
+    "displayRoles": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/id" },
+      "additionalProperties": { "$ref": "#/$defs/displayRole" }
+    },
+    "workspaces": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/id" },
+      "additionalProperties": { "$ref": "#/$defs/workspace" }
+    },
+    "modes": {
+      "type": "object",
+      "properties": {
+        "solo": { "$ref": "#/$defs/mode" },
+        "wide": { "$ref": "#/$defs/mode" },
+        "tall": { "$ref": "#/$defs/mode" }
+      },
+      "additionalProperties": false
+    },
+    "shortcuts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/shortcut" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+    "app": {
+      "type": "object",
+      "required": ["name", "match"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "match": {
+          "type": "object",
+          "required": ["appNames"],
+          "properties": {
+            "appNames": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "displayRole": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "portableMatch": {
+          "type": "object",
+          "properties": {
+            "builtIn": { "type": "boolean" },
+            "orientation": { "enum": ["wide", "tall"] }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "selector": {
+      "type": "object",
+      "properties": {
+        "movable": { "type": "boolean" },
+        "visible": { "type": "boolean" },
+        "non_empty_title": { "type": "boolean" },
+        "title_include": { "type": "string" },
+        "title_exclude": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "window": {
+      "type": "object",
+      "required": ["app", "required"],
+      "properties": {
+        "app": { "$ref": "#/$defs/id" },
+        "required": { "type": "boolean" },
+        "selector": { "$ref": "#/$defs/selector" }
+      },
+      "additionalProperties": false
+    },
+    "layout": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "role"],
+          "properties": { "type": { "const": "window" }, "role": { "$ref": "#/$defs/id" } },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "properties": { "type": { "const": "empty" } },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "direction", "weights", "children"],
+          "properties": {
+            "type": { "const": "split" },
+            "direction": { "enum": ["rows", "columns"] },
+            "weights": { "type": "array", "minItems": 2, "items": { "type": "integer", "minimum": 1 } },
+            "children": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/layout" } }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "regions"],
+          "properties": {
+            "type": { "const": "canvas" },
+            "regions": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["role"],
+                "properties": {
+                  "role": { "$ref": "#/$defs/id" },
+                  "grid": { "type": "string", "pattern": "^[0-9]+:[0-9]+:[0-9]+:[0-9]+:[0-9]+:[0-9]+$" },
+                  "move_abs": { "type": "string" },
+                  "resize_abs": { "type": "string" }
+                },
+                "anyOf": [
+                  { "required": ["grid"] },
+                  { "required": ["move_abs"] },
+                  { "required": ["resize_abs"] }
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "runtimeCompatibility": {
+      "type": "object",
+      "required": ["runner"],
+      "properties": {
+        "runner": { "enum": ["primary_helper", "office_document", "gtd_support", "gtd_review", "gtd_meeting", "gtd_ai", "fixed_adapter", "generic_layout"] },
+        "displayRole": { "type": "string", "minLength": 1 },
+        "runnerOptions": { "type": "object" },
+        "cleanup": { "type": "object" },
+        "primaryAloneLayout": { "type": "array" },
+        "windows": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["role", "app_key", "required"],
+            "properties": {
+              "role": { "$ref": "#/$defs/id" },
+              "app_key": { "$ref": "#/$defs/id" },
+              "required": { "type": "boolean" },
+              "selector": { "$ref": "#/$defs/selector" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "variant": {
+      "type": "object",
+      "required": ["layout"],
+      "properties": {
+        "layout": { "$ref": "#/$defs/layout" },
+        "command": { "$ref": "#/$defs/id" },
+        "spaceLabel": { "type": "string", "minLength": 1 },
+        "runtime": { "$ref": "#/$defs/runtimeCompatibility" }
+      },
+      "additionalProperties": false
+    },
+    "workspace": {
+      "type": "object",
+      "required": ["name", "spaceLabel", "windows", "variants"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "spaceLabel": { "type": "string", "minLength": 1 },
+        "windows": { "type": "object", "minProperties": 1, "propertyNames": { "$ref": "#/$defs/id" }, "additionalProperties": { "$ref": "#/$defs/window" } },
+        "variants": {
+          "type": "object",
+          "properties": { "solo": { "$ref": "#/$defs/variant" }, "wide": { "$ref": "#/$defs/variant" }, "tall": { "$ref": "#/$defs/variant" } },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "mode": {
+      "type": "object",
+      "required": ["displays"],
+      "properties": {
+        "displays": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["role", "workspaceOrder"],
+            "properties": {
+              "role": { "$ref": "#/$defs/id" },
+              "workspaceOrder": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" } }
+            },
+            "additionalProperties": false
+          }
+        },
+        "cleanup": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z_]+:(solo|wide|tall)$" } },
+        "postprocessors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "afterCommand"],
+            "properties": {
+              "name": { "enum": ["gtd_ai_expand_hermes_when_alone", "workspace_reconcile_primary_fixed_spaces"] },
+              "afterCommand": { "type": ["string", "null"] }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "shortcut": {
+      "type": "object",
+      "required": ["id", "keys", "action"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "keys": {
+          "type": "object",
+          "required": ["modifiers", "key"],
+          "properties": {
+            "modifiers": { "type": "array", "uniqueItems": true, "items": { "enum": ["cmd", "ctrl", "alt", "shift", "fn"] } },
+            "key": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
+        },
+        "action": {
+          "oneOf": [
+            { "type": "object", "required": ["type", "mode"], "properties": { "type": { "const": "activateMode" }, "mode": { "enum": ["solo", "wide", "tall"] } }, "additionalProperties": false },
+            { "type": "object", "required": ["type", "workspace", "mode"], "properties": { "type": { "const": "activateWorkspace" }, "workspace": { "$ref": "#/$defs/id" }, "mode": { "enum": ["solo", "wide", "tall"] } }, "additionalProperties": false }
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

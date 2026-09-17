@@ -1,0 +1,49 @@
+{
+  "version": 2,
+  "metadata": { "name": "Example SpaceWright setup" },
+  "apps": {
+    "code": { "name": "Visual Studio Code", "match": { "appNames": ["Code", "Visual Studio Code"] } },
+    "chatgpt": { "name": "ChatGPT", "match": { "appNames": ["ChatGPT"] } }
+  },
+  "displayRoles": {
+    "primary": { "name": "Primary display", "portableMatch": { "builtIn": true } },
+    "task": { "name": "Task display", "portableMatch": {} }
+  },
+  "workspaces": {
+    "coding": {
+      "name": "Coding",
+      "spaceLabel": "coding",
+      "windows": {
+        "editor": { "app": "code", "required": true, "selector": { "movable": true } },
+        "assistant": { "app": "chatgpt", "required": false, "selector": { "movable": true } }
+      },
+      "variants": {
+        "solo": { "layout": { "type": "window", "role": "editor" } },
+        "wide": {
+          "layout": {
+            "type": "split",
+            "direction": "columns",
+            "weights": [1, 2],
+            "children": [{ "type": "window", "role": "assistant" }, { "type": "window", "role": "editor" }]
+          }
+        },
+        "tall": {
+          "layout": {
+            "type": "split",
+            "direction": "rows",
+            "weights": [1, 1],
+            "children": [{ "type": "window", "role": "assistant" }, { "type": "window", "role": "editor" }]
+          }
+        }
+      }
+    }
+  },
+  "modes": {
+    "solo": { "displays": [{ "role": "primary", "workspaceOrder": ["coding"] }] },
+    "wide": { "displays": [{ "role": "task", "workspaceOrder": ["coding"] }] },
+    "tall": { "displays": [{ "role": "task", "workspaceOrder": ["coding"] }] }
+  },
+  "shortcuts": [
+    { "id": "work-wide", "keys": { "modifiers": ["alt", "shift"], "key": "w" }, "action": { "type": "activateMode", "mode": "wide" } }
+  ]
+}

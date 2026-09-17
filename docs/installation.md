@@ -6,6 +6,7 @@
 - Fish 3.6 or newer
 - `jq`
 - `yabai` for live workspace commands
+- Node.js 20 or newer for the Web Configurator and v2 compilation
 
 `skhd` and `displayplacer` remain optional integrations.
 
@@ -29,7 +30,7 @@ for Fish startup and `~/.local/bin/spacewright`. Existing non-managed files or
 links are never overwritten.
 
 The installer does not create, replace, or remove
-`~/.config/spacewright/config.json`. Re-running it for the same version is
+`~/.config/spacewright/config.json` or `config.v2.json`. Re-running it for the same version is
 idempotent. Installing a newer tagged checkout changes `current`; older release
 directories remain available for rollback.
 
@@ -40,6 +41,7 @@ spacewright version
 spacewright config-check
 spacewright config-plan coding_editor_wide
 spacewright doctor
+spacewright configure
 ```
 
 These checks are read-only. A live workspace command remains a separate,

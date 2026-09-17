@@ -200,8 +200,30 @@ function workspace_resolve_display_role --description "Resolve a workspace displ
         case wide tall
             resolve_workspace_external_display $role
         case '*'
-            echo "[WARN] workspace_resolve_display_role: invalid display role: $role" >&2
-            return 2
+            set -l base_role (string replace -r '__(solo|wide|tall)$' '' -- "$role")
+            set -l expected_mode (string match -r '(solo|wide|tall)$' -- "$role")
+            set -l machine_file "$SPACEWRIGHT_STATE_ROOT/machine.json"
+            if test -r "$machine_file"
+                set -l bound_uuid (jq -r --arg role "$base_role" '.displayBindings[$role] // empty' "$machine_file" 2>/dev/null)
+                if test -n "$bound_uuid"
+                    set -l displays_json (ws_query_displays workspace_resolve_display_role configured_role)
+                    or return 1
+                    set -l bound_index (printf "%s\n" "$displays_json" | ws_jq -r --arg uuid "$bound_uuid" 'first(.[] | select(.uuid==$uuid) | .index) // empty')
+                    if test -n "$bound_index"
+                        echo "$bound_index"
+                        return 0
+                    end
+                end
+            end
+            switch "$expected_mode"
+                case solo
+                    resolve_workspace_primary_display
+                case wide tall
+                    resolve_workspace_external_display "$expected_mode"
+                case '*'
+                    echo "[WARN] workspace_resolve_display_role: unbound display role: $role" >&2
+                    return 2
+            end
     end
 end
 

@@ -23,6 +23,12 @@ test -L "$bin_root/spacewright"
 or exit 4
 test ("$bin_root/spacewright" version) = (string trim < "$package_root/VERSION")
 or exit 5
+test -f "$installed_release_root/configurator/server.mjs"
+or exit 15
+node --check "$installed_release_root/configurator/server.mjs"
+or exit 16
+node "$installed_release_root/configurator/cli.mjs" starter | jq -e '.version == 2 and (.modes | keys == ["solo", "tall", "wide"])' >/dev/null
+or exit 17
 
 env -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT -u SPACEWRIGHT_CONFIG_ROOT \
     HOME="$test_root" XDG_CONFIG_HOME="$test_root/xdg" fish --no-config -c \
