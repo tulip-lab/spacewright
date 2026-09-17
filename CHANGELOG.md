@@ -5,6 +5,8 @@ configuration and installation contracts may still change before 1.0.
 
 ## Unreleased
 
+## 0.2.0-alpha.10 — 2026-09-18
+
 - Install the pinned Node and Chromium dependencies in CI before running the
   Playwright configuration round-trip test.
 
