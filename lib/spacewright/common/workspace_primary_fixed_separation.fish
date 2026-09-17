@@ -30,6 +30,7 @@ function workspace_verify_primary_fixed_separation --description "Verify distinc
                 [$windows[]
                     | . as $window
                     | select(($apps | index($window.app)) != null)
+                    | select((.["is-minimized"] // false) != true)
                     | select((.["is-sticky"] // false) != true)];
             def assigned($spaces; $owned_windows):
                 if ($owned_windows | length) == 0 then true
