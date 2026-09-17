@@ -52,6 +52,11 @@ to trusted Fish adapters; configuration cannot name arbitrary commands.
 
 ## Status
 
-Complete. Released as `v0.2.0-alpha.2`, pinned and installed by the Mackup
-consumer, validated in installed and rollback modes, and exercised with a live
-wide layout across the built-in and external displays.
+Implementation and release are complete through `v0.2.0-alpha.7`. The Mackup
+consumer is pinned to the immutable release and validated in installed and
+rollback modes. Live wide, tall, and solo workspace runs exposed and verified
+the cleanup, display-role, SmartGit, and Hermes fallback fixes. The Mi Monitor
+is re-enumerated and the external-left role is healthy. One final full live
+aggregate replay remains after the next login/restart because an earlier yabai
+recovery attempt invalidated existing application AX references for the rest
+of the current login.
