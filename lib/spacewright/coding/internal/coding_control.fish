@@ -272,6 +272,66 @@ function __coding_control_body --description "Collect Warp, SmartGit, KeePassXC,
             ws_move_windows_to_space $target_space $smartgit
             set smartgit (workspace_find_app_key_window --app-key smartgit --caller $label --space $target_space --no-refresh --target-only)
         end
+
+        # SmartGit can advertise a movable window while macOS still refuses a
+        # cross-display window move. After the bounded retry, preserve that
+        # app-owned Space and move the Space itself instead of silently
+        # completing with SmartGit left on the external display.
+        if test -z "$smartgit"
+            set -l smartgit_failed_move_fallback_info (workspace_app_key_space_fallback_info \
+                --app-key smartgit \
+                --caller $label \
+                --phase smartgit-failed-move-fallback)
+            or return 1
+
+            set -l smartgit_failed_move_fallback_parts (string split \t -- "$smartgit_failed_move_fallback_info")
+            set smartgit_fallback_window $smartgit_failed_move_fallback_parts[1]
+            set smartgit_fallback_space $smartgit_failed_move_fallback_parts[2]
+            set smartgit_fallback_display $smartgit_failed_move_fallback_parts[3]
+
+            if test -z "$smartgit_fallback_window" -o -z "$smartgit_fallback_space" -o -z "$smartgit_fallback_display"
+                return 1
+            end
+
+            set target_space (workspace_focus_space_fallback \
+                --label $label \
+                --caller $label \
+                --space $smartgit_fallback_space \
+                --source-display $smartgit_fallback_display \
+                --target-display $target_display \
+                --layout float \
+                --phase smartgit-failed-move-fallback)
+            or return 1
+
+            workspace_evict_non_owned_windows_from_space \
+                --caller $label \
+                --space $target_space \
+                --target-display $target_display \
+                --allowed-app-regex "$control_app_regex"
+            or return 1
+
+            set smartgit_space_fallback_used 1
+            ws_move_windows_to_space \
+                $target_space \
+                $warp_initial \
+                $keepassx_initial \
+                $flclash \
+                $portfolio_performance_initial
+
+            set windows_json_final (ws_query_windows "coding_control" failed_move_fallback_final)
+            or return 1
+
+            set warp (workspace_find_app_key_window --app-key warp --caller $label --space $target_space --no-refresh --target-only)
+            set keepassx (workspace_find_app_key_window --app-key keepassx --caller $label --space $target_space --no-refresh --target-only)
+            set portfolio_performance (workspace_find_app_key_window --app-key portfolio_performance --caller $label --space $target_space --no-refresh --target-only)
+
+            set -l smartgit_target_windows (echo $windows_json_final | workspace_app_key_windows --app-key smartgit --space $target_space)
+            or return 1
+            set smartgit $smartgit_target_windows[1]
+            if test -z "$smartgit"
+                set smartgit $smartgit_fallback_window
+            end
+        end
     end
 
     if test -z "$keepassx" -a -n "$keepassx_initial"
