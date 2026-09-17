@@ -8,15 +8,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         functions -c fish __spacewright_saved_fish_function
     end
 
+    set -l smoke_source_root "$SPACEWRIGHT_ROOT"
     if set -q WORKSPACE_TEST_SOURCE_ROOT
-        set -lx fish_function_path "$WORKSPACE_TEST_SOURCE_ROOT/common" $fish_function_path
+        set smoke_source_root "$WORKSPACE_TEST_SOURCE_ROOT"
+        set -lx fish_function_path "$smoke_source_root/common" $fish_function_path
         set -lx XDG_CONFIG_HOME "$SPACEWRIGHT_PACKAGE_ROOT/tests/fixtures/xdg-empty"
     end
 
     set -l smoke_fish_binary (command -s fish)
-    function fish --inherit-variable smoke_fish_binary
-        if test "$argv[1]" = -lc; and set -q WORKSPACE_TEST_SOURCE_ROOT
-            set -l escaped_source_root (string escape -- "$WORKSPACE_TEST_SOURCE_ROOT")
+    function fish --inherit-variable smoke_fish_binary --inherit-variable smoke_source_root
+        if test "$argv[1]" = -lc; and test -n "$smoke_source_root"
+            set -l escaped_source_root (string escape -- "$smoke_source_root")
             set argv[2] "set -gx SPACEWRIGHT_ROOT $escaped_source_root; source $escaped_source_root/common/spacewright_paths.fish; source $escaped_source_root/common/work_reload.fish; $argv[2]"
         end
         command $smoke_fish_binary $argv
