@@ -13,7 +13,14 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
       - name: Install test dependencies
-        run: brew install fish jq
+        run: |
+          brew install fish jq
+          npm ci
+          npx playwright install chromium
       - name: Run release checks
         run: fish scripts/check.fish
