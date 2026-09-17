@@ -5,6 +5,8 @@ configuration and installation contracts may still change before 1.0.
 
 ## Unreleased
 
+## 0.2.0-alpha.3 — 2026-09-17
+
 - Remove empty labels from inactive solo, wide, and tall workspace families at
   the top-level aggregate boundary.
 
