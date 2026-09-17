@@ -177,24 +177,77 @@ function gtd_apply_ai_space --description "Apply a GTD AI workspace for Hermes, 
     set -l allowed_app_regex (__gtd_ai_allowed_app_regex)
     or return 1
 
-    set -l target_space (find_or_create_labeled_space $_flag_label $target_display)
-    if test -z "$target_space"
-        return 1
+    set -l hermes_space_fallback_used 0
+    set -l hermes_fallback_window
+    set -l hermes_fallback_space
+    set -l hermes_fallback_display
+
+    set -l windows_json_initial (ws_query_windows $_flag_label initial)
+    or return 1
+
+    set -l hermes_movable_info (echo $windows_json_initial | workspace_app_key_window_info --app-key hermes --movable)
+    or return 1
+
+    if test -z "$hermes_movable_info"
+        set -l hermes_fallback_info (echo $windows_json_initial | workspace_app_key_window_info --app-key hermes --unmovable)
+        or return 1
+
+        if test -n "$hermes_fallback_info"
+            set -l hermes_fallback_parts (string split \t -- "$hermes_fallback_info")
+            set hermes_fallback_window $hermes_fallback_parts[1]
+            set hermes_fallback_space $hermes_fallback_parts[2]
+            set hermes_fallback_display $hermes_fallback_parts[3]
+
+            if test -z "$hermes_fallback_window" -o -z "$hermes_fallback_space" -o -z "$hermes_fallback_display"
+                echo "[WARN] $_flag_label found Hermes, but its fallback space metadata was incomplete" >&2
+                return 1
+            end
+        end
     end
 
-    set target_space (workspace_retarget_contaminated_space \
-        $_flag_label \
-        $_flag_label \
-        $target_space \
-        $target_display \
-        "$allowed_app_regex")
-    or return 1
+    set -l target_space
+    if test -n "$hermes_fallback_space"
+        set target_space (workspace_focus_space_fallback \
+            --label $_flag_label \
+            --caller $_flag_label \
+            --space $hermes_fallback_space \
+            --source-display $hermes_fallback_display \
+            --target-display $target_display \
+            --layout float \
+            --phase hermes-space-fallback)
+        or return 1
 
-    workspace_focus_labeled_space $_flag_label $target_space $target_display float
-    or return 1
+        workspace_evict_non_owned_windows_from_space \
+            --caller $_flag_label \
+            --space $target_space \
+            --target-display $target_display \
+            --allowed-app-regex "$allowed_app_regex"
+        or return 1
 
-    set -l hermes (__gtd_ai_capture_app --app-key hermes --caller $_flag_label --space $target_space)
-    or return 1
+        set hermes_space_fallback_used 1
+    else
+        set target_space (find_or_create_labeled_space $_flag_label $target_display)
+        if test -z "$target_space"
+            return 1
+        end
+
+        set target_space (workspace_retarget_contaminated_space \
+            $_flag_label \
+            $_flag_label \
+            $target_space \
+            $target_display \
+            "$allowed_app_regex")
+        or return 1
+
+        workspace_focus_labeled_space $_flag_label $target_space $target_display float
+        or return 1
+    end
+
+    set -l hermes $hermes_fallback_window
+    if test "$hermes_space_fallback_used" -ne 1
+        set hermes (__gtd_ai_capture_app --app-key hermes --caller $_flag_label --space $target_space)
+        or return 1
+    end
 
     set -l chatgpt (__gtd_ai_capture_app --app-key chatgpt --caller $_flag_label --space $target_space)
     or return 1
@@ -211,7 +264,15 @@ function gtd_apply_ai_space --description "Apply a GTD AI workspace for Hermes, 
     end
 
     if test -n "$hermes" -a -n "$_flag_hermes_grid"
-        ws_window $hermes --grid $_flag_hermes_grid
+        if test "$hermes_space_fallback_used" -eq 1
+            workspace_apply_app_key_grid_bounds \
+                --app-key hermes \
+                --display $target_display \
+                --grid $_flag_hermes_grid \
+                --caller $_flag_label
+        else
+            ws_window $hermes --grid $_flag_hermes_grid
+        end
     end
 
     if test -n "$chatgpt" -a -n "$_flag_chatgpt_grid"
