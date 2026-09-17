@@ -5,6 +5,12 @@ configuration and installation contracts may still change before 1.0.
 
 ## Unreleased
 
+## 0.2.0-alpha.9 — 2026-09-18
+
+- Add a local, token-protected Web Configurator for portable apps, display
+  roles, workspace layouts, modes, and structured shortcuts.
+- Add v2 configuration validation, v1 migration, deterministic runtime and
+  skhd compilation, atomic saves, backups, and machine-local display bindings.
 - Add a real-browser configuration round-trip test covering authoritative file
   reads, GUI validation and save, external edits, reload, service restart, and
   restoration without mocking the configuration backend.
