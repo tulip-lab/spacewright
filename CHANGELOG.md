@@ -5,6 +5,12 @@ configuration and installation contracts may still change before 1.0.
 
 ## Unreleased
 
+- Add a real-browser configuration round-trip test covering authoritative file
+  reads, GUI validation and save, external edits, reload, service restart, and
+  restoration without mocking the configuration backend.
+- Verify that installed releases contain the complete Web Configurator runtime,
+  including its service, compiler, HTML, JavaScript, and CSS assets.
+
 ## 0.2.0-alpha.8 — 2026-09-17
 
 - Anchor fixed SmartGit, FlClash/Thaw, and Portfolio Performance bounds to the

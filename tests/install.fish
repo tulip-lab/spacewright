@@ -23,10 +23,20 @@ test -L "$bin_root/spacewright"
 or exit 4
 test ("$bin_root/spacewright" version) = (string trim < "$package_root/VERSION")
 or exit 5
-test -f "$installed_release_root/configurator/server.mjs"
-or exit 15
+for configurator_file in \
+        server.mjs \
+        cli.mjs \
+        lib/config-v2.mjs \
+        public/index.html \
+        public/app.js \
+        public/styles.css
+    test -f "$installed_release_root/configurator/$configurator_file"
+    or exit 15
+end
 node --check "$installed_release_root/configurator/server.mjs"
 or exit 16
+node --check "$installed_release_root/configurator/public/app.js"
+or exit 18
 node "$installed_release_root/configurator/cli.mjs" starter | jq -e '.version == 2 and (.modes | keys == ["solo", "tall", "wide"])' >/dev/null
 or exit 17
 
