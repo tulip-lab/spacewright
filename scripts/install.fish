@@ -42,7 +42,7 @@ if set -q _flag_dry_run
     exit 0
 end
 
-for required in lib config schemas conf.d bin VERSION LICENSE README.md
+for required in lib config schemas conf.d bin configurator VERSION LICENSE README.md
     if not test -e "$source_root/$required"
         echo "spacewright install: source is missing $required" >&2
         exit 1
@@ -63,7 +63,7 @@ else
     command mkdir -p "$staging_root"
     or exit 1
 
-    for item in lib config schemas conf.d bin VERSION LICENSE README.md CHANGELOG.md SECURITY.md
+    for item in lib config schemas conf.d bin configurator VERSION LICENSE README.md CHANGELOG.md SECURITY.md
         if test -e "$source_root/$item"
             command cp -R "$source_root/$item" "$staging_root/"
             or begin

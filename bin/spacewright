@@ -19,6 +19,30 @@ switch "$command_name"
         workspace_config_check
     case config-plan
         workspace_config_plan $argv
+    case config-v2-check
+        set -l config_file $argv[1]
+        test -n "$config_file"; or set config_file "$SPACEWRIGHT_CONFIG_ROOT/config.v2.json"
+        command node "$package_root/configurator/cli.mjs" validate "$config_file"
+    case config-v2-compile
+        set -l config_file $argv[1]
+        test -n "$config_file"; or set config_file "$SPACEWRIGHT_CONFIG_ROOT/config.v2.json"
+        command node "$package_root/configurator/cli.mjs" compile "$config_file"
+    case config-migrate-v1
+        set -l config_file $argv[1]
+        test -n "$config_file"; or set config_file (spacewright_config_user_file)
+        command node "$package_root/configurator/cli.mjs" migrate-v1 "$config_file"
+    case configure
+        if not command -q node
+            echo 'spacewright configure requires Node.js 20 or newer' >&2
+            exit 1
+        end
+        command node "$package_root/configurator/server.mjs" "--package-root=$package_root" "--config-root=$SPACEWRIGHT_CONFIG_ROOT" "--state-root=$SPACEWRIGHT_STATE_ROOT" $argv
+    case run
+        if test (count $argv) -eq 2
+            workspace_run_configured "spacewright_$argv[1]_$argv[2]"
+        else
+            workspace_run_configured $argv
+        end
     case doctor
         work_doctor $argv
     case smoke
@@ -32,6 +56,11 @@ switch "$command_name"
             '  version                 print installed version' \
             '  config-check            validate effective configuration' \
             '  config-plan <target>    print a read-only workspace or mode plan' \
+            '  config-v2-check [file]  validate a portable v2 configuration' \
+            '  config-v2-compile [file] compile v2 to a normalized runtime plan' \
+            '  config-migrate-v1 [file] print a v2 migration without writing' \
+            '  configure               open the local Web configurator' \
+            '  run <workspace>         run a compiled workspace entry' \
             '  doctor                  run read-only dependency and config checks' \
             '  smoke                   run isolated regression checks'
     case '*'
