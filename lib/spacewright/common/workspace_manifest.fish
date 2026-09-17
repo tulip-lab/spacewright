@@ -129,7 +129,7 @@ function workspace_common_helper_rows --description "Print declared common works
     printf "%s\t%s\n" workspace_verify "read-only ownership and layout verification for supported workspaces"
     printf "%s\t%s\n" "workspace_app_name(s)/regex" "central workspace app-name registry"
     printf "%s\t%s\n" workspace_verify_primary_fixed_separation "Read-only gtd_chat/coding_control label and ownership verifier"
-    printf "%s\t%s\n" workspace_reconcile_primary_fixed_spaces "One bounded gtd_chat then coding_control reconciliation pass"
+    printf "%s\t%s\n" workspace_reconcile_primary_fixed_spaces "One bounded coding_control then gtd_chat reconciliation pass"
     printf "%s\t%s\n" "ws_find_window/ws_find_windows" "structured window selectors"
     printf "%s\t%s\n" workspace_find_app_window "movable app-window selector with optional refresh"
     printf "%s\t%s\n" workspace_find_app_key_window "movable app-window selector across registered app aliases"

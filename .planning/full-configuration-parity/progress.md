@@ -30,3 +30,32 @@
 - Applied `work_wide` on the live desktop. Fixed workspaces settled on display
   1, all created wide workspaces settled on display 2, and the resulting window
   distribution was 8 on the built-in display and 12 on the external display.
+- Released `v0.2.0-alpha.3` with complete top-level cross-mode cleanup, then
+  exercised the tall aggregate against the live external display.
+- Released `v0.2.0-alpha.4` after live validation showed minimized windows must
+  be excluded from fixed-workspace separation checks.
+- Released `v0.2.0-alpha.5` after live solo validation showed sticky windows
+  must not keep obsolete labeled spaces alive during cleanup.
+- Confirmed the final solo aggregate leaves only solo labels on the built-in
+  display, with fixed-space separation passing and no inactive wide/tall labels.
+- Updated the Mackup consumer pin to commit
+  `14f08e113a1cf1a5bc2207c7ccf98329f2dd29ae` and installed that exact release.
+- Found that `displayplacer enabled:false` can make an external display
+  impossible to re-enable programmatically once macOS stops enumerating it.
+  The Mackup consumer now defaults solo display handling to the reversible
+  `keep` policy; explicit `disable` remains opt-in with a recovery warning.
+- Reconnected and re-enumerated the Mi Monitor, then confirmed the external
+  wide display at the left origin and the built-in workspace-primary display
+  on the right. BetterDisplay's machine-local protected main-display setting
+  now agrees with that arrangement, so the left Dock resolves to the external
+  edge.
+- Released `v0.2.0-alpha.6` with a SmartGit Space fallback for cross-display
+  window moves that macOS acknowledges without applying.
+- Released `v0.2.0-alpha.7` with a Hermes-owned Space fallback, keeping Hermes
+  together with GTD AI helpers without restarting yabai when its AX window is
+  temporarily non-movable.
+- Installed alpha.7 and confirmed clean and stale-inherited Fish environments
+  both resolve the pinned release through the Mackup startup adapter.
+- The final full live aggregate replay requires one login/restart because the
+  pre-alpha.7 recovery attempt restarted yabai while applications were open,
+  leaving their AX references unavailable for the rest of the current login.

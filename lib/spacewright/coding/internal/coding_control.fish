@@ -369,6 +369,28 @@ function __coding_control_body --description "Collect Warp, SmartGit, KeePassXC,
     #    SmartGit uses a fixed absolute position and size.
     #    FlClash uses a similar size, slightly offset from SmartGit.
     # -------------------------------------------------------------------------
+    set -l displays_json (ws_query_displays $label control-bounds)
+    or return 1
+    set -l target_origin (echo $displays_json | ws_jq -r --argjson display $target_display '
+        first(.[] | select(.index==$display) | [.frame.x, .frame.y] | @tsv) // empty
+    ')
+    or return 1
+
+    if test -z "$target_origin"
+        echo "[WARN] $label could not resolve target display origin for fixed control bounds" >&2
+        return 1
+    end
+
+    set -l target_origin_parts (string split \t -- "$target_origin")
+    set -l target_origin_x $target_origin_parts[1]
+    set -l target_origin_y $target_origin_parts[2]
+    set -l smartgit_x (math --scale=0 "$target_origin_x + 300")
+    set -l smartgit_y (math --scale=0 "$target_origin_y + 60")
+    set -l flclash_x (math --scale=0 "$target_origin_x + 360")
+    set -l flclash_y (math --scale=0 "$target_origin_y + 120")
+    set -l portfolio_x (math --scale=0 "$target_origin_x + 420")
+    set -l portfolio_y (math --scale=0 "$target_origin_y + 180")
+
     if test -n "$warp"
         ws_window $warp --grid 3:1:0:0:1:2
     end
@@ -377,26 +399,26 @@ function __coding_control_body --description "Collect Warp, SmartGit, KeePassXC,
         if test "$smartgit_space_fallback_used" -eq 1
             workspace_apply_app_key_absolute_bounds \
                 --app-key smartgit \
-                --x 300 \
-                --y 60 \
+                --x $smartgit_x \
+                --y $smartgit_y \
                 --width 1200 \
                 --height 1040 \
                 --caller $label
         else
-            ws_window $smartgit --move abs:300:60
+            ws_window $smartgit --move abs:$smartgit_x:$smartgit_y
             ws_window $smartgit --resize abs:1200:1040
         end
     end
 
     for wid in $flclash
         if test -n "$wid"
-            ws_window $wid --move abs:360:120
+            ws_window $wid --move abs:$flclash_x:$flclash_y
             ws_window $wid --resize abs:1200:1040
         end
     end
 
     if test -n "$portfolio_performance"
-        ws_window $portfolio_performance --move abs:420:180
+        ws_window $portfolio_performance --move abs:$portfolio_x:$portfolio_y
         ws_window $portfolio_performance --resize abs:1220:852
     end
 
