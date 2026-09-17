@@ -28,6 +28,36 @@ function workspace_cleanup_query_spaces --description "Query spaces for opportun
     echo $spaces_json
 end
 
+function workspace_cleanup_query_windows --description "Query windows for opportunistic cleanup with a short timeout"
+    set -l old_timeout "$WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS"
+    set -l cleanup_timeout "$WORKSPACE_CLEANUP_QUERY_TIMEOUT_SECONDS"
+
+    if test -z "$cleanup_timeout"
+        set cleanup_timeout 1
+    end
+
+    set -gx WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS "$cleanup_timeout"
+    set -l windows_json (ws_yabai -m query --windows 2>/dev/null)
+    set -l query_status $status
+
+    if test -n "$old_timeout"
+        set -gx WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS "$old_timeout"
+    else
+        set -e WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS
+    end
+
+    if test "$query_status" -ne 0 -o -z "$windows_json"
+        return 1
+    end
+
+    echo $windows_json | ws_jq -e 'type == "array"' >/dev/null 2>&1
+    if test $status -ne 0
+        return 1
+    end
+
+    echo $windows_json
+end
+
 function cleanup_labeled_empty_spaces --description "Destroy empty spaces whose labels match a regex"
     if test "$WORKSPACE_SKIP_LABELED_CLEANUP" = "1"
         return 0
@@ -58,10 +88,26 @@ function cleanup_labeled_empty_spaces --description "Destroy empty spaces whose 
         return 0
     end
 
-    set -l candidates (echo $spaces_json | ws_jq -r --arg pattern "$label_pattern" '
+    set -l windows_json
+    if set -q __WORKSPACE_CLEANUP_WINDOWS_JSON
+        set windows_json "$__WORKSPACE_CLEANUP_WINDOWS_JSON"
+    else
+        set windows_json (workspace_cleanup_query_windows)
+        if test $status -ne 0 -o -z "$windows_json"
+            return 0
+        end
+    end
+
+    set -l candidates (echo $spaces_json | ws_jq -r --arg pattern "$label_pattern" --argjson windows "$windows_json" '
         [.[]
         | select(.label | test($pattern))
-        | select((.windows | length) == 0)
+        | . as $space
+        | select([
+            ($space.windows // [])[] as $window_id
+            | $windows[]
+            | select(.id == $window_id)
+            | select((.["is-sticky"] // false) != true)
+          ] | length == 0)
         | .index]
         | sort
         | reverse
