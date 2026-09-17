@@ -783,21 +783,21 @@ function __work_smoke_primary_fixed_separation
     set -g __work_smoke_primary_calls
     workspace_reconcile_primary_fixed_spaces
     or return 5
-    test (string join , -- $__work_smoke_primary_calls) = gtd_chat,coding_control
+    test (string join , -- $__work_smoke_primary_calls) = coding_control,gtd_chat
     or return 6
 
     set -g __work_smoke_primary_fixture persistent
     set -g __work_smoke_primary_calls
     workspace_reconcile_primary_fixed_spaces >/dev/null 2>&1
     and return 7
-    test (string join , -- $__work_smoke_primary_calls) = gtd_chat,coding_control
+    test (string join , -- $__work_smoke_primary_calls) = coding_control,gtd_chat
     or return 8
 
     set -g __work_smoke_primary_fixture reconcile_failure
     set -g __work_smoke_primary_calls
     workspace_reconcile_primary_fixed_spaces >/dev/null 2>&1
     and return 9
-    test (string join , -- $__work_smoke_primary_calls) = gtd_chat,coding_control
+    test (string join , -- $__work_smoke_primary_calls) = coding_control,gtd_chat
 end
 
 function work_smoke_finalization --description "Run fixture-only workspace finalization smokes"
