@@ -5,6 +5,14 @@ configuration and installation contracts may still change before 1.0.
 
 ## Unreleased
 
+## 0.2.0-alpha.8 — 2026-09-17
+
+- Anchor fixed SmartGit, FlClash/Thaw, and Portfolio Performance bounds to the
+  workspace-primary display origin, so an external display at the global left
+  origin cannot pull control windows off the built-in display.
+- Reconcile `coding_control` before `gtd_chat`, allowing any SmartGit-owned
+  Space migration and index changes to settle before restoring the chat label.
+
 ## 0.2.0-alpha.7 — 2026-09-17
 
 - Preserve an unmovable Hermes window by moving its owning Space to the target
