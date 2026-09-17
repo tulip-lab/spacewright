@@ -61,6 +61,11 @@ owned by the last applicable workspace. A mode step can reference a configured
 workspace, one of a small closed set of nested modes, or one of the two trusted
 postprocessors used by the imported runtime.
 
+Top-level `work_solo`, `work_wide`, and `work_tall` modes own the complete
+cross-family cleanup set. Nested modes suppress their own cleanup while an
+aggregate is running, so the outer mode removes empty labels belonging to the
+two inactive display modes before and after its ordered steps.
+
 Configuration does not accept shell commands, jq expressions, loops,
 conditionals, retries, or service-control actions.
 
