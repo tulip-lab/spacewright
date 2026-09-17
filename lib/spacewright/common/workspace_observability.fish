@@ -32,14 +32,14 @@ function workspace_observation_workspaces --description "Print workspaces with r
     end
 
     spacewright_config_effective | ws_jq -r --arg mode "$mode" '
-        .workspaces
-        | keys[]
-        | select(
-            (endswith("_solo") and $mode == "solo")
-            or (endswith("_wide") and $mode == "wide")
-            or (endswith("_tall") and $mode == "tall")
-            or ((endswith("_solo") or endswith("_wide") or endswith("_tall")) | not)
-        )
+        . as $root
+        | def expand($id):
+            $root.modes[$id].steps[]
+            | if .workspace then .workspace
+              elif .mode then expand(.mode)
+              else empty
+              end;
+        (reduce expand("work_" + $mode) as $id ([]; if index($id) == null then . + [$id] else . end))[]
     '
 end
 
@@ -327,7 +327,46 @@ function __workspace_observation_plan_json --description "Build a read-only work
                 fallback_candidate_ids: [$fallback[].id],
                 current_spaces: [$present[].space] | unique
             }
-        ] as $roles
+        ] as $raw_roles
+        | (
+            if ($spec.workspace | startswith("gtd_support_")) then
+                ($spec.workspace | split("_")[-1]) as $mode
+                | [
+                    $raw_roles[]
+                    | if .role != "dia" then .
+                      else . as $role
+                      | ($role.selected_windows | length) as $count
+                      | $role.selected_windows | to_entries[]
+                      | .key as $index
+                      | .value as $window
+                      | (
+                          if $mode == "wide" then
+                              (($count + 1) / 2 | floor) as $left_count
+                              | ($count - $left_count) as $right_count
+                              | if $index < $left_count then "\($left_count):2:0:\($index):1:1"
+                                else "\($right_count):2:1:\($index - $left_count):1:1"
+                                end
+                          elif $count == 1 and $mode == "solo" then "1:1:0:0:1:1"
+                          elif $count == 1 then "2:1:0:1:1:1"
+                          elif $count == 2 then "2:1:0:\($index):1:1"
+                          elif $count == 3 and $index < 2 then "2:2:\($index):0:1:1"
+                          elif $count == 3 then "2:1:0:1:1:1"
+                          else (($count + 1) / 2 | floor) as $rows
+                              | "\($rows):2:\($index % 2):\(($index / 2) | floor):1:1"
+                          end
+                        ) as $grid
+                      | $role + {
+                          selected_windows: [$window],
+                          selected_ids: [$window.id],
+                          fallback_candidate_windows: [],
+                          fallback_candidate_ids: [],
+                          layout: {kind: "grid", grid: $grid}
+                        }
+                      end
+                ]
+            else $raw_roles
+            end
+          ) as $roles
         | [$snapshot.spaces[] | select((.label // "") == $spec.label)] as $label_spaces
         | (if ($label_spaces | length) == 1 then $label_spaces[0] else null end) as $target_space_info
         | ($target_space_info.index // null) as $target_space
@@ -466,8 +505,8 @@ function __workspace_observation_verify_json --description "Verify a workspace p
                 .frame.y <= ($display_frame.y + ($display_frame.h * 0.15))
                 and .frame.h >= ($display_frame.h * 0.55)
             elif $layout.kind == "absolute" then
-                ((.frame.x - $layout.x) | absolute_value) <= ($layout.tolerance // 8)
-                and ((.frame.y - $layout.y) | absolute_value) <= ($layout.tolerance // 8)
+                ((.frame.x - ($display_frame.x + $layout.x)) | absolute_value) <= ($layout.tolerance // 8)
+                and ((.frame.y - ($display_frame.y + $layout.y)) | absolute_value) <= ($layout.tolerance // 8)
                 and ((.frame.w - $layout.width) | absolute_value) <= ($layout.tolerance // 8)
                 and ((.frame.h - $layout.height) | absolute_value) <= ($layout.tolerance // 8)
             elif $layout.kind == "grid" then
@@ -566,10 +605,31 @@ function __workspace_observation_verify_all_json --description "Verify every obs
         return 1
     end
 
-    set -l verification_results
+    set -l plan_results
     for workspace in (workspace_observation_workspaces)
         set -l plan_json (printf "%s\n" "$snapshot_json" | __workspace_observation_plan_json $workspace | string collect)
         or return $status
+        set -a plan_results "$plan_json"
+    end
+
+    set -l ordered_plans (printf "%s\n" $plan_results | ws_jq -s -c '
+        . as $plans
+        | to_entries[] as $entry
+        | ([range($entry.key + 1; $plans | length) as $index
+            | $plans[$index].roles[]
+            | (.selected_ids + .fallback_candidate_ids)[]] | unique) as $later_owned
+        | $entry.value
+        | .roles |= map(
+            .selected_windows |= map(select(.id as $id | ($later_owned | index($id)) == null))
+            | .fallback_candidate_windows |= map(select(.id as $id | ($later_owned | index($id)) == null))
+            | .selected_ids = [.selected_windows[].id]
+            | .fallback_candidate_ids = [.fallback_candidate_windows[].id]
+        )
+    ')
+    or return 1
+
+    set -l verification_results
+    for plan_json in $ordered_plans
         set -l verification_json (printf "%s\n" "$plan_json" | __workspace_observation_verify_json | string collect)
         or return 1
         set -a verification_results "$verification_json"

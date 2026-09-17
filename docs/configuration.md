@@ -1,6 +1,36 @@
 # Configuration
 
-## Roots
+## Configuration versions
+
+The Web Configurator writes the portable v2 document to:
+
+```text
+$SPACEWRIGHT_CONFIG_ROOT/config.v2.json
+```
+
+When that file exists, SpaceWright validates and deterministically compiles it
+to the normalized runtime plan consumed by Fish. v2 models logical workspaces,
+per-mode layout variants, display lanes, recursive split trees, and structured
+shortcuts. See [Web Configurator](configurator.md) and the authoritative
+[`spacewright-v2.schema.json`](../schemas/spacewright-v2.schema.json).
+
+v1 remains supported for compatibility. SpaceWright never silently rewrites a
+v1 file. `spacewright config-migrate-v1` prints a proposed v2 document without
+writing it. Migration retains each variant's exact window list, runner options,
+layout actions and cleanup behavior, then flattens trusted nested mode steps
+while preserving their order and postprocessor anchors.
+
+Machine-local display UUID bindings are deliberately separate from both
+configuration versions:
+
+```text
+$SPACEWRIGHT_STATE_ROOT/machine.json
+```
+
+The portable config names display roles; this local state maps those roles to
+the UUIDs reported by yabai on one Mac.
+
+## Version 1 roots
 
 SpaceWright loads package defaults from `config/defaults.json` and optionally
 merges a user file from:
@@ -20,6 +50,7 @@ $SPACEWRIGHT_CONFIG_ROOT/config.json
 
 Objects merge recursively and user arrays replace package arrays. This lets a
 consumer override one app or workspace without copying unrelated defaults.
+If `config.v2.json` is present it takes precedence over this v1 merge path.
 
 ## Read-Only Commands
 

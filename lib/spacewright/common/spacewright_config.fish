@@ -10,9 +10,14 @@ function spacewright_config_user_file --description "Print the user configuratio
     end
 end
 
+function spacewright_config_v2_file --description "Print the portable v2 user configuration path"
+    echo "$SPACEWRIGHT_CONFIG_ROOT/config.v2.json"
+end
+
 function spacewright_config_effective --description "Merge package defaults with an optional user configuration"
     set -l default_file (spacewright_config_default_file)
     set -l user_file (spacewright_config_user_file)
+    set -l v2_file (spacewright_config_v2_file)
 
     if not test -r "$default_file"
         echo "[WARN] SpaceWright default config is not readable: $default_file" >&2
@@ -24,7 +29,13 @@ function spacewright_config_effective --description "Merge package defaults with
         return 1
     end
 
-    if test -r "$user_file"
+    if test -r "$v2_file"
+        if not command -q node
+            echo "[WARN] SpaceWright v2 configuration requires Node.js: $v2_file" >&2
+            return 1
+        end
+        command node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/cli.mjs" compile "$v2_file"
+    else if test -r "$user_file"
         jq -s 'reduce .[] as $item ({}; . * $item)' "$default_file" "$user_file"
     else
         jq . "$default_file"
@@ -56,8 +67,8 @@ function workspace_config_check --description "Validate the effective SpaceWrigh
         and (.workspaces | type == "object")
         and (. as $root | [.workspaces[] |
             (.label | type == "string" and length > 0)
-            and (.runner | IN("primary_helper", "office_document", "gtd_support", "gtd_review", "gtd_meeting", "gtd_ai", "fixed_adapter"))
-            and (.display_role | IN("primary", "external", "solo", "wide", "tall", "auto_external"))
+            and (.runner | IN("primary_helper", "office_document", "gtd_support", "gtd_review", "gtd_meeting", "gtd_ai", "fixed_adapter", "generic_layout"))
+            and (.display_role | type == "string" and length > 0)
             and (.space_layout | IN("float", "bsp", "stack"))
             and (.windows | type == "array" and length > 0 and all(.[]; valid_window($root.apps)))
             and (.layout_ref | type == "string" and $root.layouts[.] != null)

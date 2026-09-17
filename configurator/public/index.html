@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SpaceWright Configurator</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="masthead">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div>
+        <h1>SpaceWright</h1>
+        <p>Workspace configurator</p>
+      </div>
+    </div>
+    <div class="status-panel">
+      <span class="signal"></span>
+      <div><strong id="status">Loading configuration</strong><small id="path">Local session</small></div>
+    </div>
+  </header>
+
+  <main>
+    <nav id="nav" aria-label="Configurator sections">
+      <button data-view="map" class="active"><span>01</span> Mode map</button>
+      <button data-view="displays"><span>02</span> Displays</button>
+      <button data-view="workspaces"><span>03</span> Workspaces</button>
+      <button data-view="apps"><span>04</span> Apps</button>
+      <button data-view="shortcuts"><span>05</span> Shortcuts</button>
+      <button data-view="review"><span>06</span> Review</button>
+    </nav>
+    <section id="workspace" aria-live="polite"></section>
+  </main>
+
+  <footer>
+    <p>Nothing on your desktop moves until you run a SpaceWright command.</p>
+    <div class="footer-actions">
+      <button id="validate" class="quiet">Validate</button>
+      <button id="save" class="primary">Save configuration</button>
+    </div>
+  </footer>
+  <template id="toast-template"><div class="toast"></div></template>
+  <script defer src="./app.js"></script>
+</body>
+</html>

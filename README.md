@@ -21,6 +21,15 @@ preferences into validated user configuration.
 skhd and displayplacer are optional integrations rather than required runtime
 dependencies.
 
+## Web Configurator
+
+Run `spacewright configure` to edit portable apps, named workspaces, display
+lanes, solo/wide/tall split layouts, ordering, and structured skhd shortcuts in
+a local browser UI. Saving writes only SpaceWright's own configuration root;
+it does not modify a Mackup checkout or the user's complete skhd configuration.
+
+See [Web Configurator](docs/configurator.md).
+
 ## Design Principles
 
 - Safe by default: invalid configuration and missing required windows fail

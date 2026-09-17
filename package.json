@@ -1,0 +1,11 @@
+{
+  "name": "spacewright",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test configurator/test/*.test.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.57.0"
+  }
+}

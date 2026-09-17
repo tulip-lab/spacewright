@@ -175,6 +175,62 @@ function __workspace_run_configured_fixed_adapter --description "Run one closed,
     end
 end
 
+function __workspace_run_configured_generic_layout --description "Run a declarative multi-window workspace"
+    set -l plan $argv[1]
+    set -l dry_run $argv[2]
+    set -l workspace_id (printf "%s\n" "$plan" | jq -r '.id')
+    if test "$dry_run" = 1
+        printf "dry_run=workspace_apply_generic_layout\n"
+        printf "workspace=%s\n" "$workspace_id"
+        printf "label=%s\n" (printf "%s\n" "$plan" | jq -r '.label')
+        printf "display=%s\n" (printf "%s\n" "$plan" | jq -r '.display_role')
+        printf "%s\n" "$plan" | jq -r '.windows[] | "window=" + .role + ":" + .app_key + ":required=" + (.required|tostring)'
+        printf "%s\n" "$plan" | jq -r '.layout[] | "grid=" + .role + ":" + .grid'
+        return 0
+    end
+
+    set -l roles
+    set -l window_ids
+    set -l window_count (printf "%s\n" "$plan" | jq '.windows | length')
+    for index in (seq 0 (math $window_count - 1))
+        set -l role (printf "%s\n" "$plan" | jq -r --argjson i $index '.windows[$i].role')
+        set -l app_key (printf "%s\n" "$plan" | jq -r --argjson i $index '.windows[$i].app_key')
+        set -l required (printf "%s\n" "$plan" | jq -r --argjson i $index '.windows[$i].required')
+        set -l find_args --app-key "$app_key" --caller "$workspace_id-config-preflight"
+        if test (printf "%s\n" "$plan" | jq -r --argjson i $index '.windows[$i].selector.visible // false') = true
+            set -a find_args --visible
+        end
+        set -l window_id (workspace_find_app_key_window $find_args)
+        set -l find_status $status
+        if test "$find_status" -eq 1; or test "$required" = true -a -z "$window_id"
+            echo "[WARN] $workspace_id required role is unavailable: $role" >&2
+            return 1
+        end
+        set -a roles "$role"
+        set -a window_ids "$window_id"
+    end
+
+    set -l target_display (workspace_resolve_display_role (printf "%s\n" "$plan" | jq -r '.display_role'))
+    or return 1
+    set -l target_space (workspace_prepare_labeled_space \
+        (printf "%s\n" "$plan" | jq -r '.label') \
+        "$target_display" \
+        (printf "%s\n" "$plan" | jq -r '.space_layout'))
+    or return 1
+
+    for window_id in $window_ids
+        if test -n "$window_id"
+            ws_move_windows_to_space "$target_space" "$window_id"
+        end
+    end
+    for index in (seq 1 (count $roles))
+        set -l window_id $window_ids[$index]
+        test -n "$window_id"; or continue
+        set -l grid (__workspace_config_plan_grid "$plan" $roles[$index])
+        test -n "$grid"; and ws_window "$window_id" --grid "$grid"
+    end
+end
+
 function workspace_run_configured --description "Run one validated configured workspace through a closed runner adapter"
     argparse dry-run -- $argv
     or return 1
@@ -204,6 +260,8 @@ function workspace_run_configured --description "Run one validated configured wo
             __workspace_run_configured_gtd_ai "$plan" $dry_run
         case fixed_adapter
             __workspace_run_configured_fixed_adapter "$plan" $dry_run
+        case generic_layout
+            __workspace_run_configured_generic_layout "$plan" $dry_run
         case '*'
             echo "[WARN] $workspace_id uses an unsupported configured runner" >&2
             return 1
@@ -249,13 +307,30 @@ function workspace_run_configured_mode --description "Run one configured ordered
     for index in (seq 0 (math $step_count - 1))
         set -l step_kind (printf "%s\n" "$plan" | jq -r --argjson i $index '.steps[$i] | if has("workspace") then "workspace" elif has("mode") then "mode" else "postprocessor" end')
         set -l step_name (printf "%s\n" "$plan" | jq -r --argjson i $index '.steps[$i].workspace // .steps[$i].mode // .steps[$i].postprocessor')
-        if not functions -q $step_name
-            echo "[WARN] configured $step_kind is unavailable: $step_name" >&2
-            set failed 1
-            continue
+        switch "$step_kind"
+            case workspace
+                if functions -q $step_name
+                    workspace_run_step "$step_name" $step_name
+                else
+                    workspace_run_step "$step_name" workspace_run_configured "$step_name"
+                end
+                or set failed 1
+            case mode
+                if functions -q $step_name
+                    workspace_run_step "$step_name" $step_name
+                else
+                    workspace_run_step "$step_name" workspace_run_configured_mode "$step_name"
+                end
+                or set failed 1
+            case postprocessor
+                if not functions -q $step_name
+                    echo "[WARN] configured postprocessor is unavailable: $step_name" >&2
+                    set failed 1
+                    continue
+                end
+                workspace_run_step "$step_name" $step_name
+                or set failed 1
         end
-        workspace_run_step "$step_name" $step_name
-        or set failed 1
     end
     if test -n "$old_skip_labeled_cleanup"
         set -gx WORKSPACE_SKIP_LABELED_CLEANUP "$old_skip_labeled_cleanup"
