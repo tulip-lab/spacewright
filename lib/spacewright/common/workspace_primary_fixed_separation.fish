@@ -57,13 +57,17 @@ function workspace_reconcile_primary_fixed_spaces --description "Verify and reco
         return 0
     end
 
-    echo "[WARN] primary fixed Spaces are mixed; reconciling gtd_chat then coding_control" >&2
+    echo "[WARN] primary fixed Spaces are mixed; reconciling coding_control then gtd_chat" >&2
     set -l failed 0
 
-    gtd_chat
+    # coding_control may preserve an app-owned SmartGit Space by moving the
+    # whole Space across displays. Run it first because that operation can
+    # renumber primary-display Spaces; gtd_chat then restores its final label
+    # and ownership against the settled indices.
+    coding_control
     or set failed 1
 
-    coding_control
+    gtd_chat
     or set failed 1
 
     workspace_verify_primary_fixed_separation

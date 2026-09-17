@@ -2763,6 +2763,10 @@ function work_smoke --description "Run read-only workspace smoke checks for help
             echo 1
         end
 
+        function ws_query_displays
+            printf "%s\n" "[{\"index\":1,\"frame\":{\"x\":0,\"y\":0,\"w\":1800,\"h\":1169}}]"
+        end
+
         function find_or_create_labeled_space
             echo 8
         end
@@ -2852,6 +2856,10 @@ function work_smoke --description "Run read-only workspace smoke checks for help
 
         function resolve_workspace_primary_display
             echo 1
+        end
+
+        function ws_query_displays
+            printf "%s\n" "[{\"index\":1,\"frame\":{\"x\":0,\"y\":0,\"w\":1800,\"h\":1169}}]"
         end
 
         function find_or_create_labeled_space
@@ -2946,6 +2954,10 @@ function work_smoke --description "Run read-only workspace smoke checks for help
             echo 1
         end
 
+        function ws_query_displays
+            printf "%s\n" "[{\"index\":1,\"frame\":{\"x\":0,\"y\":0,\"w\":1800,\"h\":1169}}]"
+        end
+
         function workspace_focus_space_fallback
             set -g __work_smoke_control_fallback_args (string join " " -- $argv)
             echo 6
@@ -3024,6 +3036,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set -g __work_smoke_control_fallback_args ""
         set -g __work_smoke_control_moves
         set -g __work_smoke_control_fallback_used 0
+        set -g __work_smoke_control_bounds ""
 
         function ws_query_windows
             printf "%s\n" "[
@@ -3061,6 +3074,13 @@ function work_smoke --description "Run read-only workspace smoke checks for help
             echo 2
         end
 
+        function ws_query_displays
+            printf "%s\n" "[
+                {\"index\": 1, \"frame\": {\"x\": 0, \"y\": 0, \"w\": 3062, \"h\": 1282}},
+                {\"index\": 2, \"frame\": {\"x\": 3062, \"y\": 594, \"w\": 1800, \"h\": 1169}}
+            ]"
+        end
+
         function find_or_create_labeled_space
             echo 4
         end
@@ -3089,6 +3109,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         end
 
         function workspace_apply_app_key_absolute_bounds
+            set -g __work_smoke_control_bounds (string join " " -- $argv)
         end
 
         function ws_focus_space
@@ -3114,6 +3135,10 @@ function work_smoke --description "Run read-only workspace smoke checks for help
 
         contains -- "6,21" $__work_smoke_control_moves
         or exit 6
+
+        string match -q "*--x 3362*" -- "$__work_smoke_control_bounds"
+        and string match -q "*--y 654*" -- "$__work_smoke_control_bounds"
+        or exit 7
     '
     fish -lc "$coding_control_smartgit_failed_move_fallback_smoke" >/tmp/work-coding-control-smartgit-failed-move-fallback-smoke.out 2>&1
     if test $status -eq 0
