@@ -52,6 +52,6 @@ to trusted Fish adapters; configuration cannot name arbitrary commands.
 
 ## Status
 
-Implementation and pre-release validation complete on
-`feature/full-configuration-parity`. Release, consumer pin update, installation,
-and representative live layout restoration remain.
+Complete. Released as `v0.2.0-alpha.2`, pinned and installed by the Mackup
+consumer, validated in installed and rollback modes, and exercised with a live
+wide layout across the built-in and external displays.
