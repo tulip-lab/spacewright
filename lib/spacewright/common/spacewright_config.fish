@@ -14,10 +14,28 @@ function spacewright_config_v2_file --description "Print the portable v2 user co
     echo "$SPACEWRIGHT_CONFIG_ROOT/config.v2.json"
 end
 
+function spacewright_config_runtime_file --description "Print the compiled v2 runtime path"
+    echo "$SPACEWRIGHT_CONFIG_ROOT/generated/runtime.json"
+end
+
+function __spacewright_config_sha256 --description "Print a portable SHA-256 for one file"
+    set -l file $argv[1]
+    if command -q shasum
+        set -l digest (command shasum -a 256 "$file" | string split ' ')[1]
+        echo "$digest"
+    else if command -q sha256sum
+        set -l digest (command sha256sum "$file" | string split ' ')[1]
+        echo "$digest"
+    else
+        return 1
+    end
+end
+
 function spacewright_config_effective --description "Merge package defaults with an optional user configuration"
     set -l default_file (spacewright_config_default_file)
     set -l user_file (spacewright_config_user_file)
     set -l v2_file (spacewright_config_v2_file)
+    set -l runtime_file (spacewright_config_runtime_file)
 
     if not test -r "$default_file"
         echo "[WARN] SpaceWright default config is not readable: $default_file" >&2
@@ -30,16 +48,53 @@ function spacewright_config_effective --description "Merge package defaults with
     end
 
     if test -r "$v2_file"
-        if not command -q node
-            echo "[WARN] SpaceWright v2 configuration requires Node.js: $v2_file" >&2
+        if test -r "$runtime_file"
+            set -l source_hash (__spacewright_config_sha256 "$v2_file")
+            set -l compiled_hash (jq -r 'select(.generated.format_version == 1 and .generated.compiler_version == 1 and .generated.source_version == 2) | .generated.source_sha256 // empty' "$runtime_file" 2>/dev/null)
+            if test -n "$source_hash"; and test "$source_hash" = "$compiled_hash"
+                jq 'del(.generated)' "$runtime_file"
+                return $status
+            end
+        end
+        if command -q node
+            command node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/cli.mjs" compile "$v2_file"
+        else
+            echo "[WARN] SpaceWright v2 configuration is not compiled or is stale" >&2
+            echo "[INFO] Run 'spacewright config-compile' after installing Node.js, or save it with 'spacewright configure'" >&2
             return 1
         end
-        command node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/cli.mjs" compile "$v2_file"
     else if test -r "$user_file"
         jq -s 'reduce .[] as $item ({}; . * $item)' "$default_file" "$user_file"
     else
         jq . "$default_file"
     end
+end
+
+function spacewright_config_status --description "Report configuration source and compiled runtime freshness"
+    set -l v2_file (spacewright_config_v2_file)
+    set -l runtime_file (spacewright_config_runtime_file)
+    if not test -r "$v2_file"
+        jq -n --arg source (spacewright_config_user_file) '{version:1, source:$source, compiled_runtime:null, current:true}'
+        return 0
+    end
+    set -l source_hash (__spacewright_config_sha256 "$v2_file")
+    set -l compiled_hash (jq -r '.generated.source_sha256 // empty' "$runtime_file" 2>/dev/null)
+    set -l format_version (jq -r '.generated.format_version // empty' "$runtime_file" 2>/dev/null)
+    set -l compiler_version (jq -r '.generated.compiler_version // empty' "$runtime_file" 2>/dev/null)
+    set -l generation_id (jq -r '.generated.generation_id // empty' "$runtime_file" 2>/dev/null)
+    set -l current false
+    if test -n "$source_hash"; and test "$source_hash" = "$compiled_hash"; and test "$format_version" = 1; and test "$compiler_version" = 1
+        set current true
+    end
+    jq -n \
+        --arg source "$v2_file" \
+        --arg runtime "$runtime_file" \
+        --arg source_hash "$source_hash" \
+        --arg compiled_hash "$compiled_hash" \
+        --arg generation_id "$generation_id" \
+        --argjson current "$current" \
+        '{version:2, source:$source, compiled_runtime:$runtime, source_sha256:$source_hash, compiled_source_sha256:$compiled_hash, generation_id:$generation_id, current:$current}'
+    test "$current" = true
 end
 
 function workspace_config_check --description "Validate the effective SpaceWright v1 configuration"

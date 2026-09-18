@@ -5,6 +5,22 @@ configuration and installation contracts may still change before 1.0.
 
 ## Unreleased
 
+- Harden the portable v2 contract with unknown-field, unique-label, required
+  layout role, duplicate placement, mode usage, and shortcut validation.
+- Make the checked-in JSON Schema the structural validation authority and add
+  cross-app alias and compiled Space-label conflict diagnostics.
+- Compile v2 configuration to a digest-bound runtime so normal workspace
+  commands can run without Node.js and never consume a stale plan.
+- Add versioned generation metadata plus config status, diff, and explanation
+  commands.
+- Apply every generic window selector to one fail-closed snapshot and prevent
+  one window from satisfying multiple workspace roles; verify final Space
+  ownership after mutation.
+- Add guarded configuration import, export, backup restoration, read-only app
+  discovery, rolling backups, safe object rename/delete, complete selector
+  editing, keyboard ordering, unsaved-change protection, and accessibility and
+  responsive Configurator checks.
+
 ## 0.2.0-alpha.10 — 2026-09-18
 
 - Install the pinned Node and Chromium dependencies in CI before running the

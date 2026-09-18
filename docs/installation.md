@@ -6,7 +6,8 @@
 - Fish 3.6 or newer
 - `jq`
 - `yabai` for live workspace commands
-- Node.js 20 or newer for the Web Configurator and v2 compilation
+- Node.js 20 or newer for the Web Configurator and v2 compilation; normal
+  workspace commands do not require it once the compiled runtime is current
 
 `skhd` and `displayplacer` remain optional integrations.
 
@@ -39,6 +40,8 @@ directories remain available for rollback.
 ```fish
 spacewright version
 spacewright config-check
+spacewright config-compile
+spacewright config-status
 spacewright config-plan coding_editor_wide
 spacewright doctor
 spacewright configure
@@ -46,6 +49,9 @@ spacewright configure
 
 These checks are read-only. A live workspace command remains a separate,
 explicit action.
+
+`spacewright doctor` distinguishes a current v2 runtime from a missing or
+stale compiled runtime. It never recompiles or changes configuration.
 
 ## Roll back
 
