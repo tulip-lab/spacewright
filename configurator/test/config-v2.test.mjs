@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { compileSkhd, compileV2, migrateV1, starterConfig, validateV2 } from '../lib/config-v2.mjs';
+import { CONFIG_COMPILER_VERSION, compileSkhd, compileV2, migrateV1, starterConfig, validateV2, validateV2Schema } from '../lib/config-v2.mjs';
 
 const MODES_FOR_TEST = ['solo', 'wide', 'tall'];
 
 test('starter config validates and compiles all modes', () => {
   const config = starterConfig();
-  assert.deepEqual(validateV2(config), { valid: true, errors: [] });
+  assert.equal(validateV2(config).valid, true);
   const runtime = compileV2(config);
   assert.equal(runtime.version, 1);
   assert.equal(runtime.workspaces.spacewright_coding_wide.runner, 'generic_layout');
@@ -16,6 +16,28 @@ test('starter config validates and compiles all modes', () => {
     { role: 'editor', grid: '120:120:40:0:80:120' }
   ]);
   assert.deepEqual(runtime.modes.work_tall.steps, [{ workspace: 'spacewright_coding_tall' }]);
+});
+
+test('validation rejects unknown fields, duplicate labels, and omitted required roles', () => {
+  const config = starterConfig();
+  config.scripts = ['unsafe'];
+  config.workspaces.second = structuredClone(config.workspaces.coding);
+  config.workspaces.second.variants.wide.layout = { type: 'window', role: 'assistant' };
+  const result = validateV2(config);
+  assert.equal(result.valid, false);
+  assert.match(result.errors.join('\n'), /\$\.scripts is not supported/);
+  assert.match(result.errors.join('\n'), /spaceLabel duplicates/);
+  assert.match(result.errors.join('\n'), /omits required window role "editor"/);
+});
+
+test('repository schema is the structural validation authority', () => {
+  const config = starterConfig();
+  config.apps.code.match.appNames = [];
+  config.workspaces.coding.variants.wide.layout.extra = true;
+  const errors = validateV2Schema(config).join('\n');
+  assert.match(errors, /apps.code.match.appNames must contain at least 1 item/);
+  assert.match(errors, /workspaces.coding.variants.wide.layout does not match a supported shape/);
+  assert.equal(CONFIG_COMPILER_VERSION, 1);
 });
 
 test('nested split compiles deterministically', () => {

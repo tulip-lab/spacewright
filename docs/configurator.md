@@ -55,6 +55,23 @@ Saving configuration does not move windows, create Spaces, apply display
 profiles, or reload skhd. Live changes still require an explicit workspace or
 display command.
 
+Saving validates the complete document and writes both `config.v2.json` and a
+digest-bound `generated/runtime.json`. Import validates external JSON as an
+unsaved preview. Export downloads the portable document. Restore Backup
+revalidates and recompiles the previous saved document before activating it.
+The service also keeps the 10 most recent prior portable documents under
+`$SPACEWRIGHT_CONFIG_ROOT/backups`; machine-local state is never included.
+
+The Apps page can perform read-only discovery of application names reported by
+yabai. Workspace roles expose every supported selector, and Review presents
+non-fatal semantic warnings alongside the exact compiled plan.
+
+The editor warns before closing with unsaved changes. Renaming an application,
+display role, workspace, or window role updates its structured references.
+Deletion requires confirmation and is rejected while the object is still in
+use. Mode ordering supports both drag-and-drop and keyboard-operable up/down
+buttons.
+
 ## Configuration data flow
 
 The portable v2 file is the authoritative configuration source:
@@ -93,6 +110,7 @@ backend is mocked.
 ```fish
 spacewright config-v2-check
 spacewright config-v2-compile
+spacewright config-compile
 spacewright config-migrate-v1 ~/.config/spacewright/config.json
 ```
 

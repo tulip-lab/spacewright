@@ -3,10 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090b0e">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23090b0e'/%3E%3Cpath d='M7 7h8v8H7zm10 0h8v8h-8zM7 17h18v8H7z' fill='none' stroke='%23c8ff35' stroke-width='2'/%3E%3C/svg%3E">
   <title>SpaceWright Configurator</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
+  <a class="skip-link" href="#workspace">Skip to Configurator</a>
   <header class="masthead">
     <div class="brand">
       <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -30,17 +33,21 @@
       <button data-view="shortcuts"><span>05</span> Shortcuts</button>
       <button data-view="review"><span>06</span> Review</button>
     </nav>
-    <section id="workspace" aria-live="polite"></section>
+    <section id="workspace" tabindex="-1" aria-live="polite"></section>
   </main>
 
   <footer>
     <p>Nothing on your desktop moves until you run a SpaceWright command.</p>
     <div class="footer-actions">
+      <button id="import-config" class="quiet">Import</button>
+      <button id="export-config" class="quiet">Export</button>
+      <button id="restore-backup" class="quiet">Restore backup</button>
+      <input id="import-file" type="file" accept="application/json,.json" hidden>
       <button id="validate" class="quiet">Validate</button>
       <button id="save" class="primary">Save configuration</button>
     </div>
   </footer>
-  <template id="toast-template"><div class="toast"></div></template>
+  <template id="toast-template"><div class="toast" role="status" aria-live="polite"></div></template>
   <script defer src="./app.js"></script>
 </body>
 </html>

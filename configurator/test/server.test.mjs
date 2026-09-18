@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, access, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { starterConfig } from '../lib/config-v2.mjs';
@@ -74,10 +74,42 @@ test('local server isolates machine bindings and generated skhd output', async (
   assert.equal(saved.status, 200);
   assert.deepEqual(JSON.parse(await readFile(join(stateRoot, 'machine.json'), 'utf8')), { version: 1, displayBindings: { primary: 'DISPLAY-1234' } });
 
+  const candidate = starterConfig();
+  candidate.displayRoles.studio = { name: 'Studio display', portableMatch: { orientation: 'wide' } };
+  const candidateBinding = await json(url, '/api/display-bindings', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body: JSON.stringify({ displayBindings: { studio: 'DISPLAY-5678' }, config: candidate })
+  });
+  assert.equal(candidateBinding.status, 200);
+  const duplicateBinding = await json(url, '/api/display-bindings', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body: JSON.stringify({ displayBindings: { primary: 'DISPLAY-9999', task: 'DISPLAY-9999' }, config: candidate })
+  });
+  assert.equal(duplicateBinding.status, 422);
+
   const generated = await json(url, '/api/skhd', {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body: JSON.stringify(starterConfig())
   });
   assert.equal(generated.status, 200);
   assert.equal(generated.body.path, join(configRoot, 'generated', 'spacewright.skhdrc'));
   assert.match(await readFile(generated.body.path, 'utf8'), /work_wide/);
+
+  const first = starterConfig();
+  const savedConfig = await json(url, '/api/save', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body: JSON.stringify(first)
+  });
+  assert.equal(savedConfig.status, 200);
+  await access(join(configRoot, 'generated', 'runtime.json'));
+  const runtime = JSON.parse(await readFile(join(configRoot, 'generated', 'runtime.json'), 'utf8'));
+  assert.match(runtime.generated.source_sha256, /^[a-f0-9]{64}$/);
+
+  const second = starterConfig();
+  second.metadata.name = 'Second version';
+  assert.equal((await json(url, '/api/save', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body: JSON.stringify(second)
+  })).status, 200);
+  assert.equal((await readdir(join(configRoot, 'backups'))).length, 1);
+  const restored = await json(url, '/api/restore-backup', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }
+  });
+  assert.equal(restored.status, 200);
+  assert.equal(restored.body.config.metadata.name, first.metadata.name);
 });

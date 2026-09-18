@@ -64,7 +64,7 @@ test('Configuration GUI round-trips the authoritative config file', { timeout: 3
 
   let service = await startServer(configRoot, stateRoot);
   const browser = await chromium.launch();
-  const page = await browser.newPage();
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   context.after(async () => {
     await browser.close();
     await stopServer(service.child);
@@ -75,6 +75,25 @@ test('Configuration GUI round-trips the authoritative config file', { timeout: 3
   assert.equal(backendBefore.displayRoles.primary.name, 'Authoritative primary display');
 
   await page.goto(service.url);
+  await page.getByRole('button', { name: /Workspaces/ }).click();
+  const unlabeledControls = await page.evaluate(() => [...document.querySelectorAll('input:not([type="hidden"]):not([hidden]), select')].filter((control) => {
+    if (control.getAttribute('aria-label')) return false;
+    if (control.id && document.querySelector(`label[for="${CSS.escape(control.id)}"]`)) return false;
+    return !control.closest('label');
+  }).map((control) => control.outerHTML));
+  assert.deepEqual(unlabeledControls, []);
+  const overflowing = await page.evaluate(() => [...document.querySelectorAll('*')]
+    .filter((element) => element.getBoundingClientRect().right > document.documentElement.clientWidth + 1)
+    .map((element) => `${element.tagName}.${element.className}:${element.getBoundingClientRect().left}/${element.getBoundingClientRect().right}/${element.parentElement.getBoundingClientRect().width}`));
+  assert.deepEqual(overflowing, []);
+  await page.setViewportSize({ width: 780, height: 1000 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  page.once('dialog', (dialog) => dialog.accept('coding_renamed'));
+  await page.getByRole('button', { name: 'Rename ID' }).first().click();
+  await page.locator('#workspace-id').waitFor();
+  assert.equal(await page.locator('#workspace-id').inputValue(), 'coding_renamed');
+  await page.reload();
   await page.getByRole('button', { name: /Displays/ }).click();
   const primaryName = page.locator('[data-display-name="primary"]');
   await assert.doesNotReject(() => primaryName.waitFor());
