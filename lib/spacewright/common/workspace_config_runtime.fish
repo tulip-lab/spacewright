@@ -15,6 +15,35 @@ function __workspace_config_cleanup_specs --description "Return family:mode clea
     printf "%s\n" "$plan" | jq -r '.cleanup as $cleanup | if $cleanup then $cleanup.opposite_modes[] | $cleanup.family + ":" + . else empty end'
 end
 
+function __workspace_config_select_window --description "Select one configured window from a shared snapshot"
+    set -l windows_json $argv[1]
+    set -l plan $argv[2]
+    set -l index $argv[3]
+    set -e argv[1..3]
+    set -l used_json '[]'
+    if test (count $argv) -gt 0
+        set used_json (printf '%s\n' $argv | jq -R 'tonumber' | jq -s .)
+    end
+    set -l app_names (printf "%s\n" "$plan" | jq -c --argjson i $index '.windows[$i].app_names')
+    set -l selector (printf "%s\n" "$plan" | jq -c --argjson i $index '.windows[$i].selector // {}')
+    printf "%s\n" "$windows_json" | jq -r \
+        --argjson apps "$app_names" \
+        --argjson selector "$selector" \
+        --argjson used "$used_json" '
+        first(
+            .[]
+            | select(.app as $app | $apps | index($app))
+            | select(.["is-minimized"] == false)
+            | select(($selector.movable // false) == false or .["can-move"] == true)
+            | select(($selector.visible // false) == false or .["is-visible"] == true)
+            | select(($selector.non_empty_title // false) == false or ((.title // "") | length) > 0)
+            | select(($selector.title_include // "") == "" or ((.title // "") | contains($selector.title_include)))
+            | select(($selector.title_exclude // "") == "" or (((.title // "") | contains($selector.title_exclude)) | not))
+            | select(.id as $id | ($used | index($id)) == null)
+            | .id
+        ) // empty'
+end
+
 function __workspace_run_configured_primary_helper --description "Run a configured required-primary and optional-helper workspace"
     set -l plan $argv[1]
     set -l dry_run $argv[2]
@@ -191,16 +220,17 @@ function __workspace_run_configured_generic_layout --description "Run a declarat
 
     set -l roles
     set -l window_ids
+    set -l windows_json (ws_query_windows "$workspace_id-config-preflight" all)
+    or begin
+        echo "[WARN] $workspace_id could not query windows; no workspace changes were made" >&2
+        return 1
+    end
     set -l window_count (printf "%s\n" "$plan" | jq '.windows | length')
     for index in (seq 0 (math $window_count - 1))
         set -l role (printf "%s\n" "$plan" | jq -r --argjson i $index '.windows[$i].role')
         set -l app_key (printf "%s\n" "$plan" | jq -r --argjson i $index '.windows[$i].app_key')
         set -l required (printf "%s\n" "$plan" | jq -r --argjson i $index '.windows[$i].required')
-        set -l find_args --app-key "$app_key" --caller "$workspace_id-config-preflight"
-        if test (printf "%s\n" "$plan" | jq -r --argjson i $index '.windows[$i].selector.visible // false') = true
-            set -a find_args --visible
-        end
-        set -l window_id (workspace_find_app_key_window $find_args)
+        set -l window_id (__workspace_config_select_window "$windows_json" "$plan" $index $window_ids)
         set -l find_status $status
         if test "$find_status" -eq 1; or test "$required" = true -a -z "$window_id"
             echo "[WARN] $workspace_id required role is unavailable: $role" >&2
@@ -228,6 +258,29 @@ function __workspace_run_configured_generic_layout --description "Run a declarat
         test -n "$window_id"; or continue
         set -l grid (__workspace_config_plan_grid "$plan" $roles[$index])
         test -n "$grid"; and ws_window "$window_id" --grid "$grid"
+    end
+
+
+    set -l selected_ids
+    for window_id in $window_ids
+        test -n "$window_id"; and set -a selected_ids "$window_id"
+    end
+    set -l final_windows (ws_query_windows "$workspace_id-config-verify" final)
+    or begin
+        echo "[WARN] $workspace_id could not verify final window ownership" >&2
+        return 1
+    end
+    set -l selected_json '[]'
+    if test (count $selected_ids) -gt 0
+        set selected_json (printf '%s\n' $selected_ids | jq -R 'tonumber' | jq -s .)
+    end
+    jq -n -e --argjson ids "$selected_json" --argjson space "$target_space" --argjson windows "$final_windows" '
+        all($ids[]; . as $id | any($windows[]; .id == $id and .space == $space))
+    ' >/dev/null 2>&1
+    or begin
+        echo "[WARN] $workspace_id did not settle every selected window on Space $target_space" >&2
+        echo "[INFO] Run 'spacewright config-plan $workspace_id' and 'workspace_verify --json $workspace_id'" >&2
+        return 1
     end
 end
 

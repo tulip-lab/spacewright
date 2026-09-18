@@ -90,3 +90,13 @@ Before the first release, configuration has an explicit schema version.
 SpaceWright releases state the supported schema range and any command-level
 compatibility changes. Mackup pins an immutable release or commit rather than
 implicitly following `develop`.
+
+| Format | Status | Loading behavior | Migration |
+| --- | --- | --- | --- |
+| v1 | Compatibility | Defaults recursively merged with an optional user document | `config-migrate-v1` prints v2 without writing |
+| v2 | Preferred | Complete portable document compiled to a digest-bound runtime | Never rewritten on load |
+| Unknown major | Rejected | Fails before mutation | Upgrade or provide a supported document |
+
+Additive optional v2 fields may be compatible. Removing or changing a field,
+or adding a required field, requires a new major config version and an explicit
+migration command.

@@ -1,8 +1,82 @@
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 const MODES = ['solo', 'wide', 'tall'];
 const DIRECTIONS = new Set(['rows', 'columns']);
 const POSTPROCESSORS = new Set(['gtd_ai_expand_hermes_when_alone', 'workspace_reconcile_primary_fixed_spaces']);
+const ROOT_KEYS = new Set(['version', 'metadata', 'apps', 'displayRoles', 'workspaces', 'modes', 'shortcuts']);
+export const CONFIG_COMPILER_VERSION = 1;
+const V2_SCHEMA = JSON.parse(readFileSync(new URL('../../schemas/spacewright-v2.schema.json', import.meta.url), 'utf8'));
+
+function schemaTypeMatches(value, type) {
+  if (type === 'object') return object(value);
+  if (type === 'array') return Array.isArray(value);
+  if (type === 'integer') return Number.isInteger(value);
+  if (type === 'number') return typeof value === 'number' && Number.isFinite(value);
+  if (type === 'null') return value === null;
+  return typeof value === type;
+}
+
+function schemaValueKey(value) {
+  return JSON.stringify(value, Object.keys(object(value) ? value : {}).sort());
+}
+
+function validateSchemaNode(value, schema, path, errors) {
+  if (schema.$ref) {
+    const target = schema.$ref.split('/').slice(1).reduce((node, token) => node[token.replaceAll('~1', '/').replaceAll('~0', '~')], V2_SCHEMA);
+    return validateSchemaNode(value, target, path, errors);
+  }
+  if (schema.oneOf || schema.anyOf) {
+    const branches = schema.oneOf || schema.anyOf;
+    const matches = branches.filter((branch) => {
+      const branchErrors = [];
+      validateSchemaNode(value, branch, path, branchErrors);
+      return branchErrors.length === 0;
+    }).length;
+    const valid = schema.oneOf ? matches === 1 : matches > 0;
+    if (!valid) errors.push(`${path} does not match a supported shape`);
+  }
+  if (schema.const !== undefined && value !== schema.const) errors.push(`${path} must equal ${JSON.stringify(schema.const)}`);
+  if (schema.enum && !schema.enum.includes(value)) errors.push(`${path} must be one of ${schema.enum.join(', ')}`);
+  if (schema.type) {
+    const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+    if (!types.some((type) => schemaTypeMatches(value, type))) {
+      errors.push(`${path} must be ${types.join(' or ')}`);
+      return;
+    }
+  }
+  if (typeof value === 'string') {
+    if (schema.minLength != null && value.length < schema.minLength) errors.push(`${path} must not be empty`);
+    if (schema.pattern && !new RegExp(schema.pattern).test(value)) errors.push(`${path} has an invalid format`);
+  }
+  if (typeof value === 'number' && schema.minimum != null && value < schema.minimum) errors.push(`${path} must be at least ${schema.minimum}`);
+  if (Array.isArray(value)) {
+    if (schema.minItems != null && value.length < schema.minItems) errors.push(`${path} must contain at least ${schema.minItems} item(s)`);
+    if (schema.uniqueItems && new Set(value.map(schemaValueKey)).size !== value.length) errors.push(`${path} must contain unique items`);
+    if (schema.items) value.forEach((item, index) => validateSchemaNode(item, schema.items, `${path}[${index}]`, errors));
+  }
+  if (object(value)) {
+    if (schema.minProperties != null && Object.keys(value).length < schema.minProperties) errors.push(`${path} must contain at least ${schema.minProperties} field(s)`);
+    for (const required of schema.required || []) if (!(required in value)) errors.push(`${path}.${required} is required`);
+    for (const [key, child] of Object.entries(value)) {
+      if (schema.propertyNames) validateSchemaNode(key, schema.propertyNames, `${path}.${key}`, errors);
+      if (schema.properties?.[key]) validateSchemaNode(child, schema.properties[key], `${path}.${key}`, errors);
+      else if (object(schema.additionalProperties)) validateSchemaNode(child, schema.additionalProperties, `${path}.${key}`, errors);
+      else if (schema.additionalProperties === false) errors.push(`${path}.${key} is not supported`);
+    }
+  }
+}
+
+export function validateV2Schema(config) {
+  const errors = [];
+  validateSchemaNode(config, V2_SCHEMA, '$', errors);
+  return errors;
+}
+
+function rejectUnknown(value, allowed, path, errors) {
+  if (!object(value)) return;
+  for (const key of Object.keys(value)) if (!allowed.has(key)) errors.push(`${path}.${key} is not supported`);
+}
 
 export function starterConfig() {
   return {
@@ -62,68 +136,113 @@ function id(value) {
   return typeof value === 'string' && /^[a-z][a-z0-9_]*$/.test(value);
 }
 
-function validateLayout(node, path, roles, errors, seen = new Set()) {
+function validateLayout(node, path, roles, errors, usedRoles, seen = new Set()) {
   if (!object(node)) return errors.push(`${path} must be an object`);
   if (seen.has(node)) return errors.push(`${path} contains a cycle`);
   seen.add(node);
   if (node.type === 'window') {
+    rejectUnknown(node, new Set(['type', 'role']), path, errors);
     if (!roles.has(node.role)) errors.push(`${path}.role references unknown window role "${node.role}"`);
+    else if (usedRoles.has(node.role)) errors.push(`${path}.role places window role "${node.role}" more than once`);
+    else usedRoles.add(node.role);
   } else if (node.type === 'canvas') {
+    rejectUnknown(node, new Set(['type', 'regions']), path, errors);
     if (!Array.isArray(node.regions) || !node.regions.length) errors.push(`${path}.regions must not be empty`);
     for (const [index, region] of (node.regions || []).entries()) {
       if (!roles.has(region.role)) errors.push(`${path}.regions[${index}].role references unknown window role "${region.role}"`);
+      else if (usedRoles.has(region.role)) errors.push(`${path}.regions[${index}].role places window role "${region.role}" more than once`);
+      else usedRoles.add(region.role);
+      rejectUnknown(region, new Set(['role', 'grid', 'move_abs', 'resize_abs']), `${path}.regions[${index}]`, errors);
       const hasGrid = typeof region.grid === 'string' && /^[0-9]+:[0-9]+:[0-9]+:[0-9]+:[0-9]+:[0-9]+$/.test(region.grid);
       const hasAbsolute = typeof region.move_abs === 'string' || typeof region.resize_abs === 'string';
       if (!hasGrid && !hasAbsolute) errors.push(`${path}.regions[${index}] must define grid or absolute geometry`);
     }
   } else if (node.type === 'split') {
+    rejectUnknown(node, new Set(['type', 'direction', 'weights', 'children']), path, errors);
     if (!DIRECTIONS.has(node.direction)) errors.push(`${path}.direction must be rows or columns`);
     if (!Array.isArray(node.children) || node.children.length < 2) errors.push(`${path}.children must contain at least two nodes`);
     if (!Array.isArray(node.weights) || node.weights.length !== node.children?.length || node.weights.some((n) => !Number.isInteger(n) || n < 1)) {
       errors.push(`${path}.weights must contain one positive integer per child`);
     }
-    node.children?.forEach((child, index) => validateLayout(child, `${path}.children[${index}]`, roles, errors, seen));
+    node.children?.forEach((child, index) => validateLayout(child, `${path}.children[${index}]`, roles, errors, usedRoles, seen));
   } else if (node.type !== 'empty') {
     errors.push(`${path}.type must be window, split, or empty`);
+  } else {
+    rejectUnknown(node, new Set(['type']), path, errors);
   }
   seen.delete(node);
 }
 
 export function validateV2(config) {
-  const errors = [];
-  if (!object(config) || config.version !== 2) return { valid: false, errors: ['version must be 2'] };
+  const errors = validateV2Schema(config);
+  const warnings = [];
+  if (!object(config) || config.version !== 2) return { valid: false, errors: ['version must be 2'], warnings };
+  rejectUnknown(config, ROOT_KEYS, '$', errors);
+  rejectUnknown(config.metadata, new Set(['name']), 'metadata', errors);
+  let invalidSection = false;
   for (const section of ['apps', 'displayRoles', 'workspaces', 'modes']) {
     if (!object(config[section])) errors.push(`${section} must be an object`);
+    if (!object(config[section])) invalidSection = true;
   }
-  if (errors.length) return { valid: false, errors };
+  if (invalidSection) return { valid: false, errors, warnings };
 
+  if (!Object.keys(config.apps).length) errors.push('apps must not be empty');
+  if (!Object.keys(config.displayRoles).length) errors.push('displayRoles must not be empty');
+  if (!Object.keys(config.workspaces).length) errors.push('workspaces must not be empty');
+  rejectUnknown(config.modes, new Set(MODES), 'modes', errors);
+  if (config.shortcuts != null && !Array.isArray(config.shortcuts)) errors.push('shortcuts must be an array');
+
+  const appAliases = new Map();
   for (const [appId, app] of Object.entries(config.apps)) {
+    rejectUnknown(app, new Set(['name', 'match']), `apps.${appId}`, errors);
+    rejectUnknown(app?.match, new Set(['appNames']), `apps.${appId}.match`, errors);
     if (!id(appId)) errors.push(`apps.${appId} has an invalid id`);
     if (!app?.name?.trim()) errors.push(`apps.${appId}.name is required`);
     if (!Array.isArray(app?.match?.appNames) || !app.match.appNames.length || app.match.appNames.some((name) => typeof name !== 'string' || !name.trim())) {
       errors.push(`apps.${appId}.match.appNames must contain at least one name`);
     }
+    for (const name of app?.match?.appNames || []) {
+      const normalized = name.toLocaleLowerCase();
+      if (appAliases.has(normalized) && appAliases.get(normalized) !== appId) warnings.push(`apps.${appId}.match.appNames shares “${name}” with apps.${appAliases.get(normalized)}`);
+      else appAliases.set(normalized, appId);
+    }
   }
   for (const [roleId, role] of Object.entries(config.displayRoles)) {
+    rejectUnknown(role, new Set(['name', 'portableMatch']), `displayRoles.${roleId}`, errors);
+    rejectUnknown(role?.portableMatch, new Set(['builtIn', 'orientation']), `displayRoles.${roleId}.portableMatch`, errors);
     if (!id(roleId)) errors.push(`displayRoles.${roleId} has an invalid id`);
     if (!role?.name?.trim()) errors.push(`displayRoles.${roleId}.name is required`);
   }
+  const labels = new Map();
   for (const [workspaceId, workspace] of Object.entries(config.workspaces)) {
     const path = `workspaces.${workspaceId}`;
+    rejectUnknown(workspace, new Set(['name', 'spaceLabel', 'windows', 'variants']), path, errors);
     if (!id(workspaceId)) errors.push(`${path} has an invalid id`);
     if (!workspace?.name?.trim()) errors.push(`${path}.name is required`);
     if (!workspace?.spaceLabel?.trim()) errors.push(`${path}.spaceLabel is required`);
+    else if (labels.has(workspace.spaceLabel)) errors.push(`${path}.spaceLabel duplicates workspaces.${labels.get(workspace.spaceLabel)}.spaceLabel`);
+    else labels.set(workspace.spaceLabel, workspaceId);
     if (!object(workspace?.windows) || !Object.keys(workspace.windows).length) errors.push(`${path}.windows must not be empty`);
     const roles = new Set(Object.keys(workspace?.windows || {}));
     for (const [role, window] of Object.entries(workspace?.windows || {})) {
+      rejectUnknown(window, new Set(['app', 'required', 'selector']), `${path}.windows.${role}`, errors);
+      rejectUnknown(window?.selector, new Set(['movable', 'visible', 'non_empty_title', 'title_include', 'title_exclude']), `${path}.windows.${role}.selector`, errors);
       if (!id(role)) errors.push(`${path}.windows.${role} has an invalid id`);
       if (!config.apps[window.app]) errors.push(`${path}.windows.${role}.app references unknown app "${window.app}"`);
       if (typeof window.required !== 'boolean') errors.push(`${path}.windows.${role}.required must be boolean`);
+      for (const flag of ['movable', 'visible', 'non_empty_title']) if (window.selector?.[flag] != null && typeof window.selector[flag] !== 'boolean') errors.push(`${path}.windows.${role}.selector.${flag} must be boolean`);
+      for (const field of ['title_include', 'title_exclude']) if (window.selector?.[field] != null && typeof window.selector[field] !== 'string') errors.push(`${path}.windows.${role}.selector.${field} must be a string`);
     }
     if (!object(workspace?.variants)) errors.push(`${path}.variants must be an object`);
     for (const [mode, variant] of Object.entries(workspace?.variants || {})) {
+      rejectUnknown(variant, new Set(['layout', 'command', 'spaceLabel', 'runtime']), `${path}.variants.${mode}`, errors);
       if (!MODES.includes(mode)) errors.push(`${path}.variants.${mode} is not a supported mode`);
-      validateLayout(variant.layout, `${path}.variants.${mode}.layout`, roles, errors);
+      const usedRoles = new Set();
+      validateLayout(variant.layout, `${path}.variants.${mode}.layout`, roles, errors, usedRoles);
+      for (const [role, window] of Object.entries(workspace.windows || {})) {
+        if (window.required && !usedRoles.has(role)) errors.push(`${path}.variants.${mode}.layout omits required window role "${role}"`);
+        else if (!window.required && !usedRoles.has(role)) warnings.push(`${path}.variants.${mode}.layout does not place optional window role "${role}"`);
+      }
       if (variant.runtime?.windows) {
         if (!Array.isArray(variant.runtime.windows) || !variant.runtime.windows.length) errors.push(`${path}.variants.${mode}.runtime.windows must not be empty`);
         for (const [index, window] of (variant.runtime.windows || []).entries()) {
@@ -137,9 +256,12 @@ export function validateV2(config) {
   for (const mode of MODES) {
     const definition = config.modes[mode];
     if (!definition) continue;
+    rejectUnknown(definition, new Set(['displays', 'cleanup', 'postprocessors']), `modes.${mode}`, errors);
     if (!Array.isArray(definition.displays) || !definition.displays.length) errors.push(`modes.${mode}.displays must not be empty`);
     const placed = new Set();
+    const modeLabels = new Map();
     for (const [index, display] of (definition.displays || []).entries()) {
+      rejectUnknown(display, new Set(['role', 'workspaceOrder']), `modes.${mode}.displays[${index}]`, errors);
       if (!config.displayRoles[display.role]) errors.push(`modes.${mode}.displays[${index}].role references unknown display role "${display.role}"`);
       if (!Array.isArray(display.workspaceOrder)) errors.push(`modes.${mode}.displays[${index}].workspaceOrder must be an array`);
       for (const workspaceId of display.workspaceOrder || []) {
@@ -148,7 +270,15 @@ export function validateV2(config) {
         else if (!workspace.variants?.[mode]) errors.push(`workspace "${workspaceId}" has no ${mode} variant`);
         if (placed.has(workspaceId)) errors.push(`workspace "${workspaceId}" appears twice in ${mode}`);
         placed.add(workspaceId);
+        if (workspace?.variants?.[mode]) {
+          const label = workspace.variants[mode].spaceLabel || `${workspace.spaceLabel}_${mode}`;
+          if (modeLabels.has(label)) errors.push(`modes.${mode} produces duplicate Space label "${label}" for workspaces "${modeLabels.get(label)}" and "${workspaceId}"`);
+          else modeLabels.set(label, workspaceId);
+        }
       }
+    }
+    for (const workspaceId of Object.keys(config.workspaces)) {
+      if (config.workspaces[workspaceId].variants?.[mode] && !placed.has(workspaceId)) warnings.push(`workspaces.${workspaceId}.variants.${mode} is not used by modes.${mode}`);
     }
     if (definition.cleanup && (!Array.isArray(definition.cleanup) || definition.cleanup.some((item) => typeof item !== 'string' || !/^[a-z_]+:(solo|wide|tall)$/.test(item)))) errors.push(`modes.${mode}.cleanup is invalid`);
     for (const [index, hook] of (definition.postprocessors || []).entries()) {
@@ -157,7 +287,11 @@ export function validateV2(config) {
     }
   }
   const chords = new Set();
-  for (const [index, shortcut] of (config.shortcuts || []).entries()) {
+  for (const [index, shortcut] of (Array.isArray(config.shortcuts) ? config.shortcuts : []).entries()) {
+    rejectUnknown(shortcut, new Set(['id', 'keys', 'action']), `shortcuts[${index}]`, errors);
+    rejectUnknown(shortcut.keys, new Set(['modifiers', 'key']), `shortcuts[${index}].keys`, errors);
+    rejectUnknown(shortcut.action, new Set(shortcut.action?.type === 'activateWorkspace' ? ['type', 'workspace', 'mode'] : ['type', 'mode']), `shortcuts[${index}].action`, errors);
+    if (typeof shortcut.id !== 'string' || !shortcut.id) errors.push(`shortcuts[${index}].id is required`);
     const modifiers = [...(shortcut.keys?.modifiers || [])].sort();
     const key = shortcut.keys?.key;
     if (!key || modifiers.some((item) => !['cmd', 'ctrl', 'alt', 'shift', 'fn'].includes(item))) errors.push(`shortcuts[${index}] has invalid keys`);
@@ -171,7 +305,7 @@ export function validateV2(config) {
       else if (config.workspaces[shortcut.action.workspace] && !config.workspaces[shortcut.action.workspace].variants?.[shortcut.action.mode]) errors.push(`shortcuts[${index}] references a missing workspace variant`);
     } else if (shortcut.action?.type !== 'activateMode') errors.push(`shortcuts[${index}] has an unsupported action`);
   }
-  return { valid: errors.length === 0, errors };
+  return { valid: errors.length === 0, errors, warnings };
 }
 
 function compileLayout(node, rect = { x: 0, y: 0, w: 120, h: 120 }, actions = []) {

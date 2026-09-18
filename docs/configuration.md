@@ -8,6 +8,22 @@ The Web Configurator writes the portable v2 document to:
 $SPACEWRIGHT_CONFIG_ROOT/config.v2.json
 ```
 
+Every successful save also atomically produces:
+
+```text
+$SPACEWRIGHT_CONFIG_ROOT/generated/runtime.json
+```
+
+The generated document records the SHA-256 of the canonical portable source.
+Fish uses it only while that digest matches `config.v2.json`, so it never
+silently runs a stale plan. Normal workspace commands therefore do not require
+Node.js after configuration has been compiled. `spacewright config-compile`
+performs the same compilation without opening the Web Configurator.
+
+Generated metadata includes the runtime format, compiler version, source
+configuration version, source digest, and deterministic generation id. A
+runtime with an unsupported metadata version is treated as stale.
+
 When that file exists, SpaceWright validates and deterministically compiles it
 to the normalized runtime plan consumed by Fish. v2 models logical workspaces,
 per-mode layout variants, display lanes, recursive split trees, and structured
@@ -100,6 +116,22 @@ two inactive display modes before and after its ordered steps.
 Configuration does not accept shell commands, jq expressions, loops,
 conditionals, retries, or service-control actions.
 
+## Version 2 Contract
+
+The JSON Schema is the structural contract. Runtime validation adds semantic
+checks: references must resolve, Space label prefixes must be unique, required
+window roles must occur in each layout, a workspace may occur only once in a
+mode, and shortcut chords must be unique. Unused variants and unplaced optional
+windows are reported as warnings.
+
+Window selectors use one read-only yabai snapshot before any mutation. They
+support `movable`, `visible`, `non_empty_title`, `title_include`, and
+`title_exclude`. One window cannot satisfy two roles in the same workspace.
+
+The stable user command is `spacewright run <workspace-id>
+<solo|wide|tall>`. Imported `variant.command` values preserve historical Fish
+commands; generated `spacewright_<id>_<mode>` identifiers remain internal.
+
 Runner names are also a closed enum. Generic primary/helper workspaces use the
 shared configured runner. Office and recovery-heavy GTD workspaces use trusted
 Fish adapters that consume configured labels, display roles, apps, layouts,
@@ -152,7 +184,16 @@ workspace_run_configured_mode work_wide --dry-run
 workspace_plan --json coding_editor_wide
 workspace_verify --json coding_editor_wide
 workspace_verify --all --json
+spacewright config-compile
+spacewright config-status
+spacewright config-diff
+spacewright config-explain coding wide
 ```
+
+`config-status` reports source and runtime freshness as JSON. `config-diff`
+compiles a temporary candidate and compares it with the saved runtime without
+changing either file. `config-explain` resolves a logical workspace and mode
+to its normalized read-only execution plan.
 
 Observation contracts are generated from the same effective configuration.
 `--all` selects fixed workspaces plus the solo/wide/tall variants appropriate

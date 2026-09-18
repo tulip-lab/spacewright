@@ -6,6 +6,11 @@ Configurable macOS workspace orchestration for yabai.
 > relocatable bootstrap, packaging, and full v1 workspace configuration are
 > complete.
 
+The portable v2 user module includes semantic validation, a digest-verified
+compiled runtime, complete generic window selectors, guarded
+import/export/backup flows, read-only discovery, and generated shortcut
+fragments. Personal configuration remains outside this repository.
+
 SpaceWright turns named work contexts into repeatable macOS Space and window
 layouts. It is intended to preserve stable commands such as `work_wide` or
 `coding_tall` while moving app names, layouts, mode composition, and personal

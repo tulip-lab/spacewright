@@ -13,6 +13,7 @@
     },
     "apps": {
       "type": "object",
+      "minProperties": 1,
       "propertyNames": { "$ref": "#/$defs/id" },
       "additionalProperties": { "$ref": "#/$defs/app" }
     },
@@ -24,6 +25,7 @@
     },
     "workspaces": {
       "type": "object",
+      "minProperties": 1,
       "propertyNames": { "$ref": "#/$defs/id" },
       "additionalProperties": { "$ref": "#/$defs/workspace" }
     },

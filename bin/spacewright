@@ -27,6 +27,46 @@ switch "$command_name"
         set -l config_file $argv[1]
         test -n "$config_file"; or set config_file "$SPACEWRIGHT_CONFIG_ROOT/config.v2.json"
         command node "$package_root/configurator/cli.mjs" compile "$config_file"
+    case config-compile
+        set -l config_file "$SPACEWRIGHT_CONFIG_ROOT/config.v2.json"
+        set -l runtime_file "$SPACEWRIGHT_CONFIG_ROOT/generated/runtime.json"
+        command node "$package_root/configurator/cli.mjs" compile-to "$config_file" "$runtime_file"
+        and printf 'compiled=%s\n' "$runtime_file"
+    case config-status
+        spacewright_config_status
+    case config-diff
+        set -l config_file "$SPACEWRIGHT_CONFIG_ROOT/config.v2.json"
+        set -l runtime_file "$SPACEWRIGHT_CONFIG_ROOT/generated/runtime.json"
+        if not test -r "$config_file"
+            echo 'spacewright: config-diff requires config.v2.json' >&2
+            exit 1
+        end
+        if not command -q node
+            echo 'spacewright: config-diff requires Node.js to compile the candidate plan' >&2
+            exit 1
+        end
+        set -l candidate (mktemp -t spacewright-runtime.XXXXXX)
+        command node "$package_root/configurator/cli.mjs" compile-to "$config_file" "$candidate"
+        or exit 1
+        diff -u "$runtime_file" "$candidate"
+        set -l diff_status $status
+        command rm -f "$candidate"
+        if test "$diff_status" -eq 0
+            echo 'runtime is current'
+        else if test "$diff_status" -gt 1
+            exit "$diff_status"
+        end
+    case config-explain
+        if test (count $argv) -ne 2
+            echo 'usage: spacewright config-explain <workspace> <solo|wide|tall>' >&2
+            exit 2
+        end
+        set -l runtime_id (spacewright_config_effective | jq -r --arg workspace "$argv[1]" --arg mode "$argv[2]" 'first(.workspaces | to_entries[] | select(.value.ui.workspace_id == $workspace and .value.ui.mode == $mode) | .key) // empty')
+        if test -z "$runtime_id"
+            echo "spacewright: no configured variant for $argv[1] $argv[2]" >&2
+            exit 1
+        end
+        workspace_config_plan "$runtime_id"
     case config-migrate-v1
         set -l config_file $argv[1]
         test -n "$config_file"; or set config_file (spacewright_config_user_file)
@@ -58,6 +98,10 @@ switch "$command_name"
             '  config-plan <target>    print a read-only workspace or mode plan' \
             '  config-v2-check [file]  validate a portable v2 configuration' \
             '  config-v2-compile [file] compile v2 to a normalized runtime plan' \
+            '  config-compile          atomically compile v2 for normal runtime use' \
+            '  config-status           report source and compiled runtime freshness' \
+            '  config-diff             compare compiled runtime with current v2 source' \
+            '  config-explain ID MODE  explain one compiled workspace plan' \
             '  config-migrate-v1 [file] print a v2 migration without writing' \
             '  configure               open the local Web configurator' \
             '  run <workspace>         run a compiled workspace entry' \
