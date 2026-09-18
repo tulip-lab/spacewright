@@ -5,6 +5,8 @@ configuration and installation contracts may still change before 1.0.
 
 ## Unreleased
 
+## 0.2.0-alpha.11 — 2026-09-18
+
 - Harden the portable v2 contract with unknown-field, unique-label, required
   layout role, duplicate placement, mode usage, and shortcut validation.
 - Make the checked-in JSON Schema the structural validation authority and add
