@@ -80,6 +80,8 @@ switch "$command_name"
     case run
         if test (count $argv) -eq 2
             workspace_run_configured "spacewright_$argv[1]_$argv[2]"
+        else if string match -q 'work_*' -- "$argv[1]"
+            workspace_run_configured_mode $argv
         else
             workspace_run_configured $argv
         end

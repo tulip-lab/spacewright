@@ -80,7 +80,7 @@ function syncUrl() {
 }
 
 function changedSections(before, after) {
-  return ['metadata', 'apps', 'displayRoles', 'workspaces', 'modes', 'shortcuts'].filter((key) => JSON.stringify(before?.[key]) !== JSON.stringify(after?.[key]));
+  return ['metadata', 'apps', 'displayRoles', 'workspaces', 'modes', 'shortcuts', 'profiles', 'rules', 'settings'].filter((key) => JSON.stringify(before?.[key]) !== JSON.stringify(after?.[key]));
 }
 
 function toast(message, error = false) {
@@ -116,28 +116,46 @@ function onboarding() {
 
 function mapView() {
   const mode = state.config.modes[state.mode] || { displays: [] };
+  const assigned = new Set(mode.displays.flatMap((display) => display.workspaceOrder));
+  const unassigned = ids(state.config.workspaces).filter((id) => !assigned.has(id));
+  const destinationOptions = (current) => `<option value="unassigned" ${current === 'unassigned' ? 'selected' : ''}>Unassigned</option>${mode.displays.map((display, index) => `<option value="${index}" ${String(current) === String(index) ? 'selected' : ''}>${escapeHtml(state.config.displayRoles[display.role]?.name || display.role)}</option>`).join('')}`;
+  const chip = (workspaceId, from, index) => {
+    const workspace = state.config.workspaces[workspaceId];
+    const assignedLane = from !== 'unassigned';
+    return `<div class="drop-slot" data-drop-lane="${from}" data-drop-index="${index}"></div><div class="workspace-chip" draggable="true" data-workspace="${workspaceId}" data-from="${from}"><span class="order">${assignedLane ? String(index + 1).padStart(2, '0') : '—'}</span><span><strong>${escapeHtml(workspace?.name || workspaceId)}</strong><small>${escapeHtml(workspaceId)}</small></span><span class="chip-controls"><select data-relocate="${workspaceId}" data-current-lane="${from}" aria-label="Display for ${escapeHtml(workspace?.name || workspaceId)}">${destinationOptions(from)}</select>${assignedLane ? `<span class="chip-actions"><button class="quiet" data-move-up="${workspaceId}" data-lane="${from}" aria-label="Move ${escapeHtml(workspace?.name || workspaceId)} up">↑</button><button class="quiet" data-move-down="${workspaceId}" data-lane="${from}" aria-label="Move ${escapeHtml(workspace?.name || workspaceId)} down">↓</button></span>` : ''}</span></div>`;
+  };
+  const lane = (items, laneId) => `${items.map((workspaceId, index) => chip(workspaceId, laneId, index)).join('')}<div class="drop-slot end" data-drop-lane="${laneId}" data-drop-index="${items.length}">${items.length ? 'Drop at end' : 'Drop a workspace here'}</div>`;
   root.innerHTML = title('Topology / sequence', `${state.mode} mode`, 'Drag workspaces within or between display roles. Their vertical order is the Space order and execution order.', modeSwitch()) + onboarding() +
     `<div class="display-deck">${mode.displays.map((display, displayIndex) => `
       <article class="display-card"><div class="display-screen" data-display="${displayIndex}">
         <div class="display-title"><span>${escapeHtml(state.config.displayRoles[display.role]?.name || display.role)}</span><span>${escapeHtml(display.role)}</span></div>
-        <div class="lane">${display.workspaceOrder.length ? display.workspaceOrder.map((workspaceId, index) => {
-          const workspace = state.config.workspaces[workspaceId];
-          return `<div class="workspace-chip" draggable="true" data-workspace="${workspaceId}" data-from="${displayIndex}"><span class="order">${String(index + 1).padStart(2, '0')}</span><span><strong>${escapeHtml(workspace?.name || workspaceId)}</strong><small>${escapeHtml(workspaceId)}</small></span><span class="chip-actions"><button class="quiet" data-move-up="${workspaceId}" data-lane="${displayIndex}" aria-label="Move ${escapeHtml(workspace?.name || workspaceId)} up">↑</button><button class="quiet" data-move-down="${workspaceId}" data-lane="${displayIndex}" aria-label="Move ${escapeHtml(workspace?.name || workspaceId)} down">↓</button></span></div>`;
-        }).join('') : '<div class="empty-lane">Drop a workspace here</div>'}</div>
-      </div></article>`).join('')}<article class="card"><h3>Add Display Lane</h3><div class="field"><label for="lane-role">Display role</label><select id="lane-role" name="lane-role">${ids(state.config.displayRoles).map((role) => `<option value="${role}">${escapeHtml(state.config.displayRoles[role].name)}</option>`).join('')}</select></div><button id="add-lane" class="primary">+ Add to ${state.mode}</button></article></div>`;
+        <div class="lane">${lane(display.workspaceOrder, displayIndex)}</div>
+      </div></article>`).join('')}<article class="card unassigned-card"><div class="display-title"><span>Unassigned</span><span>${unassigned.length}</span></div><p>Keep a workspace here when it should not open in this mode.</p><div class="lane">${lane(unassigned, 'unassigned')}</div></article><article class="card"><h3>Add Display Lane</h3><div class="field"><label for="lane-role">Display role</label><select id="lane-role" name="lane-role">${ids(state.config.displayRoles).map((role) => `<option value="${role}">${escapeHtml(state.config.displayRoles[role].name)}</option>`).join('')}</select></div><button id="add-lane" class="primary">+ Add to ${state.mode}</button></article></div>`;
   root.querySelectorAll('[data-mode]').forEach((button) => button.onclick = () => { state.mode = button.dataset.mode; render(); });
   let dragged;
-  root.querySelectorAll('.workspace-chip').forEach((chip) => chip.ondragstart = () => { dragged = { id: chip.dataset.workspace, from: Number(chip.dataset.from) }; });
-  root.querySelectorAll('[data-display]').forEach((display) => {
-    display.ondragover = (event) => event.preventDefault();
-    display.ondrop = () => {
+  const placeWorkspace = (id, target, index) => {
+    const sourceLane = mode.displays.findIndex((display) => display.workspaceOrder.includes(id));
+    const sourceIndex = sourceLane < 0 ? -1 : mode.displays[sourceLane].workspaceOrder.indexOf(id);
+    let insertionIndex = Number(index);
+    if (target !== 'unassigned' && sourceLane === Number(target) && sourceIndex < insertionIndex) insertionIndex--;
+    for (const display of mode.displays) display.workspaceOrder = display.workspaceOrder.filter((workspaceId) => workspaceId !== id);
+    if (target !== 'unassigned') mode.displays[Number(target)].workspaceOrder.splice(insertionIndex, 0, id);
+    markDirty(); render();
+  };
+  root.querySelectorAll('.workspace-chip').forEach((node) => node.ondragstart = () => { dragged = { id: node.dataset.workspace }; });
+  root.querySelectorAll('[data-drop-lane]').forEach((slot) => {
+    slot.ondragover = (event) => { event.preventDefault(); slot.classList.add('active'); };
+    slot.ondragleave = () => slot.classList.remove('active');
+    slot.ondrop = (event) => {
+      event.preventDefault();
       if (!dragged) return;
-      const target = Number(display.dataset.display);
-      mode.displays[dragged.from].workspaceOrder = mode.displays[dragged.from].workspaceOrder.filter((id) => id !== dragged.id);
-      mode.displays[target].workspaceOrder.push(dragged.id);
-      markDirty();
-      render();
+      placeWorkspace(dragged.id, slot.dataset.dropLane, slot.dataset.dropIndex);
     };
+  });
+  root.querySelectorAll('[data-relocate]').forEach((select) => select.onchange = () => {
+    const target = select.value;
+    const index = target === 'unassigned' ? 0 : mode.displays[Number(target)].workspaceOrder.length;
+    placeWorkspace(select.dataset.relocate, target, index);
   });
   root.querySelector('#add-lane').onclick = () => {
     const role = root.querySelector('#lane-role').value;
@@ -207,12 +225,20 @@ async function displaysView() {
 }
 
 function layoutTemplate(kind, roles) {
-  const [a, b, c] = roles;
+  const [a, b, c, d] = roles;
   if (kind === 'full' || !b) return { type: 'window', role: a };
   if (kind === 'half-columns') return { type: 'split', direction: 'columns', weights: [1, 1], children: [{ type: 'window', role: a }, { type: 'window', role: b }] };
   if (kind === 'third-columns') return { type: 'split', direction: 'columns', weights: [1, 2], children: [{ type: 'window', role: b }, { type: 'window', role: a }] };
+  if (kind === 'two-third-columns') return { type: 'split', direction: 'columns', weights: [2, 1], children: [{ type: 'window', role: a }, { type: 'window', role: b }] };
   if (kind === 'right-stack' && c) return { type: 'split', direction: 'columns', weights: [1, 2], children: [{ type: 'window', role: a }, { type: 'split', direction: 'rows', weights: [1, 1], children: [{ type: 'window', role: b }, { type: 'window', role: c }] }] };
   if (kind === 'left-stack' && c) return { type: 'split', direction: 'columns', weights: [1, 2], children: [{ type: 'split', direction: 'rows', weights: [1, 1], children: [{ type: 'window', role: b }, { type: 'window', role: c }] }, { type: 'window', role: a }] };
+  if (kind === 'top-split' && c) return { type: 'split', direction: 'rows', weights: [1, 1], children: [{ type: 'split', direction: 'columns', weights: [1, 1], children: [{ type: 'window', role: b }, { type: 'window', role: c }] }, { type: 'window', role: a }] };
+  if (kind === 'bottom-split' && c) return { type: 'split', direction: 'rows', weights: [1, 1], children: [{ type: 'window', role: a }, { type: 'split', direction: 'columns', weights: [1, 1], children: [{ type: 'window', role: b }, { type: 'window', role: c }] }] };
+  if (kind === 'three-columns' && c) return { type: 'split', direction: 'columns', weights: [1, 1, 1], children: [a, b, c].map((role) => ({ type: 'window', role })) };
+  if (kind === 'three-rows' && c) return { type: 'split', direction: 'rows', weights: [1, 1, 1], children: [a, b, c].map((role) => ({ type: 'window', role })) };
+  if (kind === 'quad' && d) return { type: 'split', direction: 'rows', weights: [1, 1], children: [[a, b], [c, d]].map((pair) => ({ type: 'split', direction: 'columns', weights: [1, 1], children: pair.map((role) => ({ type: 'window', role })) })) };
+  if (kind === 'main-left' && d) return { type: 'split', direction: 'columns', weights: [2, 1], children: [{ type: 'window', role: a }, { type: 'split', direction: 'rows', weights: [1, 1, 1], children: [b, c, d].map((role) => ({ type: 'window', role })) }] };
+  if (kind === 'main-top' && d) return { type: 'split', direction: 'rows', weights: [2, 1], children: [{ type: 'window', role: a }, { type: 'split', direction: 'columns', weights: [1, 1, 1], children: [b, c, d].map((role) => ({ type: 'window', role })) }] };
   return { type: 'split', direction: 'rows', weights: [1, 1], children: [{ type: 'window', role: b }, { type: 'window', role: a }] };
 }
 
@@ -227,17 +253,64 @@ function layoutNode(node) {
   return `<div class="layout-region split ${node.direction}" style="flex:1 1 0">${node.children.map((child, index) => `<div style="display:flex;min-width:0;min-height:0;flex:${node.weights[index]} 1 0">${layoutNode(child)}</div>`).join('')}</div>`;
 }
 
+function layoutRoles(node, roles = new Set()) {
+  visitLayout(node, (item) => { if (item.role) roles.add(item.role); });
+  return roles;
+}
+
+function canvasFromLayout(layout, roles) {
+  const placed = [...layoutRoles(layout)].filter((role) => roles.includes(role));
+  const ordered = [...placed, ...roles.filter((role) => !placed.includes(role))];
+  const count = Math.max(ordered.length, 1);
+  return {
+    type: 'canvas',
+    regions: ordered.map((role, index) => {
+      const x = Math.floor(index * 12 / count);
+      const next = Math.floor((index + 1) * 12 / count);
+      return { role, grid: `12:12:${x}:0:${Math.max(1, next - x)}:12` };
+    })
+  };
+}
+
+function gridValues(region) {
+  if (!region.grid) return { x: 0, y: 0, w: 6, h: 6 };
+  const [rows, cols, x, y, w, h] = region.grid.split(':').map(Number);
+  return {
+    x: Math.round(x / cols * 12), y: Math.round(y / rows * 12),
+    w: Math.max(1, Math.round(w / cols * 12)), h: Math.max(1, Math.round(h / rows * 12))
+  };
+}
+
+function setRegionGrid(region, values) {
+  const x = Math.max(0, Math.min(11, Number(values.x)));
+  const y = Math.max(0, Math.min(11, Number(values.y)));
+  const w = Math.max(1, Math.min(12 - x, Number(values.w)));
+  const h = Math.max(1, Math.min(12 - y, Number(values.h)));
+  region.grid = `12:12:${x}:${y}:${w}:${h}`;
+  delete region.move_abs;
+  delete region.resize_abs;
+}
+
+function canvasPreview(layout, workspace) {
+  if (layout?.type !== 'canvas') return `<div class="layout-preview">${layoutNode(layout)}</div>`;
+  return `<div class="layout-preview canvas-editor" data-canvas>${layout.regions.map((region, index) => {
+    const { x, y, w, h } = gridValues(region);
+    const app = workspace.windows[region.role]?.app;
+    return `<button class="canvas-window" data-region="${index}" data-role="${escapeHtml(region.role)}" style="--x:${x};--y:${y};--w:${w};--h:${h}" aria-label="Move and resize ${escapeHtml(region.role)}"><span class="window-app">${escapeHtml(state.config.apps[app]?.name || app || 'Unassigned')}</span><strong>${escapeHtml(region.role)}</strong><small>${x},${y} · ${w}×${h}</small><i aria-hidden="true"></i></button>`;
+  }).join('')}</div>`;
+}
+
 function workspaceEditor(id) {
   const workspace = state.config.workspaces[id];
   const roles = ids(workspace.windows);
   const variant = workspace.variants[state.mode];
-  return `<article class="card" style="grid-column:1/-1">
+  const canvas = variant?.layout?.type === 'canvas';
+  return `<article class="card workspace-editor" style="grid-column:1/-1">
     <div class="row"><div class="field"><label for="workspace-name">Workspace name</label><input id="workspace-name" name="workspace-name" autocomplete="off" data-bind="name" value="${escapeHtml(workspace.name)}"></div><div class="field"><label for="workspace-id">Stable ID</label><input id="workspace-id" value="${escapeHtml(id)}" disabled></div></div>
     <div class="field"><label for="workspace-label">Space label prefix</label><input id="workspace-label" name="workspace-label" autocomplete="off" data-bind="spaceLabel" value="${escapeHtml(workspace.spaceLabel)}"></div>
     <div class="actions"><button id="rename-workspace" class="quiet">Rename ID</button><button id="delete-workspace" class="danger">Delete Workspace</button></div>
-    <div class="actions"><button class="template-button" data-template="full">Full</button><button class="template-button" data-template="half-columns">½ + ½</button><button class="template-button" data-template="third-columns">⅓ + ⅔</button><button class="template-button" data-template="half-rows">Top + bottom</button><button class="template-button" data-template="right-stack">Right stacked</button><button class="template-button" data-template="left-stack">Left stacked</button></div>
-    <div class="layout-preview">${variant ? layoutNode(variant.layout) : '<div class="layout-region">No variant</div>'}</div>
-    <div class="window-list">${Object.entries(workspace.windows).map(([role, window]) => `<div class="window-row"><strong translate="no">${escapeHtml(role)}</strong><select aria-label="Application for ${escapeHtml(role)}" name="window-app-${role}" data-window-app="${role}">${ids(state.config.apps).map((appId) => `<option value="${appId}" ${appId === window.app ? 'selected' : ''}>${escapeHtml(state.config.apps[appId].name)}</option>`).join('')}</select><label><input type="checkbox" data-required="${role}" ${window.required ? 'checked' : ''}> required</label><label><input type="checkbox" data-selector="movable:${role}" ${window.selector?.movable ? 'checked' : ''}> movable</label><label><input type="checkbox" data-selector="visible:${role}" ${window.selector?.visible ? 'checked' : ''}> visible</label><label><input type="checkbox" data-selector="non_empty_title:${role}" ${window.selector?.non_empty_title ? 'checked' : ''}> titled</label><input aria-label="Title includes for ${escapeHtml(role)}" name="title-include-${role}" autocomplete="off" placeholder="Title includes…" data-selector-text="title_include:${role}" value="${escapeHtml(window.selector?.title_include || '')}"><input aria-label="Title excludes for ${escapeHtml(role)}" name="title-exclude-${role}" autocomplete="off" placeholder="Title excludes…" data-selector-text="title_exclude:${role}" value="${escapeHtml(window.selector?.title_exclude || '')}"><span class="actions"><button class="quiet" data-rename-window="${role}">Rename Role</button><button class="danger" data-delete-window="${role}">Delete Role</button></span></div>`).join('')}</div><button id="add-window-role" class="quiet" style="margin-top:12px">+ Window role</button>
+    <section class="layout-workbench"><div class="layout-stage"><div class="layout-heading"><div><p class="kicker">${escapeHtml(state.mode)} layout</p><h3>Arrange windows</h3></div><button id="edit-canvas" class="${canvas ? 'quiet' : 'primary'}">${canvas ? 'Reset equal columns' : 'Edit freely'}</button></div>${canvasPreview(variant?.layout, workspace)}<p class="layout-hint">${canvas ? 'Drag a window to move it. Drag its lower-right corner to resize. The grid snaps to 12 columns and 12 rows.' : 'Choose Edit freely to drag and resize every window, or start from a preset below.'}</p><div class="layout-preset-groups"><div><span>Two windows</span><div class="actions layout-presets"><button class="template-button" data-template="full">Full</button><button class="template-button" data-template="half-columns">Left | Right</button><button class="template-button" data-template="half-rows">Top / Bottom</button><button class="template-button" data-template="third-columns">⅓ | ⅔</button><button class="template-button" data-template="two-third-columns">⅔ | ⅓</button></div></div><div><span>Three windows</span><div class="actions layout-presets"><button class="template-button" data-template="three-columns">3 columns</button><button class="template-button" data-template="three-rows">3 rows</button><button class="template-button" data-template="left-stack">Left split ↕</button><button class="template-button" data-template="right-stack">Right split ↕</button><button class="template-button" data-template="top-split">Top split ↔</button><button class="template-button" data-template="bottom-split">Bottom split ↔</button></div></div><div><span>Four windows</span><div class="actions layout-presets"><button class="template-button" data-template="quad">2 × 2 grid</button><button class="template-button" data-template="main-left">Main left + 3</button><button class="template-button" data-template="main-top">Main top + 3</button></div></div></div></div>
+    <aside class="window-inspector"><div class="layout-heading"><div><p class="kicker">Windows</p><h3>Apps in this workspace</h3></div><button id="add-window-role" class="primary">+ Add app window</button></div>${Object.entries(workspace.windows).map(([role, window]) => { const region = canvas ? variant.layout.regions.find((item) => item.role === role) : null; const grid = region ? gridValues(region) : null; return `<details class="window-card" ${region ? 'open' : ''}><summary><span><strong>${escapeHtml(state.config.apps[window.app]?.name || window.app)}</strong><small>${escapeHtml(role)}</small></span><span>${grid ? `${grid.w}×${grid.h}` : 'Preset'}</span></summary><div class="window-fields"><div class="field"><label for="window-app-${role}">Application</label><select id="window-app-${role}" data-window-app="${role}">${ids(state.config.apps).map((appId) => `<option value="${appId}" ${appId === window.app ? 'selected' : ''}>${escapeHtml(state.config.apps[appId].name)}</option>`).join('')}</select></div>${grid ? `<div class="geometry-grid"><label>Left <input type="number" min="0" max="11" data-geometry="x:${role}" value="${grid.x}"></label><label>Top <input type="number" min="0" max="11" data-geometry="y:${role}" value="${grid.y}"></label><label>Width <input type="number" min="1" max="12" data-geometry="w:${role}" value="${grid.w}"></label><label>Height <input type="number" min="1" max="12" data-geometry="h:${role}" value="${grid.h}"></label></div>` : ''}<label class="check"><input type="checkbox" data-required="${role}" ${window.required ? 'checked' : ''}> This window is required</label><details class="advanced"><summary>Window matching options</summary><div class="selector-grid"><label><input type="checkbox" data-selector="movable:${role}" ${window.selector?.movable ? 'checked' : ''}> movable</label><label><input type="checkbox" data-selector="visible:${role}" ${window.selector?.visible ? 'checked' : ''}> visible</label><label><input type="checkbox" data-selector="non_empty_title:${role}" ${window.selector?.non_empty_title ? 'checked' : ''}> titled</label><input aria-label="Title includes for ${escapeHtml(role)}" placeholder="Title includes…" data-selector-text="title_include:${role}" value="${escapeHtml(window.selector?.title_include || '')}"><input aria-label="Title excludes for ${escapeHtml(role)}" placeholder="Title excludes…" data-selector-text="title_exclude:${role}" value="${escapeHtml(window.selector?.title_exclude || '')}"></div></details><div class="actions"><button class="quiet" data-rename-window="${role}">Rename role</button><button class="danger" data-delete-window="${role}">Remove window</button></div></div></details>`; }).join('')}<button class="quiet manage-apps" data-go-apps>Manage application list →</button></aside></section>
   </article>`;
 }
 
@@ -250,6 +323,43 @@ function workspacesView() {
   root.querySelector('[data-bind="name"]').oninput = (event) => state.config.workspaces[state.selectedWorkspace].name = event.target.value;
   root.querySelector('[data-bind="spaceLabel"]').oninput = (event) => state.config.workspaces[state.selectedWorkspace].spaceLabel = event.target.value;
   root.querySelectorAll('[data-window-app]').forEach((select) => select.onchange = () => state.config.workspaces[state.selectedWorkspace].windows[select.dataset.windowApp].app = select.value);
+  root.querySelector('[data-go-apps]').onclick = () => { state.view = 'apps'; render(); };
+  root.querySelector('#edit-canvas').onclick = () => {
+    const workspace = state.config.workspaces[state.selectedWorkspace];
+    workspace.variants[state.mode] = { layout: canvasFromLayout(workspace.variants[state.mode]?.layout, ids(workspace.windows)) };
+    markDirty(); render();
+  };
+  root.querySelectorAll('[data-geometry]').forEach((input) => input.onchange = () => {
+    const [field, role] = input.dataset.geometry.split(':');
+    const layout = state.config.workspaces[state.selectedWorkspace].variants[state.mode].layout;
+    const region = layout.regions.find((item) => item.role === role);
+    const values = gridValues(region); values[field] = input.value;
+    setRegionGrid(region, values); markDirty(); render();
+  });
+  root.querySelectorAll('.canvas-window').forEach((windowNode) => {
+    windowNode.onpointerdown = (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      const canvas = root.querySelector('[data-canvas]');
+      const layout = state.config.workspaces[state.selectedWorkspace].variants[state.mode].layout;
+      const region = layout.regions[Number(windowNode.dataset.region)];
+      const start = gridValues(region);
+      const bounds = canvas.getBoundingClientRect();
+      const resizing = event.target.tagName === 'I';
+      const origin = { x: event.clientX, y: event.clientY };
+      windowNode.setPointerCapture(event.pointerId);
+      windowNode.onpointermove = (move) => {
+        const dx = Math.round((move.clientX - origin.x) / bounds.width * 12);
+        const dy = Math.round((move.clientY - origin.y) / bounds.height * 12);
+        const values = resizing ? { ...start, w: start.w + dx, h: start.h + dy } : { ...start, x: start.x + dx, y: start.y + dy };
+        setRegionGrid(region, values);
+        const next = gridValues(region);
+        windowNode.style.setProperty('--x', next.x); windowNode.style.setProperty('--y', next.y); windowNode.style.setProperty('--w', next.w); windowNode.style.setProperty('--h', next.h);
+        windowNode.querySelector('small').textContent = `${next.x},${next.y} · ${next.w}×${next.h}`;
+      };
+      windowNode.onpointerup = () => { windowNode.onpointermove = null; markDirty(); render(); };
+    };
+  });
   root.querySelectorAll('[data-required]').forEach((input) => input.onchange = () => state.config.workspaces[state.selectedWorkspace].windows[input.dataset.required].required = input.checked);
   root.querySelectorAll('[data-selector]').forEach((input) => input.onchange = () => { const [field, role] = input.dataset.selector.split(':'); const selector = state.config.workspaces[state.selectedWorkspace].windows[role].selector ||= {}; if (input.checked) selector[field] = true; else delete selector[field]; });
   root.querySelectorAll('[data-selector-text]').forEach((input) => input.oninput = () => { const [field, role] = input.dataset.selectorText.split(':'); const selector = state.config.workspaces[state.selectedWorkspace].windows[role].selector ||= {}; if (input.value) selector[field] = input.value; else delete selector[field]; });
@@ -280,15 +390,22 @@ function workspacesView() {
     markDirty(); render();
   });
   root.querySelectorAll('[data-delete-window]').forEach((button) => button.onclick = () => {
-    const workspace = state.config.workspaces[state.selectedWorkspace]; const role = button.dataset.deleteWindow; let used = false;
-    for (const variant of Object.values(workspace.variants)) visitLayout(variant.layout, (node) => { if (node.role === role) used = true; });
-    if (used) return toast(`Window role “${role}” is still placed in a layout. Replace its layout first.`, true);
+    const workspace = state.config.workspaces[state.selectedWorkspace]; const role = button.dataset.deleteWindow;
     if (Object.keys(workspace.windows).length === 1) return toast('A workspace must keep at least 1 window role.', true);
-    if (!confirm(`Delete window role “${role}”?`)) return;
-    delete workspace.windows[role]; markDirty(); render();
+    if (!confirm(`Remove window “${role}” from this workspace and all of its layouts?`)) return;
+    delete workspace.windows[role];
+    for (const variant of Object.values(workspace.variants)) {
+      if (variant.layout.type === 'canvas') variant.layout.regions = variant.layout.regions.filter((region) => region.role !== role);
+      else if (layoutRoles(variant.layout).has(role)) variant.layout = canvasFromLayout(variant.layout, ids(workspace.windows));
+    }
+    markDirty(); render();
   });
   root.querySelectorAll('[data-template]').forEach((button) => button.onclick = () => {
-    if ((button.dataset.template === 'right-stack' || button.dataset.template === 'left-stack') && ids(state.config.workspaces[state.selectedWorkspace].windows).length < 3) return toast('A stacked region needs at least three window roles', true);
+    const roleCount = ids(state.config.workspaces[state.selectedWorkspace].windows).length;
+    const needsThree = ['right-stack', 'left-stack', 'top-split', 'bottom-split', 'three-columns', 'three-rows'];
+    const needsFour = ['quad', 'main-left', 'main-top'];
+    if (needsThree.includes(button.dataset.template) && roleCount < 3) return toast('This preset needs at least three app windows', true);
+    if (needsFour.includes(button.dataset.template) && roleCount < 4) return toast('This preset needs at least four app windows', true);
     state.config.workspaces[state.selectedWorkspace].variants[state.mode] = { layout: layoutTemplate(button.dataset.template, ids(state.config.workspaces[state.selectedWorkspace].windows)) };
     markDirty(); render();
   });
@@ -296,6 +413,8 @@ function workspacesView() {
     const windows = state.config.workspaces[state.selectedWorkspace].windows;
     let index = 1; while (windows[`window_${index}`]) index++;
     windows[`window_${index}`] = { app: ids(state.config.apps)[0], required: false, selector: { movable: true } };
+    const variant = state.config.workspaces[state.selectedWorkspace].variants[state.mode];
+    variant.layout = canvasFromLayout(variant.layout, ids(windows));
     markDirty(); render();
   };
   root.querySelector('#add-workspace').onclick = () => {
@@ -336,6 +455,66 @@ function shortcutsView() {
   root.querySelector('#add-shortcut').onclick = () => { state.config.shortcuts.push({ id: crypto.randomUUID(), keys: { modifiers: ['alt','shift'], key: root.querySelector('#shortcut-key').value }, action: { type: 'activateMode', mode: root.querySelector('#shortcut-mode').value } }); markDirty(); render(); };
   root.querySelector('#add-workspace-shortcut').onclick = () => { state.config.shortcuts.push({ id: crypto.randomUUID(), keys: { modifiers: ['alt'], key: root.querySelector('#workspace-shortcut-key').value }, action: { type: 'activateWorkspace', workspace: root.querySelector('#shortcut-workspace').value, mode: root.querySelector('#workspace-shortcut-mode').value } }); markDirty(); render(); };
   root.querySelector('#generate-skhd').onclick = async () => { try { const result = await request('/api/skhd', { method: 'POST', body: JSON.stringify(state.config) }); toast(`Generated ${result.path}`); } catch (error) { toast(error.message, true); } };
+}
+
+function automationView() {
+  state.config.profiles ||= {};
+  state.config.rules ||= [];
+  state.config.settings ||= {};
+  const profiles = Object.entries(state.config.profiles).map(([id, profile]) => `<article class="card"><p class="kicker">${escapeHtml(id)}</p><h3>${escapeHtml(profile.name)}</h3><p><span class="badge">${escapeHtml(profile.mode)}</span> ${(profile.workspaces || []).map(escapeHtml).join(' · ') || 'all workspaces'}</p><div class="actions"><button class="quiet" data-preview-profile="${id}">Dry run</button><button class="danger" data-delete-profile="${id}">Delete</button></div></article>`).join('');
+  const rules = state.config.rules.map((rule, index) => `<article class="card"><p class="kicker">${escapeHtml(rule.id)}</p><h3>${escapeHtml(rule.when.event)}</h3><p>${escapeHtml(rule.when.topology || rule.when.orientation || 'any topology')} → ${escapeHtml(rule.then.activateProfile || rule.then.activateWorkspace)}</p><label class="check"><input type="checkbox" data-rule-enabled="${index}" ${rule.enabled ? 'checked' : ''}> Enabled</label><button class="danger" data-delete-rule="${index}">Delete</button></article>`).join('');
+  root.innerHTML = title('Automation', 'Profiles, workspace restore & event rules', 'Profiles bundle mode, display, workspace, geometry and focus settings. Every activation can be previewed without moving windows.', '<button id="evaluate-rules" class="quiet">Evaluate current topology</button><button id="preview-mode" class="quiet">Preview current mode</button>') + `<label class="check automation-toggle"><input id="automation-enabled" type="checkbox" ${state.config.settings.eventAutomationEnabled ? 'checked' : ''}> Automatically run matching enabled rules while this configurator service is running. Save configuration to apply.</label><div id="dry-run-output"></div><div class="cards">${profiles}<article class="card"><h3>Add profile</h3><div class="field"><label for="profile-id">ID</label><input id="profile-id" value="research"></div><div class="field"><label for="profile-name">Name</label><input id="profile-name" value="Research"></div><div class="field"><label for="profile-mode">Mode</label><select id="profile-mode"><option>solo</option><option>wide</option><option>tall</option></select></div><button id="add-profile" class="primary">Add Profile</button></article></div><div class="section-head compact"><div><p class="kicker">Rule engine</p><h2>Event-driven activation</h2></div></div><div class="cards">${rules}<article class="card"><h3>Add topology rule</h3><div class="field"><label for="rule-event">Event</label><select id="rule-event"><option>display_connected</option><option>display_disconnected</option><option>topology_changed</option><option>wake</option><option>manual</option></select></div><div class="field"><label for="rule-topology">Topology</label><select id="rule-topology"><option value="">Any</option>${['solo','wide_left','wide_right','tall_left','tall_right','dual_external','clamshell'].map((item) => `<option>${item}</option>`).join('')}</select></div><div class="field"><label for="rule-profile">Activate profile</label><select id="rule-profile">${Object.entries(state.config.profiles).map(([id, profile]) => `<option value="${id}">${escapeHtml(profile.name)}</option>`).join('')}</select></div><button id="add-rule" class="primary" ${Object.keys(state.config.profiles).length ? '' : 'disabled'}>Add Rule</button></article></div>`;
+  const showPlan = async (profile) => { try { const result = await request('/api/preview', { method: 'POST', body: JSON.stringify({ config: state.config, profile, mode: state.mode }) }); root.querySelector('#dry-run-output').innerHTML = `<div class="change-summary"><strong>Dry run · no desktop changes</strong><pre>${escapeHtml(JSON.stringify(result, null, 2))}</pre></div>`; } catch (error) { toast(error.message, true); } };
+  root.querySelector('#preview-mode').onclick = () => showPlan(null);
+  root.querySelector('#automation-enabled').onchange = (event) => { state.config.settings.eventAutomationEnabled = event.target.checked; markDirty(); };
+  root.querySelector('#evaluate-rules').onclick = async () => { try { const result = await request('/api/rules/evaluate', { method: 'POST', body: JSON.stringify({ event: 'manual', execute: false }) }); root.querySelector('#dry-run-output').innerHTML = `<div class="change-summary"><strong>Rule evaluation · no desktop changes</strong><pre>${escapeHtml(JSON.stringify(result, null, 2))}</pre></div>`; } catch (error) { toast(error.message, true); } };
+  root.querySelectorAll('[data-preview-profile]').forEach((button) => button.onclick = () => showPlan(button.dataset.previewProfile));
+  root.querySelector('#add-profile').onclick = () => { const id = root.querySelector('#profile-id').value.trim(); if (!validId(id) || state.config.profiles[id]) return toast('Choose a unique lowercase profile ID.', true); state.config.profiles[id] = { name: root.querySelector('#profile-name').value.trim(), mode: root.querySelector('#profile-mode').value, workspaces: [] }; markDirty(); render(); };
+  root.querySelectorAll('[data-delete-profile]').forEach((button) => button.onclick = () => { const id = button.dataset.deleteProfile; if (state.config.rules.some((rule) => rule.then.activateProfile === id)) return toast('Delete rules that use this profile first.', true); delete state.config.profiles[id]; markDirty(); render(); });
+  root.querySelectorAll('[data-rule-enabled]').forEach((input) => input.onchange = () => { state.config.rules[Number(input.dataset.ruleEnabled)].enabled = input.checked; markDirty(); });
+  root.querySelectorAll('[data-delete-rule]').forEach((button) => button.onclick = () => { state.config.rules.splice(Number(button.dataset.deleteRule), 1); markDirty(); render(); });
+  root.querySelector('#add-rule').onclick = () => { const topology = root.querySelector('#rule-topology').value; const when = { event: root.querySelector('#rule-event').value, ...(topology ? { topology } : {}) }; let number = 1; while (state.config.rules.some((rule) => rule.id === `rule_${number}`)) number++; state.config.rules.push({ id: `rule_${number}`, enabled: true, when, then: { activateProfile: root.querySelector('#rule-profile').value } }); markDirty(); render(); };
+}
+
+async function historyView() {
+  root.innerHTML = title('Configuration history', 'Snapshots & restore points', 'Each successful Apply creates an immutable snapshot after verified read-back.') + '<p>Loading history…</p>';
+  try { const { snapshots } = await request('/api/history'); root.innerHTML = title('Configuration history', 'Snapshots & restore points', 'Compare, rename, restore or delete saved configurations.') + `<div class="cards">${snapshots.map((snapshot) => `<article class="card"><p class="kicker">${escapeHtml(snapshot.reason)}</p><h3>${escapeHtml(snapshot.name)}</h3><p>${escapeHtml(snapshot.createdAt)}</p><div class="actions"><button class="quiet" data-compare-snapshot="${snapshot.id}">Compare</button><button class="quiet" data-rename-snapshot="${snapshot.id}">Rename</button><button class="primary" data-restore-snapshot="${snapshot.id}">Restore</button><button class="danger" data-delete-snapshot="${snapshot.id}">Delete</button></div></article>`).join('') || '<div class="empty-lane">No snapshots yet. Save a configuration to create one.</div>'}</div><div id="snapshot-compare"></div>`;
+    root.querySelectorAll('[data-compare-snapshot]').forEach((button) => button.onclick = async () => { const result = await request(`/api/history/${button.dataset.compareSnapshot}`); root.querySelector('#snapshot-compare').innerHTML = `<pre class="review-json">${escapeHtml(JSON.stringify(result.changes, null, 2))}</pre>`; });
+    root.querySelectorAll('[data-rename-snapshot]').forEach((button) => button.onclick = async () => { const name = prompt('Snapshot name'); if (!name) return; await request(`/api/history/${button.dataset.renameSnapshot}/rename`, { method: 'POST', body: JSON.stringify({ name }) }); render(); });
+    root.querySelectorAll('[data-restore-snapshot]').forEach((button) => button.onclick = async () => { if (!confirm('Restore this snapshot as the active configuration?')) return; const result = await request(`/api/history/${button.dataset.restoreSnapshot}/restore`, { method: 'POST' }); state.config = result.config; state.savedConfig = structuredClone(result.config); state.dirty = false; render(); });
+    root.querySelectorAll('[data-delete-snapshot]').forEach((button) => button.onclick = async () => { if (!confirm('Delete this snapshot?')) return; await request(`/api/history/${button.dataset.deleteSnapshot}`, { method: 'DELETE' }); render(); });
+  } catch (error) { root.innerHTML = `<div class="errors">${escapeHtml(error.message)}</div>`; }
+}
+
+async function diagnosticsView() {
+  root.innerHTML = title('Diagnostics', 'System readiness & activity', 'Checks are read-only and never move windows or change display state.', '<button id="run-self-test" class="primary">Run self-test</button><button id="copy-diagnostics" class="quiet">Copy</button><button id="export-diagnostics" class="quiet">Export</button>') + '<p>Running checks…</p>';
+  try { const [diagnostics, activity] = await Promise.all([request('/api/diagnostics'), request('/api/activity')]); const documentText = JSON.stringify({ diagnostics, activity: activity.entries }, null, 2); root.innerHTML = title('Diagnostics', `Topology: ${diagnostics.topology}`, 'System, backend, schema and workspace checks. Copy or export this report when requesting support.', '<button id="run-self-test" class="primary">Run self-test</button><button id="copy-diagnostics" class="quiet">Copy</button><button id="export-diagnostics" class="quiet">Export</button>') + `<div class="cards">${diagnostics.checks.map((check) => `<article class="card diagnostic ${check.ok ? 'ok' : 'failed'}"><p class="kicker">${check.ok ? '✓ ready' : '⚠ attention'}</p><h3>${escapeHtml(check.id)}</h3><p>${escapeHtml(check.detail)}</p></article>`).join('')}</div><div class="section-head compact"><div><p class="kicker">Activity log</p><h2>Recent events</h2></div></div><pre class="review-json">${escapeHtml(activity.entries.map((entry) => `${entry.timestamp} ${entry.level.toUpperCase()} ${entry.event}`).join('\n') || 'No activity yet.')}</pre>`;
+    root.querySelector('#copy-diagnostics').onclick = async () => { await navigator.clipboard.writeText(documentText); toast('Diagnostics copied'); };
+    root.querySelector('#export-diagnostics').onclick = () => { const blob = new Blob([documentText], { type: 'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'spacewright-diagnostics.json'; link.click(); URL.revokeObjectURL(link.href); };
+    root.querySelector('#run-self-test').onclick = async () => { try { await request('/api/self-test', { method: 'POST' }); toast('Self-test passed'); render(); } catch (error) { toast(error.message, true); } };
+  } catch (error) { root.innerHTML = `<div class="errors">${escapeHtml(error.message)}</div>`; }
+}
+
+async function tasksView() {
+  state.config.profiles ||= {};
+  root.innerHTML = title('Run control', 'Activate and monitor workspaces', 'Preview first, then explicitly confirm any operation that moves windows or changes Spaces.') + '<p>Loading tasks…</p>';
+  try {
+    const { tasks } = await request('/api/tasks');
+    const targetOptions = [
+      ...['solo', 'wide', 'tall'].map((id) => `<option value="mode:${id}">Mode · ${id}</option>`),
+      ...Object.entries(state.config.profiles).map(([id, profile]) => `<option value="profile:${id}">Profile · ${escapeHtml(profile.name)}</option>`),
+      ...Object.entries(state.config.workspaces).map(([id, workspace]) => `<option value="workspace:${id}">Workspace · ${escapeHtml(workspace.name)}</option>`)
+    ].join('');
+    root.innerHTML = title('Run control', 'Activate and monitor workspaces', 'Preview first, then explicitly confirm any operation that moves windows or changes Spaces.') + `<article class="card run-control"><div class="row"><div class="field"><label for="run-target">Target</label><select id="run-target">${targetOptions}</select></div><div class="field"><label for="run-mode">Workspace mode</label><select id="run-mode"><option>solo</option><option selected>wide</option><option>tall</option></select></div></div><label class="check"><input id="execution-confirm" type="checkbox"> I understand that Run now may launch apps, create or focus Spaces, and move or resize windows.</label><div class="actions"><button id="preview-target" class="quiet">Preview dry run</button><button id="run-target-now" class="primary" disabled>Run now</button></div><div id="run-preview"></div></article><div class="section-head compact"><div><p class="kicker">Task queue</p><h2>Recent executions</h2></div><button id="refresh-tasks" class="quiet">Refresh</button></div><div class="cards">${tasks.map((task) => `<article class="card task-card" data-task-id="${task.id}"><p class="kicker">${escapeHtml(task.status)}</p><h3>${escapeHtml(task.kind)} · ${escapeHtml(task.target)}</h3><p>${escapeHtml(task.createdAt)}</p><pre>${escapeHtml(task.logs.join('\n') || 'Waiting for output…')}</pre>${['queued','running'].includes(task.status) ? `<button class="danger" data-cancel-task="${task.id}">Cancel</button>` : ''}</article>`).join('') || '<div class="empty-lane">No tasks have run in this server session.</div>'}</div>`;
+    const selection = () => { const [kind, target] = root.querySelector('#run-target').value.split(':'); return { kind, target, mode: root.querySelector('#run-mode').value }; };
+    const syncMode = () => { root.querySelector('#run-mode').disabled = !root.querySelector('#run-target').value.startsWith('workspace:'); };
+    syncMode(); root.querySelector('#run-target').onchange = syncMode;
+    root.querySelector('#execution-confirm').onchange = (event) => { root.querySelector('#run-target-now').disabled = !event.target.checked; };
+    root.querySelector('#preview-target').onclick = async () => { const value = selection(); const payload = value.kind === 'profile' ? { config: state.config, profile: value.target } : { config: state.config, mode: value.kind === 'mode' ? value.target : value.mode }; try { const result = await request('/api/preview', { method: 'POST', body: JSON.stringify(payload) }); root.querySelector('#run-preview').innerHTML = `<div class="change-summary"><strong>Dry run · no desktop changes</strong><pre>${escapeHtml(JSON.stringify(result, null, 2))}</pre></div>`; } catch (error) { toast(error.message, true); } };
+    root.querySelector('#run-target-now').onclick = async () => { const value = selection(); if (!confirm(`Run ${value.kind} “${value.target}” now? This will change the live desktop.`)) return; try { const result = await request('/api/execute', { method: 'POST', body: JSON.stringify({ ...value, confirmed: true }) }); toast(`Task ${result.task.id} started`); setTimeout(() => render(), 400); } catch (error) { toast(error.message, true); } };
+    root.querySelector('#refresh-tasks').onclick = render;
+    root.querySelectorAll('[data-cancel-task]').forEach((button) => button.onclick = async () => { try { await request(`/api/tasks/${button.dataset.cancelTask}/cancel`, { method: 'POST' }); toast('Cancellation requested'); render(); } catch (error) { toast(error.message, true); } });
+  } catch (error) { root.innerHTML = `<div class="errors">${escapeHtml(error.message)}</div>`; }
 }
 
 async function reviewView() {
@@ -381,6 +560,10 @@ function render() {
   else if (state.view === 'workspaces') workspacesView();
   else if (state.view === 'apps') appsView();
   else if (state.view === 'shortcuts') shortcutsView();
+  else if (state.view === 'automation') automationView();
+  else if (state.view === 'history') historyView();
+  else if (state.view === 'diagnostics') diagnosticsView();
+  else if (state.view === 'tasks') tasksView();
   else reviewView();
   syncUrl();
 }
@@ -389,10 +572,12 @@ document.querySelectorAll('#nav button').forEach((button) => button.onclick = ()
 root.addEventListener('input', markDirty);
 root.addEventListener('change', markDirty);
 document.querySelector('#validate').onclick = async () => { try { const result = await request('/api/validate', { method: 'POST', body: JSON.stringify(state.config) }); toast(result.warnings?.length ? `Valid with ${result.warnings.length} warning(s)` : 'Configuration is valid'); } catch (error) { toast(error.message, true); } };
-document.querySelector('#save').onclick = async (event) => { const button = event.currentTarget; button.disabled = true; button.textContent = 'Saving…'; try { const result = await request('/api/save', { method: 'POST', body: JSON.stringify(state.config) }); state.source = 'v2'; state.savedConfig = structuredClone(state.config); state.importChanges = []; state.dirty = false; document.querySelector('#status').textContent = 'Local · read/write'; toast(`Saved ${result.path}; compiled ${result.runtimePath}`); } catch (error) { toast(error.message, true); } finally { button.disabled = false; button.textContent = 'Save Configuration'; } };
-document.querySelector('#export-config').onclick = () => { const blob = new Blob([`${JSON.stringify(state.config, null, 2)}\n`], { type: 'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'spacewright-config.v2.json'; link.click(); URL.revokeObjectURL(link.href); };
+document.querySelector('#save').onclick = async (event) => { const button = event.currentTarget; button.disabled = true; button.textContent = 'Checking diff…'; try { const diff = await request('/api/diff', { method: 'POST', body: JSON.stringify(state.config) }); if (!diff.count) return toast('No changes to apply'); if (!confirm(`Apply ${diff.count} configuration change(s)? A snapshot will be created first.`)) return; button.textContent = 'Saving…'; const result = await request('/api/save', { method: 'POST', body: JSON.stringify(state.config) }); state.source = 'v2'; state.savedConfig = structuredClone(state.config); state.importChanges = []; state.dirty = false; document.querySelector('#status').textContent = 'Local · read/write · verified'; toast(`Saved and read-back verified: ${result.path}`); } catch (error) { toast(error.message, true); } finally { button.disabled = false; button.textContent = 'Save configuration'; } };
+document.querySelector('#export-config').onclick = () => { const link = document.createElement('a'); link.href = '/api/export'; link.download = 'spacewright.yaml'; link.click(); };
 document.querySelector('#import-config').onclick = () => document.querySelector('#import-file').click();
-document.querySelector('#import-file').onchange = async (event) => { try { const imported = JSON.parse(await event.target.files[0].text()); await request('/api/validate', { method: 'POST', body: JSON.stringify(imported) }); state.importChanges = changedSections(state.savedConfig, imported); state.config = imported; state.source = 'import-preview'; state.selectedWorkspace = null; markDirty(); state.view = 'review'; render(); toast(`Imported preview changes ${state.importChanges.length} section(s); review before saving.`); } catch (error) { toast(error.message, true); } finally { event.target.value = ''; } };
+document.querySelector('#import-file').onchange = async (event) => { try { const result = await request('/api/import', { method: 'POST', body: JSON.stringify({ text: await event.target.files[0].text() }) }); const imported = result.config; state.importChanges = changedSections(state.savedConfig, imported); state.config = imported; state.source = 'import-preview'; state.selectedWorkspace = null; markDirty(); state.view = 'review'; render(); toast(`Imported validated preview with ${state.importChanges.length} changed section(s).`); } catch (error) { toast(error.message, true); } finally { event.target.value = ''; } };
+document.querySelector('#revert-changes').onclick = () => { if (!state.dirty || confirm('Discard all unsaved changes?')) { state.config = structuredClone(state.savedConfig); state.dirty = false; state.selectedWorkspace = null; document.querySelector('#status').textContent = 'Local · read/write'; render(); } };
+document.querySelector('#reset-defaults').onclick = async () => { if (!confirm('Replace the editor contents with SpaceWright defaults? This remains unsaved until Apply.')) return; const result = await request('/api/defaults'); state.config = result.config; state.selectedWorkspace = null; markDirty(); render(); };
 document.querySelector('#restore-backup').onclick = async () => { if (!confirm('Restore the previous valid configuration and replace the current file?')) return; try { const result = await request('/api/restore-backup', { method: 'POST' }); state.config = result.config; state.savedConfig = structuredClone(result.config); state.source = 'v2'; state.dirty = false; state.selectedWorkspace = null; render(); toast('Restored the previous valid configuration'); } catch (error) { toast(error.message, true); } };
 addEventListener('beforeunload', (event) => { if (!state.dirty) return; event.preventDefault(); event.returnValue = ''; });
 
@@ -411,7 +596,7 @@ async function initialize() {
       const [payload, machinePayload] = await Promise.all([request('/api/config'), request('/api/machine')]);
       state.config = payload.config;
       state.savedConfig = structuredClone(payload.config);
-      if (!['map', 'displays', 'workspaces', 'apps', 'shortcuts', 'review'].includes(state.view)) state.view = 'map';
+      if (!['map', 'displays', 'workspaces', 'apps', 'shortcuts', 'automation', 'history', 'diagnostics', 'tasks', 'review'].includes(state.view)) state.view = 'map';
       if (!['solo', 'wide', 'tall'].includes(state.mode)) state.mode = 'wide';
       state.source = payload.source;
       state.legacyAvailable = payload.legacyAvailable;

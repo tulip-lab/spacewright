@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 const MODES = ['solo', 'wide', 'tall'];
 const DIRECTIONS = new Set(['rows', 'columns']);
 const POSTPROCESSORS = new Set(['gtd_ai_expand_hermes_when_alone', 'workspace_reconcile_primary_fixed_spaces']);
-const ROOT_KEYS = new Set(['version', 'metadata', 'apps', 'displayRoles', 'workspaces', 'modes', 'shortcuts']);
+const ROOT_KEYS = new Set(['version', 'metadata', 'apps', 'displayRoles', 'workspaces', 'modes', 'shortcuts', 'profiles', 'rules', 'settings']);
 export const CONFIG_COMPILER_VERSION = 1;
 const V2_SCHEMA = JSON.parse(readFileSync(new URL('../../schemas/spacewright-v2.schema.json', import.meta.url), 'utf8'));
 
@@ -191,6 +191,34 @@ export function validateV2(config) {
   if (!Object.keys(config.workspaces).length) errors.push('workspaces must not be empty');
   rejectUnknown(config.modes, new Set(MODES), 'modes', errors);
   if (config.shortcuts != null && !Array.isArray(config.shortcuts)) errors.push('shortcuts must be an array');
+  if (config.profiles != null && !object(config.profiles)) errors.push('profiles must be an object');
+  if (config.rules != null && !Array.isArray(config.rules)) errors.push('rules must be an array');
+  if (config.settings != null && !object(config.settings)) errors.push('settings must be an object');
+
+  for (const [profileId, profile] of Object.entries(config.profiles || {})) {
+    const path = `profiles.${profileId}`;
+    rejectUnknown(profile, new Set(['name', 'mode', 'workspaces', 'displayConfig', 'focusBehaviour', 'settings']), path, errors);
+    if (!id(profileId)) errors.push(`${path} has an invalid id`);
+    if (!profile?.name?.trim()) errors.push(`${path}.name is required`);
+    if (!MODES.includes(profile?.mode)) errors.push(`${path}.mode must be solo, wide, or tall`);
+    if (profile.workspaces != null && (!Array.isArray(profile.workspaces) || profile.workspaces.some((item) => !config.workspaces[item]))) errors.push(`${path}.workspaces contains an unknown workspace`);
+  }
+  const ruleIds = new Set();
+  for (const [index, rule] of (config.rules || []).entries()) {
+    const path = `rules[${index}]`;
+    rejectUnknown(rule, new Set(['id', 'enabled', 'when', 'then']), path, errors);
+    rejectUnknown(rule?.when, new Set(['event', 'topology', 'orientation', 'app', 'workspace', 'display', 'layout']), `${path}.when`, errors);
+    rejectUnknown(rule?.then, new Set(['activateProfile', 'activateWorkspace', 'mode']), `${path}.then`, errors);
+    if (!id(rule?.id)) errors.push(`${path}.id is invalid`);
+    else if (ruleIds.has(rule.id)) errors.push(`${path}.id is duplicated`);
+    else ruleIds.add(rule.id);
+    if (typeof rule?.enabled !== 'boolean') errors.push(`${path}.enabled must be boolean`);
+    if (!['display_connected', 'display_disconnected', 'topology_changed', 'wake', 'manual'].includes(rule?.when?.event)) errors.push(`${path}.when.event is unsupported`);
+    if (rule?.then?.activateProfile && !config.profiles?.[rule.then.activateProfile]) errors.push(`${path}.then.activateProfile references an unknown profile`);
+    if (rule?.then?.activateWorkspace && !config.workspaces[rule.then.activateWorkspace]) errors.push(`${path}.then.activateWorkspace references an unknown workspace`);
+    if (rule?.then?.mode && !MODES.includes(rule.then.mode)) errors.push(`${path}.then.mode is unsupported`);
+    if (!rule?.then?.activateProfile && !rule?.then?.activateWorkspace) errors.push(`${path}.then must activate a profile or workspace`);
+  }
 
   const appAliases = new Map();
   for (const [appId, app] of Object.entries(config.apps)) {
@@ -334,7 +362,7 @@ function compileLayout(node, rect = { x: 0, y: 0, w: 120, h: 120 }, actions = []
 export function compileV2(config) {
   const validation = validateV2(config);
   if (!validation.valid) throw new Error(validation.errors.join('\n'));
-  const runtime = { version: 1, source_version: 2, apps: {}, display_roles: {}, layouts: {}, workspaces: {}, modes: {} };
+  const runtime = { version: 1, source_version: 2, apps: {}, display_roles: {}, layouts: {}, workspaces: {}, modes: {}, profiles: config.profiles || {}, rules: (config.rules || []).filter((rule) => rule.enabled), settings: config.settings || {} };
   for (const [appId, app] of Object.entries(config.apps)) runtime.apps[appId] = { names: app.match.appNames };
   for (const mode of MODES) {
     for (const display of config.modes[mode]?.displays || []) {

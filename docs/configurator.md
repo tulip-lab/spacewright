@@ -66,11 +66,83 @@ The Apps page can perform read-only discovery of application names reported by
 yabai. Workspace roles expose every supported selector, and Review presents
 non-fatal semantic warnings alongside the exact compiled plan.
 
+The Workspaces page includes a visual 12 by 12 layout editor. Choose a preset
+as a starting point or select **Edit freely**, then drag windows to move them
+and drag the lower-right handle to resize them. The window inspector provides
+exact Left, Top, Width, and Height values for keyboard input. Adding an app
+window places it in the current layout; removing one also removes its placement
+from every mode variant. The application registry remains available from the
+same inspector when a new macOS application name is needed.
+Presets cover left/right, top/bottom, both one-third ratios, either side split
+into rows, and either top or bottom region split into columns. Three-window
+rows and columns, a four-window grid, and main-plus-three layouts cover larger
+workspace sets.
+
 The editor warns before closing with unsaved changes. Renaming an application,
 display role, workspace, or window role updates its structured references.
 Deletion requires confirmation and is rejected while the object is still in
 use. Mode ordering supports both drag-and-drop and keyboard-operable up/down
-buttons.
+buttons. Drop slots allow exact insertion between existing workspaces, while
+the display selector on each card supports moving across displays without a
+mouse. An Unassigned lane lists workspaces excluded from the selected mode.
+
+## Apply, history, and recovery
+
+Apply first computes a path-level diff and asks for confirmation. The server
+validates the candidate, snapshots the previous configuration, writes the
+compiled runtime and source atomically, reads the source back from disk, and
+fails the request if it differs. A verified configuration receives a second
+snapshot. **Revert changes** discards only the current unsaved edit, while
+**Reset to SpaceWright defaults** loads the product starter configuration as an
+unsaved preview. History entries can be compared, renamed, restored, or
+deleted. Restore itself creates a recovery snapshot first.
+
+## Profiles, automation, and workspace preview
+
+Optional `profiles`, `rules`, and `settings` sections extend the v2 contract.
+A profile selects a `solo`, `wide`, or `tall` mode and can narrow activation to
+named workspaces while carrying display, focus, and SpaceWright settings.
+Rules are closed declarative records: supported events are display connect,
+display disconnect, topology change, wake, and manual activation. Conditions
+may match app, workspace, display, layout, orientation, or one of these
+topologies: `solo`, `wide_left`, `wide_right`, `tall_left`, `tall_right`,
+`dual_external`, and `clamshell`. Actions can activate only a declared profile
+or workspace; arbitrary shell is not accepted.
+
+The Profiles & rules page exposes a dry-run plan. It compiles the exact
+workspace sequence but does not launch applications, create Spaces, focus a
+window, or change a display. Existing workspace selectors remain responsible
+for title matching and multi-window disambiguation when a plan is later run by
+the Fish runtime; required/optional windows preserve the existing bounded
+startup and retry behavior.
+
+The Run & tasks page is the browser execution control surface. Modes,
+profiles, and individual workspace variants can be previewed, explicitly
+confirmed, started, monitored, and cancelled. The server maps each request to
+closed `spacewright run` arguments; request data is never interpreted as a
+shell command. Execution output is streamed into the in-memory task record and
+the durable activity log records task start and completion.
+
+Topology rules can be evaluated without mutation from the browser. Setting
+`settings.eventAutomationEnabled` to `true` opts into five-second topology
+monitoring while the configurator service is running. A topology transition
+then selects enabled rules using their declared event and conditions and runs
+the associated profile or workspace. Automation is off by default and stops
+when the configurator process exits.
+
+## Diagnostics and portable configuration
+
+Diagnostics reports yabai availability, the accessibility/query path,
+scripting-addition readiness, detected displays and topology, the authenticated
+local backend, schema validity, and configured workspaces. The report can be
+copied or exported, and the self-test performs validation and compilation
+without desktop mutation. Successful saves, restores, and self-tests appear in
+the local activity log under the SpaceWright state directory.
+
+Import accepts JSON or YAML, validates it before replacing the editor model,
+and keeps it unsaved until Apply. Export produces `spacewright.yaml`. JSON
+remains fully supported and existing v2 files do not require the new optional
+sections.
 
 ## Configuration data flow
 

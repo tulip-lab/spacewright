@@ -41,7 +41,14 @@
     "shortcuts": {
       "type": "array",
       "items": { "$ref": "#/$defs/shortcut" }
-    }
+    },
+    "profiles": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/id" },
+      "additionalProperties": { "$ref": "#/$defs/profile" }
+    },
+    "rules": { "type": "array", "items": { "$ref": "#/$defs/rule" } },
+    "settings": { "type": "object" }
   },
   "additionalProperties": false,
   "$defs": {
@@ -236,6 +243,52 @@
             },
             "additionalProperties": false
           }
+        }
+      },
+      "additionalProperties": false
+    },
+    "profile": {
+      "type": "object",
+      "required": ["name", "mode"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "mode": { "enum": ["solo", "wide", "tall"] },
+        "workspaces": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "displayConfig": { "type": "object" },
+        "focusBehaviour": { "type": "object" },
+        "settings": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "rule": {
+      "type": "object",
+      "required": ["id", "enabled", "when", "then"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "enabled": { "type": "boolean" },
+        "when": {
+          "type": "object",
+          "required": ["event"],
+          "properties": {
+            "event": { "enum": ["display_connected", "display_disconnected", "topology_changed", "wake", "manual"] },
+            "topology": { "enum": ["solo", "wide_left", "wide_right", "tall_left", "tall_right", "dual_external", "clamshell"] },
+            "orientation": { "enum": ["wide", "tall"] },
+            "app": { "$ref": "#/$defs/id" },
+            "workspace": { "$ref": "#/$defs/id" },
+            "display": { "$ref": "#/$defs/id" },
+            "layout": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
+        },
+        "then": {
+          "type": "object",
+          "properties": {
+            "activateProfile": { "$ref": "#/$defs/id" },
+            "activateWorkspace": { "$ref": "#/$defs/id" },
+            "mode": { "enum": ["solo", "wide", "tall"] }
+          },
+          "anyOf": [{ "required": ["activateProfile"] }, { "required": ["activateWorkspace"] }],
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

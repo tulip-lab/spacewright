@@ -18,6 +18,17 @@ test('starter config validates and compiles all modes', () => {
   assert.deepEqual(runtime.modes.work_tall.steps, [{ workspace: 'spacewright_coding_tall' }]);
 });
 
+test('profiles and event rules validate and compile as declarative automation', () => {
+  const config = starterConfig();
+  config.profiles = { research: { name: 'Research', mode: 'wide', workspaces: ['coding'], displayConfig: { topology: 'wide_left' }, focusBehaviour: { followsMouse: false }, settings: { gap: 8 } } };
+  config.rules = [{ id: 'external_research', enabled: true, when: { event: 'display_connected', topology: 'wide_left' }, then: { activateProfile: 'research' } }];
+  config.settings = { dryRunByDefault: true };
+  assert.equal(validateV2(config).valid, true);
+  const runtime = compileV2(config);
+  assert.equal(runtime.profiles.research.mode, 'wide');
+  assert.equal(runtime.rules[0].then.activateProfile, 'research');
+});
+
 test('validation rejects unknown fields, duplicate labels, and omitted required roles', () => {
   const config = starterConfig();
   config.scripts = ['unsafe'];
