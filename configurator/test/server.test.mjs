@@ -97,6 +97,7 @@ test('local server isolates machine bindings and generated skhd output', async (
     method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body: JSON.stringify(first)
   });
   assert.equal(savedConfig.status, 200);
+  assert.equal(savedConfig.body.verified, true);
   await access(join(configRoot, 'generated', 'runtime.json'));
   const runtime = JSON.parse(await readFile(join(configRoot, 'generated', 'runtime.json'), 'utf8'));
   assert.match(runtime.generated.source_sha256, /^[a-f0-9]{64}$/);
@@ -112,4 +113,37 @@ test('local server isolates machine bindings and generated skhd output', async (
   });
   assert.equal(restored.status, 200);
   assert.equal(restored.body.config.metadata.name, first.metadata.name);
+
+  const snapshots = await json(url, '/api/history');
+  assert.equal(snapshots.status, 200);
+  assert.ok(snapshots.body.snapshots.length >= 2);
+  const preview = await json(url, '/api/preview', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body: JSON.stringify({ config: second, mode: 'wide' })
+  });
+  assert.equal(preview.status, 200);
+  assert.equal(preview.body.dryRun, true);
+  assert.equal(preview.body.mutates, false);
+  const diagnostics = await json(url, '/api/diagnostics');
+  assert.equal(diagnostics.status, 200);
+  assert.ok(diagnostics.body.checks.some((check) => check.id === 'schema' && check.ok));
+  const imported = await json(url, '/api/import', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body: JSON.stringify({ text: `version: 2\nmetadata:\n  name: invalid minimal\n` })
+  });
+  assert.equal(imported.status, 422);
+  const tasks = await json(url, '/api/tasks');
+  assert.equal(tasks.status, 200);
+  assert.deepEqual(tasks.body.tasks, []);
+  const unconfirmedExecution = await json(url, '/api/execute', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body: JSON.stringify({ kind: 'mode', target: 'wide' })
+  });
+  assert.equal(unconfirmedExecution.status, 422);
+  const invalidExecution = await json(url, '/api/execute', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body: JSON.stringify({ kind: 'mode', target: 'unknown', confirmed: true })
+  });
+  assert.equal(invalidExecution.status, 422);
+  const evaluatedRules = await json(url, '/api/rules/evaluate', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body: JSON.stringify({ event: 'manual', execute: false })
+  });
+  assert.equal(evaluatedRules.status, 200);
+  assert.equal(evaluatedRules.body.mutates, false);
 });

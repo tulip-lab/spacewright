@@ -52,7 +52,7 @@ async function writeJson(path, value) {
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
 }
 
-test('Configuration GUI round-trips the authoritative config file', { timeout: 30_000 }, async (context) => {
+test('Configuration GUI round-trips the authoritative config file', { timeout: 60_000 }, async (context) => {
   const root = await mkdtemp(join(tmpdir(), 'spacewright-config-round-trip-'));
   const configRoot = join(root, 'config');
   const stateRoot = join(root, 'state');
@@ -76,6 +76,17 @@ test('Configuration GUI round-trips the authoritative config file', { timeout: 3
 
   await page.goto(service.url);
   await page.getByRole('button', { name: /Workspaces/ }).click();
+  await page.getByRole('button', { name: 'Edit freely' }).click();
+  assert.equal(await page.locator('.canvas-window').count(), 2);
+  const width = page.locator('[data-geometry="w:editor"]');
+  await width.fill('5');
+  await width.press('Enter');
+  assert.match(await page.locator('.canvas-window[data-role="editor"]').getAttribute('style'), /--w:5/);
+  await page.getByRole('button', { name: '+ Add app window' }).click();
+  assert.equal(await page.locator('.canvas-window').count(), 3);
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.locator('[data-delete-window="window_1"]').click();
+  assert.equal(await page.locator('.canvas-window').count(), 2);
   const unlabeledControls = await page.evaluate(() => [...document.querySelectorAll('input:not([type="hidden"]):not([hidden]), select')].filter((control) => {
     if (control.getAttribute('aria-label')) return false;
     if (control.id && document.querySelector(`label[for="${CSS.escape(control.id)}"]`)) return false;
@@ -101,8 +112,9 @@ test('Configuration GUI round-trips the authoritative config file', { timeout: 3
 
   const guiValue = 'GUI round-trip display';
   await primaryName.fill(guiValue);
+  page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: 'Save configuration' }).click();
-  await page.getByText(`Saved ${configFile}`).waitFor();
+  await page.getByText(`Saved and read-back verified: ${configFile}`).waitFor();
   assert.equal((await readJson(configFile)).displayRoles.primary.name, guiValue);
 
   await page.reload();

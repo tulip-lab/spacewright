@@ -31,7 +31,11 @@
       <button data-view="workspaces"><span>03</span> Workspaces</button>
       <button data-view="apps"><span>04</span> Apps</button>
       <button data-view="shortcuts"><span>05</span> Shortcuts</button>
-      <button data-view="review"><span>06</span> Review</button>
+      <button data-view="automation"><span>06</span> Profiles & rules</button>
+      <button data-view="history"><span>07</span> History</button>
+      <button data-view="diagnostics"><span>08</span> Diagnostics</button>
+      <button data-view="tasks"><span>09</span> Run & tasks</button>
+      <button data-view="review"><span>10</span> Review</button>
     </nav>
     <section id="workspace" tabindex="-1" aria-live="polite"></section>
   </main>
@@ -42,7 +46,9 @@
       <button id="import-config" class="quiet">Import</button>
       <button id="export-config" class="quiet">Export</button>
       <button id="restore-backup" class="quiet">Restore backup</button>
-      <input id="import-file" type="file" accept="application/json,.json" hidden>
+      <button id="revert-changes" class="quiet">Revert changes</button>
+      <button id="reset-defaults" class="quiet">Reset to SpaceWright defaults</button>
+      <input id="import-file" type="file" accept="application/json,application/yaml,.json,.yaml,.yml" hidden>
       <button id="validate" class="quiet">Validate</button>
       <button id="save" class="primary">Save configuration</button>
     </div>
