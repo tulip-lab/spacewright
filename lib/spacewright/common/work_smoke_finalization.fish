@@ -277,11 +277,11 @@ end
 
 function __work_smoke_finalization_ordering
     set -l solo_dry_run (workspace_order_mode_spaces --dry-run solo)
-    string match -q '*primary=coding_control,gtd_chat,gtd_calendar,gtd_ai,coding_editor_solo,research_solo,gtd_support_solo,gtd_review_solo,gtd_mail_solo,gtd_meeting_solo,sandbox_solo*' -- "$solo_dry_run"
+    string match -q '*primary=coding_editor_solo,coding_control,research_solo,gtd_ai,gtd_support_solo,gtd_mail_solo,gtd_meeting_solo,gtd_review_solo,gtd_chat,gtd_calendar,sandbox_solo*' -- "$solo_dry_run"
     or return 10
 
     set -l dry_run (workspace_order_mode_spaces --dry-run wide)
-    string match -q '*external=gtd_ai,coding_editor_wide,research_wide,office_writing_wide,office_slides_wide,gtd_support_wide,gtd_review_wide,gtd_mail_wide,gtd_meeting_wide,sandbox_wide*' -- "$dry_run"
+    string match -q '*external=research_wide,office_writing_wide,office_slides_wide,gtd_ai,gtd_support_wide,gtd_review_wide,coding_editor_wide,gtd_mail_wide,gtd_meeting_wide,sandbox_wide*' -- "$dry_run"
     or return 1
 
     set -g __work_smoke_order_scenario good
@@ -313,9 +313,9 @@ function __work_smoke_finalization_ordering
             case '*'
                 echo '[
                   {"index":1,"uuid":"HOME","display":1,"label":""},
-                  {"index":2,"uuid":"CONTROL","display":1,"label":"coding_control"},
-                  {"index":3,"uuid":"CHAT","display":1,"label":"gtd_chat"},
-                  {"index":4,"uuid":"CAL","display":1,"label":"gtd_calendar"},
+                  {"index":2,"uuid":"CHAT","display":1,"label":"gtd_chat"},
+                  {"index":3,"uuid":"CAL","display":1,"label":"gtd_calendar"},
+                  {"index":4,"uuid":"CONTROL","display":1,"label":"coding_control"},
                   {"index":5,"uuid":"AI","display":2,"label":"gtd_ai"},
                   {"index":6,"uuid":"CODE","display":2,"label":"coding_editor_wide"},
                   {"index":7,"uuid":"SANDBOX","display":2,"label":"sandbox_wide"},

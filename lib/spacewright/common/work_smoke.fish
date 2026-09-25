@@ -1365,12 +1365,12 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         or exit 3
 
         test (echo $__work_smoke_order_spaces | ws_jq -r \
-            "[.[] | select(.display == 1) | .label] | join(\",\")") = ",coding_control,gtd_chat,gtd_calendar,"
+            "[.[] | select(.display == 1) | .label] | join(\",\")") = ",gtd_chat,gtd_calendar,coding_control,"
         or exit 4
 
         test (echo $__work_smoke_order_spaces | ws_jq -r \
             "[.[] | select(.display == 2) | .label] | join(\",\")") = \
-            "gtd_ai,coding_editor_wide,research_wide,gtd_mail_wide,gtd_meeting_wide"
+            "research_wide,gtd_ai,coding_editor_wide,gtd_mail_wide,gtd_meeting_wide"
         or exit 5
 
         test "$__work_smoke_order_query_calls" -gt (count $__work_smoke_order_commands)
@@ -1410,7 +1410,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
 
         test (echo $__work_smoke_order_spaces | ws_jq -r \
             "[.[] | select(.display == 1) | .label] | join(\",\")") = \
-            "coding_control,gtd_chat,gtd_calendar"
+            "gtd_chat,gtd_calendar,coding_control"
         or exit 11
 
         exit 0

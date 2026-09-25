@@ -66,20 +66,59 @@ function __workspace_order_labels_on_display --description "Order existing label
     end
 end
 
-function workspace_primary_order_labels --description "Print primary-display workspace labels in order"
-    printf "%s\n" coding_control gtd_chat gtd_calendar
+function __workspace_configured_order_labels --description "Print configured workspace labels for one mode display lane"
+    set -l mode $argv[1]
+    set -l lane $argv[2]
+    if not contains -- $mode solo wide tall; or not contains -- $lane primary external
+        echo "usage: __workspace_configured_order_labels <solo|wide|tall> <primary|external>" >&2
+        return 2
+    end
+
+    set -l config (spacewright_config_effective | string collect)
+    or return 1
+
+    printf "%s\n" "$config" | jq -r \
+        --arg mode "$mode" \
+        --arg mode_id "work_$mode" \
+        --arg lane "$lane" '
+            def workspace_steps($mode_id):
+                . as $root
+                | $root.modes[$mode_id].steps[]?
+                | if has("workspace") then
+                    .workspace
+                  elif has("mode") then
+                    .mode as $nested_mode | $root | workspace_steps($nested_mode)
+                  else
+                    empty
+                  end;
+            . as $root
+            | workspace_steps($mode_id) as $workspace_id
+            | $root.workspaces[$workspace_id] as $workspace
+            | ($root.display_roles[$workspace.display_role] // {}) as $role
+            | ($role.base_role // $workspace.display_role) as $base_role
+            | ($role.expected_mode // $root.modes[$mode_id].display_mode) as $expected_mode
+            | select(
+                if $lane == "primary" then
+                    ($base_role == "primary" or ($mode == "solo" and $base_role == "solo"))
+                else
+                    ($base_role != "primary" and $base_role != "solo" and $expected_mode == $mode)
+                end
+            )
+            | $workspace.label
+        '
+end
+
+function workspace_primary_order_labels --description "Print configured primary-display workspace labels in mode order"
+    set -l mode $argv[1]
+    if test -z "$mode"
+        set mode wide
+    end
+    __workspace_configured_order_labels $mode primary
 end
 
 function workspace_solo_order_labels --description "Print solo primary-display workspace labels in order"
     printf "%s\n" \
-        (workspace_primary_order_labels) \
-        gtd_ai \
-        coding_editor_solo \
-        research_solo \
-        gtd_support_solo \
-        gtd_review_solo \
-        gtd_mail_solo \
-        gtd_meeting_solo \
+        (workspace_primary_order_labels solo) \
         sandbox_solo
 end
 
@@ -91,15 +130,7 @@ function workspace_external_order_labels --description "Print external workspace
     end
 
     printf "%s\n" \
-        gtd_ai \
-        coding_editor_$mode \
-        research_$mode \
-        office_writing_$mode \
-        office_slides_$mode \
-        gtd_support_$mode \
-        gtd_review_$mode \
-        gtd_mail_$mode \
-        gtd_meeting_$mode \
+        (__workspace_configured_order_labels $mode external) \
         sandbox_$mode
 end
 
@@ -118,7 +149,7 @@ function workspace_order_mode_spaces --description "Order existing primary and e
     if test "$mode" = solo
         set primary_labels (workspace_solo_order_labels)
     else
-        set primary_labels (workspace_primary_order_labels)
+        set primary_labels (workspace_primary_order_labels $mode)
         set external_labels (workspace_external_order_labels $mode)
     end
 
@@ -208,7 +239,7 @@ function workspace_verify_mode_space_order --description "Verify Home and manage
     set -l spaces_json (ws_query_spaces workspace_verify_mode_space_order verify)
     or return 1
 
-    set -l primary_labels (workspace_primary_order_labels)
+    set -l primary_labels (workspace_primary_order_labels $mode)
     if test "$mode" = solo
         set primary_labels (workspace_solo_order_labels)
     end
