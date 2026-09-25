@@ -164,6 +164,23 @@ or exit 12
 test (workspace_app_name code) = "Custom Code"
 or exit 13
 
+printf '%s\n' '{
+  "version": 1,
+  "modes": {
+    "work_wide": {
+      "display_mode": "wide",
+      "steps": [
+        {"workspace":"gtd_calendar"},
+        {"workspace":"coding_control"},
+        {"workspace":"gtd_chat"}
+      ]
+    }
+  }
+}' > "$SPACEWRIGHT_CONFIG_ROOT/config.json"
+set -l configured_order (workspace_order_mode_spaces --dry-run wide | string collect)
+string match -q '*primary=gtd_calendar,coding_control,gtd_chat*' -- "$configured_order"
+or exit 31
+
 printf '%s\n' '{"version":2}' > "$SPACEWRIGHT_CONFIG_ROOT/config.json"
 if workspace_config_check >/dev/null 2>&1
     exit 14
