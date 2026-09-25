@@ -1,20 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm, access, readdir } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, access, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { starterConfig } from '../lib/config-v2.mjs';
 
 const packageRoot = new URL('../..', import.meta.url).pathname;
 
-async function startServer(configRoot, stateRoot) {
+async function startServer(configRoot, stateRoot, skhdFile) {
   const token = 'integration-test-token';
   const child = spawn(process.execPath, [
     join(packageRoot, 'configurator/server.mjs'),
     `--package-root=${packageRoot}`,
     `--config-root=${configRoot}`,
     `--state-root=${stateRoot}`,
+    `--skhd-file=${skhdFile}`,
     `--token=${token}`,
     '--port=0',
     '--no-open'
@@ -42,7 +43,14 @@ test('local server isolates machine bindings and generated skhd output', async (
   const root = await mkdtemp(join(tmpdir(), 'spacewright-server-test-'));
   const configRoot = join(root, 'config');
   const stateRoot = join(root, 'state');
-  const { child, token, url } = await startServer(configRoot, stateRoot);
+  const skhdFile = join(root, 'skhdrc');
+  await writeFile(skhdFile, [
+    "fn + shift - 0 : fish -lc 'display_apply_solo; work_solo'",
+    "alt + shift - 1 : fish -lc 'coding_wide'",
+    "ctrl + shift - 2 : fish -lc 'coding_family_tall'",
+    "cmd - x : open -a Example"
+  ].join('\n'));
+  const { child, token, url } = await startServer(configRoot, stateRoot, skhdFile);
   context.after(async () => {
     child.kill('SIGTERM');
     await rm(root, { recursive: true, force: true });
@@ -91,6 +99,14 @@ test('local server isolates machine bindings and generated skhd output', async (
   assert.equal(generated.status, 200);
   assert.equal(generated.body.path, join(configRoot, 'generated', 'spacewright.skhdrc'));
   assert.match(await readFile(generated.body.path, 'utf8'), /work_wide/);
+  const shortcutInventory = await json(url, '/api/shortcuts');
+  assert.equal(shortcutInventory.status, 200);
+  assert.equal(shortcutInventory.body.mutates, false);
+  assert.ok(shortcutInventory.body.bindings.some((binding) => binding.action.type === 'activateMode' && binding.action.mode === 'wide'));
+  assert.ok(shortcutInventory.body.bindings.some((binding) => binding.action.type === 'activateMode' && binding.action.mode === 'solo' && binding.keys.key === '0'));
+  assert.ok(shortcutInventory.body.bindings.some((binding) => binding.action.type === 'activateWorkspace' && binding.action.workspace === 'coding' && binding.action.mode === 'wide'));
+  assert.ok(shortcutInventory.body.bindings.some((binding) => binding.action.type === 'externalCommand' && binding.action.command === 'coding_family_tall'));
+  assert.equal(shortcutInventory.body.bindings.some((binding) => binding.keys.key === 'x'), false);
 
   const first = starterConfig();
   const savedConfig = await json(url, '/api/save', {

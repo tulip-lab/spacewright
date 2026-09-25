@@ -220,6 +220,7 @@ function __workspace_run_configured_generic_layout --description "Run a declarat
 
     set -l roles
     set -l window_ids
+    set -l selected_ids
     set -l windows_json (ws_query_windows "$workspace_id-config-preflight" all)
     or begin
         echo "[WARN] $workspace_id could not query windows; no workspace changes were made" >&2
@@ -230,14 +231,27 @@ function __workspace_run_configured_generic_layout --description "Run a declarat
         set -l role (printf "%s\n" "$plan" | jq -r --argjson i $index '.windows[$i].role')
         set -l app_key (printf "%s\n" "$plan" | jq -r --argjson i $index '.windows[$i].app_key')
         set -l required (printf "%s\n" "$plan" | jq -r --argjson i $index '.windows[$i].required')
-        set -l window_id (__workspace_config_select_window "$windows_json" "$plan" $index $window_ids)
+        set -l window_id (__workspace_config_select_window "$windows_json" "$plan" $index $selected_ids)
         set -l find_status $status
+        for retry in (seq 1 3)
+            test -n "$window_id"; and break
+            sleep 0.25
+            set windows_json (ws_query_windows "$workspace_id-config-preflight" retry_$retry)
+            or break
+            set window_id (__workspace_config_select_window "$windows_json" "$plan" $index $selected_ids)
+            set find_status $status
+        end
         if test "$find_status" -eq 1; or test "$required" = true -a -z "$window_id"
             echo "[WARN] $workspace_id required role is unavailable: $role" >&2
             return 1
         end
         set -a roles "$role"
-        set -a window_ids "$window_id"
+        if test -n "$window_id"
+            set -a window_ids "$window_id"
+            set -a selected_ids "$window_id"
+        else
+            set -a window_ids __missing__
+        end
     end
 
     set -l target_display (workspace_resolve_display_role (printf "%s\n" "$plan" | jq -r '.display_role'))
@@ -248,36 +262,36 @@ function __workspace_run_configured_generic_layout --description "Run a declarat
         (printf "%s\n" "$plan" | jq -r '.space_layout'))
     or return 1
 
-    for window_id in $window_ids
-        if test -n "$window_id"
-            ws_move_windows_to_space "$target_space" "$window_id"
-        end
+    if test (count $selected_ids) -gt 0
+        ws_move_windows_to_space "$target_space" $selected_ids
+        or return 1
     end
     for index in (seq 1 (count $roles))
         set -l window_id $window_ids[$index]
-        test -n "$window_id"; or continue
+        test "$window_id" != __missing__; or continue
         set -l grid (__workspace_config_plan_grid "$plan" $roles[$index])
         test -n "$grid"; and ws_window "$window_id" --grid "$grid"
     end
 
-
-    set -l selected_ids
-    for window_id in $window_ids
-        test -n "$window_id"; and set -a selected_ids "$window_id"
-    end
-    set -l final_windows (ws_query_windows "$workspace_id-config-verify" final)
-    or begin
-        echo "[WARN] $workspace_id could not verify final window ownership" >&2
-        return 1
-    end
     set -l selected_json '[]'
     if test (count $selected_ids) -gt 0
         set selected_json (printf '%s\n' $selected_ids | jq -R 'tonumber' | jq -s .)
     end
-    jq -n -e --argjson ids "$selected_json" --argjson space "$target_space" --argjson windows "$final_windows" '
-        all($ids[]; . as $id | any($windows[]; .id == $id and .space == $space))
-    ' >/dev/null 2>&1
-    or begin
+    set -l settled 0
+    for attempt in (seq 1 4)
+        set -l final_windows (ws_query_windows "$workspace_id-config-verify" final_$attempt)
+        if test $status -eq 0
+            jq -n -e --argjson ids "$selected_json" --argjson space "$target_space" --argjson windows "$final_windows" '
+                all($ids[]; . as $id | any($windows[]; .id == $id and .space == $space))
+            ' >/dev/null 2>&1
+            and begin
+                set settled 1
+                break
+            end
+        end
+        sleep 0.2
+    end
+    if test "$settled" -ne 1
         echo "[WARN] $workspace_id did not settle every selected window on Space $target_space" >&2
         echo "[INFO] Run 'spacewright config-plan $workspace_id' and 'workspace_verify --json $workspace_id'" >&2
         return 1

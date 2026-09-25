@@ -49,7 +49,7 @@ end
 
 function __coding_solo_body --description "Arrange coding solo workspaces and internal coding controls"
     if test "$SPACEWRIGHT_CONFIG_DISABLE" != 1
-        workspace_run_configured_mode coding_solo $argv
+        workspace_run_configured coding_editor_solo $argv
         return $status
     end
     workspace_run_mode_steps coding:wide coding:tall -- coding_editor_solo coding_control $argv
@@ -57,7 +57,7 @@ end
 
 function __coding_wide_body --description "Arrange all coding wide workspaces and clean opposite-mode spaces"
     if test "$SPACEWRIGHT_CONFIG_DISABLE" != 1
-        workspace_run_configured_mode coding_wide $argv
+        workspace_run_configured coding_editor_wide $argv
         return $status
     end
     workspace_run_mode_steps coding:tall coding:solo -- coding_editor_wide $argv
@@ -65,7 +65,7 @@ end
 
 function __coding_tall_body --description "Arrange all coding tall workspaces and clean opposite-mode spaces"
     if test "$SPACEWRIGHT_CONFIG_DISABLE" != 1
-        workspace_run_configured_mode coding_tall $argv
+        workspace_run_configured coding_editor_tall $argv
         return $status
     end
     workspace_run_mode_steps coding:wide coding:solo -- coding_editor_tall $argv

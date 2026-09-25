@@ -26,7 +26,7 @@
 
   <main>
     <nav id="nav" aria-label="Configurator sections">
-      <button data-view="map" class="active"><span>01</span> Mode map</button>
+      <button data-view="map" class="active"><span>01</span> Work Modes</button>
       <button data-view="displays"><span>02</span> Displays</button>
       <button data-view="workspaces"><span>03</span> Workspaces</button>
       <button data-view="apps"><span>04</span> Apps</button>
@@ -43,11 +43,13 @@
   <footer>
     <p>Nothing on your desktop moves until you run a SpaceWright command.</p>
     <div class="footer-actions">
-      <button id="import-config" class="quiet">Import</button>
-      <button id="export-config" class="quiet">Export</button>
-      <button id="restore-backup" class="quiet">Restore backup</button>
-      <button id="revert-changes" class="quiet">Revert changes</button>
-      <button id="reset-defaults" class="quiet">Reset to SpaceWright defaults</button>
+      <details class="more-menu"><summary>More</summary><div>
+        <button id="import-config" class="quiet">Import</button>
+        <button id="export-config" class="quiet">Export</button>
+        <button id="restore-backup" class="quiet">Restore backup</button>
+        <button id="revert-changes" class="quiet">Revert unsaved changes</button>
+        <button id="reset-defaults" class="quiet">Reset to SpaceWright defaults</button>
+      </div></details>
       <input id="import-file" type="file" accept="application/json,application/yaml,.json,.yaml,.yml" hidden>
       <button id="validate" class="quiet">Validate</button>
       <button id="save" class="primary">Save configuration</button>

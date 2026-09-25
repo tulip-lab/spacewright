@@ -9,17 +9,24 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     end
 
     set -l smoke_source_root "$SPACEWRIGHT_ROOT"
+    set -l smoke_package_root "$SPACEWRIGHT_PACKAGE_ROOT"
+    set -l smoke_config_root "$SPACEWRIGHT_CONFIG_ROOT"
     if set -q WORKSPACE_TEST_SOURCE_ROOT
         set smoke_source_root "$WORKSPACE_TEST_SOURCE_ROOT"
+        set smoke_package_root (path dirname (path dirname "$smoke_source_root"))
+        set smoke_config_root "$smoke_package_root/tests/fixtures/xdg-empty/spacewright"
         set -lx fish_function_path "$smoke_source_root/common" $fish_function_path
-        set -lx XDG_CONFIG_HOME "$SPACEWRIGHT_PACKAGE_ROOT/tests/fixtures/xdg-empty"
+        set -lx XDG_CONFIG_HOME "$smoke_package_root/tests/fixtures/xdg-empty"
+        set -lx SPACEWRIGHT_CONFIG_ROOT "$smoke_config_root"
     end
 
     set -l smoke_fish_binary (command -s fish)
-    function fish --inherit-variable smoke_fish_binary --inherit-variable smoke_source_root
+    function fish --inherit-variable smoke_fish_binary --inherit-variable smoke_source_root --inherit-variable smoke_package_root --inherit-variable smoke_config_root
         if test "$argv[1]" = -lc; and test -n "$smoke_source_root"
             set -l escaped_source_root (string escape -- "$smoke_source_root")
-            set argv[2] "set -gx SPACEWRIGHT_ROOT $escaped_source_root; source $escaped_source_root/common/spacewright_paths.fish; source $escaped_source_root/common/work_reload.fish; $argv[2]"
+            set -l escaped_package_root (string escape -- "$smoke_package_root")
+            set -l escaped_config_root (string escape -- "$smoke_config_root")
+            set argv[2] "set -gx SPACEWRIGHT_PACKAGE_ROOT $escaped_package_root; set -gx SPACEWRIGHT_ROOT $escaped_source_root; set -gx SPACEWRIGHT_CONFIG_ROOT $escaped_config_root; source $escaped_source_root/common/spacewright_paths.fish; source $escaped_source_root/common/work_reload.fish; $argv[2]"
         end
         command $smoke_fish_binary $argv
     end
@@ -744,7 +751,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         workspace_run_cleanup_specs gtd:tall
         or exit 1
 
-        test "$__work_smoke_cleanup_query_calls" -eq 1
+        test "$__work_smoke_cleanup_query_calls" -eq 2
         or exit 2
     '
     fish -lc "$labeled_cleanup_query_failure_smoke" >/tmp/work-labeled-cleanup-query-failure-smoke.out 2>&1

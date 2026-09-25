@@ -11,11 +11,13 @@ const packageRoot = new URL('../..', import.meta.url).pathname;
 const token = 'configuration-round-trip-token';
 
 async function startServer(configRoot, stateRoot) {
+  const skhdFile = join(stateRoot, 'test.skhdrc');
   const child = spawn(process.execPath, [
     join(packageRoot, 'configurator/server.mjs'),
     `--package-root=${packageRoot}`,
     `--config-root=${configRoot}`,
     `--state-root=${stateRoot}`,
+    `--skhd-file=${skhdFile}`,
     `--token=${token}`,
     '--port=0',
     '--no-open'
@@ -59,6 +61,12 @@ test('Configuration GUI round-trips the authoritative config file', { timeout: 6
   const configFile = join(configRoot, 'config.v2.json');
   const original = starterConfig();
   original.displayRoles.primary.name = 'Authoritative primary display';
+  original.apps.runtime_only = { name: 'Runtime Only', match: { appNames: ['Runtime Only'] } };
+  original.workspaces.coding.variants.solo.runtime = { runner: 'generic_layout', windows: [
+    { role: 'editor', app_key: 'code', required: true },
+    { role: 'assistant', app_key: 'chatgpt', required: false },
+    { role: 'runtime_helper', app_key: 'runtime_only', required: false }
+  ] };
   await mkdir(configRoot, { recursive: true });
   await writeJson(configFile, original);
 
@@ -76,14 +84,19 @@ test('Configuration GUI round-trips the authoritative config file', { timeout: 6
 
   await page.goto(service.url);
   await page.getByRole('button', { name: /Workspaces/ }).click();
-  await page.getByRole('button', { name: 'Edit freely' }).click();
+  await page.getByRole('button', { name: 'Layout', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit freely' }).evaluate((button) => button.click());
   assert.equal(await page.locator('.canvas-window').count(), 2);
   const width = page.locator('[data-geometry="w:editor"]');
   await width.fill('5');
   await width.press('Enter');
   assert.match(await page.locator('.canvas-window[data-role="editor"]').getAttribute('style'), /--w:5/);
+  await page.getByRole('button', { name: 'Apps & Shortcuts' }).evaluate((button) => button.click());
   await page.getByRole('button', { name: '+ Add app window' }).click();
+  await page.getByRole('button', { name: 'Layout', exact: true }).evaluate((button) => button.click());
   assert.equal(await page.locator('.canvas-window').count(), 3);
+  await page.getByRole('button', { name: 'Window Matching / Advanced' }).evaluate((button) => button.click());
+  await page.locator('.window-card').filter({ hasText: 'window_1' }).locator('summary').click();
   page.once('dialog', (dialog) => dialog.accept());
   await page.locator('[data-delete-window="window_1"]').click();
   assert.equal(await page.locator('.canvas-window').count(), 2);
@@ -105,6 +118,12 @@ test('Configuration GUI round-trips the authoritative config file', { timeout: 6
   await page.locator('#workspace-id').waitFor();
   assert.equal(await page.locator('#workspace-id').inputValue(), 'coding_renamed');
   await page.reload();
+  await page.getByRole('button', { name: '04 Apps' }).click();
+  const runtimeOnly = page.locator('.app-list-row').filter({ hasText: 'Runtime Only' });
+  await runtimeOnly.locator('summary').click();
+  await runtimeOnly.getByRole('button', { name: 'Delete App' }).click();
+  await assert.doesNotReject(() => page.getByRole('status').filter({ hasText: /solo runtime · runtime_helper/ }).waitFor());
+  assert.equal(await page.locator('[data-delete-app="runtime_only"]').count(), 1);
   await page.getByRole('button', { name: /Displays/ }).click();
   const primaryName = page.locator('[data-display-name="primary"]');
   await assert.doesNotReject(() => primaryName.waitFor());
