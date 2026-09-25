@@ -9,6 +9,15 @@ function set_workspace_primary_display_uuid --description "Persist the workspace
 end
 
 function get_workspace_primary_display_uuid --description "Return the configured workspace primary display UUID"
+    set -l machine_file "$SPACEWRIGHT_STATE_ROOT/machine.json"
+    if test -r "$machine_file"
+        set -l bound_uuid (jq -r '.displayBindings.primary // empty' "$machine_file" 2>/dev/null)
+        if test -n "$bound_uuid"
+            echo $bound_uuid
+            return 0
+        end
+    end
+
     if test -n "$WORKSPACE_PRIMARY_DISPLAY_UUID"
         echo $WORKSPACE_PRIMARY_DISPLAY_UUID
         return 0

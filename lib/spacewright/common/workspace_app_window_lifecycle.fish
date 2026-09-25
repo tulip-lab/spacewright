@@ -464,5 +464,9 @@ function workspace_capture_app_window --description "Move a movable app window t
         end
     end
 
+    if test "$moved_attempted" -eq 1
+        echo "[WARN] $caller could not confirm the captured window on Space $_flag_space" >&2
+        return 2
+    end
     return 0
 end

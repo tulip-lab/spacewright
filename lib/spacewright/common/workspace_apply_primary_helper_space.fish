@@ -294,6 +294,22 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
             end
 
             set helper_window (workspace_capture_app_window $helper_find_args)
+            set -l helper_capture_status $status
+            if test "$helper_capture_status" -eq 1
+                return 1
+            end
+            if test "$helper_capture_status" -eq 2
+                workspace_debug_step $caller helper-capture-retry "$_flag_helper_app"
+                sleep 0.6
+                set helper_window (workspace_capture_app_window $helper_find_args)
+                set helper_capture_status $status
+                if test "$helper_capture_status" -eq 1
+                    return 1
+                end
+                if test "$helper_capture_status" -eq 2
+                    echo "[WARN] $caller found $_flag_helper_app but could not settle it on Space $target_space" >&2
+                end
+            end
         end
     end
 

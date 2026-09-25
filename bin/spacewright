@@ -78,10 +78,13 @@ switch "$command_name"
         end
         command node "$package_root/configurator/server.mjs" "--package-root=$package_root" "--config-root=$SPACEWRIGHT_CONFIG_ROOT" "--state-root=$SPACEWRIGHT_STATE_ROOT" $argv
     case run
-        if test (count $argv) -eq 2
-            workspace_run_configured "spacewright_$argv[1]_$argv[2]"
-        else if string match -q 'work_*' -- "$argv[1]"
+        if string match -q 'work_*' -- "$argv[1]"
             workspace_run_configured_mode $argv
+        else if contains -- "$argv[2]" solo wide tall
+            set -l workspace_id $argv[1]
+            set -l mode $argv[2]
+            set -e argv[1..2]
+            workspace_run_configured "$workspace_id"_"$mode" $argv
         else
             workspace_run_configured $argv
         end

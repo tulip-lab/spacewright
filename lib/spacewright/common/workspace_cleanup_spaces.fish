@@ -7,8 +7,17 @@ function workspace_cleanup_query_spaces --description "Query spaces for opportun
     end
 
     set -gx WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS "$cleanup_timeout"
-    set -l spaces_json (ws_yabai -m query --spaces 2>/dev/null)
-    set -l query_status $status
+    set -l spaces_json
+    set -l query_status 1
+    for attempt in (seq 1 2)
+        set spaces_json (ws_yabai -m query --spaces 2>/dev/null)
+        set query_status $status
+        if test "$query_status" -eq 0 -a -n "$spaces_json"
+            echo $spaces_json | ws_jq -e 'type == "array"' >/dev/null 2>&1
+            and break
+        end
+        sleep 0.15
+    end
 
     if test -n "$old_timeout"
         set -gx WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS "$old_timeout"
@@ -37,8 +46,17 @@ function workspace_cleanup_query_windows --description "Query windows for opport
     end
 
     set -gx WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS "$cleanup_timeout"
-    set -l windows_json (ws_yabai -m query --windows 2>/dev/null)
-    set -l query_status $status
+    set -l windows_json
+    set -l query_status 1
+    for attempt in (seq 1 2)
+        set windows_json (ws_yabai -m query --windows 2>/dev/null)
+        set query_status $status
+        if test "$query_status" -eq 0 -a -n "$windows_json"
+            echo $windows_json | ws_jq -e 'type == "array"' >/dev/null 2>&1
+            and break
+        end
+        sleep 0.15
+    end
 
     if test -n "$old_timeout"
         set -gx WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS "$old_timeout"
@@ -141,13 +159,26 @@ function cleanup_unlabeled_empty_spaces --description "Remove unlabeled empty sp
         return 0
     end
 
+    set -l windows_json (workspace_cleanup_query_windows)
+    if test $status -ne 0 -o -z "$windows_json"
+        return 0
+    end
+
     set -l cleanup_spaces (
         echo $spaces_json | ws_jq -r \
             --argjson protected "$protected_space" \
-            '.[]
+            --argjson windows "$windows_json" '
+             . as $spaces
+             | .[]
              | select(.label=="")
-             | select((.windows | length)==0)
              | select(.index!=$protected)
+             | . as $space
+             | select([$spaces[] | select(.display==$space.display)] | length > 1)
+             | select([
+                 $windows[]
+                 | select(.space==$space.index)
+                 | select((.["is-sticky"] // false) != true)
+               ] | length == 0)
              | .index' \
         | sort -nr
     )
@@ -155,6 +186,7 @@ function cleanup_unlabeled_empty_spaces --description "Remove unlabeled empty sp
     for s in $cleanup_spaces
         if test -n "$s"
             ws_yabai -m space $s --destroy >/dev/null 2>&1
+            or echo "[WARN] could not destroy empty unlabeled Space $s" >&2
             sleep 0.05
         end
     end

@@ -17,6 +17,7 @@ const packageRoot = resolve(args['--package-root'] || join(import.meta.dirname, 
 const configRoot = resolve(args['--config-root'] || join(process.env.HOME, '.config', 'spacewright'));
 const stateRoot = resolve(args['--state-root'] || join(process.env.HOME, '.local', 'state', 'spacewright'));
 const configFile = join(configRoot, 'config.v2.json');
+const skhdFile = resolve(args['--skhd-file'] || join(process.env.HOME, '.config', 'skhd', 'skhdrc'));
 const machineFile = join(stateRoot, 'machine.json');
 const runtimeFile = join(configRoot, 'generated', 'runtime.json');
 const historyRoot = join(stateRoot, 'history');
@@ -121,6 +122,58 @@ function classifyTopology(displays) {
 async function queryDisplays() {
   try { const { stdout } = await execFileAsync('yabai', ['-m', 'query', '--displays'], { timeout: 2500, maxBuffer: 1_000_000 }); return { displays: JSON.parse(stdout) }; }
   catch (error) { return { displays: [], unavailable: true, message: error.message }; }
+}
+
+function parseSkhdShortcutLine(line, source, config) {
+  const match = line.match(/^\s*(.*?)\s*:\s*fish\s+-lc\s+(['"])(.*?)\2\s*$/);
+  if (!match) return null;
+  const chord = match[1].split(/\s+-\s+/); const key = chord.pop().trim();
+  const modifiers = chord.join(' + ').split('+').map((item) => item.trim()).filter(Boolean).map((item) => ({ command: 'cmd', option: 'alt', control: 'ctrl' })[item] || item);
+  if (modifiers.some((item) => !['cmd', 'ctrl', 'alt', 'shift', 'fn'].includes(item))) return null;
+  const commands = match[3].split(';').map((item) => item.trim()).filter(Boolean);
+  const direct = commands.find((command) => /^spacewright\s+run\s+[a-z][a-z0-9_]*\s+(?:solo|tall|wide)$/.test(command));
+  const modeCommand = commands.find((command) => /^work_(solo|tall|wide)$/.test(command));
+  let action;
+  if (direct) { const [, workspace, mode] = direct.match(/^spacewright\s+run\s+([a-z][a-z0-9_]*)\s+(solo|tall|wide)$/); action = { type: 'activateWorkspace', workspace, mode }; }
+  else if (modeCommand) action = { type: 'activateMode', mode: modeCommand.slice(5) };
+  else {
+    const candidates = [];
+    for (const [workspace, definition] of Object.entries(config.workspaces || {})) for (const [mode, variant] of Object.entries(definition.variants || {})) {
+      if (variant.command) candidates.push({ command: variant.command, workspace, mode });
+      candidates.push({ command: `${workspace}_${mode}`, workspace, mode });
+    }
+    const resolved = candidates.find((candidate) => commands.includes(candidate.command));
+    if (resolved) action = { type: 'activateWorkspace', workspace: resolved.workspace, mode: resolved.mode };
+    else {
+      const legacy = commands.find((command) => /^[a-z][a-z0-9_]*_(solo|tall|wide)$/.test(command));
+      if (!legacy) return null;
+      action = { type: 'externalCommand', command: legacy };
+    }
+  }
+  return {
+    keys: { modifiers, key: key.toLowerCase() },
+    action,
+    source
+  };
+}
+
+async function shortcutInventory(config) {
+  const sources = [
+    { path: join(configRoot, 'generated', 'spacewright.skhdrc'), label: 'SpaceWright generated fragment' },
+    { path: skhdFile, label: 'skhd configuration' }
+  ];
+  const bindings = [];
+  for (const source of sources) {
+    if (!existsSync(source.path)) continue;
+    const text = await readFile(source.path, 'utf8');
+    for (const line of text.split('\n')) {
+      const binding = parseSkhdShortcutLine(line, source.label, config);
+      if (binding) bindings.push(binding);
+    }
+  }
+  const unique = new Map();
+  for (const binding of bindings) unique.set(`${binding.keys.modifiers.slice().sort().join('+')}+${binding.keys.key}:${JSON.stringify(binding.action)}`, binding);
+  return { bindings: [...unique.values()], inspected: sources.filter((source) => existsSync(source.path)).map((source) => source.label), mutates: false };
 }
 
 async function commandCheck(command, args = ['--version']) {
@@ -332,6 +385,7 @@ async function api(request, response, url) {
       return json(response, 200, { apps: [], unavailable: true, message: error.message, mutates: false });
     }
   }
+  if (url.pathname === '/api/shortcuts' && request.method === 'GET') return json(response, 200, await shortcutInventory(await readConfig()));
   return json(response, 404, { error: 'not found' });
 }
 
