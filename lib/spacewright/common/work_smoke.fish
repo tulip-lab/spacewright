@@ -2356,6 +2356,23 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
+    if set -q WORKSPACE_TEST_SOURCE_ROOT
+        source "$WORKSPACE_TEST_SOURCE_ROOT/gtd/internal/gtd_support_find_dia_windows.fish"
+    end
+
+    set -l dia_accessibility_fixture '[
+        {"id": 31, "app": "Dia", "title": "GTD", "role": "AXWindow", "subrole": "AXStandardWindow", "space": 8, "can-move": true, "is-minimized": false, "is-native-fullscreen": false},
+        {"id": 32, "app": "Dia", "title": "Research", "role": "AXWindow", "subrole": "AXStandardWindow", "space": 3, "can-move": true, "is-minimized": false, "is-native-fullscreen": false},
+        {"id": 33, "app": "Dia", "title": "", "role": "AXHelpTag", "subrole": "", "space": 8, "can-move": true, "is-minimized": false, "is-native-fullscreen": false}
+    ]'
+    set -l dia_browser_windows (printf '%s\n' "$dia_accessibility_fixture" | gtd_support_find_dia_windows gtd_support_wide)
+    if test $status -eq 0 -a (string join , $dia_browser_windows) = "31,32"
+        echo "OK      Dia accessibility-helper exclusion"
+    else
+        echo "FAIL    Dia accessibility-helper exclusion"
+        set failed 1
+    end
+
     set -l support_retarget_smoke '
         work_reload >/dev/null
 

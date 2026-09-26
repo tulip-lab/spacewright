@@ -14,6 +14,10 @@ function __gtd_support_refresh_dia_app --description "Activate Dia briefly befor
     perl -e 'alarm shift; exec @ARGV' 2 open -a "$dia_app" >/dev/null 2>&1
 end
 
+function __gtd_support_filter_dia_window_json --description "Exclude Dia accessibility helpers from window selection"
+    ws_jq '[.[] | select((.role // "") == "" or .role == "AXWindow")]'
+end
+
 function gtd_support_find_dia_windows --description "Find all movable Dia windows for a GTD support workspace"
     set -l caller $argv[1]
 
@@ -29,8 +33,10 @@ function gtd_support_find_dia_windows --description "Find all movable Dia window
     end
 
     set -l dia_app (workspace_app_name dia)
-    set -l dia_present (printf '%s\n' "$windows_json" | ws_find_windows "$dia_app" --not-native-fullscreen)
-    set -l dia_windows (printf '%s\n' "$windows_json" | ws_find_windows "$dia_app" --movable --not-native-fullscreen)
+    set -l dia_window_json (printf '%s\n' "$windows_json" | __gtd_support_filter_dia_window_json)
+    or return 1
+    set -l dia_present (printf '%s\n' "$dia_window_json" | ws_find_windows "$dia_app" --not-native-fullscreen)
+    set -l dia_windows (printf '%s\n' "$dia_window_json" | ws_find_windows "$dia_app" --movable --not-native-fullscreen)
 
     if test (count $dia_present) -eq 0
         return 0
@@ -48,8 +54,10 @@ function gtd_support_find_dia_windows --description "Find all movable Dia window
     set windows_json (ws_query_windows "$caller" dia_refresh)
     or return 1
 
-    set dia_present (printf '%s\n' "$windows_json" | ws_find_windows "$dia_app" --not-native-fullscreen)
-    set dia_windows (printf '%s\n' "$windows_json" | ws_find_windows "$dia_app" --movable --not-native-fullscreen)
+    set dia_window_json (printf '%s\n' "$windows_json" | __gtd_support_filter_dia_window_json)
+    or return 1
+    set dia_present (printf '%s\n' "$dia_window_json" | ws_find_windows "$dia_app" --not-native-fullscreen)
+    set dia_windows (printf '%s\n' "$dia_window_json" | ws_find_windows "$dia_app" --movable --not-native-fullscreen)
 
     if test (count $dia_present) -gt 0 -a (count $dia_windows) -eq (count $dia_present)
         __gtd_support_clear_bad_dia_windows $dia_windows
@@ -66,8 +74,10 @@ function gtd_support_find_dia_windows --description "Find all movable Dia window
     set windows_json (ws_query_windows "$caller" dia_yabai_restart)
     or return 1
 
-    set dia_present (printf '%s\n' "$windows_json" | ws_find_windows "$dia_app" --not-native-fullscreen)
-    set dia_windows (printf '%s\n' "$windows_json" | ws_find_windows "$dia_app" --movable --not-native-fullscreen)
+    set dia_window_json (printf '%s\n' "$windows_json" | __gtd_support_filter_dia_window_json)
+    or return 1
+    set dia_present (printf '%s\n' "$dia_window_json" | ws_find_windows "$dia_app" --not-native-fullscreen)
+    set dia_windows (printf '%s\n' "$dia_window_json" | ws_find_windows "$dia_app" --movable --not-native-fullscreen)
 
     if test (count $dia_present) -gt 0 -a (count $dia_windows) -eq (count $dia_present)
         __gtd_support_clear_bad_dia_windows $dia_windows
