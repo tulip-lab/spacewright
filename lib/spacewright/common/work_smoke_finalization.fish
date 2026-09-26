@@ -36,11 +36,12 @@ function __work_smoke_finalization_selection
     set -l spaces '[
       {"index":1,"uuid":"HOME","display":1,"label":""},
       {"index":2,"uuid":"CONTROL","display":1,"label":"coding_control"},
-      {"index":7,"uuid":"OTHER","display":2,"label":""}
+      {"index":7,"uuid":"OTHER","display":2,"label":""},
+      {"index":8,"uuid":"CODE","display":2,"label":"coding_editor_wide"}
     ]'
     set -l windows '[
       {"id":11,"app":"Safari","space":7,"can-move":true,"is-sticky":false,"is-native-fullscreen":false,"is-minimized":false},
-      {"id":12,"app":"Code","space":7,"can-move":true,"is-sticky":false,"is-native-fullscreen":false,"is-minimized":false},
+      {"id":12,"app":"Code","space":8,"can-move":true,"is-sticky":false,"is-native-fullscreen":false,"is-minimized":false},
       {"id":13,"app":"Slack","space":1,"can-move":true,"is-sticky":false,"is-native-fullscreen":false,"is-minimized":false},
       {"id":14,"app":"Spotify","space":7,"can-move":true,"is-sticky":true,"is-native-fullscreen":false,"is-minimized":false},
       {"id":15,"app":"Firefox","space":7,"can-move":true,"is-sticky":false,"is-native-fullscreen":true,"is-minimized":false},
@@ -53,9 +54,9 @@ function __work_smoke_finalization_selection
     test "$home_info" = "HOME	1"
     or return 2
 
-    set -l ids (echo $windows | workspace_sandbox_candidate_window_ids --home-space 1)
+    set -l ids (echo $windows | workspace_sandbox_candidate_window_ids --spaces-json "$spaces" --home-space 1)
     or return 3
-    test (string join ' ' -- $ids) = '11 17'
+    test (string join ' ' -- $ids) = '11 13 17'
 end
 
 function __work_smoke_finalization_sandbox
@@ -65,6 +66,19 @@ function __work_smoke_finalization_sandbox
     set -g __work_smoke_sandbox_prepare
     set -g __work_smoke_sandbox_moves
     set -g __work_smoke_sandbox_yabai
+
+    function ws_query_spaces
+        echo '[
+          {"index":1,"uuid":"HOME","display":1,"label":""},
+          {"index":6,"uuid":"OTHER","display":2,"label":""},
+          {"index":7,"uuid":"OTHER2","display":2,"label":""},
+          {"index":8,"uuid":"SANDBOX","display":2,"label":"sandbox_wide"}
+        ]'
+    end
+
+    function workspace_managed_window_ids_json
+        echo '[]'
+    end
 
     function ws_query_windows
         set -g __work_smoke_sandbox_queries (math $__work_smoke_sandbox_queries + 1)

@@ -18,28 +18,73 @@ function workspace_home_space_info --description "Return the leftmost unlabeled 
     '
 end
 
-function workspace_sandbox_candidate_window_ids --description "Select movable unmanaged windows outside Home"
-    argparse 'home-space=' -- $argv
+function workspace_managed_window_ids_json --description "Return windows currently owned by their configured labeled workspace"
+    argparse 'spaces-json=' -- $argv
     or return 1
 
-    if not set -q _flag_home_space
-        echo "usage: workspace_sandbox_candidate_window_ids --home-space <index>" >&2
+    if not set -q _flag_spaces_json
+        echo "usage: workspace_managed_window_ids_json --spaces-json <json>" >&2
         return 2
     end
 
     set -l windows_json
     read -lz windows_json
-    set -l owned_apps (workspace_owned_app_names_json)
+    if test -z "$windows_json"
+        set windows_json '[]'
+    end
+
+    set -l config (spacewright_config_effective | string collect)
     or return 1
 
-    echo $windows_json | ws_jq -r --argjson home $_flag_home_space --argjson owned "$owned_apps" '
+    printf "%s\n" "$config" | jq -c \
+        --argjson spaces "$_flag_spaces_json" \
+        --argjson windows "$windows_json" '
+            . as $root
+            | [
+                $root.workspaces[]
+                | . as $workspace
+                | {
+                    label: $workspace.label,
+                    app_names: [
+                        $workspace.windows[]?.app_key as $key
+                        | $root.apps[$key].names[]?
+                    ] | unique
+                  }
+              ] as $claims
+            | [
+                $windows[]
+                | . as $window
+                | ($spaces | first(.[] | select(.index == $window.space)) | .label // "") as $label
+                | select(any($claims[]; .label == $label and (.app_names | index($window.app)) != null))
+                | .id
+              ]
+        '
+end
+
+function workspace_sandbox_candidate_window_ids --description "Select movable windows not owned by their configured workspace"
+    argparse 'spaces-json=' 'home-space=' -- $argv
+    or return 1
+
+    if not set -q _flag_spaces_json
+        echo "usage: workspace_sandbox_candidate_window_ids --spaces-json <json> [--home-space <index>]" >&2
+        return 2
+    end
+
+    set -l windows_json
+    read -lz windows_json
+    if test -z "$windows_json"
+        set windows_json '[]'
+    end
+    set -l managed_ids (echo $windows_json | workspace_managed_window_ids_json --spaces-json "$_flag_spaces_json")
+    or return 1
+
+    echo $windows_json | ws_jq -r --argjson managed "$managed_ids" '
         .[]
-        | select(.space != $home)
         | select(.["can-move"] == true)
         | select(.["is-sticky"] != true)
         | select(.["is-native-fullscreen"] != true)
-        | .app as $app
-        | select(($owned | index($app)) == null)
+        | .id as $id
+        | select(($managed | index($id)) == null)
         | .id
     '
 end
@@ -57,9 +102,13 @@ function workspace_apply_sandbox --description "Collect unmanaged windows into a
         return 2
     end
 
+    set -l spaces_json (ws_query_spaces workspace_apply_sandbox initial_spaces)
+    or return 1
     set -l windows_json (ws_query_windows workspace_apply_sandbox initial)
     or return 1
-    set -l ids (echo $windows_json | workspace_sandbox_candidate_window_ids --home-space $_flag_home_space)
+    set -l ids (echo $windows_json | workspace_sandbox_candidate_window_ids \
+        --spaces-json "$spaces_json" \
+        --home-space $_flag_home_space)
     or return 1
 
     if test (count $ids) -eq 0

@@ -38,6 +38,8 @@ function __workspace_order_labels_on_display --description "Order existing label
             if test "$home_index" -ne "$target_index"
                 ws_yabai -m space "$home_index" --move "$target_index"
                 or return 1
+                __workspace_wait_for_space_index "$home_uuid" $target_index
+                or return 1
             end
 
             set target_index (math $target_index + 1)
@@ -48,22 +50,48 @@ function __workspace_order_labels_on_display --description "Order existing label
         set -l live_spaces (ws_query_spaces workspace_order_spaces "before-$label")
         or return 1
 
-        set -l source_index (echo $live_spaces | ws_jq -r \
+        set -l source_info (echo $live_spaces | ws_jq -r \
             --argjson display "$_flag_display" \
             --arg label "$label" '
-                first(.[] | select(.display == $display and .label == $label) | .index) // empty
+                first(.[] | select(.display == $display and .label == $label) | [.uuid, .index] | @tsv) // empty
             ')
-        if test -z "$source_index"
+        if test -z "$source_info"
             continue
         end
+        set -l source_parts (string split \t -- "$source_info")
+        set -l source_uuid $source_parts[1]
+        set -l source_index $source_parts[2]
 
         if test "$source_index" -ne "$target_index"
             ws_yabai -m space "$label" --move "$target_index"
+            or return 1
+            __workspace_wait_for_space_index "$source_uuid" $target_index
             or return 1
         end
 
         set target_index (math $target_index + 1)
     end
+end
+
+function __workspace_wait_for_space_index --description "Wait briefly for a Space move to become observable"
+    set -l uuid $argv[1]
+    set -l expected_index $argv[2]
+    if test -z "$uuid" -o -z "$expected_index"
+        return 2
+    end
+
+    for attempt in (seq 1 20)
+        set -l spaces_json (ws_query_spaces workspace_order_spaces "confirm-$uuid-$attempt")
+        or return 1
+        set -l actual_index (echo $spaces_json | ws_jq -r --arg uuid "$uuid" \
+            'first(.[] | select(.uuid == $uuid) | .index) // empty')
+        test "$actual_index" = "$expected_index"
+        and return 0
+        sleep 0.1
+    end
+
+    echo "[WARN] Space move did not settle: uuid=$uuid expected_index=$expected_index" >&2
+    return 1
 end
 
 function __workspace_configured_order_labels --description "Print configured workspace labels for one mode display lane"

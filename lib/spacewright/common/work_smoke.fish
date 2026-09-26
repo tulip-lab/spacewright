@@ -1453,6 +1453,10 @@ function work_smoke --description "Run read-only workspace smoke checks for help
             set -ga __work_smoke_home_selectors $argv[3]
         end
 
+        function __workspace_wait_for_space_index
+            return 0
+        end
+
         for mode in solo wide tall
             set -g __work_smoke_home_selectors
             workspace_order_mode_spaces $mode

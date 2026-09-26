@@ -150,6 +150,7 @@ function workspace_common_helper_rows --description "Print declared common works
     printf "%s\t%s\n" workspace_finalized_entry_rows "public mutating entries and required finalization modes"
     printf "%s\t%s\n" workspace_finalize_mode "Sandbox, cleanup, verified ordering, and focus restoration"
     printf "%s\t%s\n" workspace_apply_sandbox "policy-driven unmanaged-window Sandbox collection"
+    printf "%s\t%s\n" workspace_managed_window_ids_json "window-level configured workspace ownership selector"
     printf "%s\t%s\n" workspace_space_occupant_windows_json "shared sticky and nonoccupying-ghost occupancy filter"
     printf "%s\t%s\n" workspace_cleanup_empty_spaces "unlabeled/Sandbox empty-Space cleanup with Home, managed-label, and ghost protection"
     printf "%s\t%s\n" workspace_order_mode_spaces "label-based solo, primary, and external Space ordering"
@@ -312,6 +313,7 @@ function workspace_required_command_names --description "Print documented worksp
         workspace_run_finalized_entry \
         workspace_finalize_mode \
         workspace_apply_sandbox \
+        workspace_managed_window_ids_json \
         workspace_space_occupant_windows_json \
         workspace_cleanup_empty_spaces \
         workspace_order_mode_spaces \
