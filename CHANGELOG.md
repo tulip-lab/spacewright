@@ -5,6 +5,16 @@ configuration and installation contracts may still change before 1.0.
 
 ## Unreleased
 
+- Add a versioned live state engine for display, Space, window, geometry, and
+  desired-state comparison with `inspect`, `plan`, `verify`, and capture.
+- Add locked, journaled apply/verification, one bounded reconciliation retry,
+  scoped best-effort recovery, and dry-run paths for every new mutation entry.
+- Add a live Current state configurator view, capture-to-draft, editable
+  profile orchestration, stable topology automation, wake events, stronger
+  diagnostics, and richer bundle/AX window selectors.
+- Serialize and cancel Web executions safely, rotate activity logs, and add
+  state-engine and real-browser regression coverage.
+
 ## 0.2.0-alpha.11 — 2026-09-18
 
 - Harden the portable v2 contract with unknown-field, unique-label, required

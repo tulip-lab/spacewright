@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 
 import http from 'node:http';
-import { readFile, writeFile, rename, mkdir, copyFile, readdir, unlink } from 'node:fs/promises';
+import { readFile, writeFile, rename, mkdir, copyFile, readdir, unlink, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { dirname, extname, join, resolve } from 'node:path';
+import { basename, dirname, extname, join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createHash } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import YAML from 'yaml';
 import { CONFIG_COMPILER_VERSION, compileSkhd, compileV2, migrateV1, starterConfig, validateV2 } from './lib/config-v2.mjs';
+import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState, normalizeSnapshot } from './lib/state-engine.mjs';
 
 const execFileAsync = promisify(execFile);
 const args = Object.fromEntries(process.argv.slice(2).map((arg) => arg.split('=', 2)));
@@ -22,10 +23,12 @@ const machineFile = join(stateRoot, 'machine.json');
 const runtimeFile = join(configRoot, 'generated', 'runtime.json');
 const historyRoot = join(stateRoot, 'history');
 const activityFile = join(stateRoot, 'activity.jsonl');
+const sessionFile = join(stateRoot, 'configurator.json');
 const publicRoot = join(packageRoot, 'configurator', 'public');
 const token = args['--token'] || randomBytes(24).toString('hex');
 const listenPort = Number(args['--port'] || 0);
 const tasks = new Map();
+let taskQueue = Promise.resolve();
 
 async function readConfig() {
   if (!existsSync(configFile)) return starterConfig();
@@ -76,6 +79,7 @@ async function atomicWrite(path, value) {
 
 async function activity(level, event, details = {}) {
   await mkdir(dirname(activityFile), { recursive: true, mode: 0o700 });
+  if (existsSync(activityFile) && (await stat(activityFile)).size > 1_000_000) await rename(activityFile, `${activityFile}.1`);
   await writeFile(activityFile, `${JSON.stringify({ timestamp: new Date().toISOString(), level, event, details })}\n`, { flag: 'a', mode: 0o600 });
 }
 
@@ -108,6 +112,7 @@ function configDiff(before, after, path = '$', changes = []) {
 
 function classifyTopology(displays) {
   const active = displays.filter((display) => display['is-visible'] !== false);
+  if (!active.length) return 'unknown';
   const builtIn = active.find((display) => display['is-built-in'] || /built.?in/i.test(display.label || ''));
   const external = active.filter((display) => display !== builtIn);
   if (!builtIn && external.length) return external.length > 1 ? 'dual_external' : 'clamshell';
@@ -122,6 +127,36 @@ function classifyTopology(displays) {
 async function queryDisplays() {
   try { const { stdout } = await execFileAsync('yabai', ['-m', 'query', '--displays'], { timeout: 2500, maxBuffer: 1_000_000 }); return { displays: JSON.parse(stdout) }; }
   catch (error) { return { displays: [], unavailable: true, message: error.message }; }
+}
+
+async function querySnapshot() {
+  try {
+    const [{ stdout: displays }, { stdout: spaces }, { stdout: windows }, machine] = await Promise.all([
+      execFileAsync('yabai', ['-m', 'query', '--displays'], { timeout: 5000, maxBuffer: 1_000_000 }),
+      execFileAsync('yabai', ['-m', 'query', '--spaces'], { timeout: 5000, maxBuffer: 2_000_000 }),
+      execFileAsync('yabai', ['-m', 'query', '--windows'], { timeout: 5000, maxBuffer: 4_000_000 }),
+      readMachine()
+    ]);
+    return normalizeSnapshot({ displays: JSON.parse(displays), spaces: JSON.parse(spaces), windows: JSON.parse(windows), capturedAt: new Date().toISOString() }, machine);
+  } catch (error) {
+    return normalizeSnapshot({ unavailable: true, message: `live yabai discovery failed: ${error.message}`, displays: [], spaces: [], windows: [], capturedAt: new Date().toISOString() }, await readMachine());
+  }
+}
+
+function targetFromPayload(payload) {
+  if (payload.kind === 'profile') return { kind: 'profile', id: payload.target };
+  if (payload.kind === 'mode') return { kind: 'mode', id: payload.target, mode: payload.target };
+  return { kind: 'workspace', id: payload.target, mode: payload.mode };
+}
+
+async function livePlan(config, payload) {
+  const validation = validateV2(config);
+  if (!validation.valid) return { validation };
+  const [snapshot, machine] = await Promise.all([querySnapshot(), readMachine()]);
+  const desired = buildDesiredState(config, compileV2(config), targetFromPayload(payload));
+  const comparison = compareState(snapshot, desired, machine);
+  const plan = buildExecutionPlan(snapshot, desired, comparison);
+  return { validation, snapshot, desired, comparison, plan };
 }
 
 function parseSkhdShortcutLine(line, source, config) {
@@ -186,32 +221,33 @@ function taskView(task) {
 }
 
 function commandsForExecution(config, payload) {
-  const runtime = compileV2(config);
   if (payload.kind === 'mode') {
     if (!['solo', 'wide', 'tall'].includes(payload.target)) throw new Error('unknown mode');
-    return { mode: payload.target, commands: [['run', `work_${payload.target}`]] };
+    return { mode: payload.target, commands: [['apply', payload.target, '--json']] };
   }
   if (payload.kind === 'workspace') {
     if (!config.workspaces[payload.target] || !['solo', 'wide', 'tall'].includes(payload.mode)) throw new Error('unknown workspace or mode');
     if (!config.workspaces[payload.target].variants?.[payload.mode]) throw new Error('workspace has no variant for this mode');
-    return { mode: payload.mode, commands: [['run', payload.target, payload.mode]] };
+    return { mode: payload.mode, commands: [['apply', payload.target, payload.mode, '--json']] };
   }
   if (payload.kind === 'profile') {
     const profile = config.profiles?.[payload.target]; if (!profile) throw new Error('unknown profile');
-    const workspaceIds = profile.workspaces?.length ? profile.workspaces : config.modes[profile.mode].displays.flatMap((display) => display.workspaceOrder);
-    const commands = workspaceIds.map((workspace) => ['run', workspace, profile.mode]);
-    if (!commands.length) throw new Error('profile contains no runnable workspaces');
-    return { mode: profile.mode, commands };
+    return { mode: profile.mode, commands: [['apply', `--profile=${payload.target}`, '--json']] };
   }
   throw new Error('kind must be mode, workspace, or profile');
 }
 
 async function runTask(task, commands) {
+  if (task.status === 'cancelled') {
+    task.exitCode = 130; task.finishedAt = new Date().toISOString();
+    await activity('info', 'task_cancelled', { id: task.id, phase: 'queued' });
+    return;
+  }
   task.status = 'running'; task.startedAt = new Date().toISOString(); await activity('info', 'task_started', { id: task.id, kind: task.kind, target: task.target });
   for (const commandArgs of commands) {
     if (task.status === 'cancelled') break;
     await new Promise((resolveTask) => {
-      const child = spawn(join(packageRoot, 'bin', 'spacewright'), commandArgs, { env: { ...process.env, SPACEWRIGHT_CONFIG_ROOT: configRoot, SPACEWRIGHT_STATE_ROOT: stateRoot }, stdio: ['ignore', 'pipe', 'pipe'] });
+      const child = spawn(join(packageRoot, 'bin', 'spacewright'), commandArgs, { env: { ...process.env, SPACEWRIGHT_CONFIG_ROOT: configRoot, SPACEWRIGHT_STATE_ROOT: stateRoot }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
       task.child = child; task.logs.push(`$ spacewright ${commandArgs.join(' ')}`);
       const append = (level) => (chunk) => { for (const line of String(chunk).split('\n').filter(Boolean)) task.logs.push(`${level} ${line}`); };
       child.stdout.on('data', append('OUT')); child.stderr.on('data', append('ERR'));
@@ -224,15 +260,32 @@ async function runTask(task, commands) {
   task.finishedAt = new Date().toISOString(); await activity(task.status === 'completed' ? 'info' : 'error', 'task_finished', { id: task.id, status: task.status, exitCode: task.exitCode });
 }
 
+function enqueueTask(task, commands) {
+  taskQueue = taskQueue.catch(() => {}).then(() => runTask(task, commands));
+  return taskQueue;
+}
+
 function matchingRules(config, context) {
-  return (config.rules || []).filter((rule) => rule.enabled && Object.entries(rule.when || {}).every(([key, value]) => key === 'event' ? value === context.event : context[key] === value));
+  return (config.rules || []).filter((rule) => rule.enabled && Object.entries(rule.when || {}).every(([key, value]) => {
+    if (key === 'app') return context.apps?.includes(value);
+    return context[key] === value;
+  }));
+}
+
+function ruleContext(config, event, snapshot, topology) {
+  const appNames = new Set(snapshot.windows.map((window) => window.app));
+  const apps = Object.entries(config.apps || {}).filter(([, app]) => app.match.appNames.some((name) => appNames.has(name))).map(([id]) => id);
+  const focusedSpace = snapshot.spaces.find((space) => space.focused);
+  const workspace = focusedSpace ? Object.entries(config.workspaces || {}).find(([, definition]) => Object.entries(definition.variants || {}).some(([mode, variant]) => (variant.spaceLabel || `${definition.spaceLabel}_${mode}`) === focusedSpace.label))?.[0] || null : null;
+  const display = snapshot.displays.find((item) => item.focused)?.role || null;
+  return { event, topology, orientation: topology.startsWith('tall') ? 'tall' : topology.startsWith('wide') ? 'wide' : null, apps, workspace, display, layout: focusedSpace?.layout || null };
 }
 
 async function executeRule(config, rule) {
   const kind = rule.then.activateProfile ? 'profile' : 'workspace'; const target = rule.then.activateProfile || rule.then.activateWorkspace;
   const execution = commandsForExecution(config, { kind, target, mode: rule.then.mode || 'solo' });
   const id = randomBytes(10).toString('hex'); const task = { id, kind, target, mode: execution.mode, status: 'queued', createdAt: new Date().toISOString(), startedAt: null, finishedAt: null, exitCode: null, logs: [`SYSTEM matched rule ${rule.id}`], child: null };
-  tasks.set(id, task); void runTask(task, execution.commands); return task;
+  tasks.set(id, task); void enqueueTask(task, execution.commands); return task;
 }
 
 async function archiveConfig() {
@@ -311,27 +364,63 @@ async function api(request, response, url) {
     const id = url.pathname.split('/').at(-1); const path = join(historyRoot, `${id}.json`); if (!existsSync(path)) return json(response, 404, { error: 'snapshot not found' }); await unlink(path); return json(response, 200, { deleted: true });
   }
   if (url.pathname === '/api/preview' && request.method === 'POST') {
-    const payload = await body(request); const config = payload.config || await readConfig(); const validation = validateV2(config); if (!validation.valid) return json(response, 422, validation);
-    const runtime = compileV2(config); const profile = payload.profile ? config.profiles?.[payload.profile] : null; const mode = profile?.mode || payload.mode || 'solo'; const requested = profile?.workspaces;
-    const steps = (runtime.modes[`work_${mode}`]?.steps || []).filter((step) => !requested || !step.workspace || requested.some((id) => step.workspace.includes(id)));
-    return json(response, 200, { dryRun: true, mutates: false, mode, profile: payload.profile || null, steps });
+    const payload = await body(request); const config = payload.config || await readConfig();
+    const normalizedPayload = payload.profile ? { kind: 'profile', target: payload.profile } : payload.kind && payload.target ? payload : { kind: 'mode', target: payload.mode || 'solo' };
+    let result; try { result = await livePlan(config, normalizedPayload); } catch (error) { return json(response, 422, { error: error.message }); }
+    if (!result.validation.valid) return json(response, 422, result.validation);
+    return json(response, 200, { dryRun: true, mutates: false, ...result });
+  }
+  if (url.pathname === '/api/state' && request.method === 'GET') return json(response, 200, { snapshot: await querySnapshot(), mutates: false });
+  if (url.pathname === '/api/capture' && request.method === 'POST') {
+    const payload = await body(request); const snapshot = await querySnapshot();
+    if (snapshot.unavailable) return json(response, 503, { error: snapshot.message });
+    try { return json(response, 200, { ...captureWorkspace(snapshot, payload), mutates: false }); }
+    catch (error) { return json(response, 422, { error: error.message }); }
   }
   if (url.pathname === '/api/tasks' && request.method === 'GET') return json(response, 200, { tasks: [...tasks.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 50).map(taskView) });
-  if (url.pathname === '/api/rules/evaluate' && request.method === 'POST') { const payload = await body(request); const config = await readConfig(); const display = await queryDisplays(); const context = { event: payload.event || 'manual', topology: classifyTopology(display.displays), orientation: classifyTopology(display.displays).startsWith('tall') ? 'tall' : 'wide' }; const rules = matchingRules(config, context); if (!payload.execute) return json(response, 200, { context, matches: rules, mutates: false }); if (payload.confirmed !== true) return json(response, 422, { error: 'explicit execution confirmation is required' }); const launched = []; for (const rule of rules) launched.push(taskView(await executeRule(config, rule))); return json(response, 202, { context, tasks: launched }); }
+  if (url.pathname === '/api/rules/evaluate' && request.method === 'POST') {
+    const payload = await body(request); const config = await readConfig(); const snapshot = await querySnapshot();
+    const topology = snapshot.unavailable ? 'unknown' : classifyTopology(snapshot.displays.map((display) => ({ ...display, 'is-built-in': display.builtIn, 'is-visible': display.visible })));
+    const context = ruleContext(config, payload.event || 'manual', snapshot, topology); const rules = matchingRules(config, context);
+    if (!payload.execute) return json(response, 200, { context, matches: rules, mutates: false });
+    if (snapshot.unavailable) return json(response, 503, { error: snapshot.message });
+    if (payload.confirmed !== true) return json(response, 422, { error: 'explicit execution confirmation is required' });
+    const launched = []; for (const rule of rules) launched.push(taskView(await executeRule(config, rule)));
+    return json(response, 202, { context, tasks: launched });
+  }
   if (url.pathname === '/api/execute' && request.method === 'POST') {
     const payload = await body(request); if (payload.confirmed !== true) return json(response, 422, { error: 'explicit execution confirmation is required' });
     const config = await readConfig(); const validation = validateV2(config); if (!validation.valid) return json(response, 422, validation);
     let execution; try { execution = commandsForExecution(config, payload); } catch (error) { return json(response, 422, { error: error.message }); }
     const id = randomBytes(10).toString('hex'); const task = { id, kind: payload.kind, target: payload.target, mode: execution.mode, status: 'queued', createdAt: new Date().toISOString(), startedAt: null, finishedAt: null, exitCode: null, logs: [], child: null };
-    tasks.set(id, task); void runTask(task, execution.commands); return json(response, 202, { task: taskView(task) });
+    tasks.set(id, task); void enqueueTask(task, execution.commands); return json(response, 202, { task: taskView(task) });
   }
   if (url.pathname.match(/^\/api\/tasks\/[a-f0-9]+$/) && request.method === 'GET') { const id = url.pathname.split('/').at(-1); const task = tasks.get(id); return task ? json(response, 200, { task: taskView(task) }) : json(response, 404, { error: 'task not found' }); }
-  if (url.pathname.match(/^\/api\/tasks\/[a-f0-9]+\/cancel$/) && request.method === 'POST') { const id = url.pathname.split('/')[3]; const task = tasks.get(id); if (!task) return json(response, 404, { error: 'task not found' }); if (!['queued', 'running'].includes(task.status)) return json(response, 409, { error: 'task is no longer running' }); task.status = 'cancelled'; task.child?.kill('SIGTERM'); task.logs.push('SYSTEM cancellation requested'); return json(response, 200, { task: taskView(task) }); }
+  if (url.pathname.match(/^\/api\/tasks\/[a-f0-9]+\/cancel$/) && request.method === 'POST') { const id = url.pathname.split('/')[3]; const task = tasks.get(id); if (!task) return json(response, 404, { error: 'task not found' }); if (!['queued', 'running'].includes(task.status)) return json(response, 409, { error: 'task is no longer running' }); task.status = 'cancelled'; if (task.child?.pid) try { process.kill(-task.child.pid, 'SIGTERM'); } catch {} task.logs.push('SYSTEM cancellation requested'); return json(response, 200, { task: taskView(task) }); }
   if (url.pathname === '/api/topology' && request.method === 'GET') { const result = await queryDisplays(); return json(response, 200, { ...result, topology: classifyTopology(result.displays), mutates: false }); }
   if (url.pathname === '/api/diagnostics' && request.method === 'GET') {
-    const config = await readConfig(); const validation = validateV2(config); const display = await queryDisplays(); const yabai = await commandCheck('yabai');
-    const checks = [{ id: 'yabai', ok: yabai.ok, detail: yabai.detail }, { id: 'accessibility', ok: yabai.ok, detail: yabai.ok ? 'yabai can query the window server' : 'unavailable' }, { id: 'scripting_addition', ok: yabai.ok, detail: 'validated through yabai availability' }, { id: 'display', ok: display.displays.length > 0, detail: `${display.displays.length} detected` }, { id: 'backend', ok: true, detail: 'local authenticated server' }, { id: 'schema', ok: validation.valid, detail: validation.valid ? 'valid' : validation.errors.join('; ') }, { id: 'workspace', ok: Object.keys(config.workspaces || {}).length > 0, detail: `${Object.keys(config.workspaces || {}).length} configured` }];
-    return json(response, 200, { generatedAt: new Date().toISOString(), topology: classifyTopology(display.displays), checks });
+    const config = await readConfig(); const validation = validateV2(config); const snapshot = await querySnapshot(); const machine = await readMachine(); const yabai = await commandCheck('yabai');
+    const topology = snapshot.unavailable ? 'unknown' : classifyTopology(snapshot.displays.map((display) => ({ ...display, 'is-built-in': display.builtIn, 'is-visible': display.visible })));
+    const duplicateLabels = [...new Set(snapshot.spaces.map((space) => space.label).filter(Boolean).filter((label, index, labels) => labels.indexOf(label) !== index))];
+    const missingBindings = Object.entries(machine.displayBindings || {}).filter(([, uuid]) => !snapshot.displays.some((display) => display.uuid === uuid)).map(([role]) => role);
+    const expectedRuntime = validation.valid ? compiledDocument(config).generated.source_sha256 : null;
+    const savedRuntime = existsSync(runtimeFile) ? JSON.parse(await readFile(runtimeFile, 'utf8')).generated?.source_sha256 : null;
+    const packageVersion = (await readFile(join(packageRoot, 'VERSION'), 'utf8')).trim();
+    const packagedRelease = basename(resolve(packageRoot, '..')) === 'releases';
+    const checks = [
+      { id: 'yabai', ok: yabai.ok, detail: yabai.detail },
+      { id: 'accessibility_query', ok: !snapshot.unavailable, detail: snapshot.unavailable ? snapshot.message : `${snapshot.windows.length} windows queried` },
+      { id: 'scripting_addition', ok: null, detail: 'not proven by read-only queries; live mutation remains unverified' },
+      { id: 'display', ok: snapshot.displays.length > 0, detail: `${snapshot.displays.length} detected; topology ${topology}` },
+      { id: 'display_bindings', ok: missingBindings.length === 0, detail: missingBindings.length ? `disconnected or stale: ${missingBindings.join(', ')}` : 'all bound roles are connected' },
+      { id: 'space_labels', ok: duplicateLabels.length === 0, detail: duplicateLabels.length ? `duplicates: ${duplicateLabels.join(', ')}` : `${snapshot.spaces.filter((space) => space.label).length} unique labels` },
+      { id: 'backend', ok: true, detail: 'loopback authenticated writes' },
+      { id: 'schema', ok: validation.valid, detail: validation.valid ? 'valid' : validation.errors.join('; ') },
+      { id: 'compiled_runtime', ok: expectedRuntime === savedRuntime, detail: expectedRuntime === savedRuntime ? 'source digest is current' : 'compiled runtime is missing or stale' },
+      { id: 'workspace', ok: Object.keys(config.workspaces || {}).length > 0, detail: `${Object.keys(config.workspaces || {}).length} configured` },
+      { id: 'build_identity', ok: packagedRelease ? basename(packageRoot) === packageVersion : true, detail: packagedRelease ? `directory ${basename(packageRoot)}; VERSION ${packageVersion}` : `development checkout; VERSION ${packageVersion}` }
+    ];
+    return json(response, 200, { generatedAt: new Date().toISOString(), topology, snapshotId: snapshot.snapshotId, checks });
   }
   if (url.pathname === '/api/self-test' && request.method === 'POST') { const config = await readConfig(); const validation = validateV2(config); const compiled = validation.valid ? compileV2(config) : null; await activity(validation.valid ? 'info' : 'error', 'self_test', { valid: validation.valid }); return json(response, validation.valid ? 200 : 422, { valid: validation.valid, errors: validation.errors, compiled: Boolean(compiled), mutates: false }); }
   if (url.pathname === '/api/activity' && request.method === 'GET') { const lines = existsSync(activityFile) ? (await readFile(activityFile, 'utf8')).trim().split('\n').filter(Boolean).slice(-200).reverse().map(JSON.parse) : []; return json(response, 200, { entries: lines }); }
@@ -411,24 +500,65 @@ const server = http.createServer(async (request, response) => {
   }
 });
 
-server.listen(listenPort, '127.0.0.1', () => {
+server.listen(listenPort, '127.0.0.1', async () => {
   const { port } = server.address();
   const url = `http://127.0.0.1:${port}/?token=${token}`;
+  await atomicWrite(sessionFile, `${JSON.stringify({ formatVersion: 1, pid: process.pid, port, startedAt: new Date().toISOString() }, null, 2)}\n`);
   process.stdout.write(`SPACEWRIGHT_CONFIGURATOR_URL=${url}\n`);
   if (!process.argv.includes('--no-open')) execFile('open', [url], () => {});
 });
 
 let lastTopology;
+let candidateTopology;
+let candidateSamples = 0;
+let lastAutomationAt = 0;
+let lastTopologyErrorAt = 0;
+
+async function triggerRuleEvent(event) {
+  const config = await readConfig();
+  if (config.settings?.eventAutomationEnabled !== true) { await activity('info', 'event_ignored', { event, reason: 'automation_disabled' }); return; }
+  const snapshot = await querySnapshot();
+  if (snapshot.unavailable) { await activity('error', 'event_query_unavailable', { event, message: snapshot.message }); return; }
+  const topology = classifyTopology(snapshot.displays.map((display) => ({ ...display, 'is-built-in': display.builtIn, 'is-visible': display.visible })));
+  const matches = matchingRules(config, ruleContext(config, event, snapshot, topology));
+  await activity('info', 'event_evaluated', { event, topology, matches: matches.map((rule) => rule.id) });
+  for (const rule of matches) await executeRule(config, rule);
+}
+
+process.on('SIGUSR1', () => { void triggerRuleEvent('wake').catch((error) => activity('error', 'wake_event_failed', { message: error.message })); });
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
+  server.close(async () => {
+    try { const session = JSON.parse(await readFile(sessionFile, 'utf8')); if (session.pid === process.pid) await unlink(sessionFile); } catch {}
+    process.exit(0);
+  });
+});
+
 setInterval(async () => {
   try {
-    const display = await queryDisplays(); const topology = classifyTopology(display.displays);
+    const snapshot = await querySnapshot();
+    if (snapshot.unavailable) {
+      if (Date.now() - lastTopologyErrorAt >= 60_000) { lastTopologyErrorAt = Date.now(); await activity('error', 'topology_query_unavailable', { message: snapshot.message }); }
+      return;
+    }
+    lastTopologyErrorAt = 0;
+    const topology = classifyTopology(snapshot.displays.map((display) => ({ ...display, 'is-built-in': display.builtIn, 'is-visible': display.visible })));
+    if (topology === 'unknown') return;
     if (lastTopology == null) { lastTopology = topology; return; }
-    if (topology === lastTopology) return;
-    const previous = lastTopology; lastTopology = topology; const config = await readConfig();
+    if (topology === lastTopology) { candidateTopology = null; candidateSamples = 0; return; }
+    if (candidateTopology !== topology) { candidateTopology = topology; candidateSamples = 1; return; }
+    candidateSamples++;
+    const currentConfig = await readConfig();
+    const stableSamples = currentConfig.settings?.topologyStableSamples || 3;
+    if (candidateSamples < stableSamples) return;
+    const previous = lastTopology; lastTopology = topology; const config = currentConfig;
+    candidateTopology = null; candidateSamples = 0;
     await activity('info', 'topology_changed', { previous, topology });
     if (config.settings?.eventAutomationEnabled !== true) return;
+    const cooldownMs = (config.settings?.topologyCooldownSeconds ?? 30) * 1000;
+    if (Date.now() - lastAutomationAt < cooldownMs) { await activity('info', 'topology_automation_suppressed', { previous, topology, reason: 'cooldown' }); return; }
     const event = topology === 'solo' || topology === 'clamshell' ? 'display_disconnected' : previous === 'solo' || previous === 'clamshell' ? 'display_connected' : 'topology_changed';
-    const context = { event, topology, orientation: topology.startsWith('tall') ? 'tall' : 'wide' };
+    const context = ruleContext(config, event, snapshot, topology);
+    lastAutomationAt = Date.now();
     for (const rule of matchingRules(config, context)) await executeRule(config, rule);
   } catch (error) { await activity('error', 'topology_monitor_failed', { message: error.message }); }
 }, 5000).unref();
