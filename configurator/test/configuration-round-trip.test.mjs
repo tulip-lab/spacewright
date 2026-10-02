@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,8 +10,9 @@ import { starterConfig } from '../lib/config-v2.mjs';
 
 const packageRoot = new URL('../..', import.meta.url).pathname;
 const token = 'configuration-round-trip-token';
+const execFileAsync = promisify(execFile);
 
-async function startServer(configRoot, stateRoot) {
+async function startServer(configRoot, stateRoot, extraEnv = {}) {
   const skhdFile = join(stateRoot, 'test.skhdrc');
   const child = spawn(process.execPath, [
     join(packageRoot, 'configurator/server.mjs'),
@@ -21,7 +23,7 @@ async function startServer(configRoot, stateRoot) {
     `--token=${token}`,
     '--port=0',
     '--no-open'
-  ], { stdio: ['ignore', 'pipe', 'pipe'] });
+  ], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...extraEnv } });
 
   const url = await new Promise((resolve, reject) => {
     let output = '';
@@ -59,6 +61,7 @@ test('Configuration GUI round-trips the authoritative config file', { timeout: 6
   const configRoot = join(root, 'config');
   const stateRoot = join(root, 'state');
   const configFile = join(configRoot, 'config.v2.json');
+  const fakeBin = join(root, 'bin');
   const original = starterConfig();
   original.displayRoles.primary.name = 'Authoritative primary display';
   original.apps.runtime_only = { name: 'Runtime Only', match: { appNames: ['Runtime Only'] } };
@@ -68,9 +71,21 @@ test('Configuration GUI round-trips the authoritative config file', { timeout: 6
     { role: 'runtime_helper', app_key: 'runtime_only', required: false }
   ] };
   await mkdir(configRoot, { recursive: true });
+  await mkdir(stateRoot, { recursive: true });
+  await mkdir(fakeBin, { recursive: true });
   await writeJson(configFile, original);
+  await writeJson(join(stateRoot, 'machine.json'), { version: 1, displayBindings: { primary: 'DISPLAY-PRIMARY' } });
+  await writeFile(join(fakeBin, 'yabai'), `#!/bin/sh
+case "$3" in
+  --displays) printf '%s\n' '[{"index":1,"uuid":"DISPLAY-PRIMARY","label":"Built-in","frame":{"x":0,"y":0,"w":1200,"h":900},"is-built-in":true,"has-focus":true,"spaces":[1]}]' ;;
+  --spaces) printf '%s\n' '[{"index":1,"uuid":"SPACE-1","display":1,"label":"coding_wide","type":"float","has-focus":true}]' ;;
+  --windows) printf '%s\n' '[{"id":10,"pid":100,"app":"Code","title":"Project","role":"AXWindow","subrole":"AXStandardWindow","display":1,"space":1,"frame":{"x":400,"y":0,"w":800,"h":900},"can-move":true,"can-resize":true,"is-visible":true},{"id":11,"pid":101,"app":"ChatGPT","title":"Assistant","role":"AXWindow","subrole":"AXStandardWindow","display":1,"space":1,"frame":{"x":0,"y":0,"w":400,"h":900},"can-move":true,"can-resize":true,"is-visible":true}]' ;;
+  *) exit 2 ;;
+esac
+`, { mode: 0o755 });
+  const serverEnv = { PATH: `${fakeBin}:${process.env.PATH}` };
 
-  let service = await startServer(configRoot, stateRoot);
+  let service = await startServer(configRoot, stateRoot, serverEnv);
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   context.after(async () => {
@@ -83,6 +98,28 @@ test('Configuration GUI round-trips the authoritative config file', { timeout: 6
   assert.equal(backendBefore.displayRoles.primary.name, 'Authoritative primary display');
 
   await page.goto(service.url);
+  await page.getByRole('heading', { name: /1 displays · 1 Spaces · 2 windows/ }).waitFor();
+  const wakeDryRun = await execFileAsync(process.execPath, [join(packageRoot, 'configurator/state-cli.mjs'), 'event', 'wake', `--package-root=${packageRoot}`, `--config-root=${configRoot}`, `--state-root=${stateRoot}`, '--dry-run'], { env: { ...process.env, ...serverEnv } });
+  assert.match(wakeDryRun.stdout, /dry_run=event/);
+  await page.getByRole('button', { name: 'Compare workspace' }).click();
+  await page.getByText(/Plan [a-f0-9]+ is/).waitFor();
+  await page.locator('#capture-id').fill('captured_test');
+  await page.locator('#capture-name').fill('Captured Test');
+  await page.getByRole('button', { name: 'Capture into editor' }).click();
+  await page.locator('#workspace-id').waitFor();
+  assert.equal(await page.locator('#workspace-id').inputValue(), 'captured_test');
+  assert.equal(Object.hasOwn(await readJson(configFile).then((value) => value.workspaces), 'captured_test'), false);
+  await page.reload();
+  await page.getByRole('button', { name: /Profiles & rules/ }).click();
+  await page.getByRole('button', { name: 'Add Profile' }).click();
+  await page.locator('[data-profile-display="research"]').selectOption('wide_left');
+  await page.locator('[data-profile-focus="research"]').selectOption('coding');
+  await page.locator('#topology-samples').fill('4');
+  await page.locator('#topology-samples').press('Enter');
+  await page.getByRole('button', { name: 'Dry run' }).click();
+  await page.getByText('Dry run · no desktop changes').waitFor();
+  assert.equal(Object.hasOwn(await readJson(configFile).then((value) => value.profiles || {}), 'research'), false);
+  await page.reload();
   await page.getByRole('button', { name: /Workspaces/ }).click();
   await page.getByRole('button', { name: 'Layout', exact: true }).click();
   await page.getByRole('button', { name: 'Edit freely' }).evaluate((button) => button.click());
@@ -118,7 +155,7 @@ test('Configuration GUI round-trips the authoritative config file', { timeout: 6
   await page.locator('#workspace-id').waitFor();
   assert.equal(await page.locator('#workspace-id').inputValue(), 'coding_renamed');
   await page.reload();
-  await page.getByRole('button', { name: '04 Apps' }).click();
+  await page.getByRole('button', { name: '05 Apps' }).click();
   const runtimeOnly = page.locator('.app-list-row').filter({ hasText: 'Runtime Only' });
   await runtimeOnly.locator('summary').click();
   await runtimeOnly.getByRole('button', { name: 'Delete App' }).click();
@@ -149,7 +186,7 @@ test('Configuration GUI round-trips the authoritative config file', { timeout: 6
   assert.equal(await page.locator('[data-display-name="primary"]').inputValue(), externalValue);
 
   await stopServer(service.child);
-  service = await startServer(configRoot, stateRoot);
+  service = await startServer(configRoot, stateRoot, serverEnv);
   await page.goto(service.url);
   await page.getByRole('button', { name: /Displays/ }).click();
   assert.equal(await page.locator('[data-display-name="primary"]').inputValue(), externalValue);

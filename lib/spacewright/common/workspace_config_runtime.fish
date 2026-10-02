@@ -39,6 +39,8 @@ function __workspace_config_select_window --description "Select one configured w
             | select(($selector.non_empty_title // false) == false or ((.title // "") | length) > 0)
             | select(($selector.title_include // "") == "" or ((.title // "") | contains($selector.title_include)))
             | select(($selector.title_exclude // "") == "" or (((.title // "") | contains($selector.title_exclude)) | not))
+            | select(($selector.role // "") == "" or ((.role // "") == $selector.role))
+            | select(($selector.subrole // "") == "" or ((.subrole // "") == $selector.subrole))
             | select(.id as $id | ($used | index($id)) == null)
             | .id
         ) // empty'

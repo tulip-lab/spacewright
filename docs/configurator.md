@@ -101,7 +101,9 @@ deleted. Restore itself creates a recovery snapshot first.
 
 Optional `profiles`, `rules`, and `settings` sections extend the v2 contract.
 A profile selects a `solo`, `wide`, or `tall` mode and can narrow activation to
-named workspaces while carrying display, focus, and SpaceWright settings.
+named workspaces. Closed optional fields select a `solo`, `wide_left`, or
+`tall_left` display profile, a final workspace to focus, and whether one bounded
+reconciliation retry is allowed.
 Rules are closed declarative records: supported events are display connect,
 display disconnect, topology change, wake, and manual activation. Conditions
 may match app, workspace, display, layout, orientation, or one of these
@@ -109,32 +111,37 @@ topologies: `solo`, `wide_left`, `wide_right`, `tall_left`, `tall_right`,
 `dual_external`, and `clamshell`. Actions can activate only a declared profile
 or workspace; arbitrary shell is not accepted.
 
-The Profiles & rules page exposes a dry-run plan. It compiles the exact
-workspace sequence but does not launch applications, create Spaces, focus a
-window, or change a display. Existing workspace selectors remain responsible
-for title matching and multi-window disambiguation when a plan is later run by
-the Fish runtime; required/optional windows preserve the existing bounded
-startup and retry behavior.
+The Current state and Profiles & rules pages expose a dry-run plan from a fresh
+display, Space, and window snapshot. They show blockers, changes, warnings, and
+the closed runner sequence without launching applications, creating Spaces,
+focusing a window, or changing a display. The Current state page can also
+capture one live Space into an unsaved canvas-layout draft.
 
 The Run & tasks page is the browser execution control surface. Modes,
 profiles, and individual workspace variants can be previewed, explicitly
 confirmed, started, monitored, and cancelled. The server maps each request to
-closed `spacewright run` arguments; request data is never interpreted as a
-shell command. Execution output is streamed into the in-memory task record and
-the durable activity log records task start and completion.
+closed `spacewright apply` arguments; request data is never interpreted as a
+shell command. Runs are serialized, process-group cancellation is supported,
+and each apply writes a durable state journal. Execution output is streamed
+into the current server session's task record and the rotating durable activity
+log records task start and completion.
 
 Topology rules can be evaluated without mutation from the browser. Setting
 `settings.eventAutomationEnabled` to `true` opts into five-second topology
-monitoring while the configurator service is running. A topology transition
-then selects enabled rules using their declared event and conditions and runs
-the associated profile or workspace. Automation is off by default and stops
-when the configurator process exits.
+monitoring while the configurator service is running. A transition must remain
+stable for `topologyStableSamples` observations and pass the
+`topologyCooldownSeconds` cooldown before it can run a matching rule. Query
+failure is reported as unknown rather than solo. `spacewright event wake`
+delivers the wake event to the running service. Automation is off by default
+and stops when the configurator process exits.
 
 ## Diagnostics and portable configuration
 
-Diagnostics reports yabai availability, the accessibility/query path,
-scripting-addition readiness, detected displays and topology, the authenticated
-local backend, schema validity, and configured workspaces. The report can be
+Diagnostics reports yabai availability, the accessibility/query path, detected
+displays and topology, display binding health, duplicate labels, compiled
+runtime freshness, build identity, the authenticated local backend, schema
+validity, and configured workspaces. Scripting-addition readiness is explicitly
+shown as not verified because a read-only query cannot prove mutation support. The report can be
 copied or exported, and the self-test performs validation and compilation
 without desktop mutation. Successful saves, restores, and self-tests appear in
 the local activity log under the SpaceWright state directory.

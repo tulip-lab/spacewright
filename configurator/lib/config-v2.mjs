@@ -194,6 +194,7 @@ export function validateV2(config) {
   if (config.profiles != null && !object(config.profiles)) errors.push('profiles must be an object');
   if (config.rules != null && !Array.isArray(config.rules)) errors.push('rules must be an array');
   if (config.settings != null && !object(config.settings)) errors.push('settings must be an object');
+  rejectUnknown(config.settings, new Set(['eventAutomationEnabled', 'topologyStableSamples', 'topologyCooldownSeconds']), 'settings', errors);
 
   for (const [profileId, profile] of Object.entries(config.profiles || {})) {
     const path = `profiles.${profileId}`;
@@ -202,6 +203,14 @@ export function validateV2(config) {
     if (!profile?.name?.trim()) errors.push(`${path}.name is required`);
     if (!MODES.includes(profile?.mode)) errors.push(`${path}.mode must be solo, wide, or tall`);
     if (profile.workspaces != null && (!Array.isArray(profile.workspaces) || profile.workspaces.some((item) => !config.workspaces[item]))) errors.push(`${path}.workspaces contains an unknown workspace`);
+    if (Array.isArray(profile.workspaces) && MODES.includes(profile.mode) && profile.workspaces.some((item) => config.workspaces[item] && !config.workspaces[item].variants?.[profile.mode])) errors.push(`${path}.workspaces contains a workspace without a ${profile.mode} variant`);
+    rejectUnknown(profile.displayConfig, new Set(['profile']), `${path}.displayConfig`, errors);
+    rejectUnknown(profile.focusBehaviour, new Set(['workspace']), `${path}.focusBehaviour`, errors);
+    rejectUnknown(profile.settings, new Set(['reconcile']), `${path}.settings`, errors);
+    if (profile.displayConfig && !['solo', 'wide_left', 'tall_left'].includes(profile.displayConfig.profile)) errors.push(`${path}.displayConfig.profile is unsupported`);
+    if (profile.focusBehaviour?.workspace && !config.workspaces[profile.focusBehaviour.workspace]) errors.push(`${path}.focusBehaviour.workspace references an unknown workspace`);
+    if (profile.focusBehaviour?.workspace && MODES.includes(profile.mode) && !config.workspaces[profile.focusBehaviour.workspace]?.variants?.[profile.mode]) errors.push(`${path}.focusBehaviour.workspace has no ${profile.mode} variant`);
+    if (profile.focusBehaviour?.workspace && profile.workspaces?.length && !profile.workspaces.includes(profile.focusBehaviour.workspace)) errors.push(`${path}.focusBehaviour.workspace must be included in profile.workspaces`);
   }
   const ruleIds = new Set();
   for (const [index, rule] of (config.rules || []).entries()) {
@@ -214,8 +223,13 @@ export function validateV2(config) {
     else ruleIds.add(rule.id);
     if (typeof rule?.enabled !== 'boolean') errors.push(`${path}.enabled must be boolean`);
     if (!['display_connected', 'display_disconnected', 'topology_changed', 'wake', 'manual'].includes(rule?.when?.event)) errors.push(`${path}.when.event is unsupported`);
+    if (rule?.when?.app && !config.apps[rule.when.app]) errors.push(`${path}.when.app references an unknown app`);
+    if (rule?.when?.workspace && !config.workspaces[rule.when.workspace]) errors.push(`${path}.when.workspace references an unknown workspace`);
+    if (rule?.when?.display && !config.displayRoles[rule.when.display]) errors.push(`${path}.when.display references an unknown display role`);
     if (rule?.then?.activateProfile && !config.profiles?.[rule.then.activateProfile]) errors.push(`${path}.then.activateProfile references an unknown profile`);
     if (rule?.then?.activateWorkspace && !config.workspaces[rule.then.activateWorkspace]) errors.push(`${path}.then.activateWorkspace references an unknown workspace`);
+    if (rule?.then?.activateWorkspace && !rule.then.mode) errors.push(`${path}.then.mode is required when activating a workspace`);
+    if (rule?.then?.activateWorkspace && rule.then.mode && !config.workspaces[rule.then.activateWorkspace]?.variants?.[rule.then.mode]) errors.push(`${path}.then.activateWorkspace has no ${rule.then.mode} variant`);
     if (rule?.then?.mode && !MODES.includes(rule.then.mode)) errors.push(`${path}.then.mode is unsupported`);
     if (!rule?.then?.activateProfile && !rule?.then?.activateWorkspace) errors.push(`${path}.then must activate a profile or workspace`);
   }
@@ -223,12 +237,13 @@ export function validateV2(config) {
   const appAliases = new Map();
   for (const [appId, app] of Object.entries(config.apps)) {
     rejectUnknown(app, new Set(['name', 'match']), `apps.${appId}`, errors);
-    rejectUnknown(app?.match, new Set(['appNames']), `apps.${appId}.match`, errors);
+    rejectUnknown(app?.match, new Set(['appNames', 'bundleIds']), `apps.${appId}.match`, errors);
     if (!id(appId)) errors.push(`apps.${appId} has an invalid id`);
     if (!app?.name?.trim()) errors.push(`apps.${appId}.name is required`);
     if (!Array.isArray(app?.match?.appNames) || !app.match.appNames.length || app.match.appNames.some((name) => typeof name !== 'string' || !name.trim())) {
       errors.push(`apps.${appId}.match.appNames must contain at least one name`);
     }
+    if (app?.match?.bundleIds != null && (!Array.isArray(app.match.bundleIds) || app.match.bundleIds.some((bundleId) => typeof bundleId !== 'string' || !bundleId.trim()))) errors.push(`apps.${appId}.match.bundleIds must be an array of non-empty strings`);
     for (const name of app?.match?.appNames || []) {
       const normalized = name.toLocaleLowerCase();
       if (appAliases.has(normalized) && appAliases.get(normalized) !== appId) warnings.push(`apps.${appId}.match.appNames shares “${name}” with apps.${appAliases.get(normalized)}`);
@@ -254,12 +269,13 @@ export function validateV2(config) {
     const roles = new Set(Object.keys(workspace?.windows || {}));
     for (const [role, window] of Object.entries(workspace?.windows || {})) {
       rejectUnknown(window, new Set(['app', 'required', 'selector']), `${path}.windows.${role}`, errors);
-      rejectUnknown(window?.selector, new Set(['movable', 'visible', 'non_empty_title', 'title_include', 'title_exclude']), `${path}.windows.${role}.selector`, errors);
+      rejectUnknown(window?.selector, new Set(['movable', 'visible', 'non_empty_title', 'title_include', 'title_exclude', 'role', 'subrole']), `${path}.windows.${role}.selector`, errors);
       if (!id(role)) errors.push(`${path}.windows.${role} has an invalid id`);
       if (!config.apps[window.app]) errors.push(`${path}.windows.${role}.app references unknown app "${window.app}"`);
       if (typeof window.required !== 'boolean') errors.push(`${path}.windows.${role}.required must be boolean`);
       for (const flag of ['movable', 'visible', 'non_empty_title']) if (window.selector?.[flag] != null && typeof window.selector[flag] !== 'boolean') errors.push(`${path}.windows.${role}.selector.${flag} must be boolean`);
       for (const field of ['title_include', 'title_exclude']) if (window.selector?.[field] != null && typeof window.selector[field] !== 'string') errors.push(`${path}.windows.${role}.selector.${field} must be a string`);
+      for (const field of ['role', 'subrole']) if (window.selector?.[field] != null && (typeof window.selector[field] !== 'string' || !window.selector[field].trim())) errors.push(`${path}.windows.${role}.selector.${field} must be a non-empty string`);
     }
     if (!object(workspace?.variants)) errors.push(`${path}.variants must be an object`);
     for (const [mode, variant] of Object.entries(workspace?.variants || {})) {
@@ -336,7 +352,7 @@ export function validateV2(config) {
   return { valid: errors.length === 0, errors, warnings };
 }
 
-function compileLayout(node, rect = { x: 0, y: 0, w: 120, h: 120 }, actions = []) {
+export function compileLayout(node, rect = { x: 0, y: 0, w: 120, h: 120 }, actions = []) {
   if (node.type === 'window') {
     actions.push({ role: node.role, grid: `120:120:${rect.x}:${rect.y}:${rect.w}:${rect.h}` });
     return actions;
@@ -363,7 +379,7 @@ export function compileV2(config) {
   const validation = validateV2(config);
   if (!validation.valid) throw new Error(validation.errors.join('\n'));
   const runtime = { version: 1, source_version: 2, apps: {}, display_roles: {}, layouts: {}, workspaces: {}, modes: {}, profiles: config.profiles || {}, rules: (config.rules || []).filter((rule) => rule.enabled), settings: config.settings || {} };
-  for (const [appId, app] of Object.entries(config.apps)) runtime.apps[appId] = { names: app.match.appNames };
+  for (const [appId, app] of Object.entries(config.apps)) runtime.apps[appId] = { names: app.match.appNames, ...(app.match.bundleIds?.length ? { bundle_ids: app.match.bundleIds } : {}) };
   for (const mode of MODES) {
     for (const display of config.modes[mode]?.displays || []) {
       const runtimeRole = display.role === 'primary' ? 'primary' : `${display.role}__${mode}`;

@@ -126,7 +126,10 @@ windows are reported as warnings.
 
 Window selectors use one read-only yabai snapshot before any mutation. They
 support `movable`, `visible`, `non_empty_title`, `title_include`, and
-`title_exclude`. One window cannot satisfy two roles in the same workspace.
+`title_exclude`, plus AX `role` and `subrole`. Application definitions may add
+bundle identifiers as a stronger identity signal; app-name aliases remain the
+portable fallback because standard yabai snapshots do not expose bundle IDs.
+One window cannot satisfy two roles in the same workspace.
 
 The stable user command is `spacewright run <workspace-id>
 <solo|wide|tall>`. Imported `variant.command` values preserve historical Fish
@@ -188,12 +191,18 @@ spacewright config-compile
 spacewright config-status
 spacewright config-diff
 spacewright config-explain coding wide
+spacewright inspect
+spacewright plan coding wide
+spacewright verify coding wide
+spacewright capture captured_coding wide
 ```
 
 `config-status` reports source and runtime freshness as JSON. `config-diff`
 compiles a temporary candidate and compares it with the saved runtime without
 changing either file. `config-explain` resolves a logical workspace and mode
-to its normalized read-only execution plan.
+to its normalized read-only execution plan. `inspect`, live `plan`, `verify`, and
+`capture` are read-only state-engine commands; see
+[State discovery and reconciliation](state-reconciliation.md).
 
 Observation contracts are generated from the same effective configuration.
 `--all` selects fixed workspaces plus the solo/wide/tall variants appropriate

@@ -20,9 +20,9 @@ test('starter config validates and compiles all modes', () => {
 
 test('profiles and event rules validate and compile as declarative automation', () => {
   const config = starterConfig();
-  config.profiles = { research: { name: 'Research', mode: 'wide', workspaces: ['coding'], displayConfig: { topology: 'wide_left' }, focusBehaviour: { followsMouse: false }, settings: { gap: 8 } } };
+  config.profiles = { research: { name: 'Research', mode: 'wide', workspaces: ['coding'], displayConfig: { profile: 'wide_left' }, focusBehaviour: { workspace: 'coding' }, settings: { reconcile: true } } };
   config.rules = [{ id: 'external_research', enabled: true, when: { event: 'display_connected', topology: 'wide_left' }, then: { activateProfile: 'research' } }];
-  config.settings = { dryRunByDefault: true };
+  config.settings = { eventAutomationEnabled: false, topologyStableSamples: 3, topologyCooldownSeconds: 30 };
   assert.equal(validateV2(config).valid, true);
   const runtime = compileV2(config);
   assert.equal(runtime.profiles.research.mode, 'wide');

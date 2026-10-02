@@ -7,9 +7,10 @@ Configurable macOS workspace orchestration for yabai.
 > complete.
 
 The portable v2 user module includes semantic validation, a digest-verified
-compiled runtime, complete generic window selectors, guarded
-import/export/backup flows, read-only discovery, and generated shortcut
-fragments. Personal configuration remains outside this repository.
+compiled runtime, live state discovery, desired-state comparison, executable
+plans, post-apply verification, bounded reconciliation, guarded
+import/export/backup flows, and generated shortcut fragments. Personal
+configuration remains outside this repository.
 
 SpaceWright turns named work contexts into repeatable macOS Space and window
 layouts. It is intended to preserve stable commands such as `work_wide` or
@@ -35,6 +36,27 @@ it does not modify a Mackup checkout or the user's complete skhd configuration.
 
 See [Web Configurator](docs/configurator.md).
 
+## Inspect, plan, apply, verify
+
+The state-management path is explicit and uses fresh yabai snapshots:
+
+```fish
+spacewright inspect
+spacewright plan gtd_chat wide
+spacewright apply gtd_chat wide
+spacewright verify gtd_chat wide
+```
+
+`inspect`, `plan`, `verify`, and `capture` never change the desktop. `apply`
+refuses unavailable discovery, invalid configuration, missing display bindings,
+ambiguous required windows, and missing required windows before invoking an
+existing workspace runner. Each non-noop run is locked, journaled under the
+state root, verified afterward, and retried at most once unless reconciliation
+is disabled. `spacewright recover RUN_ID` is an explicit best-effort restore of
+only the matched windows recorded by that run.
+
+See [State discovery and reconciliation](docs/state-reconciliation.md).
+
 ## Design Principles
 
 - Safe by default: invalid configuration and missing required windows fail
@@ -58,6 +80,7 @@ depend on its directory layout or read its source files directly.
 See:
 
 - [Architecture](docs/architecture.md)
+- [State discovery and reconciliation](docs/state-reconciliation.md)
 - [Configuration](docs/configuration.md)
 - [Installation and upgrades](docs/installation.md)
 - [Release process](docs/releasing.md)

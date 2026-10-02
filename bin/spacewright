@@ -61,12 +61,104 @@ switch "$command_name"
             echo 'usage: spacewright config-explain <workspace> <solo|wide|tall>' >&2
             exit 2
         end
-        set -l runtime_id (spacewright_config_effective | jq -r --arg workspace "$argv[1]" --arg mode "$argv[2]" 'first(.workspaces | to_entries[] | select(.value.ui.workspace_id == $workspace and .value.ui.mode == $mode) | .key) // empty')
+        set -l config_file "$SPACEWRIGHT_CONFIG_ROOT/config.v2.json"
+        set -l runtime_id
+        if test -r "$config_file"
+            set runtime_id (jq -r --arg workspace "$argv[1]" --arg mode "$argv[2]" '.workspaces[$workspace].variants[$mode] as $variant | if $variant then ($variant.command // ("spacewright_" + $workspace + "_" + $mode)) else empty end' "$config_file")
+        else
+            set runtime_id (spacewright_config_effective | jq -r --arg workspace "$argv[1]" --arg mode "$argv[2]" 'first(.workspaces | to_entries[] | select(.value.ui.workspace_id == $workspace and .value.ui.mode == $mode) | .key) // empty')
+        end
         if test -z "$runtime_id"
             echo "spacewright: no configured variant for $argv[1] $argv[2]" >&2
             exit 1
         end
         workspace_config_plan "$runtime_id"
+    case inspect
+        command node "$package_root/configurator/state-cli.mjs" inspect \
+            "--package-root=$package_root" \
+            "--config-root=$SPACEWRIGHT_CONFIG_ROOT" \
+            "--state-root=$SPACEWRIGHT_STATE_ROOT" \
+            $argv
+    case plan
+        command node "$package_root/configurator/state-cli.mjs" plan \
+            "--package-root=$package_root" \
+            "--config-root=$SPACEWRIGHT_CONFIG_ROOT" \
+            "--state-root=$SPACEWRIGHT_STATE_ROOT" \
+            $argv
+    case verify
+        command node "$package_root/configurator/state-cli.mjs" verify \
+            "--package-root=$package_root" \
+            "--config-root=$SPACEWRIGHT_CONFIG_ROOT" \
+            "--state-root=$SPACEWRIGHT_STATE_ROOT" \
+            $argv
+    case capture
+        command node "$package_root/configurator/state-cli.mjs" capture \
+            "--package-root=$package_root" \
+            "--config-root=$SPACEWRIGHT_CONFIG_ROOT" \
+            "--state-root=$SPACEWRIGHT_STATE_ROOT" \
+            $argv
+    case apply
+        command node "$package_root/configurator/state-cli.mjs" apply \
+            "--package-root=$package_root" \
+            "--config-root=$SPACEWRIGHT_CONFIG_ROOT" \
+            "--state-root=$SPACEWRIGHT_STATE_ROOT" \
+            $argv
+    case event
+        command node "$package_root/configurator/state-cli.mjs" event \
+            "--package-root=$package_root" \
+            "--config-root=$SPACEWRIGHT_CONFIG_ROOT" \
+            "--state-root=$SPACEWRIGHT_STATE_ROOT" \
+            $argv
+    case recover
+        command node "$package_root/configurator/state-cli.mjs" recover \
+            "--package-root=$package_root" \
+            "--config-root=$SPACEWRIGHT_CONFIG_ROOT" \
+            "--state-root=$SPACEWRIGHT_STATE_ROOT" \
+            $argv
+    case display
+        set -l profile $argv[1]
+        if not contains -- "$profile" solo wide_left tall_left
+            echo 'usage: spacewright display <solo|wide_left|tall_left> [--dry-run]' >&2
+            exit 2
+        end
+        if contains -- --dry-run $argv
+            printf 'dry_run=display_apply_%s\n' "$profile"
+            exit 0
+        end
+        switch "$profile"
+            case solo
+                display_apply_solo
+            case wide_left
+                display_apply_wide_left
+            case tall_left
+                display_apply_tall_left
+        end
+    case focus
+        if test (count $argv) -lt 2
+            echo 'usage: spacewright focus <workspace> <solo|wide|tall> [--dry-run]' >&2
+            exit 2
+        end
+        set -l workspace_id $argv[1]
+        set -l mode $argv[2]
+        if not contains -- "$mode" solo wide tall
+            echo 'spacewright: focus mode must be solo, wide, or tall' >&2
+            exit 2
+        end
+        set -l config_file "$SPACEWRIGHT_CONFIG_ROOT/config.v2.json"
+        if not test -r "$config_file"
+            echo 'spacewright: focus requires config.v2.json' >&2
+            exit 1
+        end
+        set -l label (jq -r --arg workspace "$workspace_id" --arg mode "$mode" '.workspaces[$workspace] as $w | $w.variants[$mode] as $v | if ($w and $v) then ($v.spaceLabel // ($w.spaceLabel + "_" + $mode)) else empty end' "$config_file")
+        if test -z "$label"
+            echo "spacewright: no configured variant for $workspace_id $mode" >&2
+            exit 1
+        end
+        if contains -- --dry-run $argv
+            printf 'dry_run=focus_space\nlabel=%s\n' "$label"
+            exit 0
+        end
+        command yabai -m space --focus "$label"
     case config-migrate-v1
         set -l config_file $argv[1]
         test -n "$config_file"; or set config_file (spacewright_config_user_file)
@@ -84,7 +176,16 @@ switch "$command_name"
             set -l workspace_id $argv[1]
             set -l mode $argv[2]
             set -e argv[1..2]
-            workspace_run_configured "$workspace_id"_"$mode" $argv
+            set -l runtime_id "$workspace_id"_"$mode"
+            set -l config_file "$SPACEWRIGHT_CONFIG_ROOT/config.v2.json"
+            if test -r "$config_file"
+                set runtime_id (jq -r --arg workspace "$workspace_id" --arg mode "$mode" '.workspaces[$workspace].variants[$mode] as $variant | if $variant then ($variant.command // ("spacewright_" + $workspace + "_" + $mode)) else empty end' "$config_file")
+            end
+            if test -z "$runtime_id"
+                echo "spacewright: no configured variant for $workspace_id $mode" >&2
+                exit 1
+            end
+            workspace_run_configured "$runtime_id" $argv
         else
             workspace_run_configured $argv
         end
@@ -107,6 +208,15 @@ switch "$command_name"
             '  config-status           report source and compiled runtime freshness' \
             '  config-diff             compare compiled runtime with current v2 source' \
             '  config-explain ID MODE  explain one compiled workspace plan' \
+            '  inspect [--json]         discover current displays, Spaces, and windows' \
+            '  plan TARGET [MODE]       compare current and desired state without mutation' \
+            '  verify TARGET [MODE]     verify whether a target is converged' \
+            '  capture [ID] [MODE]      print an unsaved configuration draft from a Space' \
+            '  event wake [--dry-run]   deliver a wake event to the running configurator' \
+            '  apply TARGET [MODE]      execute a live plan; --dry-run only previews' \
+            '  recover RUN_ID           restore matched windows; --dry-run only previews' \
+            '  display PROFILE [--dry-run] apply a closed display profile' \
+            '  focus ID MODE [--dry-run] focus a configured workspace Space' \
             '  config-migrate-v1 [file] print a v2 migration without writing' \
             '  configure               open the local Web configurator' \
             '  run <workspace>         run a compiled workspace entry' \
