@@ -114,6 +114,7 @@ export function buildDesiredState(config, runtime, target = {}) {
     }));
     return {
       runtimeId,
+      runner: variant.runtime?.runner || 'generic_layout',
       workspaceId,
       name: workspace.name,
       mode: resolved.mode,
@@ -195,24 +196,89 @@ function drift(code, severity, workspace, details = {}) {
   return { code, severity, workspaceId: workspace.workspaceId, label: workspace.label, ...details };
 }
 
+function matchingWindows(snapshot, desiredWindow) {
+  return snapshot.windows.map((window) => ({ window, result: selectorResult(window, desiredWindow) }));
+}
+
+function workspaceIsActive(snapshot, workspace) {
+  if (workspace.runner !== 'office_document') return true;
+  const primary = workspace.windows.find((window) => window.role === 'primary');
+  return Boolean(primary && matchingWindows(snapshot, primary).some(({ result }) => result.matches));
+}
+
+function finalWindowOwners(workspaces) {
+  const owners = new Map();
+  for (const workspace of [...workspaces].reverse()) {
+    for (const desiredWindow of workspace.windows) {
+      if (!owners.has(desiredWindow.appKey)) owners.set(desiredWindow.appKey, workspace.workspaceId);
+    }
+  }
+  return owners;
+}
+
+function inferUnlabeledSpace(snapshot, workspace, expectedDisplay, owners, reservedSpaceUuids) {
+  if (!expectedDisplay) return null;
+  const candidateIndexes = new Set();
+  for (const desiredWindow of workspace.windows) {
+    if (owners.get(desiredWindow.appKey) !== workspace.workspaceId) continue;
+    for (const { window, result } of matchingWindows(snapshot, desiredWindow)) {
+      if (result.matches) candidateIndexes.add(window.space);
+    }
+  }
+  const candidates = snapshot.spaces.filter((space) => candidateIndexes.has(space.index)
+    && space.display === expectedDisplay.index
+    && !space.label
+    && !reservedSpaceUuids.has(space.uuid));
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
 export function compareState(snapshot, desired, machine = {}) {
   const drifts = [];
   const matches = [];
   const bindings = machine.displayBindings || {};
   const usedWindowIds = new Set();
   if (snapshot.unavailable) drifts.push({ code: 'snapshot_unavailable', severity: 'blocker', message: snapshot.message || 'live state is unavailable' });
-  for (const workspace of desired.workspaces) {
+  const activeWorkspaces = desired.workspaces.filter((workspace) => {
+    const active = workspaceIsActive(snapshot, workspace);
+    if (!active) drifts.push(drift('workspace_inactive', 'warning', workspace, { reason: 'primary_window_missing' }));
+    return active;
+  });
+  const owners = finalWindowOwners(activeWorkspaces);
+  const reservedSpaceUuids = new Set();
+  const resolvedSpaces = new Map();
+  for (const workspace of activeWorkspaces) {
     const expectedUuid = bindings[workspace.displayRole] || null;
     const expectedDisplay = expectedUuid ? snapshot.displays.find((display) => display.uuid === expectedUuid) : null;
     if (!expectedUuid) drifts.push(drift('display_binding_missing', 'blocker', workspace, { displayRole: workspace.displayRole }));
     else if (!expectedDisplay) drifts.push(drift('display_disconnected', 'blocker', workspace, { displayRole: workspace.displayRole, displayUuid: expectedUuid }));
     const labeledSpaces = snapshot.spaces.filter((space) => space.label === workspace.label);
-    if (!labeledSpaces.length) drifts.push(drift('space_missing', 'change', workspace, { displayRole: workspace.displayRole }));
     if (labeledSpaces.length > 1) drifts.push(drift('space_label_duplicate', 'blocker', workspace, { spaces: labeledSpaces.map((space) => space.uuid) }));
-    const targetSpace = labeledSpaces[0] || null;
+    let targetSpace = labeledSpaces[0] || null;
+    if (!targetSpace) {
+      targetSpace = inferUnlabeledSpace(snapshot, workspace, expectedDisplay, owners, reservedSpaceUuids);
+      if (targetSpace) drifts.push(drift('space_label_missing', 'change', workspace, { displayRole: workspace.displayRole, spaceUuid: targetSpace.uuid, spaceIndex: targetSpace.index }));
+      else drifts.push(drift('space_missing', 'change', workspace, { displayRole: workspace.displayRole }));
+    }
+    if (targetSpace) {
+      reservedSpaceUuids.add(targetSpace.uuid);
+      resolvedSpaces.set(workspace.workspaceId, targetSpace);
+    }
     if (targetSpace && expectedDisplay && targetSpace.display !== expectedDisplay.index) drifts.push(drift('space_on_wrong_display', 'change', workspace, { spaceUuid: targetSpace.uuid, actualDisplay: targetSpace.display, expectedDisplay: expectedDisplay.index }));
     for (const desiredWindow of workspace.windows) {
-      const candidates = snapshot.windows.map((window) => ({ window, result: selectorResult(window, desiredWindow) }));
+      const candidates = matchingWindows(snapshot, desiredWindow);
+      const owner = owners.get(desiredWindow.appKey);
+      if (owner !== workspace.workspaceId) {
+        matches.push({
+          workspaceId: workspace.workspaceId,
+          role: desiredWindow.role,
+          required: desiredWindow.required,
+          selectedWindowId: null,
+          candidates: candidates.filter(({ result }) => result.matches).map(({ window }) => window.id),
+          rejected: [],
+          supersededByWorkspaceId: owner
+        });
+        continue;
+      }
       const eligible = candidates.filter(({ window, result }) => result.matches && !usedWindowIds.has(window.id));
       const preferred = targetSpace ? eligible.filter(({ window }) => window.space === targetSpace.index) : [];
       const selected = (preferred[0] || eligible[0])?.window || null;
@@ -229,11 +295,27 @@ export function compareState(snapshot, desired, machine = {}) {
         continue;
       }
       usedWindowIds.add(selected.id);
-      if (eligible.length > 1 && preferred.length !== 1) drifts.push(drift('window_match_ambiguous', desiredWindow.required ? 'blocker' : 'warning', workspace, { role: desiredWindow.role, candidateWindowIds: eligible.map(({ window }) => window.id), selectedWindowId: selected.id }));
+      const ambiguous = eligible.length > 1 && preferred.length !== 1;
+      if (ambiguous) drifts.push(drift('window_match_ambiguous', desiredWindow.required ? 'blocker' : 'warning', workspace, { role: desiredWindow.role, candidateWindowIds: eligible.map(({ window }) => window.id), selectedWindowId: selected.id }));
       if (targetSpace && selected.space !== targetSpace.index) drifts.push(drift('window_on_wrong_space', 'change', workspace, { role: desiredWindow.role, windowId: selected.id, actualSpace: selected.space, expectedSpaceUuid: targetSpace.uuid }));
       const layout = workspace.layout.find((item) => item.role === desiredWindow.role);
       const geometry = geometryMatches(selected, expectedDisplay || snapshot.displays.find((display) => display.index === selected.display), layout);
-      if (geometry.comparable && !geometry.matches) drifts.push(drift('window_geometry_mismatch', 'change', workspace, { role: desiredWindow.role, windowId: selected.id, grid: layout.grid, geometry }));
+      // A singular role cannot describe the adaptive multi-window layouts used
+      // by runners such as GTD Support.  Preserve the ambiguity warning, but do
+      // not turn one arbitrarily selected candidate into false geometry drift.
+      if (!ambiguous && geometry.comparable && !geometry.matches) drifts.push(drift('window_geometry_mismatch', 'change', workspace, { role: desiredWindow.role, windowId: selected.id, grid: layout.grid, geometry }));
+    }
+  }
+  if (desired.target.kind !== 'workspace') {
+    for (const displayRole of new Set(activeWorkspaces.map((workspace) => workspace.displayRole))) {
+      const expectedDisplay = snapshot.displays.find((display) => display.uuid === bindings[displayRole]);
+      if (!expectedDisplay) continue;
+      const lane = activeWorkspaces.filter((workspace) => workspace.displayRole === displayRole);
+      const expected = lane.filter((workspace) => resolvedSpaces.has(workspace.workspaceId)).map((workspace) => workspace.workspaceId);
+      const actual = lane.filter((workspace) => resolvedSpaces.has(workspace.workspaceId))
+        .sort((a, b) => resolvedSpaces.get(a.workspaceId).index - resolvedSpaces.get(b.workspaceId).index)
+        .map((workspace) => workspace.workspaceId);
+      if (JSON.stringify(actual) !== JSON.stringify(expected)) drifts.push({ code: 'space_order_mismatch', severity: 'change', displayRole, expected, actual });
     }
   }
   const counts = drifts.reduce((result, item) => ({ ...result, [item.severity]: (result[item.severity] || 0) + 1 }), { blocker: 0, change: 0, warning: 0 });
@@ -254,11 +336,12 @@ export function buildExecutionPlan(snapshot, desired, comparison, options = {}) 
   for (const workspace of desired.workspaces) {
     const workspaceDrifts = comparison.drifts.filter((item) => item.workspaceId === workspace.workspaceId);
     if (workspaceDrifts.some((item) => item.code === 'space_missing')) actions.push({ type: 'ensure_space', workspaceId: workspace.workspaceId, label: workspace.label, displayRole: workspace.displayRole });
+    for (const item of workspaceDrifts.filter((entry) => entry.code === 'space_label_missing')) actions.push({ type: 'recover_space_label', workspaceId: workspace.workspaceId, label: workspace.label, spaceUuid: item.spaceUuid, spaceIndex: item.spaceIndex });
     if (workspaceDrifts.some((item) => item.code === 'space_on_wrong_display')) actions.push({ type: 'move_space', workspaceId: workspace.workspaceId, label: workspace.label, displayRole: workspace.displayRole });
     for (const item of workspaceDrifts.filter((entry) => entry.code === 'window_on_wrong_space')) actions.push({ type: 'move_window', workspaceId: workspace.workspaceId, role: item.role, windowId: item.windowId, targetLabel: workspace.label });
     for (const item of workspaceDrifts.filter((entry) => entry.code === 'window_geometry_mismatch')) actions.push({ type: 'resize_window', workspaceId: workspace.workspaceId, role: item.role, windowId: item.windowId, grid: item.grid });
   }
-  if (desired.target.kind !== 'workspace') actions.push({ type: 'order_spaces', mode: desired.target.mode });
+  if (desired.target.kind !== 'workspace' && (actions.some((action) => ['ensure_space', 'recover_space_label', 'move_space'].includes(action.type)) || comparison.drifts.some((item) => item.code === 'space_order_mismatch'))) actions.push({ type: 'order_spaces', mode: desired.target.mode });
   if (actions.length) actions.push({ type: 'verify', target: clone(desired.target) });
   const blockers = comparison.drifts.filter((item) => item.severity === 'blocker');
   const planCore = {

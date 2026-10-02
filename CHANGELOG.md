@@ -17,6 +17,14 @@ configuration and installation contracts may still change before 1.0.
 - Package the Configurator's production Node dependency in installed releases
   and verify that the installed server starts; make `spacewright version`
   return a successful status.
+- Reconcile aggregate modes using last-applicable shared-window ownership,
+  inactive Office document workspaces, adaptive multi-window warnings, and
+  explicit per-display Space ordering.
+- Recover uniquely identifiable unlabeled Spaces after a yabai restart instead
+  of planning duplicate Space creation.
+- Keep finalization independent of optional Word, PowerPoint, and Input Source
+  Pro registry entries so minimal v2 configurations do not fail after an
+  otherwise successful workspace layout.
 
 ## 0.2.0-alpha.11 — 2026-09-18
 

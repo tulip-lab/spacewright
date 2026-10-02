@@ -42,6 +42,25 @@ role/subrole. Standard yabai snapshots do not expose bundle IDs, so portable
 application-name matching remains the fallback unless a richer discovery
 source supplies a bundle ID.
 
+For aggregate modes, workspace order also defines final ownership of shared
+applications: the last active workspace that declares an app owns its window.
+Earlier declarations remain visible in diagnostics as superseded matches, but
+do not produce contradictory movement or missing-window drift. Office document
+workspaces are inactive when their primary Word or PowerPoint window is absent;
+an inactive workspace does not require an empty Space. Adaptive runners that
+lay out several matching windows under one role report ambiguity as a warning
+without comparing one arbitrary window to a singular geometry rule.
+
+Space ordering is compared explicitly per display lane. A converged aggregate
+plan is a true no-op; ordering is applied only when the discovered order is
+wrong or Space creation/movement requires a final reorder.
+
+When yabai has restarted and labels are gone, comparison can recover a Space
+identity from its uniquely matching owned windows and expected display. The
+plan reports `recover_space_label` instead of creating a duplicate Space. If
+the evidence points to zero or several candidate Spaces, discovery remains
+conservative and leaves normal creation/recovery to the bounded runner.
+
 ## Execution, journals, and recovery
 
 `spacewright apply --dry-run` follows the same discovery and planning path but

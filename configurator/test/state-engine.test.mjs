@@ -105,3 +105,116 @@ test('AX role selectors reject a mismatched window while bundle ids fall back wh
   assert.ok(comparison.drifts.some((item) => item.code === 'required_window_missing'));
   assert.ok(comparison.matches.find((item) => item.role === 'editor').rejected.some((item) => item.reasons.includes('role')));
 });
+
+test('aggregate comparison assigns shared apps to the last active workspace', () => {
+  const snapshot = normalizeSnapshot({
+    capturedAt: '2026-10-02T00:00:00.000Z',
+    displays: [{ index: 1, uuid: 'DISPLAY-PRIMARY', frame: { x: 0, y: 0, w: 1200, h: 900 }, spaces: [1, 2] }],
+    spaces: [
+      { index: 1, uuid: 'SPACE-REVIEW', display: 1, label: 'review_wide', type: 'float' },
+      { index: 2, uuid: 'SPACE-CODING', display: 1, label: 'coding_wide', type: 'float' }
+    ],
+    windows: [
+      { id: 10, app: 'Finder', display: 1, space: 1, frame: { x: 0, y: 0, w: 1200, h: 900 }, 'can-move': true },
+      { id: 11, app: 'Code', display: 1, space: 2, frame: { x: 600, y: 0, w: 600, h: 900 }, 'can-move': true },
+      { id: 12, app: 'ChatGPT', display: 1, space: 2, frame: { x: 0, y: 0, w: 600, h: 900 }, 'can-move': true }
+    ]
+  });
+  const desiredState = {
+    desiredStateId: 'SHARED', target: { kind: 'mode', id: 'wide', mode: 'wide' },
+    orchestration: { displayProfile: null, focusWorkspace: null, reconcile: true },
+    workspaces: [
+      { workspaceId: 'review', label: 'review_wide', displayRole: 'primary', runner: 'gtd_review', layout: [{ role: 'finder', grid: '1:1:0:0:1:1' }, { role: 'assistant', grid: '1:1:0:0:1:1' }], windows: [
+        { role: 'finder', appKey: 'finder', appNames: ['Finder'], bundleIds: [], required: false, selector: {} },
+        { role: 'assistant', appKey: 'chatgpt', appNames: ['ChatGPT'], bundleIds: [], required: false, selector: {} }
+      ] },
+      { workspaceId: 'coding', label: 'coding_wide', displayRole: 'primary', runner: 'generic_layout', layout: [{ role: 'editor', grid: '1:2:1:0:1:1' }, { role: 'assistant', grid: '1:2:0:0:1:1' }], windows: [
+        { role: 'editor', appKey: 'code', appNames: ['Code'], bundleIds: [], required: true, selector: {} },
+        { role: 'assistant', appKey: 'chatgpt', appNames: ['ChatGPT'], bundleIds: [], required: false, selector: {} }
+      ] }
+    ]
+  };
+  const comparison = compareState(snapshot, desiredState, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
+  assert.equal(comparison.converged, true);
+  assert.equal(comparison.matches.find((item) => item.workspaceId === 'review' && item.role === 'assistant').supersededByWorkspaceId, 'coding');
+  assert.equal(comparison.matches.find((item) => item.workspaceId === 'coding' && item.role === 'assistant').selectedWindowId, 12);
+  assert.equal(buildExecutionPlan(snapshot, desiredState, comparison).actions.length, 0);
+});
+
+test('office workspaces without their primary document stay inactive', () => {
+  const snapshot = fixture();
+  const desiredState = {
+    desiredStateId: 'OFFICE-IDLE', target: { kind: 'mode', id: 'wide', mode: 'wide' },
+    workspaces: [{
+      workspaceId: 'slides', label: 'slides_wide', displayRole: 'primary', runner: 'office_document',
+      layout: [{ role: 'primary', grid: '1:2:1:0:1:1' }, { role: 'helper', grid: '1:2:0:0:1:1' }],
+      windows: [
+        { role: 'primary', appKey: 'powerpoint', appNames: ['Microsoft PowerPoint'], bundleIds: [], required: false, selector: {} },
+        { role: 'helper', appKey: 'chatgpt', appNames: ['ChatGPT'], bundleIds: [], required: false, selector: {} }
+      ]
+    }]
+  };
+  const comparison = compareState(snapshot, desiredState, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
+  assert.equal(comparison.converged, true);
+  assert.ok(comparison.drifts.some((item) => item.code === 'workspace_inactive' && item.severity === 'warning'));
+  assert.ok(!comparison.drifts.some((item) => item.code === 'space_missing'));
+});
+
+test('ambiguous optional multi-window roles warn without false geometry drift', () => {
+  const snapshot = normalizeSnapshot({
+    displays: [{ index: 1, uuid: 'DISPLAY-PRIMARY', frame: { x: 0, y: 0, w: 1200, h: 900 }, spaces: [1] }],
+    spaces: [{ index: 1, uuid: 'SPACE-SUPPORT', display: 1, label: 'support_wide', type: 'float' }],
+    windows: [
+      { id: 20, app: 'Dia', display: 1, space: 1, frame: { x: 0, y: 0, w: 600, h: 450 }, 'can-move': true },
+      { id: 21, app: 'Dia', display: 1, space: 1, frame: { x: 600, y: 0, w: 600, h: 900 }, 'can-move': true },
+      { id: 22, app: 'Dia', display: 1, space: 1, frame: { x: 0, y: 450, w: 600, h: 450 }, 'can-move': true }
+    ]
+  });
+  const desiredState = {
+    desiredStateId: 'DIA', target: { kind: 'workspace', id: 'support', mode: 'wide' },
+    workspaces: [{ workspaceId: 'support', label: 'support_wide', displayRole: 'primary', runner: 'gtd_support', layout: [{ role: 'dia', grid: '1:2:0:0:1:1' }], windows: [
+      { role: 'dia', appKey: 'dia', appNames: ['Dia'], bundleIds: [], required: false, selector: {} }
+    ] }]
+  };
+  const comparison = compareState(snapshot, desiredState, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
+  assert.equal(comparison.converged, true);
+  assert.ok(comparison.drifts.some((item) => item.code === 'window_match_ambiguous'));
+  assert.ok(!comparison.drifts.some((item) => item.code === 'window_geometry_mismatch'));
+});
+
+test('aggregate comparison reports actual Space order drift', () => {
+  const snapshot = normalizeSnapshot({
+    displays: [{ index: 1, uuid: 'DISPLAY-PRIMARY', frame: { x: 0, y: 0, w: 1200, h: 900 }, spaces: [1, 2] }],
+    spaces: [
+      { index: 1, uuid: 'SPACE-B', display: 1, label: 'b_wide', type: 'float' },
+      { index: 2, uuid: 'SPACE-A', display: 1, label: 'a_wide', type: 'float' }
+    ], windows: []
+  });
+  const desiredState = {
+    desiredStateId: 'ORDER', target: { kind: 'mode', id: 'wide', mode: 'wide' },
+    orchestration: { displayProfile: null, focusWorkspace: null, reconcile: true },
+    workspaces: [
+      { workspaceId: 'a', label: 'a_wide', displayRole: 'primary', runner: 'generic_layout', layout: [], windows: [] },
+      { workspaceId: 'b', label: 'b_wide', displayRole: 'primary', runner: 'generic_layout', layout: [], windows: [] }
+    ]
+  };
+  const comparison = compareState(snapshot, desiredState, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
+  assert.ok(comparison.drifts.some((item) => item.code === 'space_order_mismatch'));
+  assert.deepEqual(buildExecutionPlan(snapshot, desiredState, comparison).actions, [
+    { type: 'order_spaces', mode: 'wide' },
+    { type: 'verify', target: { kind: 'mode', id: 'wide', mode: 'wide' } }
+  ]);
+});
+
+test('comparison recovers a uniquely identifiable unlabeled Space', () => {
+  const snapshot = normalizeSnapshot({
+    displays: [{ index: 1, uuid: 'DISPLAY-PRIMARY', frame: { x: 0, y: 0, w: 1200, h: 900 }, spaces: [1] }],
+    spaces: [{ index: 1, uuid: 'SPACE-UNLABELED', display: 1, label: '', type: 'float' }],
+    windows: [{ id: 10, app: 'Code', display: 1, space: 1, frame: { x: 0, y: 0, w: 1200, h: 900 }, 'can-move': true }]
+  });
+  const { desired: state } = desired();
+  const comparison = compareState(snapshot, state, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
+  assert.ok(comparison.drifts.some((item) => item.code === 'space_label_missing' && item.spaceUuid === 'SPACE-UNLABELED'));
+  assert.ok(!comparison.drifts.some((item) => item.code === 'space_missing'));
+  assert.ok(buildExecutionPlan(snapshot, state, comparison).actions.some((action) => action.type === 'recover_space_label' && action.spaceIndex === 1));
+});

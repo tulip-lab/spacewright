@@ -5,7 +5,16 @@ function workspace_space_occupant_windows_json --description "Return non-sticky 
         set windows_json '[]'
     end
 
-    set -l nonoccupying_ghost_apps (workspace_app_names_json word powerpoint input_source_pro)
+    # These helpers are optional product integrations, not configuration
+    # requirements.  A portable v2 configuration may omit any of them, so do
+    # not route this lookup through the strict workspace_app_names helper.
+    set -l nonoccupying_ghost_apps (spacewright_config_effective | ws_jq -c '
+        [
+            .apps.word.names[]?,
+            .apps.powerpoint.names[]?,
+            .apps.input_source_pro.names[]?
+        ] | unique
+    ')
     or return 1
 
     echo $windows_json | ws_jq -c --argjson ghost_apps "$nonoccupying_ghost_apps" '
