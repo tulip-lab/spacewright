@@ -23,6 +23,8 @@ test -L "$bin_root/spacewright"
 or exit 4
 test ("$bin_root/spacewright" version) = (string trim < "$package_root/VERSION")
 or exit 5
+"$bin_root/spacewright" version >/dev/null
+or exit 19
 for configurator_file in \
         server.mjs \
         cli.mjs \
@@ -33,12 +35,35 @@ for configurator_file in \
     test -f "$installed_release_root/configurator/$configurator_file"
     or exit 15
 end
+test -f "$installed_release_root/node_modules/yaml/package.json"
+or exit 20
 node --check "$installed_release_root/configurator/server.mjs"
 or exit 16
 node --check "$installed_release_root/configurator/public/app.js"
 or exit 18
 node "$installed_release_root/configurator/cli.mjs" starter | jq -e '.version == 2 and (.modes | keys == ["solo", "tall", "wide"])' >/dev/null
 or exit 17
+
+set -l server_log "$test_root/configurator.log"
+env HOME="$test_root" node "$installed_release_root/configurator/server.mjs" \
+    "--package-root=$installed_release_root" \
+    "--config-root=$test_root/server-config" \
+    "--state-root=$test_root/server-state" \
+    --port=0 --no-open >"$server_log" 2>&1 &
+set -l server_pid $last_pid
+for attempt in (seq 1 30)
+    if grep -q 'SPACEWRIGHT_CONFIGURATOR_URL=' "$server_log"
+        break
+    end
+    sleep 0.1
+end
+grep -q 'SPACEWRIGHT_CONFIGURATOR_URL=' "$server_log"
+or begin
+    command kill "$server_pid" 2>/dev/null
+    exit 21
+end
+command kill "$server_pid"
+wait "$server_pid"
 
 env -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT -u SPACEWRIGHT_CONFIG_ROOT \
     HOME="$test_root" XDG_CONFIG_HOME="$test_root/xdg" fish --no-config -c \

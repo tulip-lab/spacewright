@@ -14,6 +14,9 @@ configuration and installation contracts may still change before 1.0.
   diagnostics, and richer bundle/AX window selectors.
 - Serialize and cancel Web executions safely, rotate activity logs, and add
   state-engine and real-browser regression coverage.
+- Package the Configurator's production Node dependency in installed releases
+  and verify that the installed server starts; make `spacewright version`
+  return a successful status.
 
 ## 0.2.0-alpha.11 — 2026-09-18
 

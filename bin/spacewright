@@ -14,7 +14,7 @@ end
 
 switch "$command_name"
     case version --version -v
-        string trim < "$package_root/VERSION"
+        command cat "$package_root/VERSION"
     case config-check
         workspace_config_check
     case config-plan
