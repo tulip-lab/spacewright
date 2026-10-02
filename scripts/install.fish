@@ -42,7 +42,7 @@ if set -q _flag_dry_run
     exit 0
 end
 
-for required in lib config schemas conf.d bin configurator VERSION LICENSE README.md
+for required in lib config schemas conf.d bin configurator package.json package-lock.json VERSION LICENSE README.md
     if not test -e "$source_root/$required"
         echo "spacewright install: source is missing $required" >&2
         exit 1
@@ -63,13 +63,33 @@ else
     command mkdir -p "$staging_root"
     or exit 1
 
-    for item in lib config schemas conf.d bin configurator VERSION LICENSE README.md CHANGELOG.md SECURITY.md
+    for item in lib config schemas conf.d bin configurator package.json package-lock.json VERSION LICENSE README.md CHANGELOG.md SECURITY.md
         if test -e "$source_root/$item"
             command cp -R "$source_root/$item" "$staging_root/"
             or begin
                 command rm -rf "$staging_root"
                 exit 1
             end
+        end
+    end
+
+    if test -d "$source_root/node_modules/yaml"
+        command mkdir -p "$staging_root/node_modules"
+        command cp -R "$source_root/node_modules/yaml" "$staging_root/node_modules/"
+        or begin
+            command rm -rf "$staging_root"
+            exit 1
+        end
+    else
+        if not command -q npm
+            echo 'spacewright install: npm is required when production dependencies are not present in the source tree' >&2
+            command rm -rf "$staging_root"
+            exit 1
+        end
+        command npm ci --omit=dev --ignore-scripts --prefix "$staging_root"
+        or begin
+            command rm -rf "$staging_root"
+            exit 1
         end
     end
 
