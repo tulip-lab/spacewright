@@ -77,3 +77,15 @@ test('generic layouts retain role alignment when a middle optional window is abs
   `);
   assert.equal(output, 'grids=11:A,33:C');
 });
+
+test('finalization tolerates omitted optional ghost-app definitions', () => {
+  const output = fish(`
+    source lib/spacewright/common/workspace_finalize.fish
+    function ws_jq; command jq $argv; end
+    function spacewright_config_effective
+      echo '{"apps":{"code":{"names":["Code"]}}}'
+    end
+    echo '[{"id":11,"app":"Code","title":"Project","role":"AXWindow","subrole":"AXStandardWindow","can-move":true,"is-sticky":false}]' | workspace_space_occupant_windows_json
+  `);
+  assert.deepEqual(JSON.parse(output).map((window) => window.id), [11]);
+});
