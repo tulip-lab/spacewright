@@ -404,9 +404,28 @@ async function api(request, response, url) {
     const duplicateLabels = [...new Set(snapshot.spaces.map((space) => space.label).filter(Boolean).filter((label, index, labels) => labels.indexOf(label) !== index))];
     const missingBindings = Object.entries(machine.displayBindings || {}).filter(([, uuid]) => !snapshot.displays.some((display) => display.uuid === uuid)).map(([role]) => role);
     const expectedRuntime = validation.valid ? compiledDocument(config).generated.source_sha256 : null;
-    const savedRuntime = existsSync(runtimeFile) ? JSON.parse(await readFile(runtimeFile, 'utf8')).generated?.source_sha256 : null;
+    let savedRuntime = null; let runtimeReadError = null;
+    if (existsSync(runtimeFile)) {
+      try { savedRuntime = JSON.parse(await readFile(runtimeFile, 'utf8')).generated?.source_sha256 || null; }
+      catch (error) { runtimeReadError = error.message; }
+    }
     const packageVersion = (await readFile(join(packageRoot, 'VERSION'), 'utf8')).trim();
     const packagedRelease = basename(resolve(packageRoot, '..')) === 'releases';
+    const inferredMode = topology === 'solo' ? 'solo' : topology.startsWith('tall') ? 'tall' : topology.startsWith('wide') ? 'wide' : null;
+    let reconciliation = null;
+    if (validation.valid && !snapshot.unavailable && inferredMode && config.modes[inferredMode]) {
+      const desired = buildDesiredState(config, compileV2(config), { kind: 'mode', id: inferredMode, mode: inferredMode });
+      reconciliation = compareState(snapshot, desired, machine);
+    }
+    const runsRoot = join(stateRoot, 'runs');
+    const runFiles = existsSync(runsRoot) ? (await readdir(runsRoot)).filter((name) => /^[0-9]+-[a-f0-9]{8}\.json$/.test(name)).sort().reverse().slice(0, 10) : [];
+    const recentRuns = [];
+    for (const name of runFiles) {
+      try {
+        const run = JSON.parse(await readFile(join(runsRoot, name), 'utf8'));
+        recentRuns.push({ runId: run.runId, status: run.status, target: run.target, createdAt: run.createdAt, finishedAt: run.finishedAt || null, exitCode: run.exitCode ?? null, planId: run.plan?.planId || null });
+      } catch {}
+    }
     const checks = [
       { id: 'yabai', ok: yabai.ok, detail: yabai.detail },
       { id: 'accessibility_query', ok: !snapshot.unavailable, detail: snapshot.unavailable ? snapshot.message : `${snapshot.windows.length} windows queried` },
@@ -416,11 +435,13 @@ async function api(request, response, url) {
       { id: 'space_labels', ok: duplicateLabels.length === 0, detail: duplicateLabels.length ? `duplicates: ${duplicateLabels.join(', ')}` : `${snapshot.spaces.filter((space) => space.label).length} unique labels` },
       { id: 'backend', ok: true, detail: 'loopback authenticated writes' },
       { id: 'schema', ok: validation.valid, detail: validation.valid ? 'valid' : validation.errors.join('; ') },
-      { id: 'compiled_runtime', ok: expectedRuntime === savedRuntime, detail: expectedRuntime === savedRuntime ? 'source digest is current' : 'compiled runtime is missing or stale' },
+      { id: 'compiled_runtime', ok: !runtimeReadError && expectedRuntime === savedRuntime, detail: runtimeReadError ? `compiled runtime is unreadable: ${runtimeReadError}` : expectedRuntime === savedRuntime ? 'source digest is current' : 'compiled runtime is missing or stale' },
       { id: 'workspace', ok: Object.keys(config.workspaces || {}).length > 0, detail: `${Object.keys(config.workspaces || {}).length} configured` },
       { id: 'build_identity', ok: packagedRelease ? basename(packageRoot) === packageVersion : true, detail: packagedRelease ? `directory ${basename(packageRoot)}; VERSION ${packageVersion}` : `development checkout; VERSION ${packageVersion}` }
     ];
-    return json(response, 200, { generatedAt: new Date().toISOString(), topology, snapshotId: snapshot.snapshotId, checks });
+    if (reconciliation) checks.push({ id: 'current_mode_state', ok: reconciliation.converged, detail: `${inferredMode}: ${reconciliation.counts.blocker} blockers, ${reconciliation.counts.change} changes, ${reconciliation.counts.warning} warnings` });
+    checks.push({ id: 'execution_history', ok: recentRuns.length ? !['failed', 'stale', 'partial'].includes(recentRuns[0].status) : null, detail: recentRuns.length ? `${recentRuns.length} recent; latest ${recentRuns[0].status}` : 'no recorded apply runs' });
+    return json(response, 200, { generatedAt: new Date().toISOString(), topology, snapshotId: snapshot.snapshotId, inferredMode, reconciliation, recentRuns, checks });
   }
   if (url.pathname === '/api/self-test' && request.method === 'POST') { const config = await readConfig(); const validation = validateV2(config); const compiled = validation.valid ? compileV2(config) : null; await activity(validation.valid ? 'info' : 'error', 'self_test', { valid: validation.valid }); return json(response, validation.valid ? 200 : 422, { valid: validation.valid, errors: validation.errors, compiled: Boolean(compiled), mutates: false }); }
   if (url.pathname === '/api/activity' && request.method === 'GET') { const lines = existsSync(activityFile) ? (await readFile(activityFile, 'utf8')).trim().split('\n').filter(Boolean).slice(-200).reverse().map(JSON.parse) : []; return json(response, 200, { entries: lines }); }

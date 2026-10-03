@@ -86,6 +86,19 @@ fish "$package_root/scripts/install.fish" \
     --bin-root "$bin_root" >/dev/null
 or exit 9
 
+set -l development_version 0.0.0-dev.install-test
+fish "$package_root/scripts/install.fish" \
+    --source-root "$package_root" \
+    --prefix "$install_root" \
+    --fish-config-root "$fish_root" \
+    --bin-root "$bin_root" \
+    --version "$development_version" >/dev/null
+or exit 22
+test ("$bin_root/spacewright" version) = "$development_version"
+or exit 23
+test (path basename (readlink "$install_root/current")) = "$development_version"
+or exit 24
+
 set -l user_config_root "$test_root/user-config/spacewright"
 mkdir -p "$user_config_root"
 printf '%s\n' '{"version":1}' > "$user_config_root/config.json"

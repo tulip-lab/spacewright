@@ -43,13 +43,17 @@ application-name matching remains the fallback unless a richer discovery
 source supplies a bundle ID.
 
 For aggregate modes, workspace order also defines final ownership of shared
-applications: the last active workspace that declares an app owns its window.
+applications by default: the last active workspace that declares an app owns
+its window. A role may instead set `ownership: "independent"` when selectors
+assign distinct windows from one application to different workspaces.
 Earlier declarations remain visible in diagnostics as superseded matches, but
 do not produce contradictory movement or missing-window drift. Office document
-workspaces are inactive when their primary Word or PowerPoint window is absent;
-an inactive workspace does not require an empty Space. Adaptive runners that
-lay out several matching windows under one role report ambiguity as a warning
-without comparing one arbitrary window to a singular geometry rule.
+workspaces migrated from the Office adapters declare
+`activation: { "type": "windowPresent", "role": "primary" }`; an inactive
+workspace does not require an empty Space. Other variants default to always
+active. Window roles default to `cardinality: "one"`; adaptive roles such as
+GTD Support's Dia role use `"many"`, select every eligible window, and verify
+Space membership without inventing a singular geometry comparison.
 
 Space ordering is compared explicitly per display lane. A converged aggregate
 plan is a true no-op; ordering is applied only when the discovered order is
@@ -64,11 +68,20 @@ conservative and leaves normal creation/recovery to the bounded runner.
 ## Execution, journals, and recovery
 
 `spacewright apply --dry-run` follows the same discovery and planning path but
-performs no mutation. Without that flag, `spacewright apply` recomputes the plan immediately before mutation. A single
-execution lock prevents concurrent Web, automation, and CLI runs. The existing
-Fish workspace runners remain the mutation backend, preserving their startup
-and recovery adapters. Output, the initial plan, before/after snapshots, and
-verification are written to:
+performs no mutation. Without that flag, `spacewright apply` acquires the
+execution lock, computes an immutable plan, and performs a second preflight
+discovery. If the snapshot, configuration digest, or plan changed, the run is
+journaled as `stale` and no mutation is attempted. The lock serializes CLI,
+Web, and automation mutations. Lock recovery is conservative: a newly created
+ownerless lock receives a grace period, live owners are checked against the
+SpaceWright state CLI, and stale locks are quarantined atomically before they
+are removed.
+
+Only workspaces with change drift are invoked. Aggregate plans add Space
+ordering only when required and retain closed postprocessors at their anchors.
+The existing Fish runners remain the mutation backend. Output, the plan,
+before/after snapshots, exact per-command lifecycle, and verification are
+written to:
 
 ```text
 $SPACEWRIGHT_STATE_ROOT/runs/<run-id>.json
@@ -108,6 +121,12 @@ Profiles may declare only closed orchestration fields:
   "settings": { "reconcile": true }
 }
 ```
+
+A requested display profile is an explicit orchestration action, even when the
+workspace comparison is otherwise converged. The requested workspace is
+focused after display and workspace actions so later mutation cannot steal the
+final focus. A focus-only mismatch is represented as ordinary change drift and
+therefore remains visible in plans and verification.
 
 Topological automation uses stable sampling and a cooldown. The optional root
 settings are `eventAutomationEnabled`, `topologyStableSamples` (1–12), and

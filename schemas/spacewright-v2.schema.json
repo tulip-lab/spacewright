@@ -113,6 +113,8 @@
       "properties": {
         "app": { "$ref": "#/$defs/id" },
         "required": { "type": "boolean" },
+        "ownership": { "enum": ["lastApplicable", "independent"] },
+        "cardinality": { "enum": ["one", "many"] },
         "selector": { "$ref": "#/$defs/selector" }
       },
       "additionalProperties": false
@@ -191,6 +193,8 @@
               "role": { "$ref": "#/$defs/id" },
               "app_key": { "$ref": "#/$defs/id" },
               "required": { "type": "boolean" },
+              "ownership": { "enum": ["lastApplicable", "independent"] },
+              "cardinality": { "enum": ["one", "many"] },
               "selector": { "$ref": "#/$defs/selector" }
             },
             "additionalProperties": false
@@ -206,6 +210,25 @@
         "layout": { "$ref": "#/$defs/layout" },
         "command": { "$ref": "#/$defs/id" },
         "spaceLabel": { "type": "string", "minLength": 1 },
+        "activation": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["type"],
+              "properties": { "type": { "const": "always" } },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": ["type", "role"],
+              "properties": {
+                "type": { "const": "windowPresent" },
+                "role": { "$ref": "#/$defs/id" }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
         "runtime": { "$ref": "#/$defs/runtimeCompatibility" }
       },
       "additionalProperties": false

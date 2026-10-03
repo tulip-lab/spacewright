@@ -95,6 +95,34 @@ test('profile plans carry closed display, workspace, focus, and recovery command
   assert.deepEqual(plan.recovery.windowIds, [10, 11]);
 });
 
+test('profile orchestration still applies display and final focus when layout is converged', () => {
+  const config = starterConfig();
+  config.profiles = { focused: { name: 'Focused', mode: 'solo', workspaces: ['coding'], displayConfig: { profile: 'solo' }, focusBehaviour: { workspace: 'coding' }, settings: { reconcile: true } } };
+  const snapshot = fixture();
+  const state = buildDesiredState(config, compileV2(config), { kind: 'profile', id: 'focused' });
+  const comparison = compareState(snapshot, state, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
+  assert.equal(comparison.converged, true);
+  const plan = buildExecutionPlan(snapshot, state, comparison, { createdAt: '2026-10-02T00:00:00.000Z' });
+  assert.deepEqual(plan.actions, [
+    { type: 'apply_display_profile', profile: 'solo' },
+    { type: 'focus_workspace', workspaceId: 'coding', mode: 'solo' },
+    { type: 'verify', target: { kind: 'profile', id: 'focused', mode: 'solo' } }
+  ]);
+  assert.deepEqual(plan.runnerCommands, [['display', 'solo'], ['focus', 'coding', 'solo']]);
+});
+
+test('profile focus mismatch creates a focus-only plan', () => {
+  const config = starterConfig();
+  config.profiles = { focused: { name: 'Focused', mode: 'solo', workspaces: ['coding'], focusBehaviour: { workspace: 'coding' } } };
+  const snapshot = fixture();
+  snapshot.spaces[0].focused = false;
+  const state = buildDesiredState(config, compileV2(config), { kind: 'profile', id: 'focused' });
+  const comparison = compareState(snapshot, state, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
+  assert.ok(comparison.drifts.some((item) => item.code === 'workspace_focus_mismatch'));
+  const plan = buildExecutionPlan(snapshot, state, comparison, { createdAt: '2026-10-02T00:00:00.000Z' });
+  assert.deepEqual(plan.runnerCommands, [['focus', 'coding', 'solo']]);
+});
+
 test('AX role selectors reject a mismatched window while bundle ids fall back when unavailable', () => {
   const config = starterConfig();
   config.apps.code.match.bundleIds = ['com.microsoft.VSCode'];
@@ -160,7 +188,7 @@ test('office workspaces without their primary document stay inactive', () => {
   assert.ok(!comparison.drifts.some((item) => item.code === 'space_missing'));
 });
 
-test('ambiguous optional multi-window roles warn without false geometry drift', () => {
+test('declarative multi-window roles select every match without false ambiguity or geometry drift', () => {
   const snapshot = normalizeSnapshot({
     displays: [{ index: 1, uuid: 'DISPLAY-PRIMARY', frame: { x: 0, y: 0, w: 1200, h: 900 }, spaces: [1] }],
     spaces: [{ index: 1, uuid: 'SPACE-SUPPORT', display: 1, label: 'support_wide', type: 'float' }],
@@ -178,8 +206,38 @@ test('ambiguous optional multi-window roles warn without false geometry drift', 
   };
   const comparison = compareState(snapshot, desiredState, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
   assert.equal(comparison.converged, true);
-  assert.ok(comparison.drifts.some((item) => item.code === 'window_match_ambiguous'));
+  assert.deepEqual(comparison.matches[0].selectedWindowIds, [20, 21, 22]);
+  assert.ok(!comparison.drifts.some((item) => item.code === 'window_match_ambiguous'));
   assert.ok(!comparison.drifts.some((item) => item.code === 'window_geometry_mismatch'));
+  const single = structuredClone(snapshot);
+  single.windows = [single.windows[0]];
+  const singleComparison = compareState(single, desiredState, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
+  assert.ok(!singleComparison.drifts.some((item) => item.code === 'window_geometry_mismatch'));
+});
+
+test('independent ownership lets distinct selectors assign one app to different workspaces', () => {
+  const snapshot = normalizeSnapshot({
+    displays: [{ index: 1, uuid: 'DISPLAY-PRIMARY', frame: { x: 0, y: 0, w: 1200, h: 900 }, spaces: [1, 2] }],
+    spaces: [
+      { index: 1, uuid: 'SPACE-A', display: 1, label: 'a_wide', type: 'float' },
+      { index: 2, uuid: 'SPACE-B', display: 1, label: 'b_wide', type: 'float' }
+    ],
+    windows: [
+      { id: 31, app: 'Browser', title: 'Alpha', display: 1, space: 1, frame: { x: 0, y: 0, w: 1200, h: 900 }, 'can-move': true },
+      { id: 32, app: 'Browser', title: 'Beta', display: 1, space: 2, frame: { x: 0, y: 0, w: 1200, h: 900 }, 'can-move': true }
+    ]
+  });
+  const window = (role, title) => ({ role, appKey: 'browser', appNames: ['Browser'], bundleIds: [], required: true, ownership: 'independent', cardinality: 'one', selector: { title_include: title } });
+  const desiredState = {
+    desiredStateId: 'INDEPENDENT', target: { kind: 'mode', id: 'wide', mode: 'wide' },
+    workspaces: [
+      { workspaceId: 'a', label: 'a_wide', displayRole: 'primary', layout: [{ role: 'browser_a', grid: '1:1:0:0:1:1' }], windows: [window('browser_a', 'Alpha')] },
+      { workspaceId: 'b', label: 'b_wide', displayRole: 'primary', layout: [{ role: 'browser_b', grid: '1:1:0:0:1:1' }], windows: [window('browser_b', 'Beta')] }
+    ]
+  };
+  const comparison = compareState(snapshot, desiredState, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
+  assert.equal(comparison.converged, true);
+  assert.deepEqual(comparison.matches.map((item) => item.selectedWindowId), [31, 32]);
 });
 
 test('aggregate comparison reports actual Space order drift', () => {
@@ -204,6 +262,18 @@ test('aggregate comparison reports actual Space order drift', () => {
     { type: 'order_spaces', mode: 'wide' },
     { type: 'verify', target: { kind: 'mode', id: 'wide', mode: 'wide' } }
   ]);
+  assert.deepEqual(buildExecutionPlan(snapshot, desiredState, comparison).runnerCommands, [['order', 'wide']]);
+});
+
+test('aggregate execution runs only workspaces with change drift', () => {
+  const snapshot = fixture({ helperX: 50 });
+  const { config, runtime } = desired();
+  config.modes.solo.postprocessors = [{ name: 'gtd_ai_expand_hermes_when_alone', afterCommand: 'spacewright_coding_solo' }];
+  const state = buildDesiredState(config, runtime, { kind: 'mode', id: 'solo', mode: 'solo' });
+  const comparison = compareState(snapshot, state, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
+  const plan = buildExecutionPlan(snapshot, state, comparison, { createdAt: '2026-10-02T00:00:00.000Z' });
+  assert.deepEqual(plan.runnerCommands, [['run', 'coding', 'solo'], ['postprocess', 'gtd_ai_expand_hermes_when_alone']]);
+  assert.ok(!plan.runnerCommands.some((command) => command[1] === 'work_solo'));
 });
 
 test('comparison recovers a uniquely identifiable unlabeled Space', () => {

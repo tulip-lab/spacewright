@@ -110,26 +110,37 @@ export function buildDesiredState(config, runtime, target = {}) {
     const variant = workspace.variants[resolved.mode];
     const runtimeId = variant.command || `spacewright_${workspaceId}_${resolved.mode}`;
     const configuredWindows = variant.runtime?.windows || Object.entries(workspace.windows).map(([role, window]) => ({
-      role, app_key: window.app, required: window.required, ...(window.selector ? { selector: window.selector } : {})
+      role, app_key: window.app, required: window.required,
+      ...(window.ownership ? { ownership: window.ownership } : {}),
+      ...(window.cardinality ? { cardinality: window.cardinality } : {}),
+      ...(window.selector ? { selector: window.selector } : {})
     }));
+    const runner = variant.runtime?.runner || 'generic_layout';
     return {
       runtimeId,
-      runner: variant.runtime?.runner || 'generic_layout',
+      runner,
       workspaceId,
       name: workspace.name,
       mode: resolved.mode,
       label: variant.spaceLabel || `${workspace.spaceLabel}_${resolved.mode}`,
       displayRole: placement.get(workspaceId),
       runtimeDisplayRole: variant.runtime?.displayRole || placement.get(workspaceId),
+      activation: clone(variant.activation || (runner === 'office_document' ? { type: 'windowPresent', role: 'primary' } : { type: 'always' })),
       layout: compileLayout(variant.layout),
-      windows: configuredWindows.map((window) => ({
-        role: window.role,
-        appKey: window.app_key,
-        appNames: clone(config.apps?.[window.app_key]?.match?.appNames || []),
-        bundleIds: clone(config.apps?.[window.app_key]?.match?.bundleIds || []),
-        required: Boolean(window.required),
-        selector: clone(window.selector || {})
-      }))
+      windows: configuredWindows.map((window) => {
+        const portable = workspace.windows[window.role] || {};
+        const appKey = window.app_key || portable.app;
+        return {
+          role: window.role,
+          appKey,
+          appNames: clone(config.apps?.[appKey]?.match?.appNames || []),
+          bundleIds: clone(config.apps?.[appKey]?.match?.bundleIds || []),
+          required: Boolean(window.required),
+          ownership: window.ownership || portable.ownership || 'lastApplicable',
+          cardinality: window.cardinality || portable.cardinality || (runner === 'gtd_support' && window.role === 'dia' ? 'many' : 'one'),
+          selector: clone(window.selector || portable.selector || {})
+        };
+      })
     };
   });
   const desired = {
@@ -137,6 +148,7 @@ export function buildDesiredState(config, runtime, target = {}) {
     target: { kind: resolved.kind, id: resolved.id, mode: resolved.mode },
     workspaces,
     cleanup: clone(runtime.modes?.[`work_${resolved.mode}`]?.cleanup || []),
+    postprocessors: clone(config.modes?.[resolved.mode]?.postprocessors || []),
     orchestration: resolved.profile ? {
       displayProfile: resolved.profile.displayConfig?.profile || null,
       focusWorkspace: resolved.profile.focusBehaviour?.workspace || null,
@@ -201,15 +213,18 @@ function matchingWindows(snapshot, desiredWindow) {
 }
 
 function workspaceIsActive(snapshot, workspace) {
-  if (workspace.runner !== 'office_document') return true;
-  const primary = workspace.windows.find((window) => window.role === 'primary');
-  return Boolean(primary && matchingWindows(snapshot, primary).some(({ result }) => result.matches));
+  const activation = workspace.activation || (workspace.runner === 'office_document' ? { type: 'windowPresent', role: 'primary' } : { type: 'always' });
+  if (activation.type === 'always') return true;
+  if (activation.type !== 'windowPresent') return false;
+  const watched = workspace.windows.find((window) => window.role === activation.role);
+  return Boolean(watched && matchingWindows(snapshot, watched).some(({ result }) => result.matches));
 }
 
 function finalWindowOwners(workspaces) {
   const owners = new Map();
   for (const workspace of [...workspaces].reverse()) {
     for (const desiredWindow of workspace.windows) {
+      if ((desiredWindow.ownership || 'lastApplicable') === 'independent') continue;
       if (!owners.has(desiredWindow.appKey)) owners.set(desiredWindow.appKey, workspace.workspaceId);
     }
   }
@@ -220,7 +235,7 @@ function inferUnlabeledSpace(snapshot, workspace, expectedDisplay, owners, reser
   if (!expectedDisplay) return null;
   const candidateIndexes = new Set();
   for (const desiredWindow of workspace.windows) {
-    if (owners.get(desiredWindow.appKey) !== workspace.workspaceId) continue;
+    if ((desiredWindow.ownership || 'lastApplicable') !== 'independent' && owners.get(desiredWindow.appKey) !== workspace.workspaceId) continue;
     for (const { window, result } of matchingWindows(snapshot, desiredWindow)) {
       if (result.matches) candidateIndexes.add(window.space);
     }
@@ -266,7 +281,9 @@ export function compareState(snapshot, desired, machine = {}) {
     if (targetSpace && expectedDisplay && targetSpace.display !== expectedDisplay.index) drifts.push(drift('space_on_wrong_display', 'change', workspace, { spaceUuid: targetSpace.uuid, actualDisplay: targetSpace.display, expectedDisplay: expectedDisplay.index }));
     for (const desiredWindow of workspace.windows) {
       const candidates = matchingWindows(snapshot, desiredWindow);
-      const owner = owners.get(desiredWindow.appKey);
+      const ownership = desiredWindow.ownership || 'lastApplicable';
+      const cardinality = desiredWindow.cardinality || (workspace.runner === 'gtd_support' && desiredWindow.role === 'dia' ? 'many' : 'one');
+      const owner = ownership === 'independent' ? workspace.workspaceId : owners.get(desiredWindow.appKey);
       if (owner !== workspace.workspaceId) {
         matches.push({
           workspaceId: workspace.workspaceId,
@@ -281,30 +298,36 @@ export function compareState(snapshot, desired, machine = {}) {
       }
       const eligible = candidates.filter(({ window, result }) => result.matches && !usedWindowIds.has(window.id));
       const preferred = targetSpace ? eligible.filter(({ window }) => window.space === targetSpace.index) : [];
-      const selected = (preferred[0] || eligible[0])?.window || null;
+      const selected = cardinality === 'many'
+        ? eligible.map(({ window }) => window)
+        : [(preferred[0] || eligible[0])?.window].filter(Boolean);
       matches.push({
         workspaceId: workspace.workspaceId,
         role: desiredWindow.role,
         required: desiredWindow.required,
-        selectedWindowId: selected?.id || null,
+        selectedWindowId: selected[0]?.id || null,
+        selectedWindowIds: selected.map((window) => window.id),
         candidates: candidates.filter(({ result }) => result.matches).map(({ window }) => window.id),
         rejected: candidates.filter(({ window, result }) => !result.matches && desiredWindow.appNames.includes(window.app)).map(({ window, result }) => ({ windowId: window.id, reasons: result.reasons }))
       });
-      if (!selected) {
+      if (!selected.length) {
         drifts.push(drift(desiredWindow.required ? 'required_window_missing' : 'optional_window_missing', desiredWindow.required ? 'blocker' : 'warning', workspace, { role: desiredWindow.role, appKey: desiredWindow.appKey }));
         continue;
       }
-      usedWindowIds.add(selected.id);
-      const ambiguous = eligible.length > 1 && preferred.length !== 1;
-      if (ambiguous) drifts.push(drift('window_match_ambiguous', desiredWindow.required ? 'blocker' : 'warning', workspace, { role: desiredWindow.role, candidateWindowIds: eligible.map(({ window }) => window.id), selectedWindowId: selected.id }));
-      if (targetSpace && selected.space !== targetSpace.index) drifts.push(drift('window_on_wrong_space', 'change', workspace, { role: desiredWindow.role, windowId: selected.id, actualSpace: selected.space, expectedSpaceUuid: targetSpace.uuid }));
+      for (const window of selected) usedWindowIds.add(window.id);
+      const ambiguous = cardinality === 'one' && eligible.length > 1 && preferred.length !== 1;
+      if (ambiguous) drifts.push(drift('window_match_ambiguous', desiredWindow.required ? 'blocker' : 'warning', workspace, { role: desiredWindow.role, candidateWindowIds: eligible.map(({ window }) => window.id), selectedWindowId: selected[0].id }));
+      for (const window of selected) {
+        if (targetSpace && window.space !== targetSpace.index) drifts.push(drift('window_on_wrong_space', 'change', workspace, { role: desiredWindow.role, windowId: window.id, actualSpace: window.space, expectedSpaceUuid: targetSpace.uuid }));
+      }
       const layout = workspace.layout.find((item) => item.role === desiredWindow.role);
-      const geometry = geometryMatches(selected, expectedDisplay || snapshot.displays.find((display) => display.index === selected.display), layout);
-      // A singular role cannot describe the adaptive multi-window layouts used
-      // by runners such as GTD Support.  Preserve the ambiguity warning, but do
-      // not turn one arbitrarily selected candidate into false geometry drift.
-      if (!ambiguous && geometry.comparable && !geometry.matches) drifts.push(drift('window_geometry_mismatch', 'change', workspace, { role: desiredWindow.role, windowId: selected.id, grid: layout.grid, geometry }));
+      const geometry = cardinality === 'one' && selected.length === 1 ? geometryMatches(selected[0], expectedDisplay || snapshot.displays.find((display) => display.index === selected[0].display), layout) : null;
+      if (!ambiguous && geometry?.comparable && !geometry.matches) drifts.push(drift('window_geometry_mismatch', 'change', workspace, { role: desiredWindow.role, windowId: selected[0].id, grid: layout.grid, geometry }));
     }
+  }
+  if (desired.orchestration?.focusWorkspace) {
+    const focusSpace = resolvedSpaces.get(desired.orchestration.focusWorkspace);
+    if (focusSpace && !focusSpace.focused) drifts.push({ code: 'workspace_focus_mismatch', severity: 'change', focusWorkspace: desired.orchestration.focusWorkspace, spaceUuid: focusSpace.uuid });
   }
   if (desired.target.kind !== 'workspace') {
     for (const displayRole of new Set(activeWorkspaces.map((workspace) => workspace.displayRole))) {
@@ -332,7 +355,9 @@ export function compareState(snapshot, desired, machine = {}) {
 }
 
 export function buildExecutionPlan(snapshot, desired, comparison, options = {}) {
+  const orchestration = desired.orchestration || { displayProfile: null, focusWorkspace: null, reconcile: true };
   const actions = [];
+  if (orchestration.displayProfile) actions.push({ type: 'apply_display_profile', profile: orchestration.displayProfile });
   for (const workspace of desired.workspaces) {
     const workspaceDrifts = comparison.drifts.filter((item) => item.workspaceId === workspace.workspaceId);
     if (workspaceDrifts.some((item) => item.code === 'space_missing')) actions.push({ type: 'ensure_space', workspaceId: workspace.workspaceId, label: workspace.label, displayRole: workspace.displayRole });
@@ -342,8 +367,23 @@ export function buildExecutionPlan(snapshot, desired, comparison, options = {}) 
     for (const item of workspaceDrifts.filter((entry) => entry.code === 'window_geometry_mismatch')) actions.push({ type: 'resize_window', workspaceId: workspace.workspaceId, role: item.role, windowId: item.windowId, grid: item.grid });
   }
   if (desired.target.kind !== 'workspace' && (actions.some((action) => ['ensure_space', 'recover_space_label', 'move_space'].includes(action.type)) || comparison.drifts.some((item) => item.code === 'space_order_mismatch'))) actions.push({ type: 'order_spaces', mode: desired.target.mode });
+  if (orchestration.focusWorkspace && (actions.length || comparison.drifts.some((item) => item.code === 'workspace_focus_mismatch'))) actions.push({ type: 'focus_workspace', workspaceId: orchestration.focusWorkspace, mode: desired.target.mode });
   if (actions.length) actions.push({ type: 'verify', target: clone(desired.target) });
   const blockers = comparison.drifts.filter((item) => item.severity === 'blocker');
+  const affectedWorkspaceIds = new Set(comparison.drifts.filter((item) => item.severity === 'change' && item.workspaceId).map((item) => item.workspaceId));
+  const affectedWorkspaces = desired.workspaces.filter((workspace) => affectedWorkspaceIds.has(workspace.workspaceId));
+  const executionSteps = [];
+  if (actions.some((action) => action.type === 'apply_display_profile')) executionSteps.push({ type: 'command', action: 'display_profile', command: ['display', orchestration.displayProfile] });
+  if (affectedWorkspaces.length) {
+    const includePostprocessors = desired.target.kind === 'mode';
+    if (includePostprocessors) for (const hook of (desired.postprocessors || []).filter((item) => item.afterCommand == null)) executionSteps.push({ type: 'command', action: 'postprocess', command: ['postprocess', hook.name] });
+    for (const workspace of desired.workspaces) {
+      if (affectedWorkspaceIds.has(workspace.workspaceId)) executionSteps.push({ type: 'command', action: 'workspace', workspaceId: workspace.workspaceId, command: ['run', workspace.workspaceId, desired.target.mode] });
+      if (includePostprocessors) for (const hook of (desired.postprocessors || []).filter((item) => item.afterCommand === workspace.runtimeId)) executionSteps.push({ type: 'command', action: 'postprocess', command: ['postprocess', hook.name] });
+    }
+  }
+  if (actions.some((action) => action.type === 'order_spaces')) executionSteps.push({ type: 'command', action: 'order_spaces', command: ['order', desired.target.mode] });
+  if (actions.some((action) => action.type === 'focus_workspace')) executionSteps.push({ type: 'command', action: 'focus', command: ['focus', orchestration.focusWorkspace, desired.target.mode] });
   const planCore = {
     formatVersion: PLAN_FORMAT_VERSION,
     target: clone(desired.target),
@@ -355,20 +395,13 @@ export function buildExecutionPlan(snapshot, desired, comparison, options = {}) 
     blockers,
     warnings: comparison.drifts.filter((item) => item.severity === 'warning'),
     actions,
-    runnerCommands: [
-      ...(desired.orchestration.displayProfile ? [['display', desired.orchestration.displayProfile]] : []),
-      ...(desired.target.kind === 'workspace'
-        ? [['run', desired.target.id, desired.target.mode]]
-        : desired.target.kind === 'mode'
-          ? [['run', `work_${desired.target.mode}`]]
-          : desired.workspaces.map((workspace) => ['run', workspace.workspaceId, desired.target.mode])),
-      ...(desired.orchestration.focusWorkspace ? [['focus', desired.orchestration.focusWorkspace, desired.target.mode]] : [])
-    ],
+    executionSteps,
+    runnerCommands: executionSteps.map((step) => step.command),
     recovery: {
       snapshotId: snapshot.snapshotId,
       strategy: 'bounded_reconcile',
-      automaticAttempts: options.automaticRecovery === false || desired.orchestration.reconcile === false ? 0 : 1,
-      windowIds: comparison.matches.map((item) => item.selectedWindowId).filter(Boolean)
+      automaticAttempts: options.automaticRecovery === false || orchestration.reconcile === false ? 0 : 1,
+      windowIds: [...new Set(comparison.matches.flatMap((item) => item.selectedWindowIds || [item.selectedWindowId]).filter(Boolean))]
     }
   };
   return { ...planCore, planId: digest(planCore).slice(0, 20), createdAt: options.createdAt || new Date().toISOString() };

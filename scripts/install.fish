@@ -93,6 +93,9 @@ else
         end
     end
 
+    # --version names the immutable installed artifact, so its reported version
+    # must match the release directory even for local development builds.
+    printf '%s\n' "$package_version" > "$staging_root/VERSION"
     printf '%s\n' "$package_version" > "$staging_root/.spacewright-release"
     command mv "$staging_root" "$release_root"
     or exit 1
