@@ -18,16 +18,25 @@ function workspace_space_occupant_windows_json --description "Return non-sticky 
     or return 1
 
     echo $windows_json | ws_jq -c --argjson ghost_apps "$nonoccupying_ghost_apps" '
-        def nonoccupying_ghost:
-            (.app as $app | $ghost_apps | index($app)) != null
-            and ((.title // "") == "")
+        def empty_nonmovable_shell:
+            ((.title // "") == "")
             and ((.role // "") == "")
             and ((.subrole // "") == "")
             and (.["can-move"] != true);
 
+        def reviewed_app_ghost:
+            (.app as $app | $ghost_apps | index($app)) != null
+            and empty_nonmovable_shell;
+
+        def headless_root_surface:
+            empty_nonmovable_shell
+            and (.["can-resize"] == false)
+            and (.["is-visible"] == false)
+            and (.["has-ax-reference"] == false);
+
         [.[]
             | select(.["is-sticky"] != true)
-            | select(nonoccupying_ghost | not)]
+            | select((reviewed_app_ghost or headless_root_surface) | not)]
     '
 end
 

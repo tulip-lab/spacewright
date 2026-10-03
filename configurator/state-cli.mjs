@@ -108,7 +108,13 @@ function printPlan(plan, comparison) {
   for (const blocker of plan.blockers) console.log(`BLOCK   ${blocker.code} ${blocker.workspaceId || ''} ${blocker.role || ''}`.trimEnd());
   for (const warning of plan.warnings) console.log(`WARN    ${warning.code} ${warning.workspaceId || ''} ${warning.role || ''}`.trimEnd());
   if (!plan.actions.length) console.log('OK      no changes required');
-  for (const [index, action] of plan.actions.entries()) console.log(`${String(index + 1).padStart(2, '0')}      ${action.type} ${action.workspaceId || action.mode || ''} ${action.role || ''}`.trimEnd());
+  for (const [index, action] of plan.actions.entries()) {
+    const subject = action.workspaceId
+      || action.mode
+      || action.profile
+      || (action.spaceIndex ? `space=${action.spaceIndex} display=${action.display}${action.label ? ` label=${action.label}` : ''}` : '');
+    console.log(`${String(index + 1).padStart(2, '0')}      ${action.type} ${subject} ${action.role || ''}`.trimEnd());
+  }
   for (const step of plan.executionSteps || []) console.log(`RUN     spacewright ${step.command.join(' ')}`);
 }
 

@@ -117,10 +117,13 @@ esac
     const journal = JSON.parse(await readFile(join(stateRoot, 'runs', journals[0]), 'utf8'));
     assert.equal(journal.status, 'completed');
     assert.equal(journal.verification.converged, true);
-    assert.equal(journal.steps.length, 1);
+    assert.equal(journal.steps.length, 2);
     assert.equal(journal.steps[0].action, 'workspace');
     assert.deepEqual(journal.steps[0].command, ['spacewright', 'run', 'coding', 'solo']);
     assert.equal(journal.steps[0].status, 'completed');
+    assert.equal(journal.steps[1].action, 'finalize_mode');
+    assert.deepEqual(journal.steps[1].command, ['spacewright', 'finalize', 'solo']);
+    assert.equal(journal.steps[1].status, 'completed');
   } finally {
     await rm(root, { recursive: true, force: true });
   }

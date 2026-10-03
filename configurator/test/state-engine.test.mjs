@@ -46,7 +46,7 @@ test('plan reports live move and resize actions without mutating', () => {
   assert.equal(plan.executable, true);
   assert.ok(plan.actions.some((action) => action.type === 'move_window' && action.windowId === 11));
   assert.ok(plan.actions.some((action) => action.type === 'resize_window' && action.windowId === 10));
-  assert.deepEqual(plan.runnerCommands, [['run', 'coding', 'solo']]);
+  assert.deepEqual(plan.runnerCommands, [['run', 'coding', 'solo'], ['finalize', 'solo']]);
 });
 
 test('missing required windows block execution while optional windows warn', () => {
@@ -90,7 +90,7 @@ test('profile plans carry closed display, workspace, focus, and recovery command
   const state = buildDesiredState(config, compileV2(config), { kind: 'profile', id: 'focused' });
   const comparison = compareState(snapshot, state, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
   const plan = buildExecutionPlan(snapshot, state, comparison, { createdAt: '2026-10-02T00:00:00.000Z' });
-  assert.deepEqual(plan.runnerCommands, [['display', 'solo'], ['run', 'coding', 'solo'], ['focus', 'coding', 'solo']]);
+  assert.deepEqual(plan.runnerCommands, [['display', 'solo'], ['run', 'coding', 'solo'], ['finalize', 'solo'], ['focus', 'coding', 'solo']]);
   assert.equal(plan.recovery.automaticAttempts, 0);
   assert.deepEqual(plan.recovery.windowIds, [10, 11]);
 });
@@ -260,9 +260,10 @@ test('aggregate comparison reports actual Space order drift', () => {
   assert.ok(comparison.drifts.some((item) => item.code === 'space_order_mismatch'));
   assert.deepEqual(buildExecutionPlan(snapshot, desiredState, comparison).actions, [
     { type: 'order_spaces', mode: 'wide' },
+    { type: 'finalize_mode', mode: 'wide' },
     { type: 'verify', target: { kind: 'mode', id: 'wide', mode: 'wide' } }
   ]);
-  assert.deepEqual(buildExecutionPlan(snapshot, desiredState, comparison).runnerCommands, [['order', 'wide']]);
+  assert.deepEqual(buildExecutionPlan(snapshot, desiredState, comparison).runnerCommands, [['finalize', 'wide']]);
 });
 
 test('aggregate execution runs only workspaces with change drift', () => {
@@ -272,8 +273,35 @@ test('aggregate execution runs only workspaces with change drift', () => {
   const state = buildDesiredState(config, runtime, { kind: 'mode', id: 'solo', mode: 'solo' });
   const comparison = compareState(snapshot, state, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
   const plan = buildExecutionPlan(snapshot, state, comparison, { createdAt: '2026-10-02T00:00:00.000Z' });
-  assert.deepEqual(plan.runnerCommands, [['run', 'coding', 'solo'], ['postprocess', 'gtd_ai_expand_hermes_when_alone']]);
+  assert.deepEqual(plan.runnerCommands, [['run', 'coding', 'solo'], ['postprocess', 'gtd_ai_expand_hermes_when_alone'], ['finalize', 'solo']]);
   assert.ok(!plan.runnerCommands.some((command) => command[1] === 'work_solo'));
+});
+
+test('empty Sandbox and headless root surfaces become explicit finalization drift', () => {
+  const snapshot = normalizeSnapshot({
+    displays: [
+      { index: 1, uuid: 'DISPLAY-PRIMARY', frame: { x: 0, y: 0, w: 1200, h: 900 }, spaces: [1] },
+      { index: 2, uuid: 'DISPLAY-TASK', frame: { x: -1200, y: 0, w: 1200, h: 900 }, spaces: [2, 3, 4] }
+    ],
+    spaces: [
+      { index: 1, uuid: 'SPACE-CODING', display: 1, label: 'coding_solo', type: 'float' },
+      { index: 2, uuid: 'SPACE-SANDBOX', display: 2, label: 'sandbox_solo', type: 'bsp' },
+      { index: 3, uuid: 'SPACE-HEADLESS', display: 2, label: '', type: 'float' },
+      { index: 4, uuid: 'SPACE-OCCUPIED', display: 2, label: 'other', type: 'float' }
+    ],
+    windows: [
+      { id: 10, app: 'Code', title: 'Project', role: 'AXWindow', subrole: 'AXStandardWindow', display: 1, space: 1, frame: { x: 0, y: 0, w: 1200, h: 900 }, 'can-move': true, 'can-resize': true, 'is-visible': true },
+      { id: 11, app: 'ChatGPT', title: 'Chat', role: 'AXWindow', subrole: 'AXStandardWindow', display: 1, space: 1, frame: { x: 600, y: 0, w: 600, h: 900 }, 'can-move': true, 'can-resize': true, 'is-visible': true },
+      { id: 12, app: 'IINA', title: '', role: '', subrole: '', display: 2, space: 3, frame: { x: -1200, y: 0, w: 540, h: 900 }, 'can-move': false, 'can-resize': false, 'is-visible': false, 'has-ax-reference': false },
+      { id: 13, app: 'Other', title: 'Visible', role: 'AXWindow', subrole: 'AXStandardWindow', display: 2, space: 4, frame: { x: -600, y: 0, w: 600, h: 900 }, 'can-move': true, 'can-resize': true, 'is-visible': true }
+    ]
+  }, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
+  const { desired: state } = desired();
+  const comparison = compareState(snapshot, state, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
+  assert.deepEqual(comparison.drifts.filter((item) => item.code === 'empty_space_cleanup_required').map((item) => item.spaceIndex), [3, 2]);
+  const plan = buildExecutionPlan(snapshot, state, comparison);
+  assert.deepEqual(plan.runnerCommands, [['finalize', 'solo']]);
+  assert.ok(plan.actions.some((action) => action.type === 'finalize_mode'));
 });
 
 test('comparison recovers a uniquely identifiable unlabeled Space', () => {
