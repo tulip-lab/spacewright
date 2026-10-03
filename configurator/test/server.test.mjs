@@ -142,6 +142,13 @@ test('local server isolates machine bindings and generated skhd output', async (
   const diagnostics = await json(url, '/api/diagnostics');
   assert.equal(diagnostics.status, 200);
   assert.ok(diagnostics.body.checks.some((check) => check.id === 'schema' && check.ok));
+  const runtimePath = join(configRoot, 'generated', 'runtime.json');
+  const savedRuntime = await readFile(runtimePath, 'utf8');
+  await writeFile(runtimePath, '{invalid json');
+  const corruptRuntimeDiagnostics = await json(url, '/api/diagnostics');
+  assert.equal(corruptRuntimeDiagnostics.status, 200);
+  assert.ok(corruptRuntimeDiagnostics.body.checks.some((check) => check.id === 'compiled_runtime' && !check.ok && check.detail.includes('unreadable')));
+  await writeFile(runtimePath, savedRuntime);
   const imported = await json(url, '/api/import', {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body: JSON.stringify({ text: `version: 2\nmetadata:\n  name: invalid minimal\n` })
   });

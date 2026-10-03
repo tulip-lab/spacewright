@@ -268,32 +268,42 @@ export function validateV2(config) {
     if (!object(workspace?.windows) || !Object.keys(workspace.windows).length) errors.push(`${path}.windows must not be empty`);
     const roles = new Set(Object.keys(workspace?.windows || {}));
     for (const [role, window] of Object.entries(workspace?.windows || {})) {
-      rejectUnknown(window, new Set(['app', 'required', 'selector']), `${path}.windows.${role}`, errors);
+      rejectUnknown(window, new Set(['app', 'required', 'ownership', 'cardinality', 'selector']), `${path}.windows.${role}`, errors);
       rejectUnknown(window?.selector, new Set(['movable', 'visible', 'non_empty_title', 'title_include', 'title_exclude', 'role', 'subrole']), `${path}.windows.${role}.selector`, errors);
       if (!id(role)) errors.push(`${path}.windows.${role} has an invalid id`);
       if (!config.apps[window.app]) errors.push(`${path}.windows.${role}.app references unknown app "${window.app}"`);
       if (typeof window.required !== 'boolean') errors.push(`${path}.windows.${role}.required must be boolean`);
+      if (window.ownership != null && !['lastApplicable', 'independent'].includes(window.ownership)) errors.push(`${path}.windows.${role}.ownership is invalid`);
+      if (window.cardinality != null && !['one', 'many'].includes(window.cardinality)) errors.push(`${path}.windows.${role}.cardinality is invalid`);
       for (const flag of ['movable', 'visible', 'non_empty_title']) if (window.selector?.[flag] != null && typeof window.selector[flag] !== 'boolean') errors.push(`${path}.windows.${role}.selector.${flag} must be boolean`);
       for (const field of ['title_include', 'title_exclude']) if (window.selector?.[field] != null && typeof window.selector[field] !== 'string') errors.push(`${path}.windows.${role}.selector.${field} must be a string`);
       for (const field of ['role', 'subrole']) if (window.selector?.[field] != null && (typeof window.selector[field] !== 'string' || !window.selector[field].trim())) errors.push(`${path}.windows.${role}.selector.${field} must be a non-empty string`);
     }
     if (!object(workspace?.variants)) errors.push(`${path}.variants must be an object`);
     for (const [mode, variant] of Object.entries(workspace?.variants || {})) {
-      rejectUnknown(variant, new Set(['layout', 'command', 'spaceLabel', 'runtime']), `${path}.variants.${mode}`, errors);
+      rejectUnknown(variant, new Set(['layout', 'command', 'spaceLabel', 'activation', 'runtime']), `${path}.variants.${mode}`, errors);
       if (!MODES.includes(mode)) errors.push(`${path}.variants.${mode} is not a supported mode`);
       const usedRoles = new Set();
       validateLayout(variant.layout, `${path}.variants.${mode}.layout`, roles, errors, usedRoles);
+      if (variant.activation?.type === 'windowPresent' && !roles.has(variant.activation.role)) errors.push(`${path}.variants.${mode}.activation.role references unknown window role "${variant.activation.role}"`);
       for (const [role, window] of Object.entries(workspace.windows || {})) {
         if (window.required && !usedRoles.has(role)) errors.push(`${path}.variants.${mode}.layout omits required window role "${role}"`);
         else if (!window.required && !usedRoles.has(role)) warnings.push(`${path}.variants.${mode}.layout does not place optional window role "${role}"`);
       }
       if (variant.runtime?.windows) {
         if (!Array.isArray(variant.runtime.windows) || !variant.runtime.windows.length) errors.push(`${path}.variants.${mode}.runtime.windows must not be empty`);
+        const runtimeRoles = new Set();
         for (const [index, window] of (variant.runtime.windows || []).entries()) {
           if (!id(window.role)) errors.push(`${path}.variants.${mode}.runtime.windows[${index}].role is invalid`);
+          if (runtimeRoles.has(window.role)) errors.push(`${path}.variants.${mode}.runtime.windows duplicates role "${window.role}"`);
+          runtimeRoles.add(window.role);
           if (!config.apps[window.app_key]) errors.push(`${path}.variants.${mode}.runtime.windows[${index}].app_key references an unknown app`);
           if (typeof window.required !== 'boolean') errors.push(`${path}.variants.${mode}.runtime.windows[${index}].required must be boolean`);
+          if (window.ownership != null && !['lastApplicable', 'independent'].includes(window.ownership)) errors.push(`${path}.variants.${mode}.runtime.windows[${index}].ownership is invalid`);
+          if (window.cardinality != null && !['one', 'many'].includes(window.cardinality)) errors.push(`${path}.variants.${mode}.runtime.windows[${index}].cardinality is invalid`);
         }
+        for (const role of usedRoles) if (!runtimeRoles.has(role)) errors.push(`${path}.variants.${mode}.runtime.windows omits layout role "${role}"`);
+        if (variant.activation?.type === 'windowPresent' && !runtimeRoles.has(variant.activation.role)) errors.push(`${path}.variants.${mode}.runtime.windows omits activation role "${variant.activation.role}"`);
       }
     }
   }
@@ -407,7 +417,10 @@ export function compileV2(config) {
           display_role: variant.runtime?.displayRole || (display.role === 'primary' ? 'primary' : `${display.role}__${mode}`),
           space_layout: 'float',
           windows: variant.runtime?.windows || Object.entries(workspace.windows).map(([role, window]) => ({
-            role, app_key: window.app, required: window.required, ...(window.selector ? { selector: window.selector } : {})
+            role, app_key: window.app, required: window.required,
+            ...(window.ownership ? { ownership: window.ownership } : {}),
+            ...(window.cardinality ? { cardinality: window.cardinality } : {}),
+            ...(window.selector ? { selector: window.selector } : {})
           })),
           layout_ref: runtimeId,
           ...(variant.runtime?.primaryAloneLayout ? { primary_alone_layout_ref: `${runtimeId}__primary_alone` } : {}),
@@ -453,7 +466,13 @@ export function migrateV1(v1) {
     for (const window of source.windows || []) {
       const prior = target.windows[window.role];
       const role = prior && prior.app !== window.app_key ? `${window.role}_${workspaceCommand}` : window.role;
-      target.windows[role] = { app: window.app_key, required: window.required, ...(window.selector ? { selector: window.selector } : {}) };
+      target.windows[role] = {
+        app: window.app_key,
+        required: window.required,
+        ...(window.ownership ? { ownership: window.ownership } : {}),
+        ...((window.cardinality || (source.runner === 'gtd_support' && window.role === 'dia' ? 'many' : null)) ? { cardinality: window.cardinality || 'many' } : {}),
+        ...(window.selector ? { selector: window.selector } : {})
+      };
     }
     commandMap[workspaceCommand] = { baseId, declaredMode, source };
   }
@@ -473,6 +492,7 @@ export function migrateV1(v1) {
       target.variants[mode] = {
         command,
         spaceLabel: entry.source.label,
+        ...(entry.source.runner === 'office_document' ? { activation: { type: 'windowPresent', role: 'primary' } } : {}),
         layout: { type: 'canvas', regions: layout.map((action) => ({ ...action })) },
         runtime: {
           runner: entry.source.runner,

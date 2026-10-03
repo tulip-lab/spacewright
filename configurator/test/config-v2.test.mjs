@@ -67,6 +67,33 @@ test('nested split compiles deterministically', () => {
   ]);
 });
 
+test('activation, ownership, and cardinality remain declarative through compilation', () => {
+  const config = starterConfig();
+  config.workspaces.coding.windows.assistant.ownership = 'independent';
+  config.workspaces.coding.windows.assistant.cardinality = 'many';
+  config.workspaces.coding.variants.wide.activation = { type: 'windowPresent', role: 'editor' };
+  assert.equal(validateV2(config).valid, true);
+  const runtime = compileV2(config);
+  assert.equal(runtime.workspaces.spacewright_coding_wide.windows.find((window) => window.role === 'assistant').ownership, 'independent');
+  assert.equal(runtime.workspaces.spacewright_coding_wide.windows.find((window) => window.role === 'assistant').cardinality, 'many');
+  config.workspaces.coding.variants.wide.activation.role = 'unknown';
+  assert.match(validateV2(config).errors.join('\n'), /activation\.role references unknown window role/);
+});
+
+test('runtime window overrides reject duplicate and omitted layout roles', () => {
+  const config = starterConfig();
+  config.workspaces.coding.variants.wide.runtime = {
+    runner: 'generic_layout',
+    windows: [
+      { role: 'editor', app_key: 'code', required: true },
+      { role: 'editor', app_key: 'chatgpt', required: false }
+    ]
+  };
+  const errors = validateV2(config).errors.join('\n');
+  assert.match(errors, /runtime\.windows duplicates role "editor"/);
+  assert.match(errors, /runtime\.windows omits layout role "assistant"/);
+});
+
 test('duplicate shortcuts fail closed', () => {
   const config = starterConfig();
   config.shortcuts.push(structuredClone(config.shortcuts[0]));

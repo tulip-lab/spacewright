@@ -159,6 +159,24 @@ switch "$command_name"
             exit 0
         end
         command yabai -m space --focus "$label"
+    case order
+        set -l mode $argv[1]
+        if not contains -- "$mode" solo wide tall
+            echo 'usage: spacewright order <solo|wide|tall> [--dry-run]' >&2
+            exit 2
+        end
+        workspace_order_mode_spaces $argv
+    case postprocess
+        set -l hook $argv[1]
+        if not contains -- "$hook" gtd_ai_expand_hermes_when_alone workspace_reconcile_primary_fixed_spaces
+            echo 'usage: spacewright postprocess <gtd_ai_expand_hermes_when_alone|workspace_reconcile_primary_fixed_spaces> [--dry-run]' >&2
+            exit 2
+        end
+        if contains -- --dry-run $argv
+            printf 'dry_run=postprocess\nhook=%s\n' "$hook"
+            exit 0
+        end
+        $hook
     case config-migrate-v1
         set -l config_file $argv[1]
         test -n "$config_file"; or set config_file (spacewright_config_user_file)
@@ -217,6 +235,8 @@ switch "$command_name"
             '  recover RUN_ID           restore matched windows; --dry-run only previews' \
             '  display PROFILE [--dry-run] apply a closed display profile' \
             '  focus ID MODE [--dry-run] focus a configured workspace Space' \
+            '  order MODE [--dry-run]   order configured Spaces for one mode' \
+            '  postprocess HOOK [--dry-run] run a closed reconciliation hook' \
             '  config-migrate-v1 [file] print a v2 migration without writing' \
             '  configure               open the local Web configurator' \
             '  run <workspace>         run a compiled workspace entry' \

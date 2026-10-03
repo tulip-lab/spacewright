@@ -50,10 +50,12 @@ spacewright verify gtd_chat wide
 `inspect`, `plan`, `verify`, and `capture` never change the desktop. `apply`
 refuses unavailable discovery, invalid configuration, missing display bindings,
 ambiguous required windows, and missing required windows before invoking an
-existing workspace runner. Each non-noop run is locked, journaled under the
-state root, verified afterward, and retried at most once unless reconciliation
-is disabled. `spacewright recover RUN_ID` is an explicit best-effort restore of
-only the matched windows recorded by that run.
+existing workspace runner. Each non-noop run is locked, rejected without
+mutation if its preflight snapshot becomes stale, executed incrementally for
+only affected workspaces, journaled per command under the state root, verified
+afterward, and retried at most once unless reconciliation is disabled.
+`spacewright recover RUN_ID` is an explicit best-effort restore of only the
+matched windows recorded by that run.
 
 See [State discovery and reconciliation](docs/state-reconciliation.md).
 

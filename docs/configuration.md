@@ -131,6 +131,15 @@ bundle identifiers as a stronger identity signal; app-name aliases remain the
 portable fallback because standard yabai snapshots do not expose bundle IDs.
 One window cannot satisfy two roles in the same workspace.
 
+Each window role may declare `ownership: "lastApplicable"` (the default) or
+`"independent"` for selector-separated windows from the same app, plus
+`cardinality: "one"` (the default) or `"many"` for adaptive layouts. A variant
+may declare `activation: { "type": "always" }` or
+`activation: { "type": "windowPresent", "role": "primary" }`. Migration emits
+the latter for Office document adapters and marks GTD Support's Dia role as
+multi-window. The Web Configurator exposes these settings under Window
+Matching / Advanced.
+
 The stable user command is `spacewright run <workspace-id>
 <solo|wide|tall>`. Imported `variant.command` values preserve historical Fish
 commands; generated `spacewright_<id>_<mode>` identifiers remain internal.
@@ -140,8 +149,8 @@ shared configured runner. Office and recovery-heavy GTD workspaces use trusted
 Fish adapters that consume configured labels, display roles, apps, layouts,
 and cleanup relationships while retaining their bounded recovery algorithms.
 
-The authoritative schema is
-[`schemas/spacewright.schema.json`](../schemas/spacewright.schema.json). A
+The authoritative v2 schema is
+[`schemas/spacewright-v2.schema.json`](../schemas/spacewright-v2.schema.json). A
 minimal override is available at [`examples/config.json`](../examples/config.json).
 
 ## Example Workspace
