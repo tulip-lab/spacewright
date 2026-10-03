@@ -77,9 +77,11 @@ ownerless lock receives a grace period, live owners are checked against the
 SpaceWright state CLI, and stale locks are quarantined atomically before they
 are removed.
 
-Only workspaces with change drift are invoked. Aggregate plans add Space
-ordering only when required and retain closed postprocessors at their anchors.
-The existing Fish runners remain the mutation backend. Output, the plan,
+Only workspaces with change drift are invoked. Any mutating workspace batch or
+detected empty-Space/order drift ends with one closed mode finalization step;
+that step collects unmanaged windows, removes safe empty Spaces, verifies
+ordering, and restores focus. Closed postprocessors retain their configured
+anchors. The existing Fish runners remain the mutation backend. Output, the plan,
 before/after snapshots, exact per-command lifecycle, and verification are
 written to:
 
@@ -90,6 +92,13 @@ $SPACEWRIGHT_STATE_ROOT/runs/<run-id>.json
 After execution, SpaceWright discovers state again. If executable drift remains
 and reconciliation is enabled, it performs one retry and verifies once more.
 It never loops indefinitely.
+
+An empty Sandbox, or an unlabeled Space containing only a headless surface, is
+reported as `empty_space_cleanup_required` instead of being hidden behind the
+Fish backend. A generic headless surface must have no title or AX role, be
+invisible and non-movable/non-resizable, and have no AX reference. This keeps
+the cleanup rule narrow while covering background root surfaces left by apps
+such as media players.
 
 `spacewright recover RUN_ID --dry-run` lists the still-present candidate
 windows without changing them. Recovery without that flag is explicit and

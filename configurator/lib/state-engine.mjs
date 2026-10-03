@@ -149,6 +149,8 @@ export function buildDesiredState(config, runtime, target = {}) {
     workspaces,
     cleanup: clone(runtime.modes?.[`work_${resolved.mode}`]?.cleanup || []),
     postprocessors: clone(config.modes?.[resolved.mode]?.postprocessors || []),
+    nonoccupyingGhostApps: ['word', 'powerpoint', 'input_source_pro']
+      .flatMap((appKey) => config.apps?.[appKey]?.match?.appNames || []),
     orchestration: resolved.profile ? {
       displayProfile: resolved.profile.displayConfig?.profile || null,
       focusWorkspace: resolved.profile.focusBehaviour?.workspace || null,
@@ -229,6 +231,42 @@ function finalWindowOwners(workspaces) {
     }
   }
   return owners;
+}
+
+function windowOccupiesSpace(window, knownGhostApps = []) {
+  if (window.sticky) return false;
+  const emptyNonmovableShell = !window.title && !window.role && !window.subrole && !window.movable;
+  if (emptyNonmovableShell && knownGhostApps.includes(window.app)) return false;
+  // Some applications leave an invisible root surface behind after their last
+  // interactive window closes.  Requiring every negative signal keeps this
+  // generic rule narrower than the reviewed per-application compatibility list.
+  const headlessRootSurface = emptyNonmovableShell
+    && !window.resizable
+    && !window.visible
+    && !window.hasAxReference;
+  return !headlessRootSurface;
+}
+
+function emptyCleanupSpaces(snapshot, desired, bindings) {
+  const occupants = snapshot.windows.filter((window) => windowOccupiesSpace(window, desired.nonoccupyingGhostApps || []));
+  const ordinaryCount = (space) => occupants.filter((window) => window.space === space.index).length;
+  const primaryDisplay = snapshot.displays.find((display) => display.uuid === bindings.primary);
+  const home = primaryDisplay
+    ? snapshot.spaces.filter((space) => space.display === primaryDisplay.index && !space.label).sort((a, b) => a.index - b.index)[0]
+    : null;
+  const candidates = [];
+  for (const display of snapshot.displays) {
+    const lane = snapshot.spaces.filter((space) => space.display === display.index).sort((a, b) => a.index - b.index);
+    const survivor = lane.find((space) => home && space.uuid === home.uuid)
+      || lane.find((space) => ordinaryCount(space) > 0)
+      || lane[0];
+    for (const space of lane) {
+      if (!space.uuid || space.uuid === survivor?.uuid || ordinaryCount(space) > 0) continue;
+      if (space.label && !/^sandbox_(solo|wide|tall)$/.test(space.label)) continue;
+      candidates.push(space);
+    }
+  }
+  return candidates.sort((a, b) => b.index - a.index);
 }
 
 function inferUnlabeledSpace(snapshot, workspace, expectedDisplay, owners, reservedSpaceUuids) {
@@ -329,6 +367,16 @@ export function compareState(snapshot, desired, machine = {}) {
     const focusSpace = resolvedSpaces.get(desired.orchestration.focusWorkspace);
     if (focusSpace && !focusSpace.focused) drifts.push({ code: 'workspace_focus_mismatch', severity: 'change', focusWorkspace: desired.orchestration.focusWorkspace, spaceUuid: focusSpace.uuid });
   }
+  for (const space of emptyCleanupSpaces(snapshot, desired, bindings)) {
+    drifts.push({
+      code: 'empty_space_cleanup_required',
+      severity: 'change',
+      spaceUuid: space.uuid,
+      spaceIndex: space.index,
+      display: space.display,
+      label: space.label
+    });
+  }
   if (desired.target.kind !== 'workspace') {
     for (const displayRole of new Set(activeWorkspaces.map((workspace) => workspace.displayRole))) {
       const expectedDisplay = snapshot.displays.find((display) => display.uuid === bindings[displayRole]);
@@ -366,12 +414,15 @@ export function buildExecutionPlan(snapshot, desired, comparison, options = {}) 
     for (const item of workspaceDrifts.filter((entry) => entry.code === 'window_on_wrong_space')) actions.push({ type: 'move_window', workspaceId: workspace.workspaceId, role: item.role, windowId: item.windowId, targetLabel: workspace.label });
     for (const item of workspaceDrifts.filter((entry) => entry.code === 'window_geometry_mismatch')) actions.push({ type: 'resize_window', workspaceId: workspace.workspaceId, role: item.role, windowId: item.windowId, grid: item.grid });
   }
+  for (const item of comparison.drifts.filter((entry) => entry.code === 'empty_space_cleanup_required')) actions.push({ type: 'remove_empty_space', spaceUuid: item.spaceUuid, spaceIndex: item.spaceIndex, display: item.display, label: item.label });
   if (desired.target.kind !== 'workspace' && (actions.some((action) => ['ensure_space', 'recover_space_label', 'move_space'].includes(action.type)) || comparison.drifts.some((item) => item.code === 'space_order_mismatch'))) actions.push({ type: 'order_spaces', mode: desired.target.mode });
-  if (orchestration.focusWorkspace && (actions.length || comparison.drifts.some((item) => item.code === 'workspace_focus_mismatch'))) actions.push({ type: 'focus_workspace', workspaceId: orchestration.focusWorkspace, mode: desired.target.mode });
-  if (actions.length) actions.push({ type: 'verify', target: clone(desired.target) });
   const blockers = comparison.drifts.filter((item) => item.severity === 'blocker');
   const affectedWorkspaceIds = new Set(comparison.drifts.filter((item) => item.severity === 'change' && item.workspaceId).map((item) => item.workspaceId));
   const affectedWorkspaces = desired.workspaces.filter((workspace) => affectedWorkspaceIds.has(workspace.workspaceId));
+  const needsFinalization = affectedWorkspaces.length > 0 || actions.some((action) => ['remove_empty_space', 'order_spaces'].includes(action.type));
+  if (needsFinalization) actions.push({ type: 'finalize_mode', mode: desired.target.mode });
+  if (orchestration.focusWorkspace && (actions.length || comparison.drifts.some((item) => item.code === 'workspace_focus_mismatch'))) actions.push({ type: 'focus_workspace', workspaceId: orchestration.focusWorkspace, mode: desired.target.mode });
+  if (actions.length) actions.push({ type: 'verify', target: clone(desired.target) });
   const executionSteps = [];
   if (actions.some((action) => action.type === 'apply_display_profile')) executionSteps.push({ type: 'command', action: 'display_profile', command: ['display', orchestration.displayProfile] });
   if (affectedWorkspaces.length) {
@@ -382,7 +433,7 @@ export function buildExecutionPlan(snapshot, desired, comparison, options = {}) 
       if (includePostprocessors) for (const hook of (desired.postprocessors || []).filter((item) => item.afterCommand === workspace.runtimeId)) executionSteps.push({ type: 'command', action: 'postprocess', command: ['postprocess', hook.name] });
     }
   }
-  if (actions.some((action) => action.type === 'order_spaces')) executionSteps.push({ type: 'command', action: 'order_spaces', command: ['order', desired.target.mode] });
+  if (needsFinalization) executionSteps.push({ type: 'command', action: 'finalize_mode', command: ['finalize', desired.target.mode] });
   if (actions.some((action) => action.type === 'focus_workspace')) executionSteps.push({ type: 'command', action: 'focus', command: ['focus', orchestration.focusWorkspace, desired.target.mode] });
   const planCore = {
     formatVersion: PLAN_FORMAT_VERSION,

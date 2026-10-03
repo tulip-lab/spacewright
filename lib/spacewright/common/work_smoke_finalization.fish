@@ -180,7 +180,8 @@ function __work_smoke_finalization_cleanup
           {"index":8,"uuid":"OFFICE_GHOST","display":2,"label":""},
           {"index":9,"uuid":"OTHER_IMMOVABLE","display":2,"label":""},
           {"index":10,"uuid":"EMPTY_CONTROL","display":1,"label":"coding_control"},
-          {"index":11,"uuid":"EMPTY_MANAGED","display":2,"label":"gtd_ai"}
+          {"index":11,"uuid":"EMPTY_MANAGED","display":2,"label":"gtd_ai"},
+          {"index":12,"uuid":"HEADLESS_ROOT","display":2,"label":""}
         ]'
     end
 
@@ -198,8 +199,9 @@ function __work_smoke_finalization_cleanup
           {"id":50,"space":5,"is-sticky":true},
           {"id":60,"space":6,"is-sticky":false},
           {"id":80,"app":"Microsoft Word","title":"","role":"","subrole":"","space":8,"can-move":false,"is-sticky":false},
-          {"id":81,"app":"Input Source Pro","title":"","role":"","subrole":"","space":8,"can-move":false,"is-sticky":false},
-          {"id":90,"app":"Terminal","title":"","role":"","subrole":"","space":9,"can-move":false,"is-sticky":false}
+          {"id":81,"app":"Microsoft PowerPoint","title":"","role":"","subrole":"","space":8,"can-move":false,"is-sticky":false},
+          {"id":90,"app":"Terminal","title":"","role":"","subrole":"","space":9,"can-move":false,"is-sticky":false},
+          {"id":91,"app":"IINA","title":"","role":"","subrole":"","space":12,"can-move":false,"can-resize":false,"is-visible":false,"has-ax-reference":false,"is-sticky":false}
         ]'
     end
 
@@ -222,7 +224,7 @@ function __work_smoke_finalization_cleanup
 
     workspace_cleanup_empty_spaces --home-uuid HOME --focus-uuid FOCUSED
     or return 1
-    test (string join ' ' -- $__work_smoke_cleanup_destroyed) = '8 5 4 3'
+    test (string join ' ' -- $__work_smoke_cleanup_destroyed) = '12 8 5 4 3'
     or return 2
     test (string join ' ' -- $__work_smoke_cleanup_focused) = '6'
     or return 3

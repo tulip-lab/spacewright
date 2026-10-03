@@ -166,6 +166,17 @@ switch "$command_name"
             exit 2
         end
         workspace_order_mode_spaces $argv
+    case finalize
+        set -l mode $argv[1]
+        if not contains -- "$mode" solo wide tall
+            echo 'usage: spacewright finalize <solo|wide|tall> [--dry-run]' >&2
+            exit 2
+        end
+        if contains -- --dry-run $argv
+            printf 'dry_run=workspace_finalize_mode\nmode=%s\nsteps=sandbox cleanup order_verify restore_focus\n' "$mode"
+            exit 0
+        end
+        workspace_finalize_mode $mode
     case postprocess
         set -l hook $argv[1]
         if not contains -- "$hook" gtd_ai_expand_hermes_when_alone workspace_reconcile_primary_fixed_spaces
@@ -236,6 +247,7 @@ switch "$command_name"
             '  display PROFILE [--dry-run] apply a closed display profile' \
             '  focus ID MODE [--dry-run] focus a configured workspace Space' \
             '  order MODE [--dry-run]   order configured Spaces for one mode' \
+            '  finalize MODE [--dry-run] collect Sandbox, clean, order, and restore focus' \
             '  postprocess HOOK [--dry-run] run a closed reconciliation hook' \
             '  config-migrate-v1 [file] print a v2 migration without writing' \
             '  configure               open the local Web configurator' \
