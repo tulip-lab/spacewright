@@ -7,6 +7,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23090b0e'/%3E%3Cpath d='M7 7h8v8H7zm10 0h8v8h-8zM7 17h18v8H7z' fill='none' stroke='%23c8ff35' stroke-width='2'/%3E%3C/svg%3E">
   <title>SpaceWright Configurator</title>
   <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./modern.css">
 </head>
 <body>
   <a class="skip-link" href="#workspace">Skip to Configurator</a>
@@ -26,19 +27,27 @@
 
   <main>
     <nav id="nav" aria-label="Configurator sections">
-      <button data-view="current" class="active"><span>01</span> Current state</button>
-      <button data-view="map"><span>02</span> Work Modes</button>
-      <button data-view="displays"><span>03</span> Displays</button>
-      <button data-view="workspaces"><span>04</span> Workspaces</button>
-      <button data-view="apps"><span>05</span> Apps</button>
-      <button data-view="shortcuts"><span>06</span> Shortcuts</button>
-      <button data-view="automation"><span>07</span> Profiles & rules</button>
-      <button data-view="history"><span>08</span> History</button>
-      <button data-view="diagnostics"><span>09</span> Diagnostics</button>
-      <button data-view="tasks"><span>10</span> Run & tasks</button>
-      <button data-view="review"><span>11</span> Review</button>
+      <div class="nav-group"><p>Operate</p>
+        <button data-view="current" class="active"><span>01</span> Current State</button>
+        <button data-view="tasks"><span>02</span> Run & Tasks</button>
+      </div>
+      <div class="nav-group"><p>Design</p>
+        <button data-view="map"><span>03</span> Work Modes</button>
+        <button data-view="workspaces"><span>04</span> Workspaces</button>
+        <button data-view="apps"><span>05</span> Apps</button>
+        <button data-view="displays"><span>06</span> Displays</button>
+        <button data-view="shortcuts"><span>07</span> Shortcuts</button>
+      </div>
+      <div class="nav-group"><p>Automate</p>
+        <button data-view="automation"><span>08</span> Profiles & Rules</button>
+      </div>
+      <div class="nav-group"><p>System</p>
+        <button data-view="review"><span>09</span> Review & Save</button>
+        <button data-view="history"><span>10</span> History</button>
+        <button data-view="diagnostics"><span>11</span> Diagnostics</button>
+      </div>
     </nav>
-    <section id="workspace" tabindex="-1" aria-live="polite"></section>
+    <section id="workspace" tabindex="-1"></section>
   </main>
 
   <footer>
@@ -52,11 +61,14 @@
         <button id="reset-defaults" class="quiet">Reset to SpaceWright defaults</button>
       </div></details>
       <input id="import-file" type="file" accept="application/json,application/yaml,.json,.yaml,.yml" hidden>
-      <button id="validate" class="quiet">Validate</button>
-      <button id="save" class="primary">Save configuration</button>
+      <span id="draft-state" class="draft-state" role="status" aria-live="polite">Saved</span>
+      <button id="undo" class="quiet" disabled aria-label="Undo configuration change">Undo</button>
+      <button id="redo" class="quiet" disabled aria-label="Redo configuration change">Redo</button>
+      <button id="validate" class="quiet">Review Changes</button>
+      <button id="save" class="primary" disabled>Save Configuration</button>
     </div>
   </footer>
   <template id="toast-template"><div class="toast" role="status" aria-live="polite"></div></template>
-  <script defer src="./app.js"></script>
+  <script type="module" src="./app.js"></script>
 </body>
 </html>

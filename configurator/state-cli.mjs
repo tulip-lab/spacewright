@@ -208,6 +208,16 @@ async function applyPlan(target) {
   try {
     const initial = await livePlan(target);
     if (initial.snapshot.unavailable) throw new Error(initial.snapshot.message);
+    const expected = {
+      planId: flags['expected-plan-id'],
+      configDigest: flags['expected-config-digest'],
+      snapshotId: flags['expected-snapshot-id']
+    };
+    if ((expected.planId && expected.planId !== initial.plan.planId)
+      || (expected.configDigest && expected.configDigest !== initial.plan.configDigest)
+      || (expected.snapshotId && expected.snapshotId !== initial.snapshot.snapshotId)) {
+      return { stale: true, status: 'stale', exitCode: 75, expected, actual: { planId: initial.plan.planId, configDigest: initial.plan.configDigest, snapshotId: initial.snapshot.snapshotId }, plan: initial.plan, comparison: initial.comparison };
+    }
     if (!initial.plan.executable) throw new Error(`plan ${initial.plan.planId} is blocked: ${initial.plan.blockers.map((item) => item.code).join(', ')}`);
     if (!initial.plan.actions.length) return { noop: true, plan: initial.plan, comparison: initial.comparison };
     const journalFile = join(stateRoot, 'runs', `${runId}.json`);

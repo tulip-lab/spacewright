@@ -28,10 +28,20 @@ const publicRoot = join(packageRoot, 'configurator', 'public');
 const token = args['--token'] || randomBytes(24).toString('hex');
 const listenPort = Number(args['--port'] || 0);
 const tasks = new Map();
+const MAX_TASKS = 100;
+const MAX_TASK_LOG_LINES = 2000;
+const unsavedStarterConfig = starterConfig();
 let taskQueue = Promise.resolve();
+let configWriteQueue = Promise.resolve();
+
+function serializeConfigWrite(operation) {
+  const queued = configWriteQueue.then(operation, operation);
+  configWriteQueue = queued.catch(() => {});
+  return queued;
+}
 
 async function readConfig() {
-  if (!existsSync(configFile)) return starterConfig();
+  if (!existsSync(configFile)) return structuredClone(unsavedStarterConfig);
   return JSON.parse(await readFile(configFile, 'utf8'));
 }
 
@@ -220,6 +230,19 @@ function taskView(task) {
   return { id: task.id, kind: task.kind, target: task.target, mode: task.mode, status: task.status, createdAt: task.createdAt, startedAt: task.startedAt, finishedAt: task.finishedAt, exitCode: task.exitCode, logs: task.logs.slice(-300) };
 }
 
+function appendTaskLog(task, line) {
+  task.logs.push(line);
+  if (task.logs.length > MAX_TASK_LOG_LINES) task.logs.splice(0, task.logs.length - MAX_TASK_LOG_LINES);
+}
+
+function rememberTask(task) {
+  const removable = [...tasks.values()].filter((item) => !['queued', 'running'].includes(item.status)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  while (tasks.size >= MAX_TASKS && removable.length) tasks.delete(removable.shift().id);
+  if (tasks.size >= MAX_TASKS) return false;
+  tasks.set(task.id, task);
+  return true;
+}
+
 function commandsForExecution(config, payload) {
   if (payload.kind === 'mode') {
     if (!['solo', 'wide', 'tall'].includes(payload.target)) throw new Error('unknown mode');
@@ -248,10 +271,10 @@ async function runTask(task, commands) {
     if (task.status === 'cancelled') break;
     await new Promise((resolveTask) => {
       const child = spawn(join(packageRoot, 'bin', 'spacewright'), commandArgs, { env: { ...process.env, SPACEWRIGHT_CONFIG_ROOT: configRoot, SPACEWRIGHT_STATE_ROOT: stateRoot }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
-      task.child = child; task.logs.push(`$ spacewright ${commandArgs.join(' ')}`);
-      const append = (level) => (chunk) => { for (const line of String(chunk).split('\n').filter(Boolean)) task.logs.push(`${level} ${line}`); };
+      task.child = child; appendTaskLog(task, `$ spacewright ${commandArgs.join(' ')}`);
+      const append = (level) => (chunk) => { for (const line of String(chunk).split('\n').filter(Boolean)) appendTaskLog(task, `${level} ${line}`); };
       child.stdout.on('data', append('OUT')); child.stderr.on('data', append('ERR'));
-      child.once('error', (error) => { task.logs.push(`ERR ${error.message}`); task.exitCode = 1; resolveTask(); });
+      child.once('error', (error) => { appendTaskLog(task, `ERR ${error.message}`); task.exitCode = 1; resolveTask(); });
       child.once('exit', (code, signal) => { task.exitCode = code ?? (signal ? 130 : 1); task.child = null; resolveTask(); });
     });
     if (task.exitCode !== 0) break;
@@ -285,7 +308,8 @@ async function executeRule(config, rule) {
   const kind = rule.then.activateProfile ? 'profile' : 'workspace'; const target = rule.then.activateProfile || rule.then.activateWorkspace;
   const execution = commandsForExecution(config, { kind, target, mode: rule.then.mode || 'solo' });
   const id = randomBytes(10).toString('hex'); const task = { id, kind, target, mode: execution.mode, status: 'queued', createdAt: new Date().toISOString(), startedAt: null, finishedAt: null, exitCode: null, logs: [`SYSTEM matched rule ${rule.id}`], child: null };
-  tasks.set(id, task); void enqueueTask(task, execution.commands); return task;
+  if (!rememberTask(task)) throw new Error('task capacity reached; wait for an active task to finish');
+  void enqueueTask(task, execution.commands); return task;
 }
 
 async function archiveConfig() {
@@ -301,6 +325,15 @@ function serializedConfig(config) {
   return `${JSON.stringify(config, null, 2)}\n`;
 }
 
+function configRevision(config) {
+  return createHash('sha256').update(serializedConfig(config)).digest('hex');
+}
+
+async function currentConfigDocument() {
+  const config = await readConfig();
+  return { config, revision: configRevision(config) };
+}
+
 function compiledDocument(config) {
   const source = serializedConfig(config);
   const sourceSha256 = createHash('sha256').update(source).digest('hex');
@@ -309,7 +342,10 @@ function compiledDocument(config) {
 
 async function api(request, response, url) {
   if (request.method !== 'GET' && request.headers['x-spacewright-token'] !== token) return json(response, 403, { error: 'invalid session token' });
-  if (url.pathname === '/api/config' && request.method === 'GET') return json(response, 200, { config: await readConfig(), path: configFile, source: existsSync(configFile) ? 'v2' : 'starter', legacyAvailable: true });
+  if (url.pathname === '/api/config' && request.method === 'GET') {
+    const document = await currentConfigDocument();
+    return json(response, 200, { ...document, path: configFile, source: existsSync(configFile) ? 'v2' : 'starter', legacyAvailable: true });
+  }
   if (url.pathname === '/api/config-backup' && request.method === 'GET') {
     const backup = `${configFile}.backup`;
     if (!existsSync(backup)) return json(response, 404, { error: 'no configuration backup exists' });
@@ -324,23 +360,30 @@ async function api(request, response, url) {
   }
   if (url.pathname === '/api/defaults' && request.method === 'GET') return json(response, 200, { config: starterConfig(), kind: 'spacewright' });
   if (url.pathname === '/api/diff' && request.method === 'POST') {
-    const candidate = await body(request); const current = await readConfig();
-    return json(response, 200, { changes: configDiff(current, candidate), count: configDiff(current, candidate).length });
+    const payload = await body(request); const candidate = payload.config || payload; const current = await currentConfigDocument();
+    if (payload.baseRevision && payload.baseRevision !== current.revision) return json(response, 409, { error: 'configuration changed on disk; reload or compare before saving', code: 'configuration_conflict', currentRevision: current.revision });
+    const changes = configDiff(current.config, candidate);
+    return json(response, 200, { changes, count: changes.length, baseRevision: current.revision });
   }
   if (url.pathname === '/api/save' && request.method === 'POST') {
-    const config = await body(request);
-    const validation = validateV2(config);
-    if (!validation.valid) return json(response, 422, validation);
-    const source = serializedConfig(config);
-    await archiveConfig();
-    await createSnapshot(await readConfig(), 'before-apply');
-    await atomicWrite(runtimeFile, `${JSON.stringify(compiledDocument(config), null, 2)}\n`);
-    await atomicWrite(configFile, source);
-    const readBack = await readConfig();
-    if (serializedConfig(readBack) !== source) return json(response, 500, { error: 'read-back verification failed' });
-    const snapshot = await createSnapshot(readBack, 'apply');
-    await activity('info', 'configuration_saved', { snapshotId: snapshot.id });
-    return json(response, 200, { saved: true, verified: true, snapshot, path: configFile, runtimePath: runtimeFile });
+    const payload = await body(request); const config = payload.config || payload;
+    return await serializeConfigWrite(async () => {
+      const current = await currentConfigDocument();
+      if (!payload.baseRevision) return json(response, 428, { error: 'baseRevision is required to prevent overwriting a newer configuration', code: 'revision_required', currentRevision: current.revision });
+      if (payload.baseRevision !== current.revision) return json(response, 409, { error: 'configuration changed on disk; reload or compare before saving', code: 'configuration_conflict', currentRevision: current.revision });
+      const validation = validateV2(config);
+      if (!validation.valid) return json(response, 422, validation);
+      const source = serializedConfig(config);
+      await archiveConfig();
+      await createSnapshot(current.config, 'before-apply');
+      await atomicWrite(runtimeFile, `${JSON.stringify(compiledDocument(config), null, 2)}\n`);
+      await atomicWrite(configFile, source);
+      const readBack = await readConfig();
+      if (serializedConfig(readBack) !== source) return json(response, 500, { error: 'read-back verification failed' });
+      const snapshot = await createSnapshot(readBack, 'apply');
+      await activity('info', 'configuration_saved', { snapshotId: snapshot.id });
+      return json(response, 200, { saved: true, verified: true, revision: configRevision(readBack), snapshot, path: configFile, runtimePath: runtimeFile });
+    });
   }
   if (url.pathname === '/api/history' && request.method === 'GET') return json(response, 200, { snapshots: await history() });
   if (url.pathname.startsWith('/api/history/') && request.method === 'GET') {
@@ -358,7 +401,7 @@ async function api(request, response, url) {
     const id = url.pathname.split('/')[3]; const path = join(historyRoot, `${id}.json`); if (!existsSync(path)) return json(response, 404, { error: 'snapshot not found' });
     const snapshot = JSON.parse(await readFile(path, 'utf8')); const validation = validateV2(snapshot.config); if (!validation.valid) return json(response, 422, validation);
     await createSnapshot(await readConfig(), 'before-restore'); await atomicWrite(runtimeFile, `${JSON.stringify(compiledDocument(snapshot.config), null, 2)}\n`); await atomicWrite(configFile, serializedConfig(snapshot.config)); await activity('info', 'snapshot_restored', { id });
-    return json(response, 200, { restored: true, config: snapshot.config });
+    return json(response, 200, { restored: true, config: snapshot.config, revision: configRevision(snapshot.config) });
   }
   if (url.pathname.startsWith('/api/history/') && request.method === 'DELETE') {
     const id = url.pathname.split('/').at(-1); const path = join(historyRoot, `${id}.json`); if (!existsSync(path)) return json(response, 404, { error: 'snapshot not found' }); await unlink(path); return json(response, 200, { deleted: true });
@@ -379,7 +422,9 @@ async function api(request, response, url) {
   }
   if (url.pathname === '/api/tasks' && request.method === 'GET') return json(response, 200, { tasks: [...tasks.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 50).map(taskView) });
   if (url.pathname === '/api/rules/evaluate' && request.method === 'POST') {
-    const payload = await body(request); const config = await readConfig(); const snapshot = await querySnapshot();
+    const payload = await body(request); const config = payload.config || await readConfig(); const validation = validateV2(config);
+    if (!validation.valid) return json(response, 422, validation);
+    const snapshot = await querySnapshot();
     const topology = snapshot.unavailable ? 'unknown' : classifyTopology(snapshot.displays.map((display) => ({ ...display, 'is-built-in': display.builtIn, 'is-visible': display.visible })));
     const context = ruleContext(config, payload.event || 'manual', snapshot, topology); const rules = matchingRules(config, context);
     if (!payload.execute) return json(response, 200, { context, matches: rules, mutates: false });
@@ -391,12 +436,21 @@ async function api(request, response, url) {
   if (url.pathname === '/api/execute' && request.method === 'POST') {
     const payload = await body(request); if (payload.confirmed !== true) return json(response, 422, { error: 'explicit execution confirmation is required' });
     const config = await readConfig(); const validation = validateV2(config); if (!validation.valid) return json(response, 422, validation);
+    if (!payload.expectedPlanId || !payload.expectedConfigDigest || !payload.expectedSnapshotId) return json(response, 428, { error: 'preview the target immediately before running it', code: 'preview_required' });
+    let currentPlan;
+    try { currentPlan = await livePlan(config, payload); } catch (error) { return json(response, 422, { error: error.message }); }
+    if (!currentPlan.validation.valid) return json(response, 422, currentPlan.validation);
+    if (currentPlan.plan.planId !== payload.expectedPlanId || currentPlan.plan.configDigest !== payload.expectedConfigDigest || currentPlan.snapshot.snapshotId !== payload.expectedSnapshotId) {
+      return json(response, 409, { error: 'the configuration or desktop changed after preview; review the refreshed plan before running', code: 'plan_stale', plan: currentPlan.plan, comparison: currentPlan.comparison });
+    }
     let execution; try { execution = commandsForExecution(config, payload); } catch (error) { return json(response, 422, { error: error.message }); }
+    for (const command of execution.commands) command.push(`--expected-plan-id=${payload.expectedPlanId}`, `--expected-config-digest=${payload.expectedConfigDigest}`, `--expected-snapshot-id=${payload.expectedSnapshotId}`);
     const id = randomBytes(10).toString('hex'); const task = { id, kind: payload.kind, target: payload.target, mode: execution.mode, status: 'queued', createdAt: new Date().toISOString(), startedAt: null, finishedAt: null, exitCode: null, logs: [], child: null };
-    tasks.set(id, task); void enqueueTask(task, execution.commands); return json(response, 202, { task: taskView(task) });
+    if (!rememberTask(task)) return json(response, 429, { error: 'task capacity reached; wait for an active task to finish', code: 'task_capacity' });
+    void enqueueTask(task, execution.commands); return json(response, 202, { task: taskView(task) });
   }
   if (url.pathname.match(/^\/api\/tasks\/[a-f0-9]+$/) && request.method === 'GET') { const id = url.pathname.split('/').at(-1); const task = tasks.get(id); return task ? json(response, 200, { task: taskView(task) }) : json(response, 404, { error: 'task not found' }); }
-  if (url.pathname.match(/^\/api\/tasks\/[a-f0-9]+\/cancel$/) && request.method === 'POST') { const id = url.pathname.split('/')[3]; const task = tasks.get(id); if (!task) return json(response, 404, { error: 'task not found' }); if (!['queued', 'running'].includes(task.status)) return json(response, 409, { error: 'task is no longer running' }); task.status = 'cancelled'; if (task.child?.pid) try { process.kill(-task.child.pid, 'SIGTERM'); } catch {} task.logs.push('SYSTEM cancellation requested'); return json(response, 200, { task: taskView(task) }); }
+  if (url.pathname.match(/^\/api\/tasks\/[a-f0-9]+\/cancel$/) && request.method === 'POST') { const id = url.pathname.split('/')[3]; const task = tasks.get(id); if (!task) return json(response, 404, { error: 'task not found' }); if (!['queued', 'running'].includes(task.status)) return json(response, 409, { error: 'task is no longer running' }); task.status = 'cancelled'; if (task.child?.pid) try { process.kill(-task.child.pid, 'SIGTERM'); } catch {} appendTaskLog(task, 'SYSTEM cancellation requested'); return json(response, 200, { task: taskView(task) }); }
   if (url.pathname === '/api/topology' && request.method === 'GET') { const result = await queryDisplays(); return json(response, 200, { ...result, topology: classifyTopology(result.displays), mutates: false }); }
   if (url.pathname === '/api/diagnostics' && request.method === 'GET') {
     const config = await readConfig(); const validation = validateV2(config); const snapshot = await querySnapshot(); const machine = await readMachine(); const yabai = await commandCheck('yabai');
@@ -455,7 +509,7 @@ async function api(request, response, url) {
     if (!validation.valid) return json(response, 422, { error: 'the configuration backup is invalid', ...validation });
     await atomicWrite(runtimeFile, `${JSON.stringify(compiledDocument(config), null, 2)}\n`);
     await atomicWrite(configFile, serializedConfig(config));
-    return json(response, 200, { restored: true, config, path: configFile, runtimePath: runtimeFile });
+    return json(response, 200, { restored: true, config, revision: configRevision(config), path: configFile, runtimePath: runtimeFile });
   }
   if (url.pathname === '/api/skhd' && request.method === 'POST') {
     const config = await body(request);
