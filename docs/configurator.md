@@ -85,6 +85,10 @@ use. Mode ordering supports both drag-and-drop and keyboard-operable up/down
 buttons. Drop slots allow exact insertion between existing workspaces, while
 the display selector on each card supports moving across displays without a
 mouse. An Unassigned lane lists workspaces excluded from the selected mode.
+The footer reports whether the draft is saved and provides bounded Undo and
+Redo history. Standard Command/Ctrl-Z and Command/Ctrl-Shift-Z shortcuts work
+outside text-entry controls, where the browser's native text undo remains in
+charge. Dialogs trap focus, close with Escape, and return focus to the editor.
 
 ## Apply, history, and recovery
 
@@ -96,6 +100,11 @@ snapshot. **Revert changes** discards only the current unsaved edit, while
 **Reset to SpaceWright defaults** loads the product starter configuration as an
 unsaved preview. History entries can be compared, renamed, restored, or
 deleted. Restore itself creates a recovery snapshot first.
+
+Every loaded document carries a content revision. Save and diff requests send
+that revision back, and the server rejects a stale draft instead of overwriting
+an external edit. Reloading is then required so the external version can be
+reviewed explicitly.
 
 ## Profiles, automation, and workspace preview
 
@@ -124,7 +133,11 @@ closed `spacewright apply` arguments; request data is never interpreted as a
 shell command. Runs are serialized, process-group cancellation is supported,
 and each apply writes a durable state journal. Execution output is streamed
 into the current server session's task record and the rotating durable activity
-log records task start and completion.
+log records task start and completion. Running is available only for the exact
+plan, configuration digest, and desktop snapshot returned by the latest
+preview. If any of them changes, execution fails closed and the user must
+preview again. In-memory task history and per-task output are bounded so a
+long-running configurator session cannot grow without limit.
 
 Topology rules can be evaluated without mutation from the browser. Setting
 `settings.eventAutomationEnabled` to `true` opts into five-second topology
@@ -170,7 +183,8 @@ Configuration GUI state
 The service reads the file for every `GET /api/config`; it does not keep a
 configuration cache. The GUI reads the API when the page loads, validates the
 complete in-memory document before saving, and writes only a valid v2 document.
-After an external file edit, reload the page to fetch the authoritative value.
+After an external file edit, reload the page to fetch the authoritative value;
+the revision check prevents a stale open page from silently replacing it.
 Restarting the configurator does not affect persistence because the JSON file,
 not the server process, owns the state.
 

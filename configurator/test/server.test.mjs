@@ -109,10 +109,14 @@ test('local server isolates machine bindings and generated skhd output', async (
   assert.equal(shortcutInventory.body.bindings.some((binding) => binding.keys.key === 'x'), false);
 
   const first = starterConfig();
+  const initialConfig = await json(url, '/api/config');
+  assert.equal(initialConfig.status, 200);
+  assert.match(initialConfig.body.revision, /^[a-f0-9]{64}$/);
+  assert.equal((await json(url, '/api/config')).body.revision, initialConfig.body.revision);
   const savedConfig = await json(url, '/api/save', {
-    method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body: JSON.stringify(first)
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body: JSON.stringify({ config: first, baseRevision: initialConfig.body.revision })
   });
-  assert.equal(savedConfig.status, 200);
+  assert.equal(savedConfig.status, 200, JSON.stringify(savedConfig.body));
   assert.equal(savedConfig.body.verified, true);
   await access(join(configRoot, 'generated', 'runtime.json'));
   const runtime = JSON.parse(await readFile(join(configRoot, 'generated', 'runtime.json'), 'utf8'));
@@ -120,15 +124,28 @@ test('local server isolates machine bindings and generated skhd output', async (
 
   const second = starterConfig();
   second.metadata.name = 'Second version';
-  assert.equal((await json(url, '/api/save', {
-    method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body: JSON.stringify(second)
-  })).status, 200);
+  const secondSave = await json(url, '/api/save', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body: JSON.stringify({ config: second, baseRevision: savedConfig.body.revision })
+  });
+  assert.equal(secondSave.status, 200);
+  const staleSave = await json(url, '/api/save', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body: JSON.stringify({ config: first, baseRevision: savedConfig.body.revision })
+  });
+  assert.equal(staleSave.status, 409);
+  assert.equal(staleSave.body.code, 'configuration_conflict');
   assert.equal((await readdir(join(configRoot, 'backups'))).length, 1);
   const restored = await json(url, '/api/restore-backup', {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }
   });
   assert.equal(restored.status, 200);
   assert.equal(restored.body.config.metadata.name, first.metadata.name);
+
+  const concurrentA = structuredClone(first); concurrentA.metadata.name = 'Concurrent A';
+  const concurrentB = structuredClone(first); concurrentB.metadata.name = 'Concurrent B';
+  const concurrentSaves = await Promise.all([concurrentA, concurrentB].map((config) => json(url, '/api/save', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body: JSON.stringify({ config, baseRevision: restored.body.revision })
+  })));
+  assert.deepEqual(concurrentSaves.map((result) => result.status).sort(), [200, 409]);
 
   const snapshots = await json(url, '/api/history');
   assert.equal(snapshots.status, 200);
@@ -163,9 +180,15 @@ test('local server isolates machine bindings and generated skhd output', async (
   const invalidExecution = await json(url, '/api/execute', {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body: JSON.stringify({ kind: 'mode', target: 'unknown', confirmed: true })
   });
-  assert.equal(invalidExecution.status, 422);
+  assert.equal(invalidExecution.status, 428);
+  assert.equal(invalidExecution.body.code, 'preview_required');
+  const staleExecution = await json(url, '/api/execute', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body: JSON.stringify({ kind: 'mode', target: 'wide', confirmed: true, expectedPlanId: 'stale', expectedConfigDigest: 'stale', expectedSnapshotId: 'stale' })
+  });
+  assert.equal(staleExecution.status, 409);
+  assert.equal(staleExecution.body.code, 'plan_stale');
   const evaluatedRules = await json(url, '/api/rules/evaluate', {
-    method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body: JSON.stringify({ event: 'manual', execute: false })
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body: JSON.stringify({ event: 'manual', execute: false, config: second })
   });
   assert.equal(evaluatedRules.status, 200);
   assert.equal(evaluatedRules.body.mutates, false);
