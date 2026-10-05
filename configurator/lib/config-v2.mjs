@@ -528,7 +528,7 @@ export function compileSkhd(config) {
   for (const shortcut of config.shortcuts || []) {
     const chord = shortcut.keys.modifiers.map((item) => SKHD_MODIFIERS[item]).join(' + ');
     const command = shortcut.action.type === 'activateMode'
-      ? `work_${shortcut.action.mode}`
+      ? `spacewright mode ${shortcut.action.mode}`
       : `spacewright run ${shortcut.action.workspace} ${shortcut.action.mode}`;
     lines.push(`${chord}${chord ? ' - ' : ''}${shortcut.keys.key} : fish -lc '${command}'`);
   }

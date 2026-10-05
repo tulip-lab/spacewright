@@ -5,6 +5,11 @@ configuration and installation contracts may still change before 1.0.
 
 ## Unreleased
 
+- Add guarded full-mode transitions with duplicate-request coalescing,
+  latest-request replacement, process-group cancellation, a bounded safety
+  deadline, persisted status, and a native macOS progress/countdown banner.
+- Generate skhd mode shortcuts through `spacewright mode` and document an
+  explicit emergency-stop binding while preserving legacy Fish commands.
 - Add a versioned live state engine for display, Space, window, geometry, and
   desired-state comparison with `inspect`, `plan`, `verify`, and capture.
 - Add locked, journaled apply/verification, one bounded reconciliation retry,

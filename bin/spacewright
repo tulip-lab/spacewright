@@ -115,6 +115,32 @@ switch "$command_name"
             "--config-root=$SPACEWRIGHT_CONFIG_ROOT" \
             "--state-root=$SPACEWRIGHT_STATE_ROOT" \
             $argv
+    case mode
+        set -l mode $argv[1]
+        if not contains -- "$mode" solo wide tall
+            echo 'usage: spacewright mode <solo|wide|tall> [--dry-run]' >&2
+            exit 2
+        end
+        if contains -- --dry-run $argv
+            set -l profile $mode
+            test "$mode" = solo; or set profile "$mode"_left
+            set -l timeout_seconds "$SPACEWRIGHT_MODE_TIMEOUT_SECONDS"
+            test -n "$timeout_seconds"; or set timeout_seconds 120
+            printf 'dry_run=mode_transition\nmode=%s\ndisplay=display_apply_%s\nworkspace=work_%s\npolicy=latest_request_wins\ntimeout_seconds=%s\n' \
+                "$mode" "$profile" "$mode" "$timeout_seconds"
+            exit 0
+        end
+        command node "$package_root/configurator/mode-transition.mjs" run "$mode" \
+            "--package-root=$package_root" \
+            "--state-root=$SPACEWRIGHT_STATE_ROOT"
+    case mode-cancel
+        command node "$package_root/configurator/mode-transition.mjs" cancel \
+            "--package-root=$package_root" \
+            "--state-root=$SPACEWRIGHT_STATE_ROOT"
+    case mode-status
+        command node "$package_root/configurator/mode-transition.mjs" status \
+            "--package-root=$package_root" \
+            "--state-root=$SPACEWRIGHT_STATE_ROOT"
     case display
         set -l profile $argv[1]
         if not contains -- "$profile" solo wide_left tall_left
@@ -244,6 +270,9 @@ switch "$command_name"
             '  event wake [--dry-run]   deliver a wake event to the running configurator' \
             '  apply TARGET [MODE]      execute a live plan; --dry-run only previews' \
             '  recover RUN_ID           restore matched windows; --dry-run only previews' \
+            '  mode MODE                switch display and workspace with progress feedback' \
+            '  mode-cancel              cancel the active mode transition' \
+            '  mode-status              show the latest mode transition state' \
             '  display PROFILE [--dry-run] apply a closed display profile' \
             '  focus ID MODE [--dry-run] focus a configured workspace Space' \
             '  order MODE [--dry-run]   order configured Spaces for one mode' \

@@ -98,7 +98,7 @@ test('local server isolates machine bindings and generated skhd output', async (
   });
   assert.equal(generated.status, 200);
   assert.equal(generated.body.path, join(configRoot, 'generated', 'spacewright.skhdrc'));
-  assert.match(await readFile(generated.body.path, 'utf8'), /work_wide/);
+  assert.match(await readFile(generated.body.path, 'utf8'), /spacewright mode wide/);
   const shortcutInventory = await json(url, '/api/shortcuts');
   assert.equal(shortcutInventory.status, 200);
   assert.equal(shortcutInventory.body.mutates, false);

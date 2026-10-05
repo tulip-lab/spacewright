@@ -177,9 +177,11 @@ function parseSkhdShortcutLine(line, source, config) {
   if (modifiers.some((item) => !['cmd', 'ctrl', 'alt', 'shift', 'fn'].includes(item))) return null;
   const commands = match[3].split(';').map((item) => item.trim()).filter(Boolean);
   const direct = commands.find((command) => /^spacewright\s+run\s+[a-z][a-z0-9_]*\s+(?:solo|tall|wide)$/.test(command));
+  const guardedModeCommand = commands.find((command) => /^spacewright\s+mode\s+(solo|tall|wide)$/.test(command));
   const modeCommand = commands.find((command) => /^work_(solo|tall|wide)$/.test(command));
   let action;
   if (direct) { const [, workspace, mode] = direct.match(/^spacewright\s+run\s+([a-z][a-z0-9_]*)\s+(solo|tall|wide)$/); action = { type: 'activateWorkspace', workspace, mode }; }
+  else if (guardedModeCommand) action = { type: 'activateMode', mode: guardedModeCommand.split(/\s+/).at(-1) };
   else if (modeCommand) action = { type: 'activateMode', mode: modeCommand.slice(5) };
   else {
     const candidates = [];

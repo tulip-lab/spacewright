@@ -37,12 +37,18 @@ for configurator_file in \
 end
 test -f "$installed_release_root/node_modules/yaml/package.json"
 or exit 20
+test -x "$installed_release_root/bin/spacewright-banner"
+or exit 25
+test -f "$installed_release_root/configurator/mode-transition.mjs"
+or exit 26
 node --check "$installed_release_root/configurator/server.mjs"
 or exit 16
 node --check "$installed_release_root/configurator/public/app.js"
 or exit 18
 node "$installed_release_root/configurator/cli.mjs" starter | jq -e '.version == 2 and (.modes | keys == ["solo", "tall", "wide"])' >/dev/null
 or exit 17
+"$bin_root/spacewright" mode wide --dry-run | string match -q '*policy=latest_request_wins*'
+or exit 27
 
 set -l server_log "$test_root/configurator.log"
 env HOME="$test_root" node "$installed_release_root/configurator/server.mjs" \
