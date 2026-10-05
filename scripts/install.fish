@@ -42,7 +42,7 @@ if set -q _flag_dry_run
     exit 0
 end
 
-for required in lib config schemas conf.d bin configurator package.json package-lock.json VERSION LICENSE README.md
+for required in lib config schemas conf.d bin configurator helpers package.json package-lock.json VERSION LICENSE README.md
     if not test -e "$source_root/$required"
         echo "spacewright install: source is missing $required" >&2
         exit 1
@@ -63,7 +63,7 @@ else
     command mkdir -p "$staging_root"
     or exit 1
 
-    for item in lib config schemas conf.d bin configurator package.json package-lock.json VERSION LICENSE README.md CHANGELOG.md SECURITY.md
+    for item in lib config schemas conf.d bin configurator helpers package.json package-lock.json VERSION LICENSE README.md CHANGELOG.md SECURITY.md
         if test -e "$source_root/$item"
             command cp -R "$source_root/$item" "$staging_root/"
             or begin
@@ -96,6 +96,16 @@ else
     # --version names the immutable installed artifact, so its reported version
     # must match the release directory even for local development builds.
     printf '%s\n' "$package_version" > "$staging_root/VERSION"
+    if command -q swiftc
+        command swiftc "$staging_root/helpers/spacewright-banner.swift" -o "$staging_root/bin/spacewright-banner"
+        or begin
+            echo 'spacewright install: failed to compile the macOS transition banner' >&2
+            command rm -rf "$staging_root"
+            exit 1
+        end
+    else
+        echo 'spacewright install: warning: swiftc not found; transition banner will be unavailable' >&2
+    end
     printf '%s\n' "$package_version" > "$staging_root/.spacewright-release"
     command mv "$staging_root" "$release_root"
     or exit 1

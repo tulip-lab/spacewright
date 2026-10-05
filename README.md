@@ -27,6 +27,16 @@ preferences into validated user configuration.
 skhd and displayplacer are optional integrations rather than required runtime
 dependencies.
 
+## Safe mode switching
+
+Use `spacewright mode solo`, `spacewright mode wide`, or `spacewright mode tall`
+for interactive display-and-workspace changes. Mode switches are globally
+serialized, repeated requests are coalesced, a newer different mode replaces
+the active run, and a native progress banner shows the current phase and safety
+timeout. `spacewright mode-cancel` provides an explicit emergency stop.
+
+See [Mode transitions](docs/mode-transitions.md).
+
 ## Web Configurator
 
 Run `spacewright configure` to edit portable apps, named workspaces, display

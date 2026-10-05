@@ -102,7 +102,7 @@ test('duplicate shortcuts fail closed', () => {
 
 test('skhd output contains only closed actions', () => {
   const output = compileSkhd(starterConfig());
-  assert.match(output, /fish -lc 'work_wide'/);
+  assert.match(output, /fish -lc 'spacewright mode wide'/);
   assert.doesNotMatch(output, /undefined/);
 });
 

@@ -10,6 +10,8 @@ change after equivalent tests exist.
 
 The initial compatibility set includes these command families:
 
+- guarded mode transitions: `spacewright mode <solo|wide|tall>`,
+  `spacewright mode-cancel`, and `spacewright mode-status`;
 - top-level modes: `work_solo`, `work_wide`, `work_tall`;
 - coding: `coding_solo`, `coding_wide`, `coding_tall`,
   `coding_editor_*`, and `coding_control`;
@@ -70,6 +72,15 @@ resolve the selected external/mode role.
 Retries and service recovery remain bounded and observable. No migration step
 may introduce an unbounded retry, an implicit display change, or an automatic
 repair in a command documented as read-only.
+
+### Interactive mode concurrency
+
+Generated shortcuts use the guarded `spacewright mode` entry. A repeated
+request for the active mode is a no-op; a different request replaces the
+active transition as one process group. The controller has a bounded deadline,
+an explicit cancellation command, persisted status, and non-activating visual
+feedback. Historical Fish entry points remain callable, but direct compound
+shortcut chains are deprecated because they cannot own one cross-command lock.
 
 ## Consumer Compatibility
 

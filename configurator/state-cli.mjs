@@ -130,7 +130,7 @@ async function acquireLock(runId) {
       try {
         process.kill(owner.pid, 0);
         const { stdout } = await execFileAsync('ps', ['-p', String(owner.pid), '-o', 'command='], { timeout: 2000 });
-        live = stdout.includes('configurator/state-cli.mjs');
+        live = stdout.includes('configurator/state-cli.mjs') || stdout.includes('configurator/mode-transition.mjs');
       } catch {}
     } else {
       const age = Date.now() - (await stat(lockRoot)).mtimeMs;
@@ -150,7 +150,7 @@ async function acquireLock(runId) {
       throw mkdirError;
     }
   }
-  await atomicWrite(join(lockRoot, 'owner.json'), { runId, pid: process.pid, acquiredAt: new Date().toISOString() });
+  await atomicWrite(join(lockRoot, 'owner.json'), { runId, pid: process.pid, controller: 'state-cli', acquiredAt: new Date().toISOString() });
   return async () => {
     const owner = await readJson(join(lockRoot, 'owner.json'), {});
     if (owner.runId !== runId || owner.pid !== process.pid) return;
