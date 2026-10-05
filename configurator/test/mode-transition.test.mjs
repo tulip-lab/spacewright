@@ -61,6 +61,19 @@ test('a repeated request for the same mode is coalesced', async () => {
   }
 });
 
+test('an immediately completed child cannot outrun exit observation', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'spacewright-mode-fast-'));
+  const stateRoot = join(root, 'state');
+  const env = { ...process.env, SPACEWRIGHT_BANNER_DISABLE: '1', SPACEWRIGHT_TRANSITION_FISH: '/usr/bin/true' };
+  try {
+    await execFileAsync(process.execPath, args(stateRoot, 'wide'), { env, timeout: 2_000 });
+    const status = JSON.parse(await readFile(join(stateRoot, 'mode-transition', 'status.json'), 'utf8'));
+    assert.equal(status.status, 'completed');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('state reconciliation cannot overlap an active mode transition', async () => {
   const { root, stateRoot, fakeFish, log } = await fixture();
   const env = { ...process.env, SPACEWRIGHT_BANNER_DISABLE: '1', SPACEWRIGHT_TRANSITION_FISH: fakeFish, FAKE_LOG: log, FAKE_DURATION: '2' };

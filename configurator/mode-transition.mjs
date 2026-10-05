@@ -263,6 +263,10 @@ export async function runTransition({
       env: { ...process.env, SPACEWRIGHT_TRANSITION_RUN_ID: runId },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    const childResult = new Promise((resolve) => {
+      child.once('error', (error) => resolve({ error }));
+      child.once('exit', (code, signal) => resolve({ code, signal }));
+    });
     owner.childPid = child.pid;
     await atomicWrite(join(lockRoot, 'owner.json'), owner);
 
@@ -277,10 +281,8 @@ export async function runTransition({
     attachLineParser(child.stdout, process.stdout, inspectLine);
     attachLineParser(child.stderr, process.stderr, inspectLine);
 
-    const exitCode = await new Promise((resolve, reject) => {
-      child.once('error', reject);
-      child.once('exit', (code, signal) => resolve({ code, signal }));
-    });
+    const exitCode = await childResult;
+    if (exitCode.error) throw exitCode.error;
     let status = 'failed';
     let message = `Transition failed${exitCode.code === null ? ` (${exitCode.signal})` : ` with status ${exitCode.code}`}`;
     if (requestedReason === 'cancelled') { status = 'cancelled'; message = 'Transition cancelled'; }
