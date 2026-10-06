@@ -340,7 +340,17 @@ function workspace_run_configured --description "Run one validated configured wo
             end
         end
     end
-    if set -q SPACEWRIGHT_CONTEXTUAL_APP_KEY; and set -q SPACEWRIGHT_CONTEXTUAL_OWNER_RUNTIME_ID; and test "$workspace_id" != "$SPACEWRIGHT_CONTEXTUAL_OWNER_RUNTIME_ID"
+    if set -q SPACEWRIGHT_CONTEXTUAL_OWNERS_JSON; and test -n "$SPACEWRIGHT_CONTEXTUAL_OWNERS_JSON"
+        set plan (printf "%s\n" "$plan" | jq -c --arg workspace "$workspace_id" --argjson owners "$SPACEWRIGHT_CONTEXTUAL_OWNERS_JSON" '
+            .windows |= map(. as $window | select(
+                (first($owners[] | select(.app_key == $window.app_key)) // null) as $owner
+                | $owner == null or $owner.owner_runtime_id == $workspace
+            ))
+            | .windows as $windows
+            | .layout |= map(select(.role as $role | any($windows[]; .role == $role)))
+            | if .primary_alone_layout then .primary_alone_layout |= map(select(.role as $role | any($windows[]; .role == $role))) else . end
+        ')
+    else if set -q SPACEWRIGHT_CONTEXTUAL_APP_KEY; and set -q SPACEWRIGHT_CONTEXTUAL_OWNER_RUNTIME_ID; and test "$workspace_id" != "$SPACEWRIGHT_CONTEXTUAL_OWNER_RUNTIME_ID"
         set plan (printf "%s\n" "$plan" | jq -c --arg app "$SPACEWRIGHT_CONTEXTUAL_APP_KEY" '
             .windows |= map(select(.app_key != $app))
             | .windows as $windows
@@ -402,11 +412,10 @@ function workspace_run_configured_mode --description "Run one configured ordered
         return 0
     end
 
-    set -l old_contextual_app_key "$SPACEWRIGHT_CONTEXTUAL_APP_KEY"
-    set -l old_contextual_owner "$SPACEWRIGHT_CONTEXTUAL_OWNER_RUNTIME_ID"
-    set -l old_contextual_focus "$SPACEWRIGHT_CONTEXTUAL_FOCUS_OWNER"
-    set -l contextual_rule (printf "%s\n" "$plan" | jq -c 'first(.contextual_apps[]) // empty')
-    if test -n "$contextual_rule"
+    set -l old_contextual_owners "$SPACEWRIGHT_CONTEXTUAL_OWNERS_JSON"
+    set -l old_contextual_focus_runtime "$SPACEWRIGHT_CONTEXTUAL_FOCUS_RUNTIME_ID"
+    set -l contextual_rules (printf "%s\n" "$plan" | jq -c '.contextual_apps // []')
+    if test "$contextual_rules" != '[]'
         set -l source_label "$SPACEWRIGHT_SOURCE_SPACE_LABEL"
         if test -z "$source_label"
             set -l current_space (ws_query_current_space "$mode_id-context" source)
@@ -419,17 +428,22 @@ function workspace_run_configured_mode --description "Run one configured ordered
         set -l source_workspace_id (printf "%s\n" "$effective_config" | jq -r --arg label "$source_label" '
             first(.workspaces[] | select(.label == $label) | .ui.workspace_id) // empty
         ')
-        set -l owner_workspace_id (printf "%s\n" "$contextual_rule" | jq -r --arg source "$source_workspace_id" '
-            if (.workspace_ids | index($source)) != null then $source else .fallback_workspace_id end
+        set -gx SPACEWRIGHT_CONTEXTUAL_OWNERS_JSON (jq -cn --argjson rules "$contextual_rules" --argjson config "$effective_config" --arg mode "$mode_id" --arg source "$source_workspace_id" '
+            [$rules[] | . as $rule
+                | (if (.workspace_ids | index($source)) != null then $source else .fallback_workspace_id end) as $owner
+                | {app_key: .app_key, owner_runtime_id: (first($config.modes[$mode].steps[].workspace as $runtime | $config.workspaces[$runtime] | select(.ui.workspace_id == $owner) | $runtime) // "")}
+            ]
         ')
-        set -gx SPACEWRIGHT_CONTEXTUAL_APP_KEY (printf "%s\n" "$contextual_rule" | jq -r '.app_key')
-        set -gx SPACEWRIGHT_CONTEXTUAL_OWNER_RUNTIME_ID (printf "%s\n" "$effective_config" | jq -r --arg mode "$mode_id" --arg owner "$owner_workspace_id" '
-            first(.modes[$mode].steps[].workspace as $runtime | .workspaces[$runtime] | select(.ui.workspace_id == $owner) | $runtime) // empty
+        set -l focus_rule (printf "%s\n" "$contextual_rules" | jq -c --arg source "$source_workspace_id" '
+            first(.[] | select((.workspace_ids | index($source)) != null)) // first(.[] | select(.focus_owner == true)) // empty
         ')
-        if test (printf "%s\n" "$contextual_rule" | jq -r '.focus_owner // false') = true
-            set -gx SPACEWRIGHT_CONTEXTUAL_FOCUS_OWNER 1
+        if test -n "$focus_rule"
+            set -l focus_owner_id (printf "%s\n" "$focus_rule" | jq -r --arg source "$source_workspace_id" 'if (.workspace_ids | index($source)) != null then $source else .fallback_workspace_id end')
+            set -gx SPACEWRIGHT_CONTEXTUAL_FOCUS_RUNTIME_ID (printf "%s\n" "$effective_config" | jq -r --arg mode "$mode_id" --arg owner "$focus_owner_id" '
+                first(.modes[$mode].steps[].workspace as $runtime | .workspaces[$runtime] | select(.ui.workspace_id == $owner) | $runtime) // empty
+            ')
         else
-            set -e SPACEWRIGHT_CONTEXTUAL_FOCUS_OWNER
+            set -e SPACEWRIGHT_CONTEXTUAL_FOCUS_RUNTIME_ID
         end
     end
 
@@ -479,28 +493,23 @@ function workspace_run_configured_mode --description "Run one configured ordered
         workspace_run_step "final cleanup $spec" workspace_run_cleanup_specs $spec
         or set failed 1
     end
-    if set -q SPACEWRIGHT_CONTEXTUAL_FOCUS_OWNER; and test -n "$SPACEWRIGHT_CONTEXTUAL_OWNER_RUNTIME_ID"
-        set -l owner_label (spacewright_config_effective | jq -r --arg owner "$SPACEWRIGHT_CONTEXTUAL_OWNER_RUNTIME_ID" '.workspaces[$owner].label // empty')
+    if set -q SPACEWRIGHT_CONTEXTUAL_FOCUS_RUNTIME_ID; and test -n "$SPACEWRIGHT_CONTEXTUAL_FOCUS_RUNTIME_ID"
+        set -l owner_label (spacewright_config_effective | jq -r --arg owner "$SPACEWRIGHT_CONTEXTUAL_FOCUS_RUNTIME_ID" '.workspaces[$owner].label // empty')
         set -l owner_space (ws_query_spaces "$mode_id-context" focus | jq -r --arg label "$owner_label" 'first(.[] | select(.label == $label) | .index) // empty')
         if test -n "$owner_space"
             workspace_run_step "focus contextual workspace" ws_focus_space "$owner_space"
             or set failed 1
         end
     end
-    if test -n "$old_contextual_app_key"
-        set -gx SPACEWRIGHT_CONTEXTUAL_APP_KEY "$old_contextual_app_key"
+    if test -n "$old_contextual_owners"
+        set -gx SPACEWRIGHT_CONTEXTUAL_OWNERS_JSON "$old_contextual_owners"
     else
-        set -e SPACEWRIGHT_CONTEXTUAL_APP_KEY
+        set -e SPACEWRIGHT_CONTEXTUAL_OWNERS_JSON
     end
-    if test -n "$old_contextual_owner"
-        set -gx SPACEWRIGHT_CONTEXTUAL_OWNER_RUNTIME_ID "$old_contextual_owner"
+    if test -n "$old_contextual_focus_runtime"
+        set -gx SPACEWRIGHT_CONTEXTUAL_FOCUS_RUNTIME_ID "$old_contextual_focus_runtime"
     else
-        set -e SPACEWRIGHT_CONTEXTUAL_OWNER_RUNTIME_ID
-    end
-    if test -n "$old_contextual_focus"
-        set -gx SPACEWRIGHT_CONTEXTUAL_FOCUS_OWNER "$old_contextual_focus"
-    else
-        set -e SPACEWRIGHT_CONTEXTUAL_FOCUS_OWNER
+        set -e SPACEWRIGHT_CONTEXTUAL_FOCUS_RUNTIME_ID
     end
     return $failed
 end

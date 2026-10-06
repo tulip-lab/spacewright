@@ -4,8 +4,8 @@ import { readFileSync } from 'node:fs';
 const MODES = ['solo', 'wide', 'tall'];
 const DIRECTIONS = new Set(['rows', 'columns']);
 const POSTPROCESSORS = new Set(['gtd_ai_expand_hermes_when_alone', 'workspace_reconcile_primary_fixed_spaces']);
-const ROOT_KEYS = new Set(['version', 'metadata', 'apps', 'displayRoles', 'workspaces', 'modes', 'shortcuts', 'profiles', 'rules', 'settings']);
-export const CONFIG_COMPILER_VERSION = 2;
+const ROOT_KEYS = new Set(['version', 'metadata', 'apps', 'aiProviders', 'aiRouting', 'displayRoles', 'workspaces', 'modes', 'shortcuts', 'profiles', 'rules', 'settings']);
+export const CONFIG_COMPILER_VERSION = 3;
 const V2_SCHEMA = JSON.parse(readFileSync(new URL('../../schemas/spacewright-v2.schema.json', import.meta.url), 'utf8'));
 
 function schemaTypeMatches(value, type) {
@@ -85,6 +85,14 @@ export function starterConfig() {
     apps: {
       code: { name: 'Visual Studio Code', match: { appNames: ['Code', 'Visual Studio Code'] } },
       chatgpt: { name: 'ChatGPT', match: { appNames: ['ChatGPT'] } }
+    },
+    aiProviders: {
+      chatgpt: { name: 'ChatGPT', app: 'chatgpt' }
+    },
+    aiRouting: {
+      assignments: {},
+      fallbackWorkspace: 'coding',
+      focusOwner: true
     },
     displayRoles: {
       primary: { name: 'Primary display', portableMatch: { builtIn: true } },
@@ -195,6 +203,44 @@ export function validateV2(config) {
   if (config.rules != null && !Array.isArray(config.rules)) errors.push('rules must be an array');
   if (config.settings != null && !object(config.settings)) errors.push('settings must be an object');
   rejectUnknown(config.settings, new Set(['eventAutomationEnabled', 'topologyStableSamples', 'topologyCooldownSeconds']), 'settings', errors);
+
+  if (config.aiProviders != null && !object(config.aiProviders)) errors.push('aiProviders must be an object');
+  if (config.aiRouting != null && !object(config.aiRouting)) errors.push('aiRouting must be an object');
+  for (const [providerId, provider] of Object.entries(config.aiProviders || {})) {
+    const path = `aiProviders.${providerId}`;
+    rejectUnknown(provider, new Set(['name', 'app']), path, errors);
+    if (!id(providerId)) errors.push(`${path} has an invalid id`);
+    if (!provider?.name?.trim()) errors.push(`${path}.name is required`);
+    if (!config.apps[provider?.app]) errors.push(`${path}.app references unknown app "${provider?.app}"`);
+  }
+  if (config.aiRouting) {
+    rejectUnknown(config.aiRouting, new Set(['assignments', 'fallbackWorkspace', 'focusOwner']), 'aiRouting', errors);
+    if (!config.workspaces[config.aiRouting.fallbackWorkspace]) errors.push('aiRouting.fallbackWorkspace references an unknown workspace');
+    if (typeof config.aiRouting.focusOwner !== 'boolean') errors.push('aiRouting.focusOwner must be boolean');
+    for (const [workspaceId, assignment] of Object.entries(config.aiRouting.assignments || {})) {
+      const path = `aiRouting.assignments.${workspaceId}`;
+      rejectUnknown(assignment, new Set(['role', 'roleOverrides', 'provider', 'overrides']), path, errors);
+      const workspace = config.workspaces[workspaceId];
+      if (!workspace) errors.push(`${path} references an unknown workspace`);
+      if (workspace && !workspace.windows?.[assignment.role]) errors.push(`${path}.role references unknown window role "${assignment.role}"`);
+      if (!config.aiProviders?.[assignment.provider]) errors.push(`${path}.provider references unknown AI provider "${assignment.provider}"`);
+      rejectUnknown(assignment.overrides, new Set(MODES), `${path}.overrides`, errors);
+      rejectUnknown(assignment.roleOverrides, new Set(MODES), `${path}.roleOverrides`, errors);
+      for (const [mode, role] of Object.entries(assignment.roleOverrides || {})) {
+        if (!workspace?.windows?.[role]) errors.push(`${path}.roleOverrides.${mode} references unknown window role "${role}"`);
+        if (workspace && !workspace.variants?.[mode]) errors.push(`${path}.roleOverrides.${mode} targets a mode unavailable to this workspace`);
+      }
+      for (const [mode, providerId] of Object.entries(assignment.overrides || {})) {
+        if (!config.aiProviders?.[providerId]) errors.push(`${path}.overrides.${mode} references unknown AI provider "${providerId}"`);
+        if (workspace && !workspace.variants?.[mode]) errors.push(`${path}.overrides.${mode} targets a mode unavailable to this workspace`);
+      }
+      for (const mode of MODES.filter((item) => workspace?.variants?.[item])) {
+        const routedRole = assignment.roleOverrides?.[mode] || assignment.role;
+        const variantRoles = (workspace.variants[mode].runtime?.windows || Object.keys(workspace.windows).map((role) => ({ role }))).map((window) => window.role);
+        if (!variantRoles.includes(routedRole)) errors.push(`${path} cannot route ${mode}: window role "${routedRole}" is absent from that variant`);
+      }
+    }
+  }
 
   for (const [profileId, profile] of Object.entries(config.profiles || {})) {
     const path = `profiles.${profileId}`;
@@ -334,6 +380,20 @@ export function validateV2(config) {
     for (const workspaceId of Object.keys(config.workspaces)) {
       if (config.workspaces[workspaceId].variants?.[mode] && !placed.has(workspaceId)) warnings.push(`workspaces.${workspaceId}.variants.${mode} is not used by modes.${mode}`);
     }
+    const routedProviderApps = new Set([...placed].map((workspaceId) => {
+      const providerId = config.aiRouting?.assignments?.[workspaceId]?.overrides?.[mode] || config.aiRouting?.assignments?.[workspaceId]?.provider;
+      return config.aiProviders?.[providerId]?.app;
+    }).filter(Boolean));
+    if (routedProviderApps.size) {
+      const fallbackId = config.aiRouting.fallbackWorkspace;
+      if (!placed.has(fallbackId)) errors.push(`aiRouting.fallbackWorkspace "${fallbackId}" is outside ${mode}`);
+      const fallbackWorkspace = config.workspaces[fallbackId];
+      const fallbackWindows = fallbackWorkspace?.variants?.[mode]?.runtime?.windows || Object.values(fallbackWorkspace?.windows || {}).map((window) => ({ app_key: window.app }));
+      const fallbackApps = new Set(fallbackWindows.map((window) => window.app_key));
+      const fallbackProviderId = config.aiRouting.assignments?.[fallbackId]?.overrides?.[mode] || config.aiRouting.assignments?.[fallbackId]?.provider;
+      if (config.aiProviders?.[fallbackProviderId]?.app) fallbackApps.add(config.aiProviders[fallbackProviderId].app);
+      for (const appKey of routedProviderApps) if (!fallbackApps.has(appKey)) errors.push(`aiRouting fallback workspace "${fallbackId}" does not contain provider app "${appKey}" in ${mode}`);
+    }
     if (definition.cleanup && (!Array.isArray(definition.cleanup) || definition.cleanup.some((item) => typeof item !== 'string' || !/^[a-z_]+:(solo|wide|tall)$/.test(item)))) errors.push(`modes.${mode}.cleanup is invalid`);
     for (const [index, rule] of (Array.isArray(definition.contextualApps) ? definition.contextualApps : []).entries()) {
       const path = `modes.${mode}.contextualApps[${index}]`;
@@ -396,6 +456,60 @@ export function compileLayout(node, rect = { x: 0, y: 0, w: 120, h: 120 }, actio
   return actions;
 }
 
+export function resolvedAIProvider(config, workspaceId, mode) {
+  const assignment = config.aiRouting?.assignments?.[workspaceId];
+  return assignment ? (assignment.overrides?.[mode] || assignment.provider) : null;
+}
+
+export function resolvedAIRole(config, workspaceId, mode) {
+  const assignment = config.aiRouting?.assignments?.[workspaceId];
+  return assignment ? (assignment.roleOverrides?.[mode] || assignment.role) : null;
+}
+
+function configuredWindows(config, workspaceId, mode) {
+  const workspace = config.workspaces[workspaceId];
+  const variant = workspace.variants[mode];
+  const windows = structuredClone(variant.runtime?.windows || Object.entries(workspace.windows).map(([role, window]) => ({
+    role, app_key: window.app, required: window.required,
+    ...(window.ownership ? { ownership: window.ownership } : {}),
+    ...(window.cardinality ? { cardinality: window.cardinality } : {}),
+    ...(window.selector ? { selector: window.selector } : {})
+  })));
+  const assignment = config.aiRouting?.assignments?.[workspaceId];
+  const providerId = resolvedAIProvider(config, workspaceId, mode);
+  const providerApp = config.aiProviders?.[providerId]?.app;
+  if (assignment && providerApp) {
+    const routed = windows.find((window) => window.role === resolvedAIRole(config, workspaceId, mode));
+    if (routed) routed.app_key = providerApp;
+  }
+  return windows;
+}
+
+export function compileContextualApps(config, mode) {
+  const placed = config.modes[mode]?.displays.flatMap((display) => display.workspaceOrder) || [];
+  const fallback = config.aiRouting?.fallbackWorkspace;
+  const grouped = new Map();
+  for (const workspaceId of placed) {
+    const providerId = resolvedAIProvider(config, workspaceId, mode);
+    const appKey = config.aiProviders?.[providerId]?.app;
+    if (!appKey) continue;
+    const workspaces = grouped.get(appKey) || [];
+    workspaces.push(workspaceId);
+    grouped.set(appKey, workspaces);
+  }
+  const derived = [...grouped].map(([appKey, workspaces]) => ({
+    app_key: appKey,
+    workspace_ids: [...new Set([...workspaces, ...(fallback && placed.includes(fallback) ? [fallback] : [])])],
+    fallback_workspace_id: fallback,
+    focus_owner: config.aiRouting?.focusOwner === true
+  }));
+  const derivedApps = new Set(derived.map((rule) => rule.app_key));
+  const manual = (config.modes[mode]?.contextualApps || [])
+    .filter((rule) => !derivedApps.has(rule.app))
+    .map((rule) => ({ app_key: rule.app, workspace_ids: rule.workspaces, fallback_workspace_id: rule.fallbackWorkspace, focus_owner: rule.focusOwner === true }));
+  return [...derived, ...manual];
+}
+
 export function compileV2(config) {
   const validation = validateV2(config);
   if (!validation.valid) throw new Error(validation.errors.join('\n'));
@@ -428,12 +542,7 @@ export function compileV2(config) {
           display_role: variant.runtime?.displayRole || (display.role === 'primary' ? 'primary' : `${display.role}__${mode}`),
           space_layout: 'float',
           activation: structuredClone(variant.activation || { type: 'always' }),
-          windows: variant.runtime?.windows || Object.entries(workspace.windows).map(([role, window]) => ({
-            role, app_key: window.app, required: window.required,
-            ...(window.ownership ? { ownership: window.ownership } : {}),
-            ...(window.cardinality ? { cardinality: window.cardinality } : {}),
-            ...(window.selector ? { selector: window.selector } : {})
-          })),
+          windows: configuredWindows(config, workspaceId, mode),
           layout_ref: runtimeId,
           ...(variant.runtime?.primaryAloneLayout ? { primary_alone_layout_ref: `${runtimeId}__primary_alone` } : {}),
           ...(variant.runtime?.cleanup ? { cleanup: variant.runtime.cleanup } : {}),
@@ -448,12 +557,7 @@ export function compileV2(config) {
       display_mode: mode,
       steps,
       cleanup: config.modes[mode]?.cleanup || [],
-      contextual_apps: (config.modes[mode]?.contextualApps || []).map((rule) => ({
-        app_key: rule.app,
-        workspace_ids: rule.workspaces,
-        fallback_workspace_id: rule.fallbackWorkspace,
-        focus_owner: rule.focusOwner === true
-      }))
+      contextual_apps: compileContextualApps(config, mode)
     };
   }
   return runtime;

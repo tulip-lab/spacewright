@@ -37,7 +37,7 @@ function work_doctor --description "Run read-only workspace system checks"
         if test -r (spacewright_config_v2_file)
             set -l runtime_file (spacewright_config_runtime_file)
             set -l source_hash (__spacewright_config_sha256 (spacewright_config_v2_file))
-            set -l compiled_hash (jq -r 'select(.generated.format_version == 1 and .generated.compiler_version == 2 and .generated.source_version == 2) | .generated.source_sha256 // empty' "$runtime_file" 2>/dev/null)
+            set -l compiled_hash (jq -r 'select(.generated.format_version == 1 and .generated.compiler_version == 3 and .generated.source_version == 2) | .generated.source_sha256 // empty' "$runtime_file" 2>/dev/null)
             if test -n "$source_hash"; and test "$source_hash" = "$compiled_hash"
                 __work_doctor_ok "SpaceWright configuration v2 and compiled runtime"
             else if command -q node

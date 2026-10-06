@@ -5,6 +5,12 @@ configuration and installation contracts may still change before 1.0.
 
 ## Unreleased
 
+- Add semantic AI providers and workspace routing with defaults shared across
+  Solo, Wide, and Tall, explicit per-mode overrides, provider-aware contextual
+  ownership, and a deterministic GTD AI fallback.
+- Add a dedicated AI Routing configurator view for provider registration,
+  workspace assignments, effective mode previews, fallback, and final-focus
+  policy.
 - Add guarded full-mode transitions with duplicate-request coalescing,
   latest-request replacement, process-group cancellation, a bounded safety
   deadline, persisted status, and a native macOS progress/countdown banner.

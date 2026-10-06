@@ -17,6 +17,13 @@
       "propertyNames": { "$ref": "#/$defs/id" },
       "additionalProperties": { "$ref": "#/$defs/app" }
     },
+    "aiProviders": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/id" },
+      "additionalProperties": { "$ref": "#/$defs/aiProvider" }
+    },
+    "aiRouting": { "$ref": "#/$defs/aiRouting" },
     "displayRoles": {
       "type": "object",
       "minProperties": 1,
@@ -75,6 +82,56 @@
           },
           "additionalProperties": false
         }
+      },
+      "additionalProperties": false
+    },
+    "aiProvider": {
+      "type": "object",
+      "required": ["name", "app"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "app": { "$ref": "#/$defs/id" }
+      },
+      "additionalProperties": false
+    },
+    "aiAssignment": {
+      "type": "object",
+      "required": ["role", "provider"],
+      "properties": {
+        "role": { "$ref": "#/$defs/id" },
+        "roleOverrides": {
+          "type": "object",
+          "properties": {
+            "solo": { "$ref": "#/$defs/id" },
+            "wide": { "$ref": "#/$defs/id" },
+            "tall": { "$ref": "#/$defs/id" }
+          },
+          "additionalProperties": false
+        },
+        "provider": { "$ref": "#/$defs/id" },
+        "overrides": {
+          "type": "object",
+          "properties": {
+            "solo": { "$ref": "#/$defs/id" },
+            "wide": { "$ref": "#/$defs/id" },
+            "tall": { "$ref": "#/$defs/id" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "aiRouting": {
+      "type": "object",
+      "required": ["assignments", "fallbackWorkspace", "focusOwner"],
+      "properties": {
+        "assignments": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/id" },
+          "additionalProperties": { "$ref": "#/$defs/aiAssignment" }
+        },
+        "fallbackWorkspace": { "$ref": "#/$defs/id" },
+        "focusOwner": { "type": "boolean" }
       },
       "additionalProperties": false
     },
@@ -268,7 +325,6 @@
         "cleanup": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z_]+:(solo|wide|tall)$" } },
         "contextualApps": {
           "type": "array",
-          "maxItems": 1,
           "items": {
             "type": "object",
             "required": ["app", "workspaces", "fallbackWorkspace"],

@@ -20,7 +20,7 @@ command node "$package_root/configurator/cli.mjs" compile-to "$test_root/config.
 or exit 18
 test (jq -r '.generated.source_sha256 | length' "$test_root/generated/runtime.json") -eq 64
 or exit 19
-jq -e '.generated.format_version == 1 and .generated.compiler_version == 2 and .generated.source_version == 2 and (.generated.generation_id | length) == 16' "$test_root/generated/runtime.json" >/dev/null
+jq -e '.generated.format_version == 1 and .generated.compiler_version == 3 and .generated.source_version == 2 and (.generated.generation_id | length) == 16' "$test_root/generated/runtime.json" >/dev/null
 or exit 24
 spacewright_config_status | jq -e '.version == 2 and .current == true and (.generation_id | length) == 16' >/dev/null
 or exit 25

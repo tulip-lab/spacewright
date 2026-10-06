@@ -171,7 +171,6 @@
           },
           "contextual_apps": {
             "type": "array",
-            "maxItems": 1,
             "items": {
               "type": "object",
               "required": ["app_key", "workspace_ids", "fallback_workspace_id", "focus_owner"],

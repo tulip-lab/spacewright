@@ -14,7 +14,16 @@ function previewConfig() {
     apps: {
       code: { name: 'Visual Studio Code', match: { appNames: ['Code', 'Visual Studio Code'] } },
       chatgpt: { name: 'ChatGPT', match: { appNames: ['ChatGPT'] } },
+      hermes: { name: 'Hermes', match: { appNames: ['Hermes'] } },
       terminal: { name: 'Terminal', match: { appNames: ['Warp', 'Terminal'] } }
+    },
+    aiProviders: {
+      hermes: { name: 'Hermes', app: 'hermes' },
+      chatgpt: { name: 'ChatGPT', app: 'chatgpt' }
+    },
+    aiRouting: {
+      assignments: { coding: { role: 'assistant', provider: 'chatgpt', overrides: {} } },
+      fallbackWorkspace: 'coding', focusOwner: true
     },
     displayRoles: {
       primary: { name: 'MacBook display', portableMatch: { builtIn: true } },
@@ -133,7 +142,7 @@ function syncUrl() {
 }
 
 function changedSections(before, after) {
-  return ['metadata', 'apps', 'displayRoles', 'workspaces', 'modes', 'shortcuts', 'profiles', 'rules', 'settings'].filter((key) => JSON.stringify(before?.[key]) !== JSON.stringify(after?.[key]));
+  return ['metadata', 'apps', 'aiProviders', 'aiRouting', 'displayRoles', 'workspaces', 'modes', 'shortcuts', 'profiles', 'rules', 'settings'].filter((key) => JSON.stringify(before?.[key]) !== JSON.stringify(after?.[key]));
 }
 
 const MODES = ['solo', 'tall', 'wide'];
@@ -532,7 +541,7 @@ function workspacesView() {
   root.querySelectorAll('[data-mode-enabled]').forEach((input) => input.onchange = async () => {
     const workspace = state.config.workspaces[state.selectedWorkspace]; const modeId = input.dataset.modeEnabled;
     if (input.checked) workspace.variants[modeId] = structuredClone(workspace.variants[state.mode] || workspace.variants[MODES.find((item) => workspace.variants[item])]);
-    else { if (!await confirmAction(`Disable ${workspace.name} in ${modeId}? Its ${modeId} layout and placement will be removed from the draft.`, { confirmLabel: 'Disable Mode', danger: true })) { input.checked = true; return; } delete workspace.variants[modeId]; for (const display of state.config.modes[modeId].displays) display.workspaceOrder = display.workspaceOrder.filter((item) => item !== state.selectedWorkspace); }
+    else { if (!await confirmAction(`Disable ${workspace.name} in ${modeId}? Its ${modeId} layout and placement will be removed from the draft.`, { confirmLabel: 'Disable Mode', danger: true })) { input.checked = true; return; } delete workspace.variants[modeId]; for (const display of state.config.modes[modeId].displays) display.workspaceOrder = display.workspaceOrder.filter((item) => item !== state.selectedWorkspace); const assignment=state.config.aiRouting?.assignments?.[state.selectedWorkspace];if(assignment?.overrides)delete assignment.overrides[modeId];if(assignment?.roleOverrides)delete assignment.roleOverrides[modeId]; }
     markDirty(); render();
   });
   root.querySelector('#enable-current-mode')?.addEventListener('click', () => { const workspace = state.config.workspaces[state.selectedWorkspace]; workspace.variants[state.mode] = structuredClone(workspace.variants[MODES.find((item) => workspace.variants[item])]); state.config.modes[state.mode].displays[0].workspaceOrder.push(state.selectedWorkspace); markDirty(); render(); });
@@ -592,20 +601,27 @@ function workspacesView() {
     renameKey(state.config.workspaces, oldId, newId);
     for (const mode of Object.values(state.config.modes)) for (const display of mode.displays) display.workspaceOrder = display.workspaceOrder.map((id) => id === oldId ? newId : id);
     for (const shortcut of state.config.shortcuts || []) if (shortcut.action.workspace === oldId) shortcut.action.workspace = newId;
+    if (state.config.aiRouting?.assignments?.[oldId]) renameKey(state.config.aiRouting.assignments, oldId, newId);
+    if (state.config.aiRouting?.fallbackWorkspace === oldId) state.config.aiRouting.fallbackWorkspace = newId;
     state.selectedWorkspace = newId; markDirty(); render();
   };
   if (root.querySelector('#delete-workspace')) root.querySelector('#delete-workspace').onclick = async () => {
     const id = state.selectedWorkspace;
     if (Object.keys(state.config.workspaces).length === 1) return toast('A configuration must keep at least 1 workspace.', true);
+    if (state.config.aiRouting?.fallbackWorkspace === id) return toast('Choose a different AI fallback workspace before deleting this workspace.', true);
     if (!await confirmAction(`Delete workspace “${id}” and remove it from every mode and shortcut?`, { confirmLabel: 'Delete Workspace', danger: true })) return;
     delete state.config.workspaces[id];
     for (const mode of Object.values(state.config.modes)) for (const display of mode.displays) display.workspaceOrder = display.workspaceOrder.filter((workspaceId) => workspaceId !== id);
     state.config.shortcuts = (state.config.shortcuts || []).filter((shortcut) => shortcut.action.workspace !== id);
+    if (state.config.aiRouting?.assignments) delete state.config.aiRouting.assignments[id];
     state.selectedWorkspace = null; markDirty(); render();
   };
   root.querySelectorAll('[data-rename-window]').forEach((button) => button.onclick = async () => {
     const workspace = state.config.workspaces[state.selectedWorkspace]; const oldRole = button.dataset.renameWindow; const newRole = await requestId('New Window Role ID', oldRole, workspace.windows); if (!newRole) return;
     renameKey(workspace.windows, oldRole, newRole);
+    const assignment = state.config.aiRouting?.assignments?.[state.selectedWorkspace];
+    if (assignment?.role === oldRole) assignment.role = newRole;
+    for (const mode of Object.keys(assignment?.roleOverrides || {})) if (assignment.roleOverrides[mode] === oldRole) assignment.roleOverrides[mode] = newRole;
     for (const variant of Object.values(workspace.variants)) {
       visitLayout(variant.layout, (node) => { if (node.role === oldRole) node.role = newRole; });
       if (variant.activation?.role === oldRole) variant.activation.role = newRole;
@@ -617,6 +633,8 @@ function workspacesView() {
   root.querySelectorAll('[data-delete-window]').forEach((button) => button.onclick = async () => {
     const workspace = state.config.workspaces[state.selectedWorkspace]; const role = button.dataset.deleteWindow;
     if (Object.keys(workspace.windows).length === 1) return toast('A workspace must keep at least 1 window role.', true);
+    const assignment = state.config.aiRouting?.assignments?.[state.selectedWorkspace];
+    if (assignment?.role === role || Object.values(assignment?.roleOverrides || {}).includes(role)) return toast('This role is used by AI Routing. Remove or change that route first.', true);
     if (!await confirmAction(`Remove window “${role}” from this workspace and all of its layouts?`, { confirmLabel: 'Remove Window', danger: true })) return;
     delete workspace.windows[role];
     for (const variant of Object.values(workspace.variants)) {
@@ -655,14 +673,51 @@ function workspacesView() {
   };
 }
 
+function aiView() {
+  const providers = state.config.aiProviders || {};
+  const routing = state.config.aiRouting;
+  if (!routing || !Object.keys(providers).length) {
+    const likelyApps = Object.entries(state.config.apps).filter(([id, app]) => /hermes|chatgpt|claude|copilot|gemini/i.test(`${id} ${app.name}`));
+    root.innerHTML = title('AI routing', 'Give AI windows a stable role', 'Choose an AI once for each workspace. Solo, Wide and Tall inherit that choice unless you deliberately override one mode.') + `<section class="ai-empty"><div class="ai-orbit" aria-hidden="true"><span>AI</span></div><div><p class="kicker">Semantic layer</p><h3>One assignment, three layouts</h3><p>SpaceWright will route the selected provider into the workspace role and keep its window context with the workspace you came from.</p><button id="enable-ai-routing" class="primary" ${likelyApps.length ? '' : 'disabled'}>Set up AI routing</button>${likelyApps.length ? `<small>Detected candidates: ${likelyApps.map(([,app])=>escapeHtml(app.name)).join(' · ')}</small>` : '<small>Register ChatGPT or Hermes on the Apps page first.</small>'}</div></section>`;
+    root.querySelector('#enable-ai-routing')?.addEventListener('click', () => {
+      state.config.aiProviders = Object.fromEntries(likelyApps.map(([app, item]) => [app, { name: item.name, app }]));
+      state.config.aiRouting = { assignments: {}, fallbackWorkspace: ids(state.config.workspaces)[0], focusOwner: true };
+      markDirty(); render();
+    });
+    return;
+  }
+  const providerEntries = Object.entries(providers);
+  const providerOptions = (selected, inherit = false) => `${inherit ? '<option value="">Inherit default</option>' : ''}${providerEntries.map(([id, provider]) => `<option value="${id}" ${selected === id ? 'selected' : ''}>${escapeHtml(provider.name)}</option>`).join('')}`;
+  const workspaceOptions = Object.entries(state.config.workspaces).map(([id, workspace]) => `<option value="${id}">${escapeHtml(workspace.name)}</option>`).join('');
+  const providerCards = providerEntries.map(([id, provider], index) => `<article class="ai-provider-card"><div class="ai-provider-index">${String(index + 1).padStart(2,'0')}</div><div><span>Provider</span><input aria-label="Provider name for ${escapeHtml(id)}" data-ai-provider-name="${id}" value="${escapeHtml(provider.name)}"><small>${escapeHtml(id)}</small></div><label>Application<select data-ai-provider-app="${id}">${Object.entries(state.config.apps).map(([appId, app])=>`<option value="${appId}" ${provider.app===appId?'selected':''}>${escapeHtml(app.name)}</option>`).join('')}</select></label><button class="quiet" data-delete-ai-provider="${id}" aria-label="Delete ${escapeHtml(provider.name)}">Remove</button></article>`).join('');
+  const assignments = Object.entries(routing.assignments || {}).map(([workspaceId, assignment]) => {
+    const workspace = state.config.workspaces[workspaceId];
+    if (!workspace) return '';
+    return `<article class="ai-route-row"><header><span class="ai-route-signal"></span><div><strong>${escapeHtml(workspace.name)}</strong><small>${escapeHtml(workspaceId)} · default role <code>${escapeHtml(assignment.role)}</code></small></div></header><label class="ai-default-select"><span>Shared default</span><select data-ai-default="${workspaceId}">${providerOptions(assignment.provider)}</select></label><div class="ai-mode-overrides">${MODES.map((mode)=>{const enabled=Boolean(workspace.variants?.[mode]);const effective=assignment.overrides?.[mode]||assignment.provider;const effectiveRole=assignment.roleOverrides?.[mode]||assignment.role;return `<label class="${enabled?'':'disabled'}"><span>${mode}<b>${escapeHtml(providers[effective]?.name||effective)} · ${escapeHtml(effectiveRole)}</b></span><select data-ai-override="${workspaceId}:${mode}" ${enabled?'':'disabled'}>${providerOptions(assignment.overrides?.[mode]||'',true)}</select></label>`;}).join('')}</div><button class="quiet" data-delete-ai-route="${workspaceId}">Remove route</button></article>`;
+  }).join('');
+  root.innerHTML = title('AI routing', 'One AI choice, shared across every shape', 'Workspace roles stay semantic. The shared default flows through Solo, Wide and Tall; mode overrides are explicit exceptions.') + `<section class="ai-command-strip"><div><span>Providers</span><strong>${providerEntries.length}</strong></div><div><span>Routed workspaces</span><strong>${Object.keys(routing.assignments||{}).length}</strong></div><label><span>Context fallback</span><select id="ai-fallback">${Object.entries(state.config.workspaces).map(([id, workspace])=>`<option value="${id}" ${routing.fallbackWorkspace===id?'selected':''}>${escapeHtml(workspace.name)}</option>`).join('')}</select></label><label class="check"><input id="ai-focus-owner" type="checkbox" ${routing.focusOwner?'checked':''}> Focus the contextual AI workspace after a mode run</label></section><div class="section-head compact"><div><p class="kicker">Provider registry</p><h2>Available AI identities</h2></div></div><div class="ai-provider-list">${providerCards}</div><article class="ai-add-provider"><input id="ai-provider-id" placeholder="provider_id" aria-label="New provider ID"><input id="ai-provider-name" placeholder="Display name" aria-label="New provider display name"><select id="ai-provider-app" aria-label="Provider application">${Object.entries(state.config.apps).map(([id,app])=>`<option value="${id}">${escapeHtml(app.name)}</option>`).join('')}</select><button id="add-ai-provider" class="quiet">+ Provider</button></article><div class="section-head compact"><div><p class="kicker">Assignment matrix</p><h2>Workspace → AI</h2><p>Green is the shared default. Blue labels show the effective provider in each mode.</p></div></div><div class="ai-routing-matrix">${assignments || '<p class="empty-lane">No workspace has a semantic AI role yet.</p>'}</div><article class="ai-add-route"><div><p class="kicker">New route</p><h3>Declare one window role as AI</h3></div><label>Workspace<select id="ai-route-workspace">${workspaceOptions}</select></label><label>Window role<select id="ai-route-role"></select></label><label>Default provider<select id="ai-route-provider">${providerOptions(providerEntries[0]?.[0])}</select></label><button id="add-ai-route" class="primary">Add route</button></article><p class="ai-footnote">Existing concrete app values remain as compatibility fallbacks. The compiled runtime uses this routing layer as the authority.</p>`;
+  const updateRouteRoles = () => { const workspaceId=root.querySelector('#ai-route-workspace').value; root.querySelector('#ai-route-role').innerHTML=ids(state.config.workspaces[workspaceId]?.windows).map((role)=>`<option value="${role}">${escapeHtml(role)}</option>`).join(''); };
+  updateRouteRoles(); root.querySelector('#ai-route-workspace').onchange=updateRouteRoles;
+  root.querySelector('#ai-fallback').onchange=(event)=>{routing.fallbackWorkspace=event.target.value;markDirty();};
+  root.querySelector('#ai-focus-owner').onchange=(event)=>{routing.focusOwner=event.target.checked;markDirty();};
+  root.querySelectorAll('[data-ai-provider-name]').forEach((input)=>input.onchange=()=>{providers[input.dataset.aiProviderName].name=input.value.trim();markDirty();render();});
+  root.querySelectorAll('[data-ai-provider-app]').forEach((select)=>select.onchange=()=>{providers[select.dataset.aiProviderApp].app=select.value;markDirty();render();});
+  root.querySelectorAll('[data-ai-default]').forEach((select)=>select.onchange=()=>{routing.assignments[select.dataset.aiDefault].provider=select.value;markDirty();render();});
+  root.querySelectorAll('[data-ai-override]').forEach((select)=>select.onchange=()=>{const [workspaceId,mode]=select.dataset.aiOverride.split(':');const assignment=routing.assignments[workspaceId];assignment.overrides ||= {};if(select.value)assignment.overrides[mode]=select.value;else delete assignment.overrides[mode];markDirty();render();});
+  root.querySelectorAll('[data-delete-ai-route]').forEach((button)=>button.onclick=()=>{delete routing.assignments[button.dataset.deleteAiRoute];markDirty();render();});
+  root.querySelectorAll('[data-delete-ai-provider]').forEach((button)=>button.onclick=()=>{const id=button.dataset.deleteAiProvider;if(Object.values(routing.assignments).some((assignment)=>assignment.provider===id||Object.values(assignment.overrides||{}).includes(id)))return toast('Reassign workspaces before removing this provider.',true);delete providers[id];markDirty();render();});
+  root.querySelector('#add-ai-provider').onclick=()=>{const id=root.querySelector('#ai-provider-id').value.trim();const name=root.querySelector('#ai-provider-name').value.trim();if(!validId(id)||!name||providers[id])return toast('Choose a unique lowercase provider ID and a display name.',true);providers[id]={name,app:root.querySelector('#ai-provider-app').value};markDirty();render();};
+  root.querySelector('#add-ai-route').onclick=()=>{const workspaceId=root.querySelector('#ai-route-workspace').value;if(routing.assignments[workspaceId])return toast('This workspace already has an AI route.',true);routing.assignments[workspaceId]={role:root.querySelector('#ai-route-role').value,provider:root.querySelector('#ai-route-provider').value,overrides:{}};markDirty();render();};
+}
+
 function appsView() {
   const running = new Set(state.appInventory?.apps || []); const query=state.appSearch.toLowerCase();
-  const references=(appId)=>Object.entries(state.config.workspaces).flatMap(([workspaceId,workspace])=>{
+  const references=(appId)=>[...Object.entries(state.config.workspaces).flatMap(([workspaceId,workspace])=>{
     const results=[];
     for(const [role,window] of Object.entries(workspace.windows)) if(window.app===appId) results.push(`${workspace.name||workspaceId} · ${role}`);
     for(const [mode,variant] of Object.entries(workspace.variants)) for(const runtimeWindow of variant.runtime?.windows||[]) if(runtimeWindow.app_key===appId) results.push(`${workspace.name||workspaceId} · ${mode} runtime · ${runtimeWindow.role}`);
     return [...new Set(results)];
-  });
+  }), ...Object.entries(state.config.aiProviders || {}).filter(([,provider])=>provider.app===appId).map(([providerId])=>`AI provider · ${providerId}`)];
   const rows=Object.entries(state.config.apps).filter(([id,app])=>`${id} ${app.name} ${app.match.appNames.join(' ')} ${(app.match.bundleIds||[]).join(' ')}`.toLowerCase().includes(query)).map(([id,app])=>{const used=references(id);const detected=running.has(app.name)||app.match.appNames.some((name)=>running.has(name));return `<details class="app-list-row"><summary><span class="app-name-cell"><i class="app-avatar">${escapeHtml(app.name.slice(0,2).toUpperCase())}</i><span><strong>${escapeHtml(app.name)}</strong><small>${escapeHtml(id)}</small></span></span><span><b class="detection ${detected?'detected':''}">${state.appInventory ? detected?'Running':'Not detected':'Not checked'}</b></span><span>${escapeHtml(app.match.appNames.join(', '))}</span><span>${used.length?escapeHtml(used.join(', ')):'—'}</span><span>Expand</span></summary><div class="app-row-editor"><div class="field"><label>Display name</label><input data-app-name="${id}" value="${escapeHtml(app.name)}"></div><div class="field"><label>macOS aliases</label><input data-app-aliases="${id}" value="${escapeHtml(app.match.appNames.join(', '))}"></div><div class="field"><label>Bundle identifiers</label><input data-app-bundles="${id}" value="${escapeHtml((app.match.bundleIds||[]).join(', '))}" placeholder="com.example.App"></div><div class="actions"><button class="quiet" data-rename-app="${id}">Rename ID</button><button class="danger" data-delete-app="${id}">Delete App</button></div></div></details>`;}).join('');
   const unmatched=(state.appInventory?.apps||[]).filter((name)=>!Object.values(state.config.apps).some((app)=>app.name===name||app.match.appNames.includes(name)));
   root.innerHTML = title('Application registry', 'Applications at a glance', 'Search the shared registry used by every Workspace picker. Expand a row only when details need editing.', '<button id="discover-apps" class="quiet">Discover Open Apps</button><button id="add-app" class="primary">+ Add Application</button>') + `<label class="workspace-search app-search"><span>Search applications</span><input id="app-search" data-ui-only type="search" placeholder="Name, stable ID or alias" value="${escapeHtml(state.appSearch)}"></label>${state.appInventory?`<div class="discovery-summary"><strong>${running.size} open · ${running.size-unmatched.length} matched · ${unmatched.length} not registered</strong>${unmatched.length?`<p>${unmatched.map((name)=>`<button class="shortcut-pill" data-add-discovered="${escapeHtml(name)}">+ ${escapeHtml(name)}</button>`).join(' ')}</p>`:'<p>Every open application matches the registry.</p>'}</div>`:''}<div class="app-list-head"><span>App</span><span>Detection</span><span>Aliases</span><span>Used By</span><span>Actions</span></div><div class="app-list">${rows||'<p class="empty-lane">No applications match your search.</p>'}</div>`;
@@ -676,6 +731,7 @@ function appsView() {
   root.querySelectorAll('[data-rename-app]').forEach((button) => button.onclick = async () => {
     const oldId = button.dataset.renameApp; const newId = await requestId('New Application ID', oldId, state.config.apps); if (!newId) return;
     renameKey(state.config.apps, oldId, newId);
+    for (const provider of Object.values(state.config.aiProviders || {})) if (provider.app === oldId) provider.app = newId;
     for (const workspace of Object.values(state.config.workspaces)) for (const window of Object.values(workspace.windows)) if (window.app === oldId) window.app = newId;
     for (const workspace of Object.values(state.config.workspaces)) for (const variant of Object.values(workspace.variants)) for (const runtimeWindow of variant.runtime?.windows || []) if (runtimeWindow.app_key === oldId) runtimeWindow.app_key = newId;
     markDirty(); render();
@@ -915,6 +971,7 @@ function render() {
   else if (state.view === 'map') mapView();
   else if (state.view === 'displays') displaysView();
   else if (state.view === 'workspaces') workspacesView();
+  else if (state.view === 'ai') aiView();
   else if (state.view === 'apps') appsView();
   else if (state.view === 'shortcuts') shortcutsView();
   else if (state.view === 'automation') automationView();

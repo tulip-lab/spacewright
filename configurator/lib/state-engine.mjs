@@ -112,11 +112,15 @@ function sourceWorkspaceId(config, snapshot) {
 export function buildDesiredState(config, runtime, target = {}, snapshot = null) {
   const resolved = targetDefinition(config, target);
   const sourceWorkspace = sourceWorkspaceId(config, snapshot);
-  const contextualApps = resolved.kind === 'workspace' ? [] : (config.modes?.[resolved.mode]?.contextualApps || []).map((rule) => ({
-    appKey: rule.app,
-    workspaceIds: clone(rule.workspaces),
-    ownerWorkspaceId: rule.workspaces.includes(sourceWorkspace) ? sourceWorkspace : rule.fallbackWorkspace,
-    focusOwner: rule.focusOwner === true
+  const contextualRules = resolved.kind === 'workspace' ? [] : (runtime.modes?.[`work_${resolved.mode}`]?.contextual_apps || []);
+  const sourceRuleIndex = contextualRules.findIndex((rule) => rule.workspace_ids.includes(sourceWorkspace));
+  const fallbackFocusIndex = contextualRules.findIndex((rule) => rule.focus_owner === true);
+  const focusRuleIndex = sourceRuleIndex >= 0 ? sourceRuleIndex : fallbackFocusIndex;
+  const contextualApps = contextualRules.map((rule, index) => ({
+    appKey: rule.app_key,
+    workspaceIds: clone(rule.workspace_ids),
+    ownerWorkspaceId: rule.workspace_ids.includes(sourceWorkspace) ? sourceWorkspace : rule.fallback_workspace_id,
+    focusOwner: index === focusRuleIndex
   }));
   const placement = new Map();
   for (const display of config.modes[resolved.mode].displays) for (const workspaceId of display.workspaceOrder) placement.set(workspaceId, display.role);
@@ -124,7 +128,7 @@ export function buildDesiredState(config, runtime, target = {}, snapshot = null)
     const workspace = config.workspaces[workspaceId];
     const variant = workspace.variants[resolved.mode];
     const runtimeId = variant.command || `spacewright_${workspaceId}_${resolved.mode}`;
-    const configuredWindows = variant.runtime?.windows || Object.entries(workspace.windows).map(([role, window]) => ({
+    const configuredWindows = runtime.workspaces?.[runtimeId]?.windows || variant.runtime?.windows || Object.entries(workspace.windows).map(([role, window]) => ({
       role, app_key: window.app, required: window.required,
       ...(window.ownership ? { ownership: window.ownership } : {}),
       ...(window.cardinality ? { cardinality: window.cardinality } : {}),
