@@ -49,6 +49,10 @@ node "$installed_release_root/configurator/cli.mjs" starter | jq -e '.version ==
 or exit 17
 "$bin_root/spacewright" mode wide --dry-run | string match -q '*policy=latest_request_wins*'
 or exit 27
+set -l workspace_dry_run ("$bin_root/spacewright" workspace gtd_ai solo --dry-run | string collect)
+string match -q '*scope=target_only*' -- "$workspace_dry_run"
+    and string match -q '*finalization=none*' -- "$workspace_dry_run"
+or exit 28
 
 set -l server_log "$test_root/configurator.log"
 env HOME="$test_root" node "$installed_release_root/configurator/server.mjs" \

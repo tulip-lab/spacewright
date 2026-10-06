@@ -60,6 +60,10 @@ function modeCommand(mode) {
   return `workspace_run_step "display profile" ${profile}; and work_${mode}`;
 }
 
+function workspaceCommand(workspace, mode) {
+  return `set -lx WORKSPACE_SKIP_FINALIZATION 1; workspace_run_step "Arrange ${workspace} (${mode})" spacewright run ${workspace} ${mode}`;
+}
+
 async function focusedSpaceLabel() {
   try {
     const { stdout } = await execFileAsync('yabai', ['-m', 'query', '--spaces', '--space'], { timeout: 2_000, maxBuffer: 200_000 });
@@ -80,6 +84,9 @@ function publicState(owner, overrides = {}) {
     startedAt: owner.startedAt,
     deadlineAt: owner.deadlineAt,
     timeoutSeconds: owner.timeoutSeconds,
+    scope: owner.scope,
+    workspace: owner.workspace,
+    targetLabel: owner.targetLabel,
     ...overrides,
   };
 }
@@ -102,7 +109,7 @@ async function waitForExit(pid, timeoutMs) {
   return !processIsLive(pid);
 }
 
-async function replaceExistingOwner(lockRoot, requestedMode) {
+async function replaceExistingOwner(lockRoot, requestedTargetKey) {
   const owner = await readJson(join(lockRoot, 'owner.json'));
   const ownerKind = owner ? await processOwnerKind(owner.pid) : false;
   if (!owner) {
@@ -126,7 +133,8 @@ async function replaceExistingOwner(lockRoot, requestedMode) {
     throw new Error(`another SpaceWright mutation is active (run ${owner.runId || 'unknown'}, pid ${owner.pid}); wait for it to finish or cancel it`);
   }
 
-  if (owner.mode === requestedMode) return { duplicate: true, owner };
+  const ownerTargetKey = owner.targetKey || `mode:${owner.mode}`;
+  if (ownerTargetKey === requestedTargetKey) return { duplicate: true, owner };
 
   terminateProcessGroup(owner.childPid);
   try { process.kill(owner.pid, 'SIGTERM'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
@@ -144,7 +152,7 @@ async function replaceExistingOwner(lockRoot, requestedMode) {
   return { replaced: true, owner };
 }
 
-async function acquireLock(lockRoot, requestedMode, owner) {
+async function acquireLock(lockRoot, requestedTargetKey, owner) {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     try {
       await mkdir(lockRoot, { recursive: false, mode: 0o700 });
@@ -152,7 +160,7 @@ async function acquireLock(lockRoot, requestedMode, owner) {
       return { acquired: true };
     } catch (error) {
       if (error.code !== 'EEXIST') throw error;
-      const result = await replaceExistingOwner(lockRoot, requestedMode);
+      const result = await replaceExistingOwner(lockRoot, requestedTargetKey);
       if (result.duplicate) return { acquired: false, duplicate: true, owner: result.owner };
       if (result.retry) await sleep(50);
     }
@@ -194,9 +202,15 @@ export async function runTransition({
   command = modeCommand(mode),
   bannerExecutable,
   sourceSpaceLabel,
+  scope = 'mode',
+  workspace,
+  targetKey = `mode:${mode}`,
+  targetLabel,
 } = {}) {
   if (!VALID_MODES.has(mode)) throw new Error(`invalid mode: ${mode}`);
   await mkdir(stateRoot, { recursive: true, mode: 0o700 });
+
+  const resolvedTargetLabel = targetLabel || `${mode[0].toUpperCase()}${mode.slice(1)}`;
 
   const transitionRoot = join(stateRoot, 'mode-transition');
   const lockRoot = join(stateRoot, 'execution.lock');
@@ -210,6 +224,10 @@ export async function runTransition({
   const owner = {
     runId,
     mode,
+    scope,
+    workspace,
+    targetKey,
+    targetLabel: resolvedTargetLabel,
     pid: process.pid,
     childPid: null,
     startedAt: new Date(now).toISOString(),
@@ -217,9 +235,9 @@ export async function runTransition({
     timeoutSeconds: Math.ceil(timeoutMs / 1000),
     controller: 'mode-transition',
   };
-  const lock = await acquireLock(lockRoot, mode, owner);
+  const lock = await acquireLock(lockRoot, targetKey, owner);
   if (lock.duplicate) {
-    process.stderr.write(`[INFO] SpaceWright ${mode} transition is already running; duplicate request ignored\n`);
+    process.stderr.write(`[INFO] SpaceWright ${resolvedTargetLabel} transition is already running; duplicate request ignored\n`);
     return { status: 'duplicate', runId: lock.owner.runId, mode };
   }
 
@@ -299,7 +317,7 @@ export async function runTransition({
     if (requestedReason === 'cancelled') { status = 'cancelled'; message = 'Transition cancelled'; }
     else if (requestedReason === 'replaced') { status = 'replaced'; message = 'A newer mode request took over'; }
     else if (requestedReason === 'timed_out') { status = 'timed_out'; message = `Stopped after ${Math.ceil(timeoutMs / 1000)} seconds`; }
-    else if (exitCode.code === 0) { status = 'completed'; message = `${mode[0].toUpperCase()}${mode.slice(1)} workspace is ready`; }
+    else if (exitCode.code === 0) { status = 'completed'; message = scope === 'mode' ? `${resolvedTargetLabel} workspace is ready` : `${resolvedTargetLabel} is ready`; }
 
     await updateState({ status, phase: message, finishedAt: new Date().toISOString() });
     return { status, runId, mode, exitCode: exitCode.code };
@@ -333,14 +351,31 @@ export async function transitionStatus(stateRoot) {
 }
 
 async function main() {
-  const [action = 'help', mode] = process.argv.slice(2);
+  const [action = 'help', firstTarget, secondTarget] = process.argv.slice(2);
   const option = (name, fallback) => process.argv.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3) || fallback;
   const packageRoot = option('package-root', fileURLToPath(new URL('..', import.meta.url)));
   const stateRoot = option('state-root', process.env.SPACEWRIGHT_STATE_ROOT);
   if (!stateRoot) throw new Error('state root is required');
 
   if (action === 'run') {
+    const mode = firstTarget;
     const result = await runTransition({ mode, packageRoot, stateRoot });
+    if (!['completed', 'duplicate'].includes(result.status)) process.exitCode = 1;
+  } else if (action === 'workspace') {
+    const workspace = firstTarget;
+    const mode = secondTarget;
+    if (!/^[a-z][a-z0-9_]*$/.test(workspace || '')) throw new Error(`invalid workspace: ${workspace || ''}`);
+    const targetLabel = option('label', `${workspace} · ${mode}`);
+    const result = await runTransition({
+      mode,
+      packageRoot,
+      stateRoot,
+      command: workspaceCommand(workspace, mode),
+      scope: 'workspace',
+      workspace,
+      targetKey: `workspace:${workspace}:${mode}`,
+      targetLabel,
+    });
     if (!['completed', 'duplicate'].includes(result.status)) process.exitCode = 1;
   } else if (action === 'cancel') {
     const result = await cancelTransition(stateRoot);
@@ -348,7 +383,7 @@ async function main() {
   } else if (action === 'status') {
     process.stdout.write(`${JSON.stringify(await transitionStatus(stateRoot), null, 2)}\n`);
   } else {
-    process.stderr.write('usage: mode-transition.mjs <run MODE|cancel|status> --package-root=PATH --state-root=PATH\n');
+    process.stderr.write('usage: mode-transition.mjs <run MODE|workspace WORKSPACE MODE|cancel|status> --package-root=PATH --state-root=PATH\n');
     process.exitCode = 2;
   }
 }

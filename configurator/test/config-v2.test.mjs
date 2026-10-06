@@ -165,7 +165,7 @@ test('skhd output includes workspace actions and rejects an exact chord conflict
     keys: { modifiers: ['ctrl', 'alt'], key: 'c' },
     action: { type: 'activateWorkspace', workspace: 'coding', mode: 'wide' }
   });
-  assert.match(compileSkhd(config), /ctrl \+ alt - c : fish -lc 'spacewright run coding wide'/);
+  assert.match(compileSkhd(config), /ctrl \+ alt - c : fish -lc 'spacewright workspace coding wide'/);
   config.shortcuts.push({
     id: 'coding-wide-duplicate',
     keys: { modifiers: ['alt', 'ctrl'], key: 'c' },

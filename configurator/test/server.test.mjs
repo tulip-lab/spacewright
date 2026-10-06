@@ -48,6 +48,7 @@ test('local server isolates machine bindings and generated skhd output', async (
     "fn + shift - 0 : fish -lc 'display_apply_solo; work_solo'",
     "alt + shift - 1 : fish -lc 'coding_wide'",
     "ctrl + shift - 2 : fish -lc 'coding_family_tall'",
+    "fn + shift - 9 : fish -lc 'spacewright workspace gtd_ai solo'",
     "cmd - x : open -a Example"
   ].join('\n'));
   const { child, token, url } = await startServer(configRoot, stateRoot, skhdFile);
@@ -105,6 +106,7 @@ test('local server isolates machine bindings and generated skhd output', async (
   assert.ok(shortcutInventory.body.bindings.some((binding) => binding.action.type === 'activateMode' && binding.action.mode === 'wide'));
   assert.ok(shortcutInventory.body.bindings.some((binding) => binding.action.type === 'activateMode' && binding.action.mode === 'solo' && binding.keys.key === '0'));
   assert.ok(shortcutInventory.body.bindings.some((binding) => binding.action.type === 'activateWorkspace' && binding.action.workspace === 'coding' && binding.action.mode === 'wide'));
+  assert.ok(shortcutInventory.body.bindings.some((binding) => binding.action.type === 'activateWorkspace' && binding.action.workspace === 'gtd_ai' && binding.action.mode === 'solo'));
   assert.ok(shortcutInventory.body.bindings.some((binding) => binding.action.type === 'externalCommand' && binding.action.command === 'coding_family_tall'));
   assert.equal(shortcutInventory.body.bindings.some((binding) => binding.keys.key === 'x'), false);
 

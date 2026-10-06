@@ -75,12 +75,15 @@ repair in a command documented as read-only.
 
 ### Interactive mode concurrency
 
-Generated shortcuts use the guarded `spacewright mode` entry. A repeated
-request for the active mode is a no-op; a different request replaces the
-active transition as one process group. The controller has a bounded deadline,
-an explicit cancellation command, persisted status, and non-activating visual
-feedback. Historical Fish entry points remain callable, but direct compound
-shortcut chains are deprecated because they cannot own one cross-command lock.
+Generated mode shortcuts use the guarded `spacewright mode` entry and generated
+individual shortcuts use `spacewright workspace`. A repeated request for the
+same target is a no-op; a different request replaces the active transition as
+one process group. The controller has a bounded deadline, an explicit
+cancellation command, persisted status, and non-activating visual feedback.
+Individual workspace transitions skip mode-wide Sandbox collection and Space
+ordering. Historical Fish entry points remain callable, but direct shortcut
+bindings are deprecated because they lack the guarded progress lifecycle and
+may invoke legacy global finalization.
 
 ## Consumer Compatibility
 

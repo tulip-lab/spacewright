@@ -133,6 +133,34 @@ switch "$command_name"
         command node "$package_root/configurator/mode-transition.mjs" run "$mode" \
             "--package-root=$package_root" \
             "--state-root=$SPACEWRIGHT_STATE_ROOT"
+    case workspace
+        if test (count $argv) -lt 2
+            echo 'usage: spacewright workspace <workspace> <solo|wide|tall> [--dry-run]' >&2
+            exit 2
+        end
+        set -l workspace_id $argv[1]
+        set -l mode $argv[2]
+        if not string match -qr '^[a-z][a-z0-9_]*$' -- "$workspace_id"; or not contains -- "$mode" solo wide tall
+            echo 'usage: spacewright workspace <workspace> <solo|wide|tall> [--dry-run]' >&2
+            exit 2
+        end
+        set -l effective_config (spacewright_config_effective | string collect)
+        or exit 1
+        set -l workspace_label (printf '%s\n' "$effective_config" | jq -r --arg workspace "$workspace_id" --arg mode "$mode" '
+            first(.workspaces[] | select(.ui.workspace_id == $workspace and .ui.mode == $mode) | .ui.name) // empty
+        ')
+        if test -z "$workspace_label"
+            echo "spacewright: no configured variant for $workspace_id $mode" >&2
+            exit 1
+        end
+        if contains -- --dry-run $argv
+            printf 'dry_run=workspace_transition\nworkspace=%s\nmode=%s\nscope=target_only\nfinalization=none\n' "$workspace_id" "$mode"
+            exit 0
+        end
+        command node "$package_root/configurator/mode-transition.mjs" workspace "$workspace_id" "$mode" \
+            "--label=$workspace_label · $mode" \
+            "--package-root=$package_root" \
+            "--state-root=$SPACEWRIGHT_STATE_ROOT"
     case mode-cancel
         command node "$package_root/configurator/mode-transition.mjs" cancel \
             "--package-root=$package_root" \
@@ -271,6 +299,7 @@ switch "$command_name"
             '  apply TARGET [MODE]      execute a live plan; --dry-run only previews' \
             '  recover RUN_ID           restore matched windows; --dry-run only previews' \
             '  mode MODE                switch display and workspace with progress feedback' \
+            '  workspace ID MODE        arrange one workspace with progress feedback' \
             '  mode-cancel              cancel the active mode transition' \
             '  mode-status              show the latest mode transition state' \
             '  display PROFILE [--dry-run] apply a closed display profile' \
