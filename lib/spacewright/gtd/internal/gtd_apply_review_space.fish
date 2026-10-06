@@ -1,12 +1,15 @@
-function gtd_apply_review_space --description "Apply a GTD review workspace for Finder, Preview, ChatGPT, Notes and optional Obsidian"
+function gtd_apply_review_space --description "Apply a GTD review workspace for Finder, Preview, an assistant, Notes and optional Obsidian"
     argparse \
         'label=' \
         'display=' \
         'finder-grid=' \
         'preview-grid=' \
         'chatgpt-grid=' \
+        'assistant-app-key=' \
+        'assistant-grid=' \
         'notes-grid=' \
         'obsidian-grid=' \
+        skip-assistant \
         dry-run \
         -- $argv
     or return 1
@@ -17,23 +20,31 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
     end
 
     set -l cleanup_specs $argv
+    set -l assistant_app_key chatgpt
+    set -q _flag_assistant_app_key; and set assistant_app_key $_flag_assistant_app_key
+    set -l assistant_grid "$_flag_chatgpt_grid"
+    set -q _flag_assistant_grid; and set assistant_grid $_flag_assistant_grid
 
     if set -q _flag_dry_run
         printf "dry_run=gtd_apply_review_space\n"
         printf "label=%s\n" "$_flag_label"
         printf "display=%s\n" "$_flag_display"
-        set -l dry_run_apps \
-            (workspace_app_name finder) \
-            (workspace_app_name preview) \
-            (workspace_app_name chatgpt) \
-            (workspace_app_name notes)
+        set -l dry_run_apps (workspace_app_name finder) (workspace_app_name preview) (workspace_app_name notes)
+        if not set -q _flag_skip_assistant
+            set -a dry_run_apps (workspace_app_name $assistant_app_key)
+        end
         if set -q _flag_obsidian_grid
             set -a dry_run_apps (workspace_app_name obsidian)
         end
         printf "apps=%s\n" (string join , $dry_run_apps)
         printf "finder_grid=%s\n" "$_flag_finder_grid"
         printf "preview_grid=%s\n" "$_flag_preview_grid"
-        printf "chatgpt_grid=%s\n" "$_flag_chatgpt_grid"
+        if set -q _flag_skip_assistant
+            printf "assistant_app=\n"
+        else
+            printf "assistant_app=%s\n" "$assistant_app_key"
+        end
+        printf "assistant_grid=%s\n" "$assistant_grid"
         printf "notes_grid=%s\n" "$_flag_notes_grid"
         if set -q _flag_obsidian_grid
             printf "obsidian_grid=%s\n" "$_flag_obsidian_grid"
@@ -46,7 +57,11 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
     or return 1
 
     set -l windows_json (ws_query_windows $_flag_label initial); or return 1
-    set -l chatgpt_app (workspace_app_name chatgpt)
+    set -l assistant_app
+    if not set -q _flag_skip_assistant
+        set assistant_app (workspace_app_name $assistant_app_key)
+        or return 1
+    end
     set -l preview_apps_json (workspace_app_names_json preview)
     or return 1
     set -l notes_apps_json (workspace_app_names_json notes)
@@ -120,13 +135,16 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
         end
     end
 
-    set -l chatgpt_initial_info (echo $windows_json | workspace_app_key_window_info --app-key chatgpt)
-    if test $status -ne 0
-        return 1
+    set -l assistant_initial_info
+    set -l assistant_movable_windows
+    if not set -q _flag_skip_assistant
+        set assistant_initial_info (echo $windows_json | workspace_app_key_window_info --app-key $assistant_app_key)
+        if test $status -ne 0
+            return 1
+        end
+        set assistant_movable_windows (echo $windows_json | workspace_app_key_windows --app-key $assistant_app_key --movable)
+        or return 1
     end
-
-    set -l chatgpt_movable_windows (echo $windows_json | workspace_app_key_windows --app-key chatgpt --movable)
-    or return 1
 
     set -l obsidian
     if set -q _flag_obsidian_grid
@@ -202,14 +220,17 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
         end
     end
 
-    if test -z "$preview" -a -z "$preview_fallback_window" -a -z "$notes" -a -z "$notes_fallback_window" -a -z "$chatgpt_initial_info" -a -z "$obsidian"
+    if test -z "$preview" -a -z "$preview_fallback_window" -a -z "$notes" -a -z "$notes_fallback_window" -a -z "$assistant_initial_info" -a -z "$obsidian"
         destroy_empty_labeled_space $_flag_label
         return 0
     end
 
     set -l target_display (workspace_resolve_display_role $_flag_display)
     or return $status
-    set -l review_app_keys finder preview chatgpt notes
+    set -l review_app_keys finder preview notes
+    if not set -q _flag_skip_assistant
+        set -a review_app_keys $assistant_app_key
+    end
     if set -q _flag_obsidian_grid
         set -a review_app_keys obsidian
     end
@@ -281,10 +302,13 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
     or return 1
     set -l preview_move_windows (echo $windows_json | workspace_app_key_windows --app-key preview --movable --not-space $target_space)
     or return 1
-    set -l chatgpt_move_windows (echo $windows_json | workspace_app_key_windows --app-key chatgpt --movable --not-space $target_space)
-    or return 1
+    set -l assistant_move_windows
+    if not set -q _flag_skip_assistant
+        set assistant_move_windows (echo $windows_json | workspace_app_key_windows --app-key $assistant_app_key --movable --not-space $target_space)
+        or return 1
+    end
 
-    set -l windows_to_move $finder_move_windows $preview_move_windows $chatgpt_move_windows
+    set -l windows_to_move $finder_move_windows $preview_move_windows $assistant_move_windows
 
     if test -n "$obsidian"
         set -l obsidian_move_windows (echo $windows_json | workspace_app_key_windows --app-key obsidian --movable --not-space $target_space)
@@ -420,14 +444,17 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
             or return 1
             set preview_movable_windows (echo $windows_json_final | workspace_app_key_windows --app-key preview --movable)
             or return 1
-            set chatgpt_movable_windows (echo $windows_json_final | workspace_app_key_windows --app-key chatgpt --movable)
-            or return 1
+            set assistant_movable_windows
+            if not set -q _flag_skip_assistant
+                set assistant_movable_windows (echo $windows_json_final | workspace_app_key_windows --app-key $assistant_app_key --movable)
+                or return 1
+            end
 
             for preview_window in $preview_movable_windows
                 rm -f "$bad_window_dir/$preview_window" 2>/dev/null
             end
 
-            set -l fallback_windows_to_move $finder_windows $preview_movable_windows $chatgpt_movable_windows
+            set -l fallback_windows_to_move $finder_windows $preview_movable_windows $assistant_movable_windows
             if test "$notes_space_fallback_used" -ne 1
                 set -l notes_move_windows (echo $windows_json_final | workspace_app_key_windows --app-key notes --movable)
                 or return 1
@@ -458,13 +485,16 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
         set preview $preview_fallback_window
     end
 
-    set -l chatgpt_target_windows (echo $windows_json_final | workspace_app_key_windows --app-key chatgpt --space $target_space --movable)
-    or return 1
-    set -l chatgpt $chatgpt_target_windows[1]
-    if test -z "$chatgpt" -a -n "$chatgpt_initial_info"
-        set chatgpt (workspace_capture_app_window --app "$chatgpt_app" --caller $_flag_label --space $target_space)
-        if test $status -eq 1
-            return 1
+    set -l assistant
+    if not set -q _flag_skip_assistant
+        set -l assistant_target_windows (echo $windows_json_final | workspace_app_key_windows --app-key $assistant_app_key --space $target_space --movable)
+        or return 1
+        set assistant $assistant_target_windows[1]
+        if test -z "$assistant" -a -n "$assistant_initial_info"
+            set assistant (workspace_capture_app_window --app "$assistant_app" --caller $_flag_label --space $target_space)
+            if test $status -eq 1
+                return 1
+            end
         end
     end
 
@@ -545,8 +575,8 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
         end
     end
 
-    if test -n "$chatgpt" -a -n "$_flag_chatgpt_grid"
-        ws_window $chatgpt --grid $_flag_chatgpt_grid
+    if test -n "$assistant" -a -n "$assistant_grid"
+        ws_window $assistant --grid $assistant_grid
     end
 
     if test -n "$obsidian" -a -n "$_flag_obsidian_grid"

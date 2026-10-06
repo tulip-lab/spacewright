@@ -132,6 +132,29 @@ for mode_id in $expected_modes
     end
 end
 
+set -l contextual_review_dry_run (gtd_apply_review_space \
+    --label gtd_review_wide \
+    --display wide \
+    --assistant-app-key hermes \
+    --assistant-grid 1:3:2:0:1:1 \
+    --dry-run | string collect)
+string match -q '*apps=Finder,Preview,Notes,Hermes*' -- "$contextual_review_dry_run"
+or exit 32
+string match -q '*assistant_app=hermes*assistant_grid=1:3:2:0:1:1*' -- "$contextual_review_dry_run"
+or exit 33
+
+set -l suppressed_review_dry_run (gtd_apply_review_space \
+    --label gtd_review_wide \
+    --display wide \
+    --skip-assistant \
+    --dry-run | string collect)
+string match -q '*apps=Finder,Preview,Notes*' -- "$suppressed_review_dry_run"
+or exit 34
+string match -q '*assistant_app=*' -- "$suppressed_review_dry_run"
+or exit 35
+string match -q '*ChatGPT*' -- "$suppressed_review_dry_run"
+and exit 36
+
 set -g __spacewright_config_apply_calls 0
 function workspace_find_app_key_window
     echo 42

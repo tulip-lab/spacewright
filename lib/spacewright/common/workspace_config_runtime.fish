@@ -152,6 +152,13 @@ function __workspace_run_configured_gtd_review --description "Run a configured G
             set -a args --$role-grid "$grid"
         end
     end
+    set -l assistant_grid (__workspace_config_plan_grid "$plan" assistant)
+    set -l assistant_app_key (__workspace_config_plan_app_key "$plan" assistant)
+    if test -n "$assistant_grid" -a -n "$assistant_app_key"
+        set -a args --assistant-app-key "$assistant_app_key" --assistant-grid "$assistant_grid"
+    else if test -z (__workspace_config_plan_grid "$plan" chatgpt)
+        set -a args --skip-assistant
+    end
     set -a args (__workspace_config_cleanup_specs "$plan")
     if test "$dry_run" = 1
         set -a args --dry-run
