@@ -48,7 +48,7 @@ test('repository schema is the structural validation authority', () => {
   const errors = validateV2Schema(config).join('\n');
   assert.match(errors, /apps.code.match.appNames must contain at least 1 item/);
   assert.match(errors, /workspaces.coding.variants.wide.layout does not match a supported shape/);
-  assert.equal(CONFIG_COMPILER_VERSION, 1);
+  assert.equal(CONFIG_COMPILER_VERSION, 2);
 });
 
 test('nested split compiles deterministically', () => {
@@ -78,6 +78,17 @@ test('activation, ownership, and cardinality remain declarative through compilat
   assert.equal(runtime.workspaces.spacewright_coding_wide.windows.find((window) => window.role === 'assistant').cardinality, 'many');
   config.workspaces.coding.variants.wide.activation.role = 'unknown';
   assert.match(validateV2(config).errors.join('\n'), /activation\.role references unknown window role/);
+});
+
+test('contextual apps validate and compile as a closed mode policy', () => {
+  const config = starterConfig();
+  config.modes.solo.contextualApps = [{ app: 'chatgpt', workspaces: ['coding'], fallbackWorkspace: 'coding', focusOwner: true }];
+  assert.equal(validateV2(config).valid, true);
+  assert.deepEqual(compileV2(config).modes.work_solo.contextual_apps, [{
+    app_key: 'chatgpt', workspace_ids: ['coding'], fallback_workspace_id: 'coding', focus_owner: true
+  }]);
+  config.modes.solo.contextualApps[0].workspaces = ['missing'];
+  assert.match(validateV2(config).errors.join('\n'), /outside solo/);
 });
 
 test('runtime window overrides reject duplicate and omitted layout roles', () => {

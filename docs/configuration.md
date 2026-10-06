@@ -140,6 +140,13 @@ the latter for Office document adapters and marks GTD Support's Dia role as
 multi-window. The Web Configurator exposes these settings under Window
 Matching / Advanced.
 
+A mode may declare one `contextualApps` rule when a single assistant window
+should follow the workspace that was focused before the mode transition. The
+rule lists eligible workspace ids, a deterministic fallback, and whether the
+resolved owner should receive final focus. Aggregate execution moves the app
+only in that owner workspace; direct workspace activation remains local to the
+requested workspace.
+
 The stable user command is `spacewright run <workspace-id>
 <solo|wide|tall>`. Imported `variant.command` values preserve historical Fish
 commands; generated `spacewright_<id>_<mode>` identifiers remain internal.

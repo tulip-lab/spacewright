@@ -169,6 +169,24 @@ test('aggregate comparison assigns shared apps to the last active workspace', ()
   assert.equal(buildExecutionPlan(snapshot, desiredState, comparison).actions.length, 0);
 });
 
+test('contextual ownership follows the focused workspace and becomes final focus', () => {
+  const config = starterConfig();
+  config.workspaces.review = structuredClone(config.workspaces.coding);
+  config.workspaces.review.name = 'Review';
+  config.workspaces.review.spaceLabel = 'review';
+  config.workspaces.review.variants.solo.spaceLabel = 'review_solo';
+  config.workspaces.review.variants.solo.command = 'review_solo';
+  config.modes.solo.displays[0].workspaceOrder = ['review', 'coding'];
+  config.modes.solo.contextualApps = [{ app: 'chatgpt', workspaces: ['review', 'coding'], fallbackWorkspace: 'coding', focusOwner: true }];
+  const snapshot = fixture();
+  snapshot.spaces[0].label = 'review_solo';
+  const state = buildDesiredState(config, compileV2(config), { kind: 'mode', id: 'solo', mode: 'solo' }, snapshot);
+  assert.equal(state.contextualApps[0].ownerWorkspaceId, 'review');
+  assert.equal(state.orchestration.focusWorkspace, 'review');
+  const comparison = compareState(snapshot, state, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
+  assert.equal(comparison.matches.find((item) => item.workspaceId === 'coding' && item.role === 'assistant').supersededByWorkspaceId, 'review');
+});
+
 test('office workspaces without their primary document stay inactive', () => {
   const snapshot = fixture();
   const desiredState = {

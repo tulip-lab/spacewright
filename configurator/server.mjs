@@ -163,7 +163,7 @@ async function livePlan(config, payload) {
   const validation = validateV2(config);
   if (!validation.valid) return { validation };
   const [snapshot, machine] = await Promise.all([querySnapshot(), readMachine()]);
-  const desired = buildDesiredState(config, compileV2(config), targetFromPayload(payload));
+  const desired = buildDesiredState(config, compileV2(config), targetFromPayload(payload), snapshot);
   const comparison = compareState(snapshot, desired, machine);
   const plan = buildExecutionPlan(snapshot, desired, comparison);
   return { validation, snapshot, desired, comparison, plan };
@@ -470,7 +470,7 @@ async function api(request, response, url) {
     const inferredMode = topology === 'solo' ? 'solo' : topology.startsWith('tall') ? 'tall' : topology.startsWith('wide') ? 'wide' : null;
     let reconciliation = null;
     if (validation.valid && !snapshot.unavailable && inferredMode && config.modes[inferredMode]) {
-      const desired = buildDesiredState(config, compileV2(config), { kind: 'mode', id: inferredMode, mode: inferredMode });
+      const desired = buildDesiredState(config, compileV2(config), { kind: 'mode', id: inferredMode, mode: inferredMode }, snapshot);
       reconciliation = compareState(snapshot, desired, machine);
     }
     const runsRoot = join(stateRoot, 'runs');

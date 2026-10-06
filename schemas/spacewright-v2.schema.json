@@ -266,6 +266,21 @@
           }
         },
         "cleanup": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z_]+:(solo|wide|tall)$" } },
+        "contextualApps": {
+          "type": "array",
+          "maxItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["app", "workspaces", "fallbackWorkspace"],
+            "properties": {
+              "app": { "$ref": "#/$defs/id" },
+              "workspaces": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+              "fallbackWorkspace": { "$ref": "#/$defs/id" },
+              "focusOwner": { "type": "boolean" }
+            },
+            "additionalProperties": false
+          }
+        },
         "postprocessors": {
           "type": "array",
           "items": {

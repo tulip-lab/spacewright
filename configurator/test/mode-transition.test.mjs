@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { runTransition } from '../mode-transition.mjs';
 
 const execFileAsync = promisify(execFile);
 const script = new URL('../mode-transition.mjs', import.meta.url).pathname;
@@ -69,6 +70,21 @@ test('an immediately completed child cannot outrun exit observation', async () =
     await execFileAsync(process.execPath, args(stateRoot, 'wide'), { env, timeout: 2_000 });
     const status = JSON.parse(await readFile(join(stateRoot, 'mode-transition', 'status.json'), 'utf8'));
     assert.equal(status.status, 'completed');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('the pre-transition workspace label is passed to the Fish run', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'spacewright-mode-source-'));
+  const stateRoot = join(root, 'state');
+  const fakeFish = join(root, 'fake-fish');
+  const log = join(root, 'source.log');
+  await writeFile(fakeFish, `#!/bin/sh\nprintf '%s\\n' "$SPACEWRIGHT_SOURCE_SPACE_LABEL" > ${JSON.stringify(log)}\n`);
+  await chmod(fakeFish, 0o755);
+  try {
+    await runTransition({ mode: 'solo', packageRoot: process.cwd(), stateRoot, fishExecutable: fakeFish, bannerExecutable: null, sourceSpaceLabel: 'research_wide' });
+    assert.equal((await readFile(log, 'utf8')).trim(), 'research_wide');
   } finally {
     await rm(root, { recursive: true, force: true });
   }

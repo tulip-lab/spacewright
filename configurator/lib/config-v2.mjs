@@ -5,7 +5,7 @@ const MODES = ['solo', 'wide', 'tall'];
 const DIRECTIONS = new Set(['rows', 'columns']);
 const POSTPROCESSORS = new Set(['gtd_ai_expand_hermes_when_alone', 'workspace_reconcile_primary_fixed_spaces']);
 const ROOT_KEYS = new Set(['version', 'metadata', 'apps', 'displayRoles', 'workspaces', 'modes', 'shortcuts', 'profiles', 'rules', 'settings']);
-export const CONFIG_COMPILER_VERSION = 1;
+export const CONFIG_COMPILER_VERSION = 2;
 const V2_SCHEMA = JSON.parse(readFileSync(new URL('../../schemas/spacewright-v2.schema.json', import.meta.url), 'utf8'));
 
 function schemaTypeMatches(value, type) {
@@ -310,7 +310,7 @@ export function validateV2(config) {
   for (const mode of MODES) {
     const definition = config.modes[mode];
     if (!definition) continue;
-    rejectUnknown(definition, new Set(['displays', 'cleanup', 'postprocessors']), `modes.${mode}`, errors);
+    rejectUnknown(definition, new Set(['displays', 'cleanup', 'contextualApps', 'postprocessors']), `modes.${mode}`, errors);
     if (!Array.isArray(definition.displays) || !definition.displays.length) errors.push(`modes.${mode}.displays must not be empty`);
     const placed = new Set();
     const modeLabels = new Map();
@@ -335,6 +335,17 @@ export function validateV2(config) {
       if (config.workspaces[workspaceId].variants?.[mode] && !placed.has(workspaceId)) warnings.push(`workspaces.${workspaceId}.variants.${mode} is not used by modes.${mode}`);
     }
     if (definition.cleanup && (!Array.isArray(definition.cleanup) || definition.cleanup.some((item) => typeof item !== 'string' || !/^[a-z_]+:(solo|wide|tall)$/.test(item)))) errors.push(`modes.${mode}.cleanup is invalid`);
+    for (const [index, rule] of (Array.isArray(definition.contextualApps) ? definition.contextualApps : []).entries()) {
+      const path = `modes.${mode}.contextualApps[${index}]`;
+      if (!config.apps[rule.app]) errors.push(`${path}.app references unknown app "${rule.app}"`);
+      if (!Array.isArray(rule.workspaces) || !rule.workspaces.length) errors.push(`${path}.workspaces must not be empty`);
+      for (const workspaceId of rule.workspaces || []) {
+        if (!placed.has(workspaceId)) errors.push(`${path}.workspaces references workspace "${workspaceId}" outside ${mode}`);
+        const windows = config.workspaces[workspaceId]?.variants?.[mode]?.runtime?.windows || Object.entries(config.workspaces[workspaceId]?.windows || {}).map(([role, window]) => ({ role, app_key: window.app }));
+        if (!windows.some((window) => window.app_key === rule.app)) errors.push(`${path} app "${rule.app}" is not present in workspace "${workspaceId}"`);
+      }
+      if (!rule.workspaces?.includes(rule.fallbackWorkspace)) errors.push(`${path}.fallbackWorkspace must be listed in workspaces`);
+    }
     for (const [index, hook] of (definition.postprocessors || []).entries()) {
       if (!POSTPROCESSORS.has(hook.name)) errors.push(`modes.${mode}.postprocessors[${index}] is unsupported`);
       if (hook.afterCommand != null && typeof hook.afterCommand !== 'string') errors.push(`modes.${mode}.postprocessors[${index}].afterCommand must be a string or null`);
@@ -416,6 +427,7 @@ export function compileV2(config) {
           label: variant.spaceLabel || `${workspace.spaceLabel}_${mode}`,
           display_role: variant.runtime?.displayRole || (display.role === 'primary' ? 'primary' : `${display.role}__${mode}`),
           space_layout: 'float',
+          activation: structuredClone(variant.activation || { type: 'always' }),
           windows: variant.runtime?.windows || Object.entries(workspace.windows).map(([role, window]) => ({
             role, app_key: window.app, required: window.required,
             ...(window.ownership ? { ownership: window.ownership } : {}),
@@ -432,7 +444,17 @@ export function compileV2(config) {
         for (const hook of hooks.filter((item) => item.afterCommand === runtimeId)) steps.push({ postprocessor: hook.name });
       }
     }
-    runtime.modes[`work_${mode}`] = { display_mode: mode, steps, cleanup: config.modes[mode]?.cleanup || [] };
+    runtime.modes[`work_${mode}`] = {
+      display_mode: mode,
+      steps,
+      cleanup: config.modes[mode]?.cleanup || [],
+      contextual_apps: (config.modes[mode]?.contextualApps || []).map((rule) => ({
+        app_key: rule.app,
+        workspace_ids: rule.workspaces,
+        fallback_workspace_id: rule.fallbackWorkspace,
+        focus_owner: rule.focusOwner === true
+      }))
+    };
   }
   return runtime;
 }

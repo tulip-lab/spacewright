@@ -426,36 +426,45 @@ function gtd_apply_meeting_space --description "Apply a GTD meeting workspace fo
         end
     end
 
-    if test (count $zoom_windows) -gt 0 -a -n "$_flag_zoom_grid"
+    set -l effective_zoom_grid "$_flag_zoom_grid"
+    set -l effective_teams_grid "$_flag_teams_grid"
+    if test (count $zoom_windows) -gt 0 -a (count $teams_windows) -eq 0
+        set effective_zoom_grid 1:1:0:0:1:1
+        set zoom_skip_final_bounds_fallback 0
+    else if test (count $teams_windows) -gt 0 -a (count $zoom_windows) -eq 0
+        set effective_teams_grid 1:1:0:0:1:1
+    end
+
+    if test (count $zoom_windows) -gt 0 -a -n "$effective_zoom_grid"
         if test "$zoom_space_fallback_used" -eq 1
             if test "$zoom_skip_final_bounds_fallback" -ne 1
                 workspace_apply_app_key_grid_bounds \
                     --app-key zoom \
                     --display $target_display \
-                    --grid $_flag_zoom_grid \
+                        --grid $effective_zoom_grid \
                     --caller $_flag_label \
                     --all-windows \
                     --system-events-first
             end
         else
             for zoom_window in $zoom_windows
-                ws_window $zoom_window --grid $_flag_zoom_grid
+                ws_window $zoom_window --grid $effective_zoom_grid
             end
         end
     end
 
-    if test (count $teams_windows) -gt 0 -a -n "$_flag_teams_grid"
+    if test (count $teams_windows) -gt 0 -a -n "$effective_teams_grid"
         if test "$teams_space_fallback_used" -eq 1
             workspace_apply_app_key_grid_bounds \
                 --app-key teams \
                 --display $target_display \
-                --grid $_flag_teams_grid \
+                --grid $effective_teams_grid \
                 --caller $_flag_label \
                 --all-windows \
                 --system-events-first
         else
             for teams_window in $teams_windows
-                ws_window $teams_window --grid $_flag_teams_grid
+                ws_window $teams_window --grid $effective_teams_grid
             end
         end
     end

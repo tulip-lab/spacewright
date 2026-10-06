@@ -101,8 +101,23 @@ function targetDefinition(config, target = {}) {
   return { kind: 'mode', id: mode, mode, workspaceIds: config.modes[mode].displays.flatMap((display) => display.workspaceOrder) };
 }
 
-export function buildDesiredState(config, runtime, target = {}) {
+function sourceWorkspaceId(config, snapshot) {
+  const focusedLabel = snapshot?.spaces?.find((space) => space.focused)?.label;
+  if (!focusedLabel) return null;
+  return Object.entries(config.workspaces || {}).find(([, workspace]) => Object.entries(workspace.variants || {}).some(([mode, variant]) => (
+    variant.spaceLabel || `${workspace.spaceLabel}_${mode}`
+  ) === focusedLabel))?.[0] || null;
+}
+
+export function buildDesiredState(config, runtime, target = {}, snapshot = null) {
   const resolved = targetDefinition(config, target);
+  const sourceWorkspace = sourceWorkspaceId(config, snapshot);
+  const contextualApps = resolved.kind === 'workspace' ? [] : (config.modes?.[resolved.mode]?.contextualApps || []).map((rule) => ({
+    appKey: rule.app,
+    workspaceIds: clone(rule.workspaces),
+    ownerWorkspaceId: rule.workspaces.includes(sourceWorkspace) ? sourceWorkspace : rule.fallbackWorkspace,
+    focusOwner: rule.focusOwner === true
+  }));
   const placement = new Map();
   for (const display of config.modes[resolved.mode].displays) for (const workspaceId of display.workspaceOrder) placement.set(workspaceId, display.role);
   const workspaces = resolved.workspaceIds.map((workspaceId) => {
@@ -149,13 +164,18 @@ export function buildDesiredState(config, runtime, target = {}) {
     workspaces,
     cleanup: clone(runtime.modes?.[`work_${resolved.mode}`]?.cleanup || []),
     postprocessors: clone(config.modes?.[resolved.mode]?.postprocessors || []),
+    contextualApps,
     nonoccupyingGhostApps: ['word', 'powerpoint', 'input_source_pro']
       .flatMap((appKey) => config.apps?.[appKey]?.match?.appNames || []),
     orchestration: resolved.profile ? {
       displayProfile: resolved.profile.displayConfig?.profile || null,
       focusWorkspace: resolved.profile.focusBehaviour?.workspace || null,
       reconcile: resolved.profile.settings?.reconcile !== false
-    } : { displayProfile: null, focusWorkspace: null, reconcile: true },
+    } : {
+      displayProfile: null,
+      focusWorkspace: contextualApps.find((rule) => rule.focusOwner)?.ownerWorkspaceId || null,
+      reconcile: true
+    },
     configDigest: digest(config),
     runtimeSourceDigest: runtime.generated?.source_sha256 || null
   };
@@ -222,13 +242,16 @@ function workspaceIsActive(snapshot, workspace) {
   return Boolean(watched && matchingWindows(snapshot, watched).some(({ result }) => result.matches));
 }
 
-function finalWindowOwners(workspaces) {
+function finalWindowOwners(workspaces, contextualApps = []) {
   const owners = new Map();
   for (const workspace of [...workspaces].reverse()) {
     for (const desiredWindow of workspace.windows) {
       if ((desiredWindow.ownership || 'lastApplicable') === 'independent') continue;
       if (!owners.has(desiredWindow.appKey)) owners.set(desiredWindow.appKey, workspace.workspaceId);
     }
+  }
+  for (const rule of contextualApps) {
+    if (workspaces.some((workspace) => workspace.workspaceId === rule.ownerWorkspaceId)) owners.set(rule.appKey, rule.ownerWorkspaceId);
   }
   return owners;
 }
@@ -296,7 +319,7 @@ export function compareState(snapshot, desired, machine = {}) {
     if (!active) drifts.push(drift('workspace_inactive', 'warning', workspace, { reason: 'primary_window_missing' }));
     return active;
   });
-  const owners = finalWindowOwners(activeWorkspaces);
+  const owners = finalWindowOwners(activeWorkspaces, desired.contextualApps || []);
   const reservedSpaceUuids = new Set();
   const resolvedSpaces = new Map();
   for (const workspace of activeWorkspaces) {

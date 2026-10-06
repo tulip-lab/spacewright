@@ -73,7 +73,7 @@ function parseTarget(values = positional) {
 
 async function livePlan(target = parseTarget()) {
   const value = await context();
-  const desired = buildDesiredState(value.config, value.runtime, target);
+  const desired = buildDesiredState(value.config, value.runtime, target, value.snapshot);
   const comparison = compareState(value.snapshot, desired, value.machine);
   const plan = buildExecutionPlan(value.snapshot, desired, comparison);
   return { ...value, desired, comparison, plan };

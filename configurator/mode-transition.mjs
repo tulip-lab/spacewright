@@ -60,6 +60,15 @@ function modeCommand(mode) {
   return `workspace_run_step "display profile" ${profile}; and work_${mode}`;
 }
 
+async function focusedSpaceLabel() {
+  try {
+    const { stdout } = await execFileAsync('yabai', ['-m', 'query', '--spaces', '--space'], { timeout: 2_000, maxBuffer: 200_000 });
+    return String(JSON.parse(stdout).label || '');
+  } catch {
+    return '';
+  }
+}
+
 function publicState(owner, overrides = {}) {
   return {
     schemaVersion: 1,
@@ -184,6 +193,7 @@ export async function runTransition({
   fishExecutable = process.env.SPACEWRIGHT_TRANSITION_FISH || 'fish',
   command = modeCommand(mode),
   bannerExecutable,
+  sourceSpaceLabel,
 } = {}) {
   if (!VALID_MODES.has(mode)) throw new Error(`invalid mode: ${mode}`);
   await mkdir(stateRoot, { recursive: true, mode: 0o700 });
@@ -258,9 +268,10 @@ export async function runTransition({
   const timeout = setTimeout(() => requestStop('timed_out'), timeoutMs);
 
   try {
+    const transitionSourceLabel = sourceSpaceLabel === undefined ? await focusedSpaceLabel() : sourceSpaceLabel;
     child = spawn(fishExecutable, ['-lc', command], {
       detached: true,
-      env: { ...process.env, SPACEWRIGHT_TRANSITION_RUN_ID: runId },
+      env: { ...process.env, SPACEWRIGHT_TRANSITION_RUN_ID: runId, SPACEWRIGHT_SOURCE_SPACE_LABEL: transitionSourceLabel },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const childResult = new Promise((resolve) => {
