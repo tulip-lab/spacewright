@@ -140,12 +140,21 @@ the latter for Office document adapters and marks GTD Support's Dia role as
 multi-window. The Web Configurator exposes these settings under Window
 Matching / Advanced.
 
-A mode may declare one `contextualApps` rule when a single assistant window
-should follow the workspace that was focused before the mode transition. The
-rule lists eligible workspace ids, a deterministic fallback, and whether the
-resolved owner should receive final focus. Aggregate execution moves the app
-only in that owner workspace; direct workspace activation remains local to the
-requested workspace.
+`aiProviders` maps a human AI identity such as Hermes or ChatGPT to a registered
+application. `aiRouting.assignments` then maps one semantic window role in a
+workspace to a default provider. That default is shared by Solo, Wide, and Tall;
+an assignment's `overrides` object contains only deliberate per-mode provider
+exceptions. `roleOverrides` supports a legacy variant whose equivalent AI slot
+uses a different role name. The compiler replaces the concrete app in that role
+and derives one contextual ownership rule per active provider.
+
+`aiRouting.fallbackWorkspace` is the deterministic home for a provider that is
+not selected by the workspace focused before a mode transition. When
+`focusOwner` is true, the source-matched AI workspace receives final focus;
+otherwise the first fallback does. This lets different workspaces use different
+AI providers in the same mode without moving either provider through every
+workspace. Existing mode-level `contextualApps` rules remain supported for
+non-AI or compatibility policies and may now contain more than one app.
 
 The stable user command is `spacewright run <workspace-id>
 <solo|wide|tall>`. Imported `variant.command` values preserve historical Fish

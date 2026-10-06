@@ -37,6 +37,10 @@ fragment is inert until the user explicitly integrates it with skhd.
 ## Editor model
 
 - **Apps** map portable app keys to one or more macOS application names.
+- **AI Routing** maps named providers to registered apps and assigns a semantic
+  AI role to each participating workspace. One default applies across Solo,
+  Wide, and Tall; each mode can optionally override it. The page also controls
+  the shared fallback workspace and final-focus behavior.
 - **Display roles** describe portable intent. UUID bindings belong in
   `$SPACEWRIGHT_STATE_ROOT/machine.json` under `displayBindings`. The Displays
   page can discover connected displays read-only and bind a UUID to a role on

@@ -48,7 +48,48 @@ test('repository schema is the structural validation authority', () => {
   const errors = validateV2Schema(config).join('\n');
   assert.match(errors, /apps.code.match.appNames must contain at least 1 item/);
   assert.match(errors, /workspaces.coding.variants.wide.layout does not match a supported shape/);
-  assert.equal(CONFIG_COMPILER_VERSION, 2);
+  assert.equal(CONFIG_COMPILER_VERSION, 3);
+});
+
+test('AI routing shares defaults across modes and compiles explicit overrides', () => {
+  const config = starterConfig();
+  config.apps.hermes = { name: 'Hermes', match: { appNames: ['Hermes'] } };
+  config.aiProviders.hermes = { name: 'Hermes', app: 'hermes' };
+  config.aiRouting.assignments.coding = { role: 'assistant', provider: 'hermes', overrides: { tall: 'chatgpt' } };
+  assert.equal(validateV2(config).valid, true);
+  const runtime = compileV2(config);
+  assert.equal(runtime.workspaces.spacewright_coding_solo.windows.find((window) => window.role === 'assistant').app_key, 'hermes');
+  assert.equal(runtime.workspaces.spacewright_coding_wide.windows.find((window) => window.role === 'assistant').app_key, 'hermes');
+  assert.equal(runtime.workspaces.spacewright_coding_tall.windows.find((window) => window.role === 'assistant').app_key, 'chatgpt');
+  assert.equal(runtime.modes.work_solo.contextual_apps[0].app_key, 'hermes');
+  assert.equal(runtime.modes.work_tall.contextual_apps[0].app_key, 'chatgpt');
+});
+
+test('AI routing rejects unknown providers and semantic roles', () => {
+  const config = starterConfig();
+  config.aiRouting.assignments.coding = { role: 'missing', provider: 'unknown', overrides: {} };
+  const errors = validateV2(config).errors.join('\n');
+  assert.match(errors, /role references unknown window role/);
+  assert.match(errors, /provider references unknown AI provider/);
+});
+
+test('AI routing derives independent contextual ownership rules for multiple providers', () => {
+  const config = starterConfig();
+  config.apps.hermes = { name: 'Hermes', match: { appNames: ['Hermes'] } };
+  config.aiProviders.hermes = { name: 'Hermes', app: 'hermes' };
+  config.workspaces.coding.windows.hermes = { app: 'hermes', required: false };
+  config.workspaces.review = structuredClone(config.workspaces.coding);
+  config.workspaces.review.name = 'Review';
+  config.workspaces.review.spaceLabel = 'review';
+  config.workspaces.review.windows.assistant.app = 'hermes';
+  for (const mode of MODES_FOR_TEST) config.modes[mode].displays[0].workspaceOrder.push('review');
+  config.aiRouting.assignments = {
+    coding: { role: 'assistant', provider: 'chatgpt', overrides: {} },
+    review: { role: 'assistant', provider: 'hermes', overrides: {} }
+  };
+  const runtime = compileV2(config);
+  assert.deepEqual(runtime.modes.work_wide.contextual_apps.map((rule) => rule.app_key), ['chatgpt', 'hermes']);
+  assert.deepEqual(runtime.modes.work_wide.contextual_apps.map((rule) => rule.workspace_ids), [['coding'], ['review', 'coding']]);
 });
 
 test('nested split compiles deterministically', () => {

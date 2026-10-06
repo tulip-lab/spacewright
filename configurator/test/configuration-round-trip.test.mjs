@@ -64,6 +64,8 @@ test('Configuration GUI round-trips the authoritative config file', { timeout: 6
   const fakeBin = join(root, 'bin');
   const original = starterConfig();
   original.displayRoles.primary.name = 'Authoritative primary display';
+  original.apps.hermes = { name: 'Hermes', match: { appNames: ['Hermes'] } };
+  original.aiProviders.hermes = { name: 'Hermes', app: 'hermes' };
   original.apps.runtime_only = { name: 'Runtime Only', match: { appNames: ['Runtime Only'] } };
   original.workspaces.coding.variants.solo.runtime = { runner: 'generic_layout', windows: [
     { role: 'editor', app_key: 'code', required: true },
@@ -103,6 +105,21 @@ esac
   assert.match(wakeDryRun.stdout, /dry_run=event/);
   await page.getByRole('button', { name: 'Compare workspace' }).click();
   await page.getByText(/Plan [a-f0-9]+ is/).waitFor();
+  await page.locator('#nav [data-view="ai"]').click();
+  await page.getByRole('heading', { name: 'One AI choice, shared across every shape' }).waitFor();
+  await page.locator('#ai-route-workspace').selectOption('coding');
+  await page.locator('#ai-route-role').selectOption('assistant');
+  await page.locator('#ai-route-provider').selectOption('chatgpt');
+  await page.getByRole('button', { name: 'Add route' }).click();
+  await page.locator('[data-ai-override="coding:wide"]').selectOption('hermes');
+  assert.equal(await page.locator('[data-ai-default="coding"]').inputValue(), 'chatgpt');
+  assert.equal(await page.locator('[data-ai-override="coding:wide"]').inputValue(), 'hermes');
+  assert.match(await page.locator('.ai-route-row').innerText(), /solo[\s\S]*ChatGPT[\s\S]*wide[\s\S]*Hermes/i);
+  assert.equal(Object.keys((await readJson(configFile)).aiRouting.assignments).length, 0);
+  await page.setViewportSize({ width: 780, height: 1000 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.locator('#nav [data-view="current"]').click();
   await page.locator('#capture-id').fill('captured_test');
   await page.locator('#capture-name').fill('Captured Test');
   await page.getByRole('button', { name: 'Capture into editor' }).click();
