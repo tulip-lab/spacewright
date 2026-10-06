@@ -29,7 +29,8 @@ migrated.
 
 Installed macOS builds compile a small AppKit helper. While a transition is
 active it presents a non-activating, always-on-top banner near the top of the
-current display. The banner shows:
+current display. Its fixed dark, high-contrast surface remains readable over
+light or visually busy desktop content. The banner shows:
 
 - the requested mode;
 - the current `workspace_run_step` label;

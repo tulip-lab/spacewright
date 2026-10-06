@@ -12,6 +12,11 @@ struct TransitionState: Decodable {
 }
 
 final class BannerController: NSObject, NSApplicationDelegate {
+    private let lime = NSColor(calibratedRed: 0.78, green: 1.0, blue: 0.20, alpha: 1)
+    private let ink = NSColor(calibratedRed: 0.035, green: 0.045, blue: 0.055, alpha: 0.96)
+    private let primaryText = NSColor(calibratedRed: 0.96, green: 0.98, blue: 0.94, alpha: 1)
+    private let secondaryText = NSColor(calibratedRed: 0.76, green: 0.81, blue: 0.85, alpha: 1)
+    private let stopColor = NSColor(calibratedRed: 0.88, green: 0.25, blue: 0.16, alpha: 1)
     private let stateURL: URL
     private let cancelURL: URL
     private let expectedRunId: String
@@ -30,7 +35,7 @@ final class BannerController: NSObject, NSApplicationDelegate {
         self.cancelURL = cancelURL
         self.expectedRunId = expectedRunId
         self.panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 112),
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 124),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -51,38 +56,41 @@ final class BannerController: NSObject, NSApplicationDelegate {
         panel.hasShadow = true
         panel.backgroundColor = .clear
         panel.isOpaque = false
+        panel.appearance = NSAppearance(named: .darkAqua)
 
         let effect = NSVisualEffectView(frame: panel.contentView!.bounds)
         effect.autoresizingMask = [.width, .height]
         effect.material = .hudWindow
         effect.blendingMode = .behindWindow
         effect.state = .active
+        effect.appearance = NSAppearance(named: .darkAqua)
         effect.wantsLayer = true
         effect.layer?.cornerRadius = 18
         effect.layer?.borderWidth = 1
-        effect.layer?.borderColor = NSColor.white.withAlphaComponent(0.14).cgColor
+        effect.layer?.borderColor = lime.withAlphaComponent(0.34).cgColor
+        effect.layer?.backgroundColor = ink.cgColor
         effect.layer?.masksToBounds = true
         panel.contentView?.addSubview(effect)
 
         accent.translatesAutoresizingMaskIntoConstraints = false
         accent.wantsLayer = true
-        accent.layer?.backgroundColor = NSColor(calibratedRed: 0.78, green: 1.0, blue: 0.20, alpha: 1).cgColor
+        accent.layer?.backgroundColor = lime.cgColor
         effect.addSubview(accent)
 
         modeLabel.translatesAutoresizingMaskIntoConstraints = false
         modeLabel.font = .monospacedSystemFont(ofSize: 11, weight: .bold)
-        modeLabel.textColor = NSColor(calibratedRed: 0.78, green: 1.0, blue: 0.20, alpha: 1)
+        modeLabel.textColor = lime
         effect.addSubview(modeLabel)
 
         phaseLabel.translatesAutoresizingMaskIntoConstraints = false
-        phaseLabel.font = .systemFont(ofSize: 16, weight: .semibold)
-        phaseLabel.textColor = .white
+        phaseLabel.font = .systemFont(ofSize: 17, weight: .bold)
+        phaseLabel.textColor = primaryText
         phaseLabel.lineBreakMode = .byTruncatingTail
         effect.addSubview(phaseLabel)
 
         timeLabel.translatesAutoresizingMaskIntoConstraints = false
-        timeLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
-        timeLabel.textColor = NSColor.white.withAlphaComponent(0.62)
+        timeLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+        timeLabel.textColor = secondaryText
         effect.addSubview(timeLabel)
 
         progress.translatesAutoresizingMaskIntoConstraints = false
@@ -90,10 +98,17 @@ final class BannerController: NSObject, NSApplicationDelegate {
         progress.isIndeterminate = false
         progress.minValue = 0
         progress.maxValue = 1
+        progress.appearance = NSAppearance(named: .darkAqua)
         effect.addSubview(progress)
 
         cancelButton.translatesAutoresizingMaskIntoConstraints = false
-        cancelButton.bezelStyle = .rounded
+        cancelButton.isBordered = false
+        cancelButton.wantsLayer = true
+        cancelButton.layer?.cornerRadius = 9
+        cancelButton.layer?.backgroundColor = stopColor.cgColor
+        cancelButton.font = .systemFont(ofSize: 13, weight: .bold)
+        setCancelTitle("Stop")
+        cancelButton.toolTip = "Stop this workspace transition"
         cancelButton.target = self
         cancelButton.action = #selector(cancel)
         effect.addSubview(cancelButton)
@@ -104,7 +119,7 @@ final class BannerController: NSObject, NSApplicationDelegate {
             accent.bottomAnchor.constraint(equalTo: effect.bottomAnchor),
             accent.widthAnchor.constraint(equalToConstant: 5),
             modeLabel.leadingAnchor.constraint(equalTo: effect.leadingAnchor, constant: 24),
-            modeLabel.topAnchor.constraint(equalTo: effect.topAnchor, constant: 17),
+            modeLabel.topAnchor.constraint(equalTo: effect.topAnchor, constant: 18),
             modeLabel.trailingAnchor.constraint(lessThanOrEqualTo: cancelButton.leadingAnchor, constant: -12),
             phaseLabel.leadingAnchor.constraint(equalTo: modeLabel.leadingAnchor),
             phaseLabel.topAnchor.constraint(equalTo: modeLabel.bottomAnchor, constant: 6),
@@ -114,10 +129,11 @@ final class BannerController: NSObject, NSApplicationDelegate {
             progress.leadingAnchor.constraint(equalTo: modeLabel.leadingAnchor),
             progress.trailingAnchor.constraint(equalTo: cancelButton.leadingAnchor, constant: -16),
             progress.topAnchor.constraint(equalTo: timeLabel.bottomAnchor, constant: 7),
-            progress.heightAnchor.constraint(equalToConstant: 3),
+            progress.heightAnchor.constraint(equalToConstant: 4),
             cancelButton.trailingAnchor.constraint(equalTo: effect.trailingAnchor, constant: -20),
             cancelButton.centerYAnchor.constraint(equalTo: effect.centerYAnchor),
-            cancelButton.widthAnchor.constraint(equalToConstant: 72),
+            cancelButton.widthAnchor.constraint(equalToConstant: 82),
+            cancelButton.heightAnchor.constraint(equalToConstant: 36),
         ])
 
         if let screen = NSScreen.main ?? NSScreen.screens.first {
@@ -130,7 +146,18 @@ final class BannerController: NSObject, NSApplicationDelegate {
     @objc private func cancel() {
         try? Data(expectedRunId.utf8).write(to: cancelURL, options: .atomic)
         cancelButton.isEnabled = false
-        cancelButton.title = "Stopping…"
+        cancelButton.layer?.backgroundColor = NSColor(calibratedWhite: 0.28, alpha: 1).cgColor
+        setCancelTitle("Stopping…")
+    }
+
+    private func setCancelTitle(_ title: String) {
+        cancelButton.attributedTitle = NSAttributedString(
+            string: title,
+            attributes: [
+                .foregroundColor: NSColor.white,
+                .font: NSFont.systemFont(ofSize: 13, weight: .bold)
+            ]
+        )
     }
 
     private func refresh() {
