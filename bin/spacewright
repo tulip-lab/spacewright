@@ -146,8 +146,10 @@ switch "$command_name"
         end
         set -l effective_config (spacewright_config_effective | string collect)
         or exit 1
-        set -l workspace_label (printf '%s\n' "$effective_config" | jq -r --arg workspace "$workspace_id" --arg mode "$mode" '
-            first(.workspaces[] | select(.ui.workspace_id == $workspace and .ui.mode == $mode) | .ui.name) // empty
+        set -l workspace_label (printf '%s\n' "$effective_config" | jq -r --arg workspace "$workspace_id" --arg mode "$mode" --arg runtime_key "$workspace_id"_"$mode" '
+            (.workspaces // {}) as $workspaces
+            | (first($workspaces[]? | select(.ui.workspace_id == $workspace and .ui.mode == $mode) | .ui.name) // empty)
+                // (if ($workspaces | type) == "object" then ($workspaces[$runtime_key].label // empty) else empty end)
         ')
         if test -z "$workspace_label"
             echo "spacewright: no configured variant for $workspace_id $mode" >&2

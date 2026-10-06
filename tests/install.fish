@@ -49,7 +49,9 @@ node "$installed_release_root/configurator/cli.mjs" starter | jq -e '.version ==
 or exit 17
 "$bin_root/spacewright" mode wide --dry-run | string match -q '*policy=latest_request_wins*'
 or exit 27
-set -l workspace_dry_run ("$bin_root/spacewright" workspace gtd_ai solo --dry-run | string collect)
+set -l workspace_dry_run (env -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT -u SPACEWRIGHT_CONFIG_ROOT \
+    HOME="$test_root" XDG_CONFIG_HOME="$test_root/xdg" \
+    "$bin_root/spacewright" workspace gtd_ai solo --dry-run | string collect)
 string match -q '*scope=target_only*' -- "$workspace_dry_run"
     and string match -q '*finalization=none*' -- "$workspace_dry_run"
 or exit 28
