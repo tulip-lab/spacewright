@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm, access, readdir, writeFile } from 'node:fs/promi
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { starterConfig } from '../lib/config-v2.mjs';
+import { writeTransitionRecord } from '../lib/transition-history.mjs';
 
 const packageRoot = new URL('../..', import.meta.url).pathname;
 
@@ -51,6 +52,12 @@ test('local server isolates machine bindings and generated skhd output', async (
     "fn + shift - 9 : fish -lc 'spacewright workspace gtd_ai solo'",
     "cmd - x : open -a Example"
   ].join('\n'));
+  await writeTransitionRecord(stateRoot, {
+    schemaVersion: 1, runId: '1700000000000-123-abcdef12', mode: 'solo', scope: 'workspace', workspace: 'gtd_ai',
+    targetKey: 'workspace:gtd_ai:solo', targetLabel: 'GTD AI · solo', status: 'completed', phase: 'GTD AI · solo is ready', step: 2,
+    startedAt: '2026-10-06T00:00:00.000Z', finishedAt: '2026-10-06T00:00:02.000Z', durationMs: 2000,
+    warnings: ['optional ChatGPT missing'], skipped: ['skipping ChatGPT'], errors: [], logTail: ['OUT complete']
+  });
   const { child, token, url } = await startServer(configRoot, stateRoot, skhdFile);
   context.after(async () => {
     child.kill('SIGTERM');
@@ -161,6 +168,11 @@ test('local server isolates machine bindings and generated skhd output', async (
   const diagnostics = await json(url, '/api/diagnostics');
   assert.equal(diagnostics.status, 200);
   assert.ok(diagnostics.body.checks.some((check) => check.id === 'schema' && check.ok));
+  assert.equal(diagnostics.body.recentTransitions[0].workspace, 'gtd_ai');
+  assert.ok(diagnostics.body.checks.some((check) => check.id === 'transition_history' && check.ok));
+  const transitionHistory = await json(url, '/api/transition-history');
+  assert.equal(transitionHistory.status, 200);
+  assert.equal(transitionHistory.body.transitions[0].targetLabel, 'GTD AI · solo');
   const runtimePath = join(configRoot, 'generated', 'runtime.json');
   const savedRuntime = await readFile(runtimePath, 'utf8');
   await writeFile(runtimePath, '{invalid json');
@@ -175,6 +187,11 @@ test('local server isolates machine bindings and generated skhd output', async (
   const tasks = await json(url, '/api/tasks');
   assert.equal(tasks.status, 200);
   assert.deepEqual(tasks.body.tasks, []);
+  const clearedTransitions = await json(url, '/api/transition-history', {
+    method: 'DELETE', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }
+  });
+  assert.equal(clearedTransitions.status, 200);
+  assert.deepEqual((await json(url, '/api/transition-history')).body.transitions, []);
   const unconfirmedExecution = await json(url, '/api/execute', {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body: JSON.stringify({ kind: 'mode', target: 'wide' })
   });

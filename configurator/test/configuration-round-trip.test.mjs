@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { starterConfig } from '../lib/config-v2.mjs';
+import { writeTransitionRecord } from '../lib/transition-history.mjs';
 
 const packageRoot = new URL('../..', import.meta.url).pathname;
 const token = 'configuration-round-trip-token';
@@ -77,6 +78,12 @@ test('Configuration GUI round-trips the authoritative config file', { timeout: 6
   await mkdir(fakeBin, { recursive: true });
   await writeJson(configFile, original);
   await writeJson(join(stateRoot, 'machine.json'), { version: 1, displayBindings: { primary: 'DISPLAY-PRIMARY' } });
+  await writeTransitionRecord(stateRoot, {
+    schemaVersion: 1, runId: '1700000000001-456-abcdef34', mode: 'solo', scope: 'workspace', workspace: 'gtd_ai',
+    targetKey: 'workspace:gtd_ai:solo', targetLabel: 'GTD AI · solo', status: 'completed', phase: 'GTD AI · solo is ready', step: 3,
+    startedAt: '2026-10-06T00:00:00.000Z', finishedAt: '2026-10-06T00:00:01.500Z', durationMs: 1500,
+    warnings: [], skipped: ['[WARN] ChatGPT unavailable; skipping ChatGPT'], errors: [], logTail: ['OUT ==> Arrange gtd_ai (solo)']
+  });
   await writeFile(join(fakeBin, 'yabai'), `#!/bin/sh
 case "$3" in
   --displays) printf '%s\n' '[{"index":1,"uuid":"DISPLAY-PRIMARY","label":"Built-in","frame":{"x":0,"y":0,"w":1200,"h":900},"is-built-in":true,"has-focus":true,"spaces":[1]}]' ;;
@@ -101,6 +108,14 @@ esac
 
   await page.goto(service.url);
   await page.getByRole('heading', { name: /1 displays · 1 Spaces · 2 windows/ }).waitFor();
+  await page.locator('#nav [data-view="history"]').click();
+  await page.getByRole('heading', { name: 'Workspace activity & restore points' }).waitFor();
+  await page.getByRole('heading', { name: 'GTD AI · solo' }).waitFor();
+  assert.match(await page.locator('.transition-row').innerText(), /1\.5 s[\s\S]*1 skipped/i);
+  await page.setViewportSize({ width: 780, height: 1000 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.locator('#nav [data-view="current"]').click();
   const wakeDryRun = await execFileAsync(process.execPath, [join(packageRoot, 'configurator/state-cli.mjs'), 'event', 'wake', `--package-root=${packageRoot}`, `--config-root=${configRoot}`, `--state-root=${stateRoot}`, '--dry-run'], { env: { ...process.env, ...serverEnv } });
   assert.match(wakeDryRun.stdout, /dry_run=event/);
   await page.getByRole('button', { name: 'Compare workspace' }).click();

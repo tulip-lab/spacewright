@@ -147,6 +147,8 @@ function workspace_common_helper_rows --description "Print declared common works
     printf "%s\t%s\n" workspace_run_mode_steps "mode aggregate runner with shared cleanup suppression"
     printf "%s\t%s\n" workspace_run_cleanup_specs "family:mode cleanup-spec dispatcher"
     printf "%s\t%s\n" workspace_run_finalized_entry "outermost-only solo/wide/tall post-command runner"
+    printf "%s\t%s\n" workspace_run_public_workspace_entry "legacy workspace-name compatibility route through guarded CLI"
+    printf "%s\t%s\n" workspace_run_public_mode_entry "legacy work-mode compatibility route through guarded CLI"
     printf "%s\t%s\n" workspace_finalized_entry_rows "public mutating entries and required finalization modes"
     printf "%s\t%s\n" workspace_finalize_mode "Sandbox, cleanup, verified ordering, and focus restoration"
     printf "%s\t%s\n" workspace_apply_sandbox "policy-driven unmanaged-window Sandbox collection"
@@ -311,6 +313,8 @@ function workspace_required_command_names --description "Print documented worksp
         workspace_run_cleanup_specs \
         workspace_run_mode_steps \
         workspace_run_finalized_entry \
+        workspace_run_public_workspace_entry \
+        workspace_run_public_mode_entry \
         workspace_finalize_mode \
         workspace_apply_sandbox \
         workspace_managed_window_ids_json \

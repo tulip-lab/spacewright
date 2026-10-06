@@ -5,6 +5,12 @@ configuration and installation contracts may still change before 1.0.
 
 ## Unreleased
 
+- Persist the latest 100 guarded workspace and mode transitions with duration,
+  outcome, warnings, skipped-app signals, failure details, and bounded log
+  tails; expose them in the CLI, Configurator History, and Diagnostics views.
+- Route legacy top-level `work_*` and individual workspace Fish commands
+  through the guarded SpaceWright controller while retaining their names and
+  internal fallback bodies for aggregate and legacy execution.
 - Add guarded, cancellable progress banners for individual workspace shortcuts
   and keep their execution target-scoped so unrelated windows are not collected
   into the mode Sandbox, including on fresh installs using packaged fallback

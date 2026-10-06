@@ -24,12 +24,19 @@ workspace and its bounded opposite-variant cleanup.
   deadline.
 - `spacewright mode-cancel` stops the active transition and
   `spacewright mode-status` reports its latest persisted state.
+- `spacewright transition-history` returns the recent guarded transitions as
+  JSON. The state root retains at most 100 entries under
+  `transition-history/`, including duration, warnings, skipped/unavailable app
+  signals, failure details, and a bounded output tail.
 
 The controller owns both the display profile and the aggregate workspace run,
 so they cannot overlap with another controller-managed mode switch. Existing
-Fish functions remain available for compatibility, but a compound shortcut
-that calls them directly does not gain controller semantics and should be
-migrated.
+The historical `work_solo`, `work_wide`, and `work_tall` functions and the
+individual workspace functions remain available as compatibility names. When
+called directly with normal configuration enabled, they now route through the
+same guarded CLI. Internal aggregate execution and the explicit legacy bypass
+continue to use their tested Fish bodies without recursively starting another
+controller.
 
 ## Progress banner
 

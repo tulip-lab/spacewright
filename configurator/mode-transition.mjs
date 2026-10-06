@@ -6,6 +6,7 @@ import { access, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/pr
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { readTransitionHistory, writeTransitionRecord } from './lib/transition-history.mjs';
 
 const VALID_MODES = new Set(['solo', 'wide', 'tall']);
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -242,7 +243,20 @@ export async function runTransition({
   }
 
   let state = publicState(owner);
-  await atomicWrite(stateFile, state);
+  const diagnostics = { warnings: [], skipped: [], errors: [], logTail: [] };
+  let sourceLabel = null;
+  const historyDocument = () => ({
+    schemaVersion: 1,
+    ...state,
+    targetKey,
+    sourceSpaceLabel: sourceLabel,
+    durationMs: state.finishedAt ? Math.max(0, new Date(state.finishedAt).getTime() - now) : null,
+    warnings: diagnostics.warnings,
+    skipped: diagnostics.skipped,
+    errors: diagnostics.errors,
+    logTail: diagnostics.logTail,
+  });
+  await Promise.all([atomicWrite(stateFile, state), writeTransitionRecord(stateRoot, historyDocument())]);
 
   let banner = null;
   const resolvedBanner = bannerExecutable === undefined ? await resolveBanner(packageRoot) : bannerExecutable;
@@ -258,9 +272,26 @@ export async function runTransition({
   const updateState = async (overrides) => {
     stateWrites = stateWrites.then(async () => {
       state = { ...state, ...overrides };
-      await atomicWrite(stateFile, state);
+      await Promise.all([atomicWrite(stateFile, state), writeTransitionRecord(stateRoot, historyDocument())]);
     });
     await stateWrites;
+  };
+  const rememberDiagnostic = (collection, line, limit = 30) => {
+    if (!collection.includes(line)) collection.push(line);
+    if (collection.length > limit) collection.splice(0, collection.length - limit);
+  };
+  const inspectOutput = (line, channel) => {
+    const value = line.trim();
+    if (!value) return;
+    diagnostics.logTail.push(`${channel === 'stderr' ? 'ERR' : 'OUT'} ${value}`);
+    if (diagnostics.logTail.length > 200) diagnostics.logTail.splice(0, diagnostics.logTail.length - 200);
+    if (/\[WARN\]/i.test(value)) rememberDiagnostic(diagnostics.warnings, value);
+    if (/skip|unavailable|no movable|not found|required (?:app|role).*unavailable/i.test(value)) rememberDiagnostic(diagnostics.skipped, value);
+    if (channel === 'stderr' && /\[ERROR\]|\bfailed\b|could not|\berror:/i.test(value)) rememberDiagnostic(diagnostics.errors, value);
+    const match = value.match(/^==>\s+(.+)$/);
+    if (!match) return;
+    step += 1;
+    void updateState({ phase: match[1], step });
   };
   const requestStop = (reason) => {
     if (requestedReason) return;
@@ -287,6 +318,8 @@ export async function runTransition({
 
   try {
     const transitionSourceLabel = sourceSpaceLabel === undefined ? await focusedSpaceLabel() : sourceSpaceLabel;
+    sourceLabel = transitionSourceLabel;
+    await updateState({ sourceSpaceLabel: transitionSourceLabel });
     child = spawn(fishExecutable, ['-lc', command], {
       detached: true,
       env: { ...process.env, SPACEWRIGHT_TRANSITION_RUN_ID: runId, SPACEWRIGHT_SOURCE_SPACE_LABEL: transitionSourceLabel },
@@ -294,21 +327,15 @@ export async function runTransition({
     });
     const childResult = new Promise((resolve) => {
       child.once('error', (error) => resolve({ error }));
-      child.once('exit', (code, signal) => resolve({ code, signal }));
+      child.once('close', (code, signal) => resolve({ code, signal }));
     });
     owner.childPid = child.pid;
     await atomicWrite(join(lockRoot, 'owner.json'), owner);
 
     if (requestedReason) terminateProcessGroup(child.pid);
 
-    const inspectLine = (line) => {
-      const match = line.match(/^==>\s+(.+)$/);
-      if (!match) return;
-      step += 1;
-      void updateState({ phase: match[1], step });
-    };
-    attachLineParser(child.stdout, process.stdout, inspectLine);
-    attachLineParser(child.stderr, process.stderr, inspectLine);
+    attachLineParser(child.stdout, process.stdout, (line) => inspectOutput(line, 'stdout'));
+    attachLineParser(child.stderr, process.stderr, (line) => inspectOutput(line, 'stderr'));
 
     const exitCode = await childResult;
     if (exitCode.error) throw exitCode.error;
@@ -319,10 +346,13 @@ export async function runTransition({
     else if (requestedReason === 'timed_out') { status = 'timed_out'; message = `Stopped after ${Math.ceil(timeoutMs / 1000)} seconds`; }
     else if (exitCode.code === 0) { status = 'completed'; message = scope === 'mode' ? `${resolvedTargetLabel} workspace is ready` : `${resolvedTargetLabel} is ready`; }
 
-    await updateState({ status, phase: message, finishedAt: new Date().toISOString() });
+    const finishedAt = new Date().toISOString();
+    await updateState({ status, phase: message, finishedAt, durationMs: Math.max(0, new Date(finishedAt).getTime() - now) });
     return { status, runId, mode, exitCode: exitCode.code };
   } catch (error) {
-    await updateState({ status: 'failed', phase: `Transition could not start: ${error.message}`, finishedAt: new Date().toISOString() });
+    rememberDiagnostic(diagnostics.errors, error.message);
+    const finishedAt = new Date().toISOString();
+    await updateState({ status: 'failed', phase: `Transition could not start: ${error.message}`, finishedAt, durationMs: Math.max(0, new Date(finishedAt).getTime() - now) });
     throw error;
   } finally {
     clearInterval(cancelPoll);
@@ -382,8 +412,10 @@ async function main() {
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } else if (action === 'status') {
     process.stdout.write(`${JSON.stringify(await transitionStatus(stateRoot), null, 2)}\n`);
+  } else if (action === 'history') {
+    process.stdout.write(`${JSON.stringify({ transitions: await readTransitionHistory(stateRoot) }, null, 2)}\n`);
   } else {
-    process.stderr.write('usage: mode-transition.mjs <run MODE|workspace WORKSPACE MODE|cancel|status> --package-root=PATH --state-root=PATH\n');
+    process.stderr.write('usage: mode-transition.mjs <run MODE|workspace WORKSPACE MODE|cancel|status|history> --package-root=PATH --state-root=PATH\n');
     process.exitCode = 2;
   }
 }

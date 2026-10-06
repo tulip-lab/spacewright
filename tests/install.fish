@@ -29,6 +29,7 @@ for configurator_file in \
         server.mjs \
         cli.mjs \
         lib/config-v2.mjs \
+        lib/transition-history.mjs \
         public/index.html \
         public/app.js \
         public/styles.css
@@ -55,6 +56,10 @@ set -l workspace_dry_run (env -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT -u
 string match -q '*scope=target_only*' -- "$workspace_dry_run"
     and string match -q '*finalization=none*' -- "$workspace_dry_run"
 or exit 28
+env -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT -u SPACEWRIGHT_CONFIG_ROOT \
+    HOME="$test_root" XDG_CONFIG_HOME="$test_root/xdg" \
+    "$bin_root/spacewright" transition-history | jq -e '.transitions == []' >/dev/null
+or exit 29
 
 set -l server_log "$test_root/configurator.log"
 env HOME="$test_root" node "$installed_release_root/configurator/server.mjs" \
