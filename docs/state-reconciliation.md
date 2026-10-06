@@ -55,6 +55,12 @@ active. Window roles default to `cardinality: "one"`; adaptive roles such as
 GTD Support's Dia role use `"many"`, select every eligible window, and verify
 Space membership without inventing a singular geometry comparison.
 
+`contextualApps` is the closed exception for a single shared assistant window.
+The reconciler maps the pre-transition focused Space label back to a workspace
+id, uses that workspace when it is eligible, and otherwise uses the configured
+fallback. When `focusOwner` is true, the selected owner becomes the mode's
+final focus, which also makes later verification resolve the same ownership.
+
 Space ordering is compared explicitly per display lane. A converged aggregate
 plan is a true no-op; ordering is applied only when the discovered order is
 wrong or Space creation/movement requires a final reorder.

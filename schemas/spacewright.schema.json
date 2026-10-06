@@ -59,7 +59,8 @@
               "gtd_review",
               "gtd_meeting",
               "gtd_ai",
-              "fixed_adapter"
+              "fixed_adapter",
+              "generic_layout"
             ]
           },
           "runner_options": {
@@ -100,6 +101,15 @@
             }
           },
           "layout_ref": { "type": "string", "minLength": 1 },
+          "activation": {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": { "enum": ["always", "windowPresent"] },
+              "role": { "type": "string", "minLength": 1 }
+            },
+            "additionalProperties": false
+          },
           "primary_alone_layout_ref": { "type": "string", "minLength": 1 },
           "cleanup": {
             "type": "object",
@@ -158,6 +168,21 @@
             "type": "array",
             "items": { "type": "string", "pattern": "^[a-z_]+:(solo|wide|tall)$" },
             "uniqueItems": true
+          },
+          "contextual_apps": {
+            "type": "array",
+            "maxItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["app_key", "workspace_ids", "fallback_workspace_id", "focus_owner"],
+              "properties": {
+                "app_key": { "type": "string", "minLength": 1 },
+                "workspace_ids": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+                "fallback_workspace_id": { "type": "string", "minLength": 1 },
+                "focus_owner": { "type": "boolean" }
+              },
+              "additionalProperties": false
+            }
           }
         },
         "additionalProperties": false

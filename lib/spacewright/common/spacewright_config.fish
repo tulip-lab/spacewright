@@ -125,6 +125,7 @@ function workspace_config_check --description "Validate the effective SpaceWrigh
             and (.runner | IN("primary_helper", "office_document", "gtd_support", "gtd_review", "gtd_meeting", "gtd_ai", "fixed_adapter", "generic_layout"))
             and (.display_role | type == "string" and length > 0)
             and (.space_layout | IN("float", "bsp", "stack"))
+            and ((.activation // {type:"always"}) as $activation | ($activation.type == "always") or ($activation.type == "windowPresent" and ($activation.role | type == "string" and length > 0)))
             and (.windows | type == "array" and length > 0 and all(.[]; valid_window($root.apps)))
             and (.layout_ref | type == "string" and $root.layouts[.] != null)
             and ((.primary_alone_layout_ref // null) as $ref | $ref == null or $root.layouts[$ref] != null)
@@ -141,6 +142,12 @@ function workspace_config_check --description "Validate the effective SpaceWrigh
             type == "object"
             and (.display_mode | IN("solo", "wide", "tall", "auto"))
             and (.steps | type == "array" and length > 0)
+            and ((.contextual_apps // []) | type == "array" and all(.[];
+                (.app_key | type == "string" and length > 0)
+                and (.workspace_ids | type == "array" and length > 0)
+                and (.fallback_workspace_id as $fallback | .workspace_ids | index($fallback) != null)
+                and ((.focus_owner // false) | type == "boolean")
+            ))
             and (all(.steps[];
                 (has("workspace") and ($root.workspaces[.workspace] != null))
                 or (has("mode") and ($root.modes[.mode] != null) and (.mode | IN("coding_solo", "gtd_solo_all", "office_wide", "office_tall")))
@@ -193,6 +200,7 @@ function workspace_config_plan --description "Print a read-only configured works
                 layout: .layouts[.workspaces[$target].layout_ref],
                 primary_alone_layout: (.workspaces[$target].primary_alone_layout_ref as $ref | if $ref then .layouts[$ref] else null end),
                 runner_options: (.workspaces[$target].runner_options // {}),
+                activation: (.workspaces[$target].activation // {type: "always"}),
                 cleanup: (.workspaces[$target].cleanup // null),
                 mutates: false
             }
@@ -203,6 +211,7 @@ function workspace_config_plan --description "Print a read-only configured works
                 display_mode: .modes[$target].display_mode,
                 steps: .modes[$target].steps,
                 cleanup: (.modes[$target].cleanup // []),
+                contextual_apps: (.modes[$target].contextual_apps // []),
                 mutates: false
             }
         else

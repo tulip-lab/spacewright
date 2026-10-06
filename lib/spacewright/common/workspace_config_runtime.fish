@@ -115,6 +115,12 @@ function __workspace_run_configured_office_document --description "Run a configu
         --display (printf "%s\n" "$plan" | jq -r '.display_role') \
         --mode (printf "%s\n" "$plan" | jq -r '.runner_options.mode') \
         --primary-app-key (__workspace_config_plan_app_key "$plan" primary)
+    set -l helper_app_key (__workspace_config_plan_app_key "$plan" helper)
+    if test -n "$helper_app_key"
+        set -a args --helper-app-key "$helper_app_key"
+    else
+        set -a args --skip-helper
+    end
     set -a args (__workspace_config_cleanup_specs "$plan")
     if test "$dry_run" = 1
         set -a args --dry-run
@@ -176,6 +182,8 @@ function __workspace_run_configured_gtd_ai --description "Run a configured GTD A
         set -l grid (__workspace_config_plan_grid "$plan" $role)
         if test -n "$grid"
             set -a args --$role-grid "$grid"
+        else
+            set -a args --skip-$role
         end
     end
     set -a args (__workspace_config_cleanup_specs "$plan")
@@ -310,6 +318,29 @@ function workspace_run_configured --description "Run one validated configured wo
     end
     set -l plan (workspace_config_plan "$workspace_id" | string collect)
     or return 1
+    set -l activation_type (printf "%s\n" "$plan" | jq -r '.activation.type // "always"')
+    if test "$activation_type" = windowPresent
+        set -l activation_role (printf "%s\n" "$plan" | jq -r '.activation.role')
+        set -l activation_app_key (__workspace_config_plan_app_key "$plan" "$activation_role")
+        if not set -q _flag_dry_run
+            set -l activation_window (workspace_find_app_key_window --app-key "$activation_app_key" --caller "$workspace_id-activation")
+            if test $status -eq 1
+                return 1
+            end
+            if test -z "$activation_window"
+                destroy_empty_labeled_space (printf "%s\n" "$plan" | jq -r '.label')
+                return 0
+            end
+        end
+    end
+    if set -q SPACEWRIGHT_CONTEXTUAL_APP_KEY; and set -q SPACEWRIGHT_CONTEXTUAL_OWNER_RUNTIME_ID; and test "$workspace_id" != "$SPACEWRIGHT_CONTEXTUAL_OWNER_RUNTIME_ID"
+        set plan (printf "%s\n" "$plan" | jq -c --arg app "$SPACEWRIGHT_CONTEXTUAL_APP_KEY" '
+            .windows |= map(select(.app_key != $app))
+            | .windows as $windows
+            | .layout |= map(select(.role as $role | any($windows[]; .role == $role)))
+            | if .primary_alone_layout then .primary_alone_layout |= map(select(.role as $role | any($windows[]; .role == $role))) else . end
+        ')
+    end
     set -l dry_run 0
     if set -q _flag_dry_run
         set dry_run 1
@@ -364,6 +395,37 @@ function workspace_run_configured_mode --description "Run one configured ordered
         return 0
     end
 
+    set -l old_contextual_app_key "$SPACEWRIGHT_CONTEXTUAL_APP_KEY"
+    set -l old_contextual_owner "$SPACEWRIGHT_CONTEXTUAL_OWNER_RUNTIME_ID"
+    set -l old_contextual_focus "$SPACEWRIGHT_CONTEXTUAL_FOCUS_OWNER"
+    set -l contextual_rule (printf "%s\n" "$plan" | jq -c 'first(.contextual_apps[]) // empty')
+    if test -n "$contextual_rule"
+        set -l source_label "$SPACEWRIGHT_SOURCE_SPACE_LABEL"
+        if test -z "$source_label"
+            set -l current_space (ws_query_current_space "$mode_id-context" source)
+            if test $status -eq 0
+                set source_label (printf "%s\n" "$current_space" | jq -r '.label // empty')
+            end
+        end
+        set -l effective_config (spacewright_config_effective)
+        or return 1
+        set -l source_workspace_id (printf "%s\n" "$effective_config" | jq -r --arg label "$source_label" '
+            first(.workspaces[] | select(.label == $label) | .ui.workspace_id) // empty
+        ')
+        set -l owner_workspace_id (printf "%s\n" "$contextual_rule" | jq -r --arg source "$source_workspace_id" '
+            if (.workspace_ids | index($source)) != null then $source else .fallback_workspace_id end
+        ')
+        set -gx SPACEWRIGHT_CONTEXTUAL_APP_KEY (printf "%s\n" "$contextual_rule" | jq -r '.app_key')
+        set -gx SPACEWRIGHT_CONTEXTUAL_OWNER_RUNTIME_ID (printf "%s\n" "$effective_config" | jq -r --arg mode "$mode_id" --arg owner "$owner_workspace_id" '
+            first(.modes[$mode].steps[].workspace as $runtime | .workspaces[$runtime] | select(.ui.workspace_id == $owner) | $runtime) // empty
+        ')
+        if test (printf "%s\n" "$contextual_rule" | jq -r '.focus_owner // false') = true
+            set -gx SPACEWRIGHT_CONTEXTUAL_FOCUS_OWNER 1
+        else
+            set -e SPACEWRIGHT_CONTEXTUAL_FOCUS_OWNER
+        end
+    end
+
     set -l cleanup_specs (printf "%s\n" "$plan" | jq -r '.cleanup[]?')
     set -l failed 0
     for spec in $cleanup_specs
@@ -409,6 +471,29 @@ function workspace_run_configured_mode --description "Run one configured ordered
     for spec in $cleanup_specs
         workspace_run_step "final cleanup $spec" workspace_run_cleanup_specs $spec
         or set failed 1
+    end
+    if set -q SPACEWRIGHT_CONTEXTUAL_FOCUS_OWNER; and test -n "$SPACEWRIGHT_CONTEXTUAL_OWNER_RUNTIME_ID"
+        set -l owner_label (spacewright_config_effective | jq -r --arg owner "$SPACEWRIGHT_CONTEXTUAL_OWNER_RUNTIME_ID" '.workspaces[$owner].label // empty')
+        set -l owner_space (ws_query_spaces "$mode_id-context" focus | jq -r --arg label "$owner_label" 'first(.[] | select(.label == $label) | .index) // empty')
+        if test -n "$owner_space"
+            workspace_run_step "focus contextual workspace" ws_focus_space "$owner_space"
+            or set failed 1
+        end
+    end
+    if test -n "$old_contextual_app_key"
+        set -gx SPACEWRIGHT_CONTEXTUAL_APP_KEY "$old_contextual_app_key"
+    else
+        set -e SPACEWRIGHT_CONTEXTUAL_APP_KEY
+    end
+    if test -n "$old_contextual_owner"
+        set -gx SPACEWRIGHT_CONTEXTUAL_OWNER_RUNTIME_ID "$old_contextual_owner"
+    else
+        set -e SPACEWRIGHT_CONTEXTUAL_OWNER_RUNTIME_ID
+    end
+    if test -n "$old_contextual_focus"
+        set -gx SPACEWRIGHT_CONTEXTUAL_FOCUS_OWNER "$old_contextual_focus"
+    else
+        set -e SPACEWRIGHT_CONTEXTUAL_FOCUS_OWNER
     end
     return $failed
 end

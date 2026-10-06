@@ -1,7 +1,11 @@
 function __gtd_ai_allowed_app_regex --description "Return app regex for GTD AI owned windows"
     set -l app_names
 
-    for app_key in hermes chatgpt obsidian notes
+    set -l app_keys $argv
+    if test (count $app_keys) -eq 0
+        set app_keys hermes chatgpt obsidian notes
+    end
+    for app_key in $app_keys
         set -a app_names (workspace_app_names $app_key)
         or return 1
     end
@@ -144,6 +148,10 @@ function gtd_apply_ai_space --description "Apply a GTD AI workspace for Hermes, 
         'chatgpt-grid=' \
         'obsidian-grid=' \
         'notes-grid=' \
+        skip-hermes \
+        skip-chatgpt \
+        skip-obsidian \
+        skip-notes \
         dry-run \
         -- $argv
     or return 1
@@ -159,7 +167,13 @@ function gtd_apply_ai_space --description "Apply a GTD AI workspace for Hermes, 
         printf "dry_run=gtd_apply_ai_space\n"
         printf "label=%s\n" "$_flag_label"
         printf "display=%s\n" "$_flag_display"
-        printf "apps=%s,%s,%s,%s\n" (workspace_app_name hermes) (workspace_app_name chatgpt) (workspace_app_name obsidian) (workspace_app_name notes)
+        set -l enabled_apps
+        for app_key in hermes chatgpt obsidian notes
+            if not set -q _flag_skip_$app_key
+                set -a enabled_apps (workspace_app_name $app_key)
+            end
+        end
+        printf "apps=%s\n" (string join , $enabled_apps)
         printf "hermes_grid=%s\n" "$_flag_hermes_grid"
         printf "chatgpt_grid=%s\n" "$_flag_chatgpt_grid"
         printf "obsidian_grid=%s\n" "$_flag_obsidian_grid"
@@ -174,7 +188,13 @@ function gtd_apply_ai_space --description "Apply a GTD AI workspace for Hermes, 
     set -l target_display (workspace_resolve_display_role $_flag_display)
     or return $status
 
-    set -l allowed_app_regex (__gtd_ai_allowed_app_regex)
+    set -l enabled_app_keys
+    for app_key in hermes chatgpt obsidian notes
+        if not set -q _flag_skip_$app_key
+            set -a enabled_app_keys $app_key
+        end
+    end
+    set -l allowed_app_regex (__gtd_ai_allowed_app_regex $enabled_app_keys)
     or return 1
 
     set -l hermes_space_fallback_used 0
@@ -185,10 +205,13 @@ function gtd_apply_ai_space --description "Apply a GTD AI workspace for Hermes, 
     set -l windows_json_initial (ws_query_windows $_flag_label initial)
     or return 1
 
-    set -l hermes_movable_info (echo $windows_json_initial | workspace_app_key_window_info --app-key hermes --movable)
-    or return 1
+    set -l hermes_movable_info
+    if not set -q _flag_skip_hermes
+        set hermes_movable_info (echo $windows_json_initial | workspace_app_key_window_info --app-key hermes --movable)
+        or return 1
+    end
 
-    if test -z "$hermes_movable_info"
+    if not set -q _flag_skip_hermes; and test -z "$hermes_movable_info"
         set -l hermes_fallback_info (echo $windows_json_initial | workspace_app_key_window_info --app-key hermes --unmovable)
         or return 1
 
@@ -244,19 +267,28 @@ function gtd_apply_ai_space --description "Apply a GTD AI workspace for Hermes, 
     end
 
     set -l hermes $hermes_fallback_window
-    if test "$hermes_space_fallback_used" -ne 1
+    if not set -q _flag_skip_hermes; and test "$hermes_space_fallback_used" -ne 1
         set hermes (__gtd_ai_capture_app --app-key hermes --caller $_flag_label --space $target_space)
         or return 1
     end
 
-    set -l chatgpt (__gtd_ai_capture_app --app-key chatgpt --caller $_flag_label --space $target_space)
-    or return 1
+    set -l chatgpt
+    if not set -q _flag_skip_chatgpt
+        set chatgpt (__gtd_ai_capture_app --app-key chatgpt --caller $_flag_label --space $target_space)
+        or return 1
+    end
 
-    set -l obsidian (__gtd_ai_capture_app --app-key obsidian --caller $_flag_label --space $target_space)
-    or return 1
+    set -l obsidian
+    if not set -q _flag_skip_obsidian
+        set obsidian (__gtd_ai_capture_app --app-key obsidian --caller $_flag_label --space $target_space)
+        or return 1
+    end
 
-    set -l notes (__gtd_ai_capture_app --app-key notes --caller $_flag_label --space $target_space)
-    or return 1
+    set -l notes
+    if not set -q _flag_skip_notes
+        set notes (__gtd_ai_capture_app --app-key notes --caller $_flag_label --space $target_space)
+        or return 1
+    end
 
     if test -z "$hermes" -a -z "$chatgpt" -a -z "$obsidian" -a -z "$notes"
         destroy_empty_labeled_space $_flag_label

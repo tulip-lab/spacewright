@@ -1,8 +1,10 @@
-function __office_chatgpt_grid --description "Return the ChatGPT grid for an office workspace"
+function __office_helper_grid --description "Return the helper grid for an office workspace"
     set -l mode $argv[1]
     set -l primary_count $argv[2]
 
     switch "$mode"
+        case solo
+            echo 1:3:2:0:1:1
         case wide
             echo 1:3:0:0:1:1
         case tall
@@ -18,10 +20,30 @@ function __office_primary_grid --description "Return a document window grid for 
     set -l mode $argv[1]
     set -l index $argv[2]
     set -l primary_count $argv[3]
-    set -l has_chatgpt $argv[4]
+    set -l has_helper $argv[4]
 
-    if test "$has_chatgpt" -eq 1
+    if test "$has_helper" -eq 1
         switch "$mode"
+            case solo
+                if test "$primary_count" -le 1
+                    echo 1:3:0:0:2:1
+                else if test "$primary_count" -eq 2
+                    switch "$index"
+                        case 1
+                            echo 1:3:0:0:1:1
+                        case 2
+                            echo 1:3:1:0:1:1
+                    end
+                else
+                    switch "$index"
+                        case 1
+                            echo 1:3:0:0:1:1
+                        case 2
+                            echo 2:3:1:0:1:1
+                        case 3
+                            echo 2:3:1:1:1:1
+                    end
+                end
             case wide
                 if test "$primary_count" -le 1
                     echo 1:3:1:0:2:1
@@ -111,35 +133,47 @@ function __office_primary_grid --description "Return a document window grid for 
     end
 end
 
-function office_apply_document_space --description "Apply an Office workspace for ChatGPT and document windows"
+function office_apply_document_space --description "Apply an Office workspace for a helper and document windows"
     argparse \
         'label=' \
         'display=' \
         'primary-app-key=' \
+        'helper-app-key=' \
         'mode=' \
+        skip-helper \
         dry-run \
         -- $argv
     or return 1
 
     if not set -q _flag_label; or not set -q _flag_display; or not set -q _flag_primary_app_key; or not set -q _flag_mode
-        echo "usage: office_apply_document_space --label <label> --display <wide|tall> --primary-app-key <word|powerpoint> --mode <wide|tall> [--dry-run] [cleanup-spec ...]" >&2
+        echo "usage: office_apply_document_space --label <label> --display <primary|wide|tall> --primary-app-key <word|powerpoint> --mode <solo|wide|tall> [--helper-app-key <app>] [--dry-run] [cleanup-spec ...]" >&2
         return 2
     end
 
     set -l cleanup_specs $argv
     set -l primary_app (workspace_app_name $_flag_primary_app_key)
     or return 1
-    set -l chatgpt_app (workspace_app_name chatgpt)
-    or return 1
+    set -l helper_app_key
+    if not set -q _flag_skip_helper
+        set helper_app_key chatgpt
+    end
+    if set -q _flag_helper_app_key; and not set -q _flag_skip_helper
+        set helper_app_key $_flag_helper_app_key
+    end
+    set -l helper_app
+    if test -n "$helper_app_key"
+        set helper_app (workspace_app_name $helper_app_key)
+        or return 1
+    end
 
     if set -q _flag_dry_run
         printf "dry_run=office_apply_document_space\n"
         printf "label=%s\n" "$_flag_label"
         printf "display=%s\n" "$_flag_display"
         printf "mode=%s\n" "$_flag_mode"
-        printf "apps=%s,%s\n" "$chatgpt_app" "$primary_app"
+        printf "apps=%s\n" (string join , $helper_app $primary_app)
         printf "primary_app=%s\n" "$primary_app"
-        printf "helper_app=%s\n" "$chatgpt_app"
+        printf "helper_app=%s\n" "$helper_app"
         printf "cleanup=%s\n" "$cleanup_specs"
         return 0
     end
@@ -161,7 +195,7 @@ function office_apply_document_space --description "Apply an Office workspace fo
     set -l target_display (workspace_resolve_display_role $_flag_display)
     or return $status
 
-    set -l allowed_app_regex (workspace_app_regex $_flag_primary_app_key chatgpt)
+    set -l allowed_app_regex (workspace_app_regex $_flag_primary_app_key $helper_app_key)
     or return 1
 
     set -l target_space (find_or_create_labeled_space $_flag_label $target_display)
@@ -182,23 +216,26 @@ function office_apply_document_space --description "Apply an Office workspace fo
 
     ws_move_windows_to_space $target_space $primary_windows
 
-    set -l chatgpt (workspace_capture_app_window --app-key chatgpt --caller $_flag_label --space $target_space)
-    set -l chatgpt_status $status
-    if test "$chatgpt_status" -eq 1
-        return 1
+    set -l helper
+    if test -n "$helper_app_key"
+        set helper (workspace_capture_app_window --app-key $helper_app_key --caller $_flag_label --space $target_space)
+        set -l helper_status $status
+        if test "$helper_status" -eq 1
+            return 1
+        end
     end
 
-    set -l has_chatgpt 0
-    if test -n "$chatgpt"
-        set has_chatgpt 1
-        set -l chatgpt_grid (__office_chatgpt_grid $_flag_mode (count $primary_windows))
-        if test -n "$chatgpt_grid"
-            ws_window $chatgpt --grid $chatgpt_grid
+    set -l has_helper 0
+    if test -n "$helper"
+        set has_helper 1
+        set -l helper_grid (__office_helper_grid $_flag_mode (count $primary_windows))
+        if test -n "$helper_grid"
+            ws_window $helper --grid $helper_grid
         end
     end
 
     for index in (seq 1 (count $primary_windows))
-        set -l primary_grid (__office_primary_grid $_flag_mode $index (count $primary_windows) $has_chatgpt)
+        set -l primary_grid (__office_primary_grid $_flag_mode $index (count $primary_windows) $has_helper)
         if test -n "$primary_grid"
             ws_window $primary_windows[$index] --grid $primary_grid
         end

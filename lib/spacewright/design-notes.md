@@ -470,11 +470,11 @@ Layouts:
 - tall: Hermes occupies the top half, ChatGPT the third quarter, and Obsidian and Notes split the bottom quarter
 - solo: Hermes occupies the top half; ChatGPT, Obsidian, and Notes share the bottom reference band
 
-`gtd_ai_*` runs near the start of every aggregate `work_*` entry. This guarantees a stable owned Space for Hermes. Later review and coding stages intentionally reclaim their shared Notes, Obsidian, and ChatGPT windows according to the last-invoked ownership rule, leaving Hermes in `gtd_ai`. The aggregate then calls `gtd_ai_expand_hermes_when_alone`; when Hermes is the only effective window remaining on that Space, it expands to the full display instead of retaining the center-half multi-app grid.
+By default, aggregate workspace order gives a shared app to its last applicable workspace. A mode may instead declare one closed `contextualApps` rule for a mobile assistant such as Hermes. Before a guarded mode transition changes displays, the controller captures the focused Space label. The configured runner maps that label back to the same logical workspace in the target mode, suppresses the assistant in all other aggregate steps, and finally focuses the selected owner. If the source is not eligible, ownership falls back to the configured workspace. Direct workspace entries do not apply aggregate contextual ownership.
 
 ### Office ChatGPT And Documents
 
-Office writing and slides workspaces use `office_apply_document_space` instead of the generic primary/helper flow. Word and PowerPoint are multi-window primary apps: all movable document windows are moved to the target workspace. ChatGPT remains a single shared helper window and follows the last-caller ownership rule.
+Office writing and slides workspaces use `office_apply_document_space` instead of the generic primary/helper flow. Word and PowerPoint are multi-window primary apps: all movable document windows are moved to the target workspace. The helper app is configured per variant, so wide/tall may retain ChatGPT while solo can use Hermes; aggregate contextual ownership can suppress that helper in non-owner workspaces.
 
 Wide mode keeps ChatGPT in the left third when present. One document window uses the right two thirds; two document windows use the middle and right thirds; three or more document windows keep the first document in the middle third and split the right third between the next two document windows.
 
