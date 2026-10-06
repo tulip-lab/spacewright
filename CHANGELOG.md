@@ -5,6 +5,9 @@ configuration and installation contracts may still change before 1.0.
 
 ## Unreleased
 
+- Align Meeting smoke coverage with single-app full-screen behavior, retain the
+  Zoom-and-Teams split-layout contract, and print installed smoke logs on CI
+  failures.
 - Make the native transition banner readable over light and busy desktops with
   a fixed dark high-contrast surface, brighter text, and a solid Stop control.
 - Add semantic AI providers and workspace routing with defaults shared across

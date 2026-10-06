@@ -80,10 +80,16 @@ env -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT -u SPACEWRIGHT_CONFIG_ROOT \
     "set -gx SPACEWRIGHT_USE_LEGACY 1; source '$fish_root/conf.d/spacewright.fish'; not set -q SPACEWRIGHT_ROOT"
 or exit 7
 
+set -l smoke_log "$test_root/work-smoke.log"
 env -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT -u SPACEWRIGHT_CONFIG_ROOT \
     HOME="$test_root" XDG_CONFIG_HOME="$test_root/xdg" fish --no-config -c \
-    "source '$fish_root/conf.d/spacewright.fish'; work_smoke >/dev/null"
-or exit 8
+    "source '$fish_root/conf.d/spacewright.fish'; work_smoke" >"$smoke_log" 2>&1
+set -l smoke_status $status
+if test "$smoke_status" -ne 0
+    printf "FAIL    installed work_smoke status=%s log=%s\n" "$smoke_status" "$smoke_log" >&2
+    cat "$smoke_log" >&2
+    exit 8
+end
 
 fish "$package_root/scripts/install.fish" \
     --source-root "$package_root" \
