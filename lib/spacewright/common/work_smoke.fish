@@ -3274,17 +3274,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         contains -- "8,41,42" $__work_smoke_zoom_moves
         or exit 2
 
-        contains -- "41 --grid 1:2:0:0:1:1" $__work_smoke_zoom_grids
+        contains -- "41 --grid 1:1:0:0:1:1" $__work_smoke_zoom_grids
         or exit 3
 
-        contains -- "42 --grid 1:2:0:0:1:1" $__work_smoke_zoom_grids
+        contains -- "42 --grid 1:1:0:0:1:1" $__work_smoke_zoom_grids
         or exit 4
     '
     fish -lc "$meeting_zoom_settle_smoke" >/tmp/work-meeting-zoom-settle-smoke.out 2>&1
     if test $status -eq 0
-        echo "OK      meeting Zoom settle reconciliation"
+        echo "OK      meeting Zoom-only settle full-screen"
     else
-        echo "FAIL    meeting Zoom settle reconciliation"
+        echo "FAIL    meeting Zoom-only settle full-screen"
         cat /tmp/work-meeting-zoom-settle-smoke.out
         set failed 1
     end
@@ -3354,14 +3354,14 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         contains -- "8,41" $__work_smoke_zoom_alias_moves
         or exit 2
 
-        contains -- "41 --grid 2:1:0:0:1:1" $__work_smoke_zoom_alias_grids
+        contains -- "41 --grid 1:1:0:0:1:1" $__work_smoke_zoom_alias_grids
         or exit 3
     '
     fish -lc "$meeting_zoom_alias_smoke" >/tmp/work-meeting-zoom-alias-smoke.out 2>&1
     if test $status -eq 0
-        echo "OK      meeting Zoom app alias capture"
+        echo "OK      meeting Zoom alias-only full-screen"
     else
-        echo "FAIL    meeting Zoom app alias capture"
+        echo "FAIL    meeting Zoom alias-only full-screen"
         cat /tmp/work-meeting-zoom-alias-smoke.out
         set failed 1
     end
@@ -3461,18 +3461,91 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         contains -- "8,51,52" $__work_smoke_teams_moves
         or exit 2
 
-        contains -- "51 --grid 1:2:1:0:1:1" $__work_smoke_teams_grids
+        contains -- "51 --grid 1:1:0:0:1:1" $__work_smoke_teams_grids
         or exit 3
 
-        contains -- "52 --grid 1:2:1:0:1:1" $__work_smoke_teams_grids
+        contains -- "52 --grid 1:1:0:0:1:1" $__work_smoke_teams_grids
         or exit 4
     '
     fish -lc "$meeting_teams_settle_smoke" >/tmp/work-meeting-teams-settle-smoke.out 2>&1
     if test $status -eq 0
-        echo "OK      meeting Teams settle reconciliation"
+        echo "OK      meeting Teams-only settle full-screen"
     else
-        echo "FAIL    meeting Teams settle reconciliation"
+        echo "FAIL    meeting Teams-only settle full-screen"
         cat /tmp/work-meeting-teams-settle-smoke.out
+        set failed 1
+    end
+
+    set -l meeting_zoom_teams_split_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_meeting_split_moves
+        set -g __work_smoke_meeting_split_grids
+
+        function workspace_run_cleanup_specs
+        end
+
+        function sleep
+        end
+
+        function ws_query_windows
+            printf "%s\n" "[
+                {\"id\": 41, \"app\": \"zoom.us\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Zoom Workplace\"},
+                {\"id\": 51, \"app\": \"Microsoft Teams\", \"space\": 8, \"display\": 2, \"can-move\": true, \"is-minimized\": false, \"title\": \"Teams\"}
+            ]"
+        end
+
+        function workspace_resolve_display_role
+            echo 2
+        end
+
+        function find_or_create_labeled_space
+            echo 8
+        end
+
+        function workspace_retarget_contaminated_space
+            echo 8
+        end
+
+        function workspace_focus_labeled_space
+        end
+
+        function ws_move_windows_to_space
+            set -ga __work_smoke_meeting_split_moves (string join , -- $argv)
+        end
+
+        function ws_window
+            set -ga __work_smoke_meeting_split_grids (string join " " -- $argv)
+        end
+
+        function ws_focus_space
+        end
+
+        function cleanup_unlabeled_empty_spaces
+        end
+
+        gtd_apply_meeting_space \
+            --label gtd_meeting_wide \
+            --display wide \
+            --zoom-grid 1:2:0:0:1:1 \
+            --teams-grid 1:2:1:0:1:1
+        or exit 1
+
+        contains -- "8,41,51" $__work_smoke_meeting_split_moves
+        or exit 2
+
+        contains -- "41 --grid 1:2:0:0:1:1" $__work_smoke_meeting_split_grids
+        or exit 3
+
+        contains -- "51 --grid 1:2:1:0:1:1" $__work_smoke_meeting_split_grids
+        or exit 4
+    '
+    fish -lc "$meeting_zoom_teams_split_smoke" >/tmp/work-meeting-zoom-teams-split-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      meeting Zoom/Teams split layout"
+    else
+        echo "FAIL    meeting Zoom/Teams split layout"
+        cat /tmp/work-meeting-zoom-teams-split-smoke.out
         set failed 1
     end
 
