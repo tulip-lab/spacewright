@@ -7,7 +7,8 @@ configuration and installation contracts may still change before 1.0.
 
 - Add guarded, cancellable progress banners for individual workspace shortcuts
   and keep their execution target-scoped so unrelated windows are not collected
-  into the mode Sandbox.
+  into the mode Sandbox, including on fresh installs using packaged fallback
+  configuration.
 - Align Meeting smoke coverage with single-app full-screen behavior, retain the
   Zoom-and-Teams split-layout contract, and print installed smoke logs on CI
   failures.
