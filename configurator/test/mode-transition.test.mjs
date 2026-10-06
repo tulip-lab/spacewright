@@ -46,6 +46,10 @@ function args(stateRoot, mode) {
   return [script, 'run', mode, `--package-root=${process.cwd()}`, `--state-root=${stateRoot}`];
 }
 
+function workspaceArgs(stateRoot, workspace, mode) {
+  return [script, 'workspace', workspace, mode, `--package-root=${process.cwd()}`, `--state-root=${stateRoot}`];
+}
+
 test('a repeated request for the same mode is coalesced', async () => {
   const { root, stateRoot, fakeFish, log } = await fixture();
   const env = { ...process.env, SPACEWRIGHT_BANNER_DISABLE: '1', SPACEWRIGHT_TRANSITION_FISH: fakeFish, FAKE_LOG: log, FAKE_DURATION: '2' };
@@ -154,6 +158,30 @@ test('a newer different mode replaces the active transition', async () => {
     assert.doesNotMatch(lines, /completed .*work_wide/);
     assert.match(lines, /completed .*work_solo/);
     const status = JSON.parse(await readFile(join(stateRoot, 'mode-transition', 'status.json'), 'utf8'));
+    assert.equal(status.mode, 'solo');
+    assert.equal(status.status, 'completed');
+  } finally {
+    if (first.exitCode === null) first.kill('SIGKILL');
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('a different workspace in the same mode replaces the active scoped transition', async () => {
+  const { root, stateRoot, fakeFish, log } = await fixture();
+  const common = { ...process.env, SPACEWRIGHT_BANNER_DISABLE: '1', SPACEWRIGHT_TRANSITION_FISH: fakeFish, FAKE_LOG: log };
+  const first = spawn(process.execPath, workspaceArgs(stateRoot, 'gtd_ai', 'solo'), { env: { ...common, FAKE_DURATION: '10' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  try {
+    await waitFor(async () => (await readFile(log, 'utf8').catch(() => '')).includes('gtd_ai'));
+    await execFileAsync(process.execPath, workspaceArgs(stateRoot, 'research', 'solo'), { env: { ...common, FAKE_DURATION: '0.1' } });
+    await waitForChild(first);
+    const lines = await readFile(log, 'utf8');
+    assert.match(lines, /started .*WORKSPACE_SKIP_FINALIZATION 1.*spacewright run gtd_ai solo/);
+    assert.match(lines, /started .*WORKSPACE_SKIP_FINALIZATION 1.*spacewright run research solo/);
+    assert.doesNotMatch(lines, /completed .*gtd_ai solo/);
+    assert.match(lines, /completed .*research solo/);
+    const status = JSON.parse(await readFile(join(stateRoot, 'mode-transition', 'status.json'), 'utf8'));
+    assert.equal(status.scope, 'workspace');
+    assert.equal(status.workspace, 'research');
     assert.equal(status.mode, 'solo');
     assert.equal(status.status, 'completed');
   } finally {

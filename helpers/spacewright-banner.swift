@@ -9,6 +9,7 @@ struct TransitionState: Decodable {
     let step: Int?
     let startedAt: String
     let deadlineAt: String
+    let targetLabel: String?
 }
 
 final class BannerController: NSObject, NSApplicationDelegate {
@@ -168,7 +169,7 @@ final class BannerController: NSObject, NSApplicationDelegate {
             return
         }
 
-        let title = state.mode.prefix(1).uppercased() + state.mode.dropFirst()
+        let title = state.targetLabel ?? (state.mode.prefix(1).uppercased() + state.mode.dropFirst())
         modeLabel.stringValue = "SPACEWRIGHT  /  \(title)"
         phaseLabel.stringValue = state.phase
 

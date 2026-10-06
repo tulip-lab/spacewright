@@ -160,6 +160,12 @@ The stable user command is `spacewright run <workspace-id>
 <solo|wide|tall>`. Imported `variant.command` values preserve historical Fish
 commands; generated `spacewright_<id>_<mode>` identifiers remain internal.
 
+Interactive shortcuts use `spacewright workspace <workspace-id>
+<solo|wide|tall>`. This guarded wrapper adds progress, cancellation, duplicate
+coalescing, and a safety deadline while keeping execution scoped to the target
+workspace. `spacewright run` remains the lower-level stable entry used inside
+that controller and by non-interactive integrations.
+
 Runner names are also a closed enum. Generic primary/helper workspaces use the
 shared configured runner. Office and recovery-heavy GTD workspaces use trusted
 Fish adapters that consume configured labels, display roles, apps, layouts,
