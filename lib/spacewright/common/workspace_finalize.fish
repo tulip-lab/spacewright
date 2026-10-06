@@ -280,3 +280,55 @@ function workspace_run_finalized_entry --description "Run an entry and finalize 
     end
     return $final_status
 end
+
+function workspace_run_public_workspace_entry --description "Route a legacy public workspace command through the guarded CLI"
+    argparse 'workspace=' 'mode=' 'command=' -- $argv
+    or return 1
+
+    if not set -q _flag_workspace; or not string match -qr '^[a-z][a-z0-9_]*$' -- $_flag_workspace
+        echo "usage: workspace_run_public_workspace_entry --workspace <id> --mode <solo|wide|tall> --command <function> -- [args...]" >&2
+        return 2
+    end
+    if not set -q _flag_mode; or not contains -- $_flag_mode solo wide tall
+        echo "usage: workspace_run_public_workspace_entry --workspace <id> --mode <solo|wide|tall> --command <function> -- [args...]" >&2
+        return 2
+    end
+    if not set -q _flag_command; or not functions -q $_flag_command
+        echo "usage: workspace_run_public_workspace_entry --workspace <id> --mode <solo|wide|tall> --command <function> -- [args...]" >&2
+        return 2
+    end
+
+    if test "$SPACEWRIGHT_CONFIG_DISABLE" != 1
+        and not set -q SPACEWRIGHT_TRANSITION_RUN_ID
+        and test "$SPACEWRIGHT_PUBLIC_ENTRY_DIRECT" != 1
+        and command -q spacewright
+        command spacewright workspace $_flag_workspace $_flag_mode $argv
+        return $status
+    end
+
+    workspace_run_finalized_entry --mode $_flag_mode --command $_flag_command -- $argv
+end
+
+function workspace_run_public_mode_entry --description "Route a legacy public mode command through the guarded CLI"
+    argparse 'mode=' 'command=' -- $argv
+    or return 1
+
+    if not set -q _flag_mode; or not contains -- $_flag_mode solo wide tall
+        echo "usage: workspace_run_public_mode_entry --mode <solo|wide|tall> --command <function> -- [args...]" >&2
+        return 2
+    end
+    if not set -q _flag_command; or not functions -q $_flag_command
+        echo "usage: workspace_run_public_mode_entry --mode <solo|wide|tall> --command <function> -- [args...]" >&2
+        return 2
+    end
+
+    if test "$SPACEWRIGHT_CONFIG_DISABLE" != 1
+        and not set -q SPACEWRIGHT_TRANSITION_RUN_ID
+        and test "$SPACEWRIGHT_PUBLIC_ENTRY_DIRECT" != 1
+        and command -q spacewright
+        command spacewright mode $_flag_mode $argv
+        return $status
+    end
+
+    workspace_run_finalized_entry --mode $_flag_mode --command $_flag_command -- $argv
+end

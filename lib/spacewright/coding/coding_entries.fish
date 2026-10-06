@@ -72,25 +72,25 @@ function __coding_tall_body --description "Arrange all coding tall workspaces an
 end
 
 function coding_editor_wide --description "Collect VS Code and optional ChatGPT onto the wide coding editor workspace"
-    workspace_run_finalized_entry --mode wide --command __coding_editor_wide_body -- $argv
+    workspace_run_public_workspace_entry --workspace coding_editor --mode wide --command __coding_editor_wide_body -- $argv
 end
 
 function coding_editor_tall --description "Collect VS Code and optional ChatGPT onto the tall coding editor workspace"
-    workspace_run_finalized_entry --mode tall --command __coding_editor_tall_body -- $argv
+    workspace_run_public_workspace_entry --workspace coding_editor --mode tall --command __coding_editor_tall_body -- $argv
 end
 
 function coding_editor_solo --description "Collect VS Code onto the solo coding editor workspace"
-    workspace_run_finalized_entry --mode solo --command __coding_editor_solo_body -- $argv
+    workspace_run_public_workspace_entry --workspace coding_editor --mode solo --command __coding_editor_solo_body -- $argv
 end
 
 function coding_solo --description "Arrange coding solo workspaces and internal coding controls"
-    workspace_run_finalized_entry --mode solo --command __coding_solo_body -- $argv
+    workspace_run_public_workspace_entry --workspace coding_editor --mode solo --command __coding_solo_body -- $argv
 end
 
 function coding_wide --description "Arrange all coding wide workspaces and clean opposite-mode spaces"
-    workspace_run_finalized_entry --mode wide --command __coding_wide_body -- $argv
+    workspace_run_public_workspace_entry --workspace coding_editor --mode wide --command __coding_wide_body -- $argv
 end
 
 function coding_tall --description "Arrange all coding tall workspaces and clean opposite-mode spaces"
-    workspace_run_finalized_entry --mode tall --command __coding_tall_body -- $argv
+    workspace_run_public_workspace_entry --workspace coding_editor --mode tall --command __coding_tall_body -- $argv
 end

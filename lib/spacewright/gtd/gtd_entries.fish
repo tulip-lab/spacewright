@@ -268,63 +268,63 @@ function __gtd_tall_body --description "Arrange all GTD tall workspaces and clea
 end
 
 function gtd_support_wide --description "Collect Dia onto the wide GTD support workspace and apply the standard support layout"
-    workspace_run_finalized_entry --mode wide --command __gtd_support_wide_body -- $argv
+    workspace_run_public_workspace_entry --workspace gtd_support --mode wide --command __gtd_support_wide_body -- $argv
 end
 
 function gtd_support_solo --description "Collect Dia onto the solo GTD support workspace"
-    workspace_run_finalized_entry --mode solo --command __gtd_support_solo_body -- $argv
+    workspace_run_public_workspace_entry --workspace gtd_support --mode solo --command __gtd_support_solo_body -- $argv
 end
 
 function gtd_support_tall --description "Collect Dia onto the tall GTD support workspace and apply the standard support layout"
-    workspace_run_finalized_entry --mode tall --command __gtd_support_tall_body -- $argv
+    workspace_run_public_workspace_entry --workspace gtd_support --mode tall --command __gtd_support_tall_body -- $argv
 end
 
 function gtd_review_solo --description "Collect review-related windows onto the solo GTD review workspace"
-    workspace_run_finalized_entry --mode solo --command __gtd_review_solo_body -- $argv
+    workspace_run_public_workspace_entry --workspace gtd_review --mode solo --command __gtd_review_solo_body -- $argv
 end
 
 function gtd_review_wide --description "Collect review-related windows onto the wide GTD review workspace and apply the standard review layout"
-    workspace_run_finalized_entry --mode wide --command __gtd_review_wide_body -- $argv
+    workspace_run_public_workspace_entry --workspace gtd_review --mode wide --command __gtd_review_wide_body -- $argv
 end
 
 function gtd_review_tall --description "Collect review-related windows onto the tall GTD review workspace and apply the standard review layout"
-    workspace_run_finalized_entry --mode tall --command __gtd_review_tall_body -- $argv
+    workspace_run_public_workspace_entry --workspace gtd_review --mode tall --command __gtd_review_tall_body -- $argv
 end
 
 function gtd_mail_solo --description "Collect Thunderbird and Outlook onto the solo GTD mail workspace"
-    workspace_run_finalized_entry --mode solo --command __gtd_mail_solo_body -- $argv
+    workspace_run_public_workspace_entry --workspace gtd_mail --mode solo --command __gtd_mail_solo_body -- $argv
 end
 
 function gtd_mail_wide --description "Collect Thunderbird and Outlook onto the wide GTD mail workspace and apply the standard mail layout"
-    workspace_run_finalized_entry --mode wide --command __gtd_mail_wide_body -- $argv
+    workspace_run_public_workspace_entry --workspace gtd_mail --mode wide --command __gtd_mail_wide_body -- $argv
 end
 
 function gtd_mail_tall --description "Collect Thunderbird and Outlook onto the tall GTD mail workspace and apply the standard tall mail layout"
-    workspace_run_finalized_entry --mode tall --command __gtd_mail_tall_body -- $argv
+    workspace_run_public_workspace_entry --workspace gtd_mail --mode tall --command __gtd_mail_tall_body -- $argv
 end
 
 function gtd_meeting_solo --description "Collect meeting apps onto the solo GTD meeting workspace"
-    workspace_run_finalized_entry --mode solo --command __gtd_meeting_solo_body -- $argv
+    workspace_run_public_workspace_entry --workspace gtd_meeting --mode solo --command __gtd_meeting_solo_body -- $argv
 end
 
 function gtd_meeting_wide --description "Collect Zoom and Teams onto the wide GTD meeting workspace and apply the standard meeting layout"
-    workspace_run_finalized_entry --mode wide --command __gtd_meeting_wide_body -- $argv
+    workspace_run_public_workspace_entry --workspace gtd_meeting --mode wide --command __gtd_meeting_wide_body -- $argv
 end
 
 function gtd_meeting_tall --description "Collect Zoom and Teams onto the tall GTD meeting workspace and apply the standard meeting layout"
-    workspace_run_finalized_entry --mode tall --command __gtd_meeting_tall_body -- $argv
+    workspace_run_public_workspace_entry --workspace gtd_meeting --mode tall --command __gtd_meeting_tall_body -- $argv
 end
 
 function gtd_ai_solo --description "Collect Hermes and AI support apps onto the solo GTD AI workspace"
-    workspace_run_finalized_entry --mode solo --command __gtd_ai_solo_body -- $argv
+    workspace_run_public_workspace_entry --workspace gtd_ai --mode solo --command __gtd_ai_solo_body -- $argv
 end
 
 function gtd_ai_wide --description "Collect Hermes and AI support apps onto the wide GTD AI workspace"
-    workspace_run_finalized_entry --mode wide --command __gtd_ai_wide_body -- $argv
+    workspace_run_public_workspace_entry --workspace gtd_ai --mode wide --command __gtd_ai_wide_body -- $argv
 end
 
 function gtd_ai_tall --description "Collect Hermes and AI support apps onto the tall GTD AI workspace"
-    workspace_run_finalized_entry --mode tall --command __gtd_ai_tall_body -- $argv
+    workspace_run_public_workspace_entry --workspace gtd_ai --mode tall --command __gtd_ai_tall_body -- $argv
 end
 
 function gtd_solo_all --description "Arrange GTD solo workspaces including internal fixed workspaces"

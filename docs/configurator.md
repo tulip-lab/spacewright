@@ -16,16 +16,19 @@ ordinary Fish commands continue to work without opening the configurator.
 
 ## Files and ownership
 
-The editor owns only:
+The editor and guarded transition controller own only:
 
 ```text
 $SPACEWRIGHT_CONFIG_ROOT/config.v2.json
 $SPACEWRIGHT_CONFIG_ROOT/generated/spacewright.skhdrc
 $SPACEWRIGHT_STATE_ROOT/machine.json
+$SPACEWRIGHT_STATE_ROOT/transition-history/*.json
 ```
 
 The first two files are portable user configuration. `machine.json` contains
 only local display-role-to-UUID bindings and should not be synced between Macs.
+Transition history is also machine-local and retains only the latest 100
+guarded runs.
 
 Saving uses a same-directory temporary file and atomic rename. If the target
 already exists, the previous content is copied to a `.backup` file first.
@@ -105,6 +108,12 @@ snapshot. **Revert changes** discards only the current unsaved edit, while
 unsaved preview. History entries can be compared, renamed, restored, or
 deleted. Restore itself creates a recovery snapshot first.
 
+The History page also shows durable shortcut and CLI transition records. It
+summarizes completion rate and the latest target, filters by outcome and scope,
+and expands each run into duration, phases, warnings, skipped or unavailable
+apps, failure signals, and a bounded log tail. Clearing run history requires an
+explicit destructive confirmation and does not remove configuration snapshots.
+
 Every loaded document carries a content revision. Save and diff requests send
 that revision back, and the server rejects a stale draft instead of overwriting
 an external edit. Reloading is then required so the external version can be
@@ -162,6 +171,8 @@ shown as not verified because a read-only query cannot prove mutation support. T
 copied or exported, and the self-test performs validation and compilation
 without desktop mutation. Successful saves, restores, and self-tests appear in
 the local activity log under the SpaceWright state directory.
+Diagnostics also reports the health and compact summary of recent guarded
+shortcut and CLI transitions, with a direct route to the full History view.
 
 Import accepts JSON or YAML, validates it before replacing the editor model,
 and keeps it unsaved until Apply. Export produces `spacewright.yaml`. JSON

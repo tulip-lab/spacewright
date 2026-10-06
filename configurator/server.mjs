@@ -11,6 +11,7 @@ import { promisify } from 'node:util';
 import YAML from 'yaml';
 import { CONFIG_COMPILER_VERSION, compileSkhd, compileV2, migrateV1, starterConfig, validateV2 } from './lib/config-v2.mjs';
 import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState, normalizeSnapshot } from './lib/state-engine.mjs';
+import { clearTransitionHistory, readTransitionHistory } from './lib/transition-history.mjs';
 
 const execFileAsync = promisify(execFile);
 const args = Object.fromEntries(process.argv.slice(2).map((arg) => arg.split('=', 2)));
@@ -423,6 +424,15 @@ async function api(request, response, url) {
     catch (error) { return json(response, 422, { error: error.message }); }
   }
   if (url.pathname === '/api/tasks' && request.method === 'GET') return json(response, 200, { tasks: [...tasks.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 50).map(taskView) });
+  if (url.pathname === '/api/transition-history' && request.method === 'GET') {
+    const limit = Number(url.searchParams.get('limit') || 50);
+    return json(response, 200, { transitions: await readTransitionHistory(stateRoot, limit), retention: 100 });
+  }
+  if (url.pathname === '/api/transition-history' && request.method === 'DELETE') {
+    await clearTransitionHistory(stateRoot);
+    await activity('info', 'transition_history_cleared');
+    return json(response, 200, { cleared: true });
+  }
   if (url.pathname === '/api/rules/evaluate' && request.method === 'POST') {
     const payload = await body(request); const config = payload.config || await readConfig(); const validation = validateV2(config);
     if (!validation.valid) return json(response, 422, validation);
@@ -482,6 +492,7 @@ async function api(request, response, url) {
         recentRuns.push({ runId: run.runId, status: run.status, target: run.target, createdAt: run.createdAt, finishedAt: run.finishedAt || null, exitCode: run.exitCode ?? null, planId: run.plan?.planId || null });
       } catch {}
     }
+    const recentTransitions = await readTransitionHistory(stateRoot, 10);
     const checks = [
       { id: 'yabai', ok: yabai.ok, detail: yabai.detail },
       { id: 'accessibility_query', ok: !snapshot.unavailable, detail: snapshot.unavailable ? snapshot.message : `${snapshot.windows.length} windows queried` },
@@ -497,7 +508,8 @@ async function api(request, response, url) {
     ];
     if (reconciliation) checks.push({ id: 'current_mode_state', ok: reconciliation.converged, detail: `${inferredMode}: ${reconciliation.counts.blocker} blockers, ${reconciliation.counts.change} changes, ${reconciliation.counts.warning} warnings` });
     checks.push({ id: 'execution_history', ok: recentRuns.length ? !['failed', 'stale', 'partial'].includes(recentRuns[0].status) : null, detail: recentRuns.length ? `${recentRuns.length} recent; latest ${recentRuns[0].status}` : 'no recorded apply runs' });
-    return json(response, 200, { generatedAt: new Date().toISOString(), topology, snapshotId: snapshot.snapshotId, inferredMode, reconciliation, recentRuns, checks });
+    checks.push({ id: 'transition_history', ok: recentTransitions.length ? !['failed', 'timed_out'].includes(recentTransitions[0].status) : null, detail: recentTransitions.length ? `${recentTransitions.length} recent; latest ${recentTransitions[0].status}` : 'no recorded shortcut or CLI transitions' });
+    return json(response, 200, { generatedAt: new Date().toISOString(), topology, snapshotId: snapshot.snapshotId, inferredMode, reconciliation, recentRuns, recentTransitions, checks });
   }
   if (url.pathname === '/api/self-test' && request.method === 'POST') { const config = await readConfig(); const validation = validateV2(config); const compiled = validation.valid ? compileV2(config) : null; await activity(validation.valid ? 'info' : 'error', 'self_test', { valid: validation.valid }); return json(response, validation.valid ? 200 : 422, { valid: validation.valid, errors: validation.errors, compiled: Boolean(compiled), mutates: false }); }
   if (url.pathname === '/api/activity' && request.method === 'GET') { const lines = existsSync(activityFile) ? (await readFile(activityFile, 'utf8')).trim().split('\n').filter(Boolean).slice(-200).reverse().map(JSON.parse) : []; return json(response, 200, { entries: lines }); }

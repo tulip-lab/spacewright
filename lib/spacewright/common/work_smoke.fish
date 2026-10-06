@@ -1,4 +1,5 @@
 function work_smoke --description "Run read-only workspace smoke checks for helper wiring and dry-run paths"
+    set -lx SPACEWRIGHT_PUBLIC_ENTRY_DIRECT 1
     set -l failed 0
     set -lx WORKSPACE_SKIP_FINALIZATION 1
     set -l had_fish_function 0

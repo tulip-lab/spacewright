@@ -6,6 +6,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { runTransition } from '../mode-transition.mjs';
+import { readTransitionHistory } from '../lib/transition-history.mjs';
 
 const execFileAsync = promisify(execFile);
 const script = new URL('../mode-transition.mjs', import.meta.url).pathname;
@@ -74,6 +75,37 @@ test('an immediately completed child cannot outrun exit observation', async () =
     await execFileAsync(process.execPath, args(stateRoot, 'wide'), { env, timeout: 2_000 });
     const status = JSON.parse(await readFile(join(stateRoot, 'mode-transition', 'status.json'), 'utf8'));
     assert.equal(status.status, 'completed');
+    const [history] = await readTransitionHistory(stateRoot);
+    assert.equal(history.status, 'completed');
+    assert.equal(history.scope, 'mode');
+    assert.equal(history.targetLabel, 'Wide');
+    assert.ok(history.durationMs >= 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('transition history retains warning, skipped-app, and failure diagnostics', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'spacewright-mode-history-'));
+  const stateRoot = join(root, 'state');
+  const fakeFish = join(root, 'fake-fish');
+  await writeFile(fakeFish, `#!/bin/sh
+printf '==> Arrange target\n'
+printf '[WARN] ChatGPT is unavailable; skipping ChatGPT\n' >&2
+printf '[ERROR] layout failed for required role\n' >&2
+exit 7
+`);
+  await chmod(fakeFish, 0o755);
+  try {
+    const result = await runTransition({ mode: 'solo', packageRoot: process.cwd(), stateRoot, fishExecutable: fakeFish, bannerExecutable: null, sourceSpaceLabel: 'research_wide', scope: 'workspace', workspace: 'gtd_ai', targetKey: 'workspace:gtd_ai:solo', targetLabel: 'GTD AI · solo' });
+    assert.equal(result.status, 'failed');
+    const [history] = await readTransitionHistory(stateRoot);
+    assert.equal(history.status, 'failed');
+    assert.equal(history.workspace, 'gtd_ai');
+    assert.equal(history.sourceSpaceLabel, 'research_wide');
+    assert.match(history.skipped[0], /ChatGPT is unavailable/);
+    assert.match(history.errors[0], /layout failed/);
+    assert.ok(history.logTail.some((line) => line.includes('Arrange target')));
   } finally {
     await rm(root, { recursive: true, force: true });
   }

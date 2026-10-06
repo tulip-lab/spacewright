@@ -146,13 +146,13 @@ function __work_tall_body
 end
 
 function work_solo --description "Arrange solo primary-display workspaces"
-    workspace_run_finalized_entry --mode solo --command __work_solo_body -- $argv
+    workspace_run_public_mode_entry --mode solo --command __work_solo_body -- $argv
 end
 
 function work_wide --description "Arrange wide external-display workspaces"
-    workspace_run_finalized_entry --mode wide --command __work_wide_body -- $argv
+    workspace_run_public_mode_entry --mode wide --command __work_wide_body -- $argv
 end
 
 function work_tall --description "Arrange tall external-display workspaces"
-    workspace_run_finalized_entry --mode tall --command __work_tall_body -- $argv
+    workspace_run_public_mode_entry --mode tall --command __work_tall_body -- $argv
 end

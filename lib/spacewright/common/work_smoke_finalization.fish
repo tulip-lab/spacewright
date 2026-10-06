@@ -640,6 +640,7 @@ function __work_smoke_finalization_entries
         set -l parts (string split \t -- "$mapping")
         set -l definition (string join \n -- (functions $parts[1]))
         string match -q "*workspace_run_finalized_entry --mode $parts[2]*" -- "$definition"
+            or string match -q "*workspace_run_public_*--mode $parts[2]*" -- "$definition"
         or begin
             echo "missing finalization wrapper: $parts[1] mode=$parts[2]" >&2
             return 3

@@ -11,7 +11,8 @@ change after equivalent tests exist.
 The initial compatibility set includes these command families:
 
 - guarded mode transitions: `spacewright mode <solo|wide|tall>`,
-  `spacewright mode-cancel`, and `spacewright mode-status`;
+  `spacewright mode-cancel`, `spacewright mode-status`, and
+  `spacewright transition-history`;
 - top-level modes: `work_solo`, `work_wide`, `work_tall`;
 - coding: `coding_solo`, `coding_wide`, `coding_tall`,
   `coding_editor_*`, and `coding_control`;
@@ -81,9 +82,11 @@ same target is a no-op; a different request replaces the active transition as
 one process group. The controller has a bounded deadline, an explicit
 cancellation command, persisted status, and non-activating visual feedback.
 Individual workspace transitions skip mode-wide Sandbox collection and Space
-ordering. Historical Fish entry points remain callable, but direct shortcut
-bindings are deprecated because they lack the guarded progress lifecycle and
-may invoke legacy global finalization.
+ordering. Historical top-level mode and individual-workspace Fish entry points
+remain callable and route through the guarded lifecycle when invoked directly.
+Their internal bodies remain available only for aggregate execution and the
+explicit legacy bypass. Direct shortcut bindings are still deprecated in favor
+of generated `spacewright mode` and `spacewright workspace` commands.
 
 ## Consumer Compatibility
 

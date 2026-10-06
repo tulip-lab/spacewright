@@ -30,6 +30,23 @@ or exit 5
 test "$configured_dry_run" = "$legacy_dry_run"
 or exit 6
 
+set -l routed_bin "$test_root/routed-bin"
+set -l routed_log "$test_root/routed.log"
+mkdir -p "$routed_bin"
+printf '%s\n' '#!/bin/sh' 'printf "%s\\n" "$*" >> "$SPACEWRIGHT_ROUTING_LOG"' > "$routed_bin/spacewright"
+chmod +x "$routed_bin/spacewright"
+set -lx PATH "$routed_bin" $PATH
+set -lx SPACEWRIGHT_ROUTING_LOG "$routed_log"
+gtd_ai_solo --dry-run
+or exit 37
+work_wide --dry-run
+or exit 38
+string match -q 'workspace gtd_ai solo --dry-run' (sed -n '1p' "$routed_log")
+or exit 39
+string match -q 'mode wide --dry-run' (sed -n '2p' "$routed_log")
+or exit 40
+set -e PATH[1]
+
 set -l expected_workspaces \
     coding_control coding_editor_solo coding_editor_tall coding_editor_wide \
     gtd_ai_solo gtd_ai_tall gtd_ai_wide gtd_calendar gtd_chat \

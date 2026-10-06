@@ -45,13 +45,13 @@ function __research_tall_body --description "Collect Zotero and Claude onto the 
 end
 
 function research_solo --description "Collect Zotero and Claude onto the solo research workspace"
-    workspace_run_finalized_entry --mode solo --command __research_solo_body -- $argv
+    workspace_run_public_workspace_entry --workspace research --mode solo --command __research_solo_body -- $argv
 end
 
 function research_wide --description "Collect Zotero and Claude onto the wide research workspace and apply the standard research layout"
-    workspace_run_finalized_entry --mode wide --command __research_wide_body -- $argv
+    workspace_run_public_workspace_entry --workspace research --mode wide --command __research_wide_body -- $argv
 end
 
 function research_tall --description "Collect Zotero and Claude onto the tall research workspace and apply the standard research layout"
-    workspace_run_finalized_entry --mode tall --command __research_tall_body -- $argv
+    workspace_run_public_workspace_entry --workspace research --mode tall --command __research_tall_body -- $argv
 end
