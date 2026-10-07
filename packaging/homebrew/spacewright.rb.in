@@ -1,0 +1,32 @@
+class Spacewright < Formula
+  desc "Configurable macOS workspace orchestration for yabai"
+  homepage "https://github.com/tulip-lab/spacewright"
+  url "@URL@"
+  version "@VERSION@"
+  sha256 "@SHA256@"
+  license "MIT"
+
+  depends_on "fish"
+  depends_on "jq"
+  depends_on "node"
+  depends_on :macos
+
+  def install
+    libexec.install "bin", "conf.d", "config", "configurator", "examples", "lib", "schemas",
+                    "CHANGELOG.md", "LICENSE", "README.md", "SECURITY.md", "VERSION"
+    bin.install_symlink libexec/"bin/spacewright"
+    (share/"fish/vendor_conf.d").install_symlink libexec/"conf.d/spacewright.fish"
+  end
+
+  def caveats
+    <<~EOS
+      Live workspace commands also require yabai. Install and configure it from
+      the official yabai tap before running SpaceWright workspace mutations.
+    EOS
+  end
+
+  test do
+    assert_equal version.to_s, shell_output("#{bin}/spacewright version").strip
+    system bin/"spacewright", "config-v2-check", libexec/"examples/config-v2.json"
+  end
+end

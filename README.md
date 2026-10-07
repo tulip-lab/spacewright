@@ -2,9 +2,8 @@
 
 Configurable macOS workspace orchestration for yabai.
 
-> Status: private pre-release. The history-preserving runtime import,
-> relocatable bootstrap, packaging, and full v1 workspace configuration are
-> complete.
+> Status: pre-release. The history-preserving runtime import, relocatable
+> bootstrap, packaging, and full v1 workspace configuration are complete.
 
 The portable v2 user module includes semantic validation, a digest-verified
 compiled runtime, live state discovery, desired-state comparison, executable
@@ -150,6 +149,25 @@ For a versioned installation from a trusted private checkout:
 ```fish
 fish scripts/install.fish
 spacewright config-check
+```
+
+## Homebrew
+
+After the first public release, install from the dedicated tap:
+
+```sh
+brew install tulip-lab/tap/spacewright
+```
+
+Homebrew installs the architecture-independent Fish/JavaScript package on both
+Apple Silicon and Intel Macs. It also installs Fish, jq, and Node.js. Live
+workspace commands require yabai to be installed and configured separately.
+
+Upgrade to the latest published version with:
+
+```sh
+brew update
+brew upgrade spacewright
 ```
 
 ## Migration Progress

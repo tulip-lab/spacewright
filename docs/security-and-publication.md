@@ -2,9 +2,10 @@
 
 ## Current Policy
 
-SpaceWright is private during extraction and hardening. MIT licensing does not
-itself authorize publication; making the repository public is a later explicit
-decision.
+SpaceWright became public on 2026-10-07 after the maintainer requested public
+Homebrew distribution and the review below completed. MIT licensing does not
+replace the publication review. Public Homebrew installation requires the
+source repository and its release assets to remain anonymously readable.
 
 ## Import Audit
 
@@ -47,6 +48,33 @@ Before any visibility change from private to public:
 If history contains material that cannot be published, create and review a
 sanitized history before changing visibility. Do not assume deletion from the
 latest tree removes data from Git history.
+
+## 2026-10-07 publication review
+
+The Homebrew distribution work performed the following non-mutating checks:
+
+- scanned all reachable Git history with Gitleaks using redacted reporting;
+  no credential findings were reported;
+- searched the current tree and patches for private-key markers, common token
+  formats, absolute `/Users/...` paths, and embedded display UUID values;
+- inventoried historical paths for credentials, sessions, logs, databases,
+  caches, private keys, and generated state;
+- confirmed the distributable allowlist excludes Git metadata, tests,
+  `AGENTS.md`, `node_modules`, caches, and machine state;
+- confirmed the only direct npm package is the Playwright test dependency and
+  neither it nor its transitive packages are bundled in the release artifact;
+- confirmed the repository declares MIT and the release contains no compiled
+  third-party artifact.
+
+No secret or machine-specific identifier was found. The Git history does expose
+the maintainer name and the addresses `gangli@duck.com` and
+`4224559+tuliplab@users.noreply.github.com`. Changing repository visibility is
+the maintainer's explicit acceptance of publishing that metadata.
+
+The complete read-only release check and release-archive inspection passed
+before the visibility change. GitHub secret scanning and push protection were
+enabled immediately afterward. The public history intentionally retains the
+reviewed maintainer metadata listed above.
 
 ## Destructive And Live-State Operations
 

@@ -1,0 +1,96 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - name: Check out the release tag
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install test dependencies
+        run: |
+          brew install fish jq
+          npm ci
+          npx playwright install chromium
+
+      - name: Verify tag and run release checks
+        run: |
+          test "${GITHUB_REF_NAME}" = "v$(tr -d '[:space:]' < VERSION)"
+          if [[ "${GITHUB_REF_NAME}" == *-dev* ]]; then
+            echo "Development versions cannot be published: ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+          fish scripts/check.fish
+
+      - name: Build release archive and checksums
+        run: fish scripts/package-release.fish --tag "${GITHUB_REF_NAME}" --output dist
+
+      - name: Create or update the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" dist/* --clobber
+          elif [[ "${version}" == *-* ]]; then
+            gh release create "${GITHUB_REF_NAME}" dist/* \
+              --title "SpaceWright ${version}" \
+              --generate-notes \
+              --prerelease
+          else
+            gh release create "${GITHUB_REF_NAME}" dist/* \
+              --title "SpaceWright ${version}" \
+              --generate-notes
+          fi
+
+      - name: Check out the Homebrew tap
+        uses: actions/checkout@v5
+        with:
+          repository: tulip-lab/homebrew-tap
+          path: homebrew-tap
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+
+      - name: Update the Homebrew formula
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          archive="spacewright-${version}.tar.gz"
+          sha256="$(awk -v file="${archive}" '$2 == file { print $1 }' dist/SHA256SUMS)"
+          url="https://github.com/tulip-lab/spacewright/releases/download/${GITHUB_REF_NAME}/${archive}"
+          fish scripts/render-homebrew-formula.fish \
+            --version "${version}" \
+            --sha256 "${sha256}" \
+            --url "${url}" \
+            --output homebrew-tap/Formula/spacewright.rb
+
+      - name: Commit the tap update
+        working-directory: homebrew-tap
+        run: |
+          if git diff --quiet -- Formula/spacewright.rb; then
+            echo "Homebrew formula already matches ${GITHUB_REF_NAME}."
+            exit 0
+          fi
+          git config user.name "spacewright-release[bot]"
+          git config user.email "spacewright-release[bot]@users.noreply.github.com"
+          git add Formula/spacewright.rb
+          git commit -m "spacewright ${GITHUB_REF_NAME#v}"
+          git push
