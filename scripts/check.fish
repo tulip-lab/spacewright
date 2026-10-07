@@ -21,6 +21,8 @@ fish tests/config.fish
 or exit 1
 fish tests/install.fish
 or exit 1
+fish tests/release.fish
+or exit 1
 
 set -l smoke_config_root (mktemp -d /private/tmp/spacewright-smoke-config.XXXXXX)
 env -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT \

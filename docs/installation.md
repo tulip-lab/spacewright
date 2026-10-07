@@ -77,8 +77,30 @@ releases.
 Both scripts accept `--dry-run`; `--prefix`, `--fish-config-root`, and
 `--bin-root` make isolated or managed installations possible.
 
-## Homebrew
+## Install with Homebrew
 
-A formula is intentionally deferred until the install layout and private
-distribution workflow have survived the prerelease cycle. The scripted layout
-is the Phase 5 distribution contract.
+The supported public distribution is the `tulip-lab/homebrew-tap` formula:
+
+```sh
+brew install tulip-lab/tap/spacewright
+```
+
+The release archive contains Fish and JavaScript source rather than native
+machine code. The same archive supports Apple Silicon and Intel Macs; Homebrew
+selects compatible bottles for the `fish`, `jq`, and `node` dependencies.
+SpaceWright itself does not need separate architecture-specific artifacts.
+
+`yabai` is not in Homebrew Core and is deliberately not an automatic formula
+dependency. Install and configure it from its official tap before running live
+workspace commands. Read-only configuration commands remain useful without it.
+
+Upgrade and uninstall through Homebrew in the usual way:
+
+```sh
+brew update
+brew upgrade spacewright
+brew uninstall spacewright
+```
+
+Homebrew keeps user configuration and machine state outside its Cellar, so an
+upgrade or uninstall does not delete either one.
