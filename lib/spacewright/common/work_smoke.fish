@@ -242,10 +242,10 @@ function work_smoke --description "Run read-only workspace smoke checks for help
             and string match -q "*chatgpt_grid=1:4:3:0:1:1*" -- "$gtd_ai_wide_dry_run"
             and string match -q "*obsidian_grid=2:4:0:1:1:1*" -- "$gtd_ai_wide_dry_run"
             and string match -q "*notes_grid=2:4:0:0:1:1*" -- "$gtd_ai_wide_dry_run"
-            and string match -q "*hermes_grid=4:2:0:0:2:2*" -- "$gtd_ai_tall_dry_run"
-            and string match -q "*chatgpt_grid=4:2:0:2:2:1*" -- "$gtd_ai_tall_dry_run"
-            and string match -q "*obsidian_grid=4:2:0:3:1:1*" -- "$gtd_ai_tall_dry_run"
-            and string match -q "*notes_grid=4:2:1:3:1:1*" -- "$gtd_ai_tall_dry_run"
+            and string match -q "*hermes_grid=2:3:0:0:2:1*" -- "$gtd_ai_tall_dry_run"
+            and string match -q "*chatgpt_grid=2:3:0:1:2:1*" -- "$gtd_ai_tall_dry_run"
+            and string match -q "*obsidian_grid=2:3:2:0:1:1*" -- "$gtd_ai_tall_dry_run"
+            and string match -q "*notes_grid=2:3:2:1:1:1*" -- "$gtd_ai_tall_dry_run"
             and string match -q "*hermes_grid=2:3:0:0:3:1*" -- "$gtd_ai_solo_dry_run"
             and string match -q "*chatgpt_grid=2:3:0:1:1:1*" -- "$gtd_ai_solo_dry_run"
             and string match -q "*obsidian_grid=2:3:1:1:1:1*" -- "$gtd_ai_solo_dry_run"
@@ -2364,6 +2364,65 @@ function work_smoke --description "Run read-only workspace smoke checks for help
 
     if set -q WORKSPACE_TEST_SOURCE_ROOT
         source "$WORKSPACE_TEST_SOURCE_ROOT/gtd/internal/gtd_support_find_dia_windows.fish"
+    end
+
+    set -l support_dia_fullscreen_recovery_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_dia_fullscreen_toggles
+        set -g __work_smoke_dia_fullscreen_queries
+
+        function sleep
+        end
+
+        function ws_window
+            set -ga __work_smoke_dia_fullscreen_toggles (string join " " -- $argv)
+        end
+
+        function ws_query_windows
+            set -l phase $argv[2]
+            set -ga __work_smoke_dia_fullscreen_queries $phase
+
+            if string match -q "native_fullscreen_*" -- "$phase"
+                printf "%s\n" "[
+                    {\"id\": 31, \"app\": \"Dia\", \"title\": \"GTD\", \"role\": \"AXWindow\", \"space\": 8, \"display\": 1, \"can-move\": true, \"is-minimized\": false, \"is-native-fullscreen\": false}
+                ]"
+                return 0
+            end
+
+            return 1
+        end
+
+        function __gtd_support_refresh_dia_app
+            exit 10
+        end
+
+        function ws_restart_yabai
+            exit 11
+        end
+
+        set -l dia_initial_fixture "[
+            {\"id\": 31, \"app\": \"Dia\", \"title\": \"GTD\", \"role\": \"AXWindow\", \"space\": 1, \"display\": 1, \"can-move\": false, \"is-minimized\": false, \"is-native-fullscreen\": true}
+        ]"
+        set -l dia_windows (printf "%s\n" "$dia_initial_fixture" | gtd_support_find_dia_windows gtd_support_tall 2>/dev/null)
+        or exit 1
+
+        test "$dia_windows" = 31
+        or exit 2
+
+        test (string join , -- $__work_smoke_dia_fullscreen_toggles) = "31 --toggle native-fullscreen"
+        or exit 3
+
+        contains -- native_fullscreen_1 $__work_smoke_dia_fullscreen_queries
+        or exit 4
+    '
+    fish -lc "$support_dia_fullscreen_recovery_smoke" >/tmp/work-support-dia-fullscreen-recovery-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      support Dia native-fullscreen recovery"
+    else
+        echo "FAIL    support Dia native-fullscreen recovery"
+        cat /tmp/work-support-dia-fullscreen-recovery-smoke.out
+        set failed 1
     end
 
     set -l dia_accessibility_fixture '[

@@ -67,6 +67,18 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
     set -l notes_apps_json (workspace_app_names_json notes)
     or return 1
 
+    set -l review_app_keys finder preview notes
+    if not set -q _flag_skip_assistant
+        set -a review_app_keys $assistant_app_key
+    end
+    if set -q _flag_obsidian_grid
+        set -a review_app_keys obsidian
+    end
+    set windows_json (printf '%s\n' "$windows_json" | workspace_normalize_native_fullscreen_windows \
+        --caller "$_flag_label" \
+        $review_app_keys)
+    or return 1
+
     set -l finder_windows (echo $windows_json | workspace_app_key_windows --app-key finder --movable)
     or return 1
 
@@ -227,13 +239,6 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
 
     set -l target_display (workspace_resolve_display_role $_flag_display)
     or return $status
-    set -l review_app_keys finder preview notes
-    if not set -q _flag_skip_assistant
-        set -a review_app_keys $assistant_app_key
-    end
-    if set -q _flag_obsidian_grid
-        set -a review_app_keys obsidian
-    end
     set -l review_app_regex (workspace_app_regex $review_app_keys)
     or return 1
 

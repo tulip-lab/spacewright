@@ -94,6 +94,25 @@ function gtd_find_meeting_windows --description "Find all movable GTD meeting he
         return 0
     end
 
+    set windows_json (printf '%s\n' "$windows_json" | workspace_normalize_native_fullscreen_windows \
+        --caller "$caller" \
+        $app_key)
+    or return 1
+    set window_ids (echo $windows_json | ws_jq -r \
+        --argjson apps "$apps_json" \
+        --argjson secondary_titles "$secondary_titles_json" \
+        --arg target_space "" \
+        "$candidate_filter")
+
+    if test (count $window_ids) -gt 0
+        workspace_debug_step $caller "$debug_name-found-after-native-fullscreen-exit" $window_ids
+        for window_id in $window_ids
+            rm -f "$bad_window_dir/$window_id" 2>/dev/null
+        end
+        printf "%s\n" $window_ids
+        return 0
+    end
+
     if test "$refresh_policy" != "refresh" -o "$no_refresh" -eq 1
         return 0
     end

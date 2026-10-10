@@ -99,6 +99,10 @@ function __coding_control_body --description "Collect Warp, SmartGit, KeePassXC,
     # 1. Find candidate windows first
     # -------------------------------------------------------------------------
     set -l windows_json (ws_query_windows "coding_control" initial); or return 1
+    set windows_json (printf '%s\n' "$windows_json" | workspace_normalize_native_fullscreen_windows \
+        --caller "$label" \
+        warp smartgit keepassx flclash thaw portfolio_performance)
+    or return 1
 
     set -l warp (workspace_find_app_key_window --app-key warp --caller $label)
     set -l warp_status $status

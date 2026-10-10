@@ -46,6 +46,10 @@ function __gtd_calendar_body --description "Collect Calendar and Reminders onto 
     #    At least one calendar app must exist before creating the workspace.
     # -------------------------------------------------------------------------
     set -l windows_json (ws_query_windows gtd_calendar initial); or return 1
+    set windows_json (printf '%s\n' "$windows_json" | workspace_normalize_native_fullscreen_windows \
+        --caller "$label" \
+        calendar reminders)
+    or return 1
 
     set -l calendar_space_fallback_used 0
     set -l calendar_status 0

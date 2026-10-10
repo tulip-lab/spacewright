@@ -6,6 +6,7 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
         'layout=' \
         'primary-app=' \
         'primary-app-key=' \
+        'primary-window=' \
         'helper-app=' \
         'helper-app-key=' \
         'primary-grid=' \
@@ -85,16 +86,28 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
     if set -q _flag_primary_space_fallback
         set -a primary_find_args --quiet-unmovable
     end
-
-    set -l primary_window
     if set -q _flag_primary_app_key
         set -a primary_find_args --app-key $_flag_primary_app_key
-        set primary_window (workspace_find_app_key_window $primary_find_args)
     else
         set -a primary_find_args --app "$_flag_primary_app"
-        set primary_window (workspace_find_app_window $primary_find_args)
     end
-    set -l primary_find_status $status
+
+    set -l primary_window
+    set -l primary_find_status 0
+    if set -q _flag_primary_window
+        if not string match -qr '^[0-9]+$' -- "$_flag_primary_window"
+            echo "[WARN] $caller received an invalid preselected primary window id" >&2
+            return 2
+        end
+        set primary_window $_flag_primary_window
+    else
+        if set -q _flag_primary_app_key
+            set primary_window (workspace_find_app_key_window $primary_find_args)
+        else
+            set primary_window (workspace_find_app_window $primary_find_args)
+        end
+        set primary_find_status $status
+    end
 
     if test "$primary_find_status" -eq 1
         return 1
@@ -328,7 +341,12 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
             ) // empty
         ')
     else if set -q _flag_primary_app_key
-        set primary_window (workspace_find_app_key_window $primary_target_find_args)
+        set -l primary_target_windows (echo $windows_json_final | workspace_app_key_windows \
+            --app-key $_flag_primary_app_key \
+            --space $target_space \
+            --movable)
+        or return 1
+        set primary_window $primary_target_windows[1]
     else
         set primary_window (echo $windows_json_final | ws_find_window "$_flag_primary_app" --space $target_space)
     end
@@ -341,23 +359,23 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
             if test -z "$helper_window"
                 set helper_window $helper_fallback_window
             end
+        else if set -q _flag_helper_app_key
+            set -l helper_target_args --app-key $_flag_helper_app_key --space $target_space --movable
+            if set -q _flag_helper_visible
+                set -a helper_target_args --visible
+            end
+            set -l helper_target_windows (echo $windows_json_final | workspace_app_key_windows $helper_target_args)
+            or return 1
+            set helper_window $helper_target_windows[1]
         else
             set -l final_helper_args --caller $caller --space $target_space --no-refresh --target-only
-            if set -q _flag_helper_app_key
-                set -a final_helper_args --app-key $_flag_helper_app_key
-            else
-                set -a final_helper_args --app "$_flag_helper_app"
-            end
+            set -a final_helper_args --app "$_flag_helper_app"
 
             if set -q _flag_helper_visible
                 set -a final_helper_args --visible
             end
 
-            if set -q _flag_helper_app_key
-                set helper_window (workspace_find_app_key_window $final_helper_args)
-            else
-                set helper_window (workspace_find_app_window $final_helper_args)
-            end
+            set helper_window (workspace_find_app_window $final_helper_args)
         end
     end
 

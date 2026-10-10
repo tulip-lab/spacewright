@@ -399,6 +399,7 @@ WORKSPACE_SKIP_LABELED_CLEANUP=1
 ```
 
 This prevents repeated labeled-space scans and destroy attempts while preserving standalone module behavior.
+Nested aggregate modes check this ownership marker before collecting cleanup snapshots, and each top-level cleanup phase batches all cleanup specs so they share one Spaces snapshot and one windows snapshot.
 
 Common cleanup wrappers are intentionally thin and mode-named:
 
@@ -467,7 +468,7 @@ The AI workspace uses `workspace_retarget_contaminated_space` before preparing `
 Layouts:
 
 - wide: Notes and Obsidian stack in the left quarter, Hermes occupies the middle half, and ChatGPT occupies the right quarter
-- tall: Hermes occupies the top half, ChatGPT the third quarter, and Obsidian and Notes split the bottom quarter
+- tall: Hermes and ChatGPT occupy the upper-left and lower-left two-thirds, while Obsidian and Notes occupy the upper-right and lower-right thirds
 - solo: Hermes occupies the top half; ChatGPT, Obsidian, and Notes share the bottom reference band
 
 By default, aggregate workspace order gives a shared app to its last applicable workspace. A mode may instead declare one closed `contextualApps` rule for a mobile assistant such as Hermes. Before a guarded mode transition changes displays, the controller captures the focused Space label. The configured runner maps that label back to the same logical workspace in the target mode, suppresses the assistant in all other aggregate steps, and finally focuses the selected owner. If the source is not eligible, ownership falls back to the configured workspace. Direct workspace entries do not apply aggregate contextual ownership.

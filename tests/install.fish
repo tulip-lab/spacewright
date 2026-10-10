@@ -50,13 +50,19 @@ node "$installed_release_root/configurator/cli.mjs" starter | jq -e '.version ==
 or exit 17
 "$bin_root/spacewright" mode wide --dry-run | string match -q '*policy=latest_request_wins*'
 or exit 27
-set -l workspace_dry_run (env -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT -u SPACEWRIGHT_CONFIG_ROOT \
+set -l workspace_dry_run (env \
+    -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT -u SPACEWRIGHT_CONFIG_ROOT \
+    -u SPACEWRIGHT_STATE_ROOT -u SPACEWRIGHT_DISPLAY_PROFILES_ROOT \
+    -u SPACEWRIGHT_SKHD_ROOT -u SPACEWRIGHT_YABAI_ROOT \
     HOME="$test_root" XDG_CONFIG_HOME="$test_root/xdg" \
     "$bin_root/spacewright" workspace gtd_ai solo --dry-run | string collect)
 string match -q '*scope=target_only*' -- "$workspace_dry_run"
     and string match -q '*finalization=none*' -- "$workspace_dry_run"
 or exit 28
-env -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT -u SPACEWRIGHT_CONFIG_ROOT \
+env \
+    -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT -u SPACEWRIGHT_CONFIG_ROOT \
+    -u SPACEWRIGHT_STATE_ROOT -u SPACEWRIGHT_DISPLAY_PROFILES_ROOT \
+    -u SPACEWRIGHT_SKHD_ROOT -u SPACEWRIGHT_YABAI_ROOT \
     HOME="$test_root" XDG_CONFIG_HOME="$test_root/xdg" \
     "$bin_root/spacewright" transition-history | jq -e '.transitions == []' >/dev/null
 or exit 29
@@ -82,17 +88,26 @@ end
 command kill "$server_pid"
 wait "$server_pid"
 
-env -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT -u SPACEWRIGHT_CONFIG_ROOT \
+env \
+    -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT -u SPACEWRIGHT_CONFIG_ROOT \
+    -u SPACEWRIGHT_STATE_ROOT -u SPACEWRIGHT_DISPLAY_PROFILES_ROOT \
+    -u SPACEWRIGHT_SKHD_ROOT -u SPACEWRIGHT_YABAI_ROOT \
     HOME="$test_root" XDG_CONFIG_HOME="$test_root/xdg" fish --no-config -c \
     "source '$fish_root/conf.d/spacewright.fish'; test \"\$SPACEWRIGHT_PACKAGE_ROOT\" = '$installed_release_root'"
 or exit 6
-env -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT -u SPACEWRIGHT_CONFIG_ROOT \
+env \
+    -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT -u SPACEWRIGHT_CONFIG_ROOT \
+    -u SPACEWRIGHT_STATE_ROOT -u SPACEWRIGHT_DISPLAY_PROFILES_ROOT \
+    -u SPACEWRIGHT_SKHD_ROOT -u SPACEWRIGHT_YABAI_ROOT \
     HOME="$test_root" XDG_CONFIG_HOME="$test_root/xdg" fish --no-config -c \
     "set -gx SPACEWRIGHT_USE_LEGACY 1; source '$fish_root/conf.d/spacewright.fish'; not set -q SPACEWRIGHT_ROOT"
 or exit 7
 
 set -l smoke_log "$test_root/work-smoke.log"
-env -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT -u SPACEWRIGHT_CONFIG_ROOT \
+env \
+    -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT -u SPACEWRIGHT_CONFIG_ROOT \
+    -u SPACEWRIGHT_STATE_ROOT -u SPACEWRIGHT_DISPLAY_PROFILES_ROOT \
+    -u SPACEWRIGHT_SKHD_ROOT -u SPACEWRIGHT_YABAI_ROOT \
     HOME="$test_root" XDG_CONFIG_HOME="$test_root/xdg" fish --no-config -c \
     "source '$fish_root/conf.d/spacewright.fish'; work_smoke" >"$smoke_log" 2>&1
 set -l smoke_status $status

@@ -104,6 +104,7 @@ function __workspace_run_configured_primary_helper --description "Run a configur
         echo "[WARN] $workspace_id required app is unavailable; no workspace changes were made" >&2
         return 1
     end
+    set -a apply_args --primary-window "$required_window"
     workspace_apply_primary_helper_space $apply_args
 end
 
@@ -244,19 +245,47 @@ function __workspace_run_configured_generic_layout --description "Run a declarat
         return 1
     end
     set -l window_count (printf "%s\n" "$plan" | jq '.windows | length')
+
+    set -l required_indices (printf "%s\n" "$plan" | jq -r '.windows | to_entries[] | select(.value.required == true) | .key')
+    set -l required_ids
+    for index in $required_indices
+        set -l relaxed_plan (printf "%s\n" "$plan" | jq -c --argjson i $index '.windows[$i].selector.movable = false')
+        set -l required_id (__workspace_config_select_window "$windows_json" "$relaxed_plan" $index $required_ids)
+        if test -z "$required_id"
+            set -l required_role (printf "%s\n" "$plan" | jq -r --argjson i $index '.windows[$i].role')
+            echo "[WARN] $workspace_id required role is unavailable before native-fullscreen recovery: $required_role" >&2
+            return 1
+        end
+        set -a required_ids $required_id
+    end
+
+    set -l configured_app_keys (printf "%s\n" "$plan" | jq -r '[.windows[].app_key] | unique[]')
+    if test (count $configured_app_keys) -gt 0
+        set windows_json (printf '%s\n' "$windows_json" | workspace_normalize_native_fullscreen_windows \
+            --caller "$workspace_id-config-preflight" \
+            $configured_app_keys)
+        or return 1
+    end
+
     for index in (seq 0 (math $window_count - 1))
         set -l role (printf "%s\n" "$plan" | jq -r --argjson i $index '.windows[$i].role')
         set -l app_key (printf "%s\n" "$plan" | jq -r --argjson i $index '.windows[$i].app_key')
         set -l required (printf "%s\n" "$plan" | jq -r --argjson i $index '.windows[$i].required')
         set -l window_id (__workspace_config_select_window "$windows_json" "$plan" $index $selected_ids)
         set -l find_status $status
-        for retry in (seq 1 3)
-            test -n "$window_id"; and break
-            sleep 0.25
-            set windows_json (ws_query_windows "$workspace_id-config-preflight" retry_$retry)
-            or break
-            set window_id (__workspace_config_select_window "$windows_json" "$plan" $index $selected_ids)
-            set find_status $status
+        set -l app_names (printf "%s\n" "$plan" | jq -c --argjson i $index '.windows[$i].app_names')
+        set -l app_present 0
+        printf "%s\n" "$windows_json" | jq -e --argjson apps "$app_names" 'any(.[]; .app as $app | $apps | index($app) != null)' >/dev/null 2>&1
+        and set app_present 1
+        if test "$required" = true; or test "$app_present" -eq 1
+            for retry in (seq 1 3)
+                test -n "$window_id"; and break
+                sleep 0.25
+                set windows_json (ws_query_windows "$workspace_id-config-preflight" retry_$retry)
+                or break
+                set window_id (__workspace_config_select_window "$windows_json" "$plan" $index $selected_ids)
+                set find_status $status
+            end
         end
         if test "$find_status" -eq 1; or test "$required" = true -a -z "$window_id"
             echo "[WARN] $workspace_id required role is unavailable: $role" >&2
@@ -449,8 +478,12 @@ function workspace_run_configured_mode --description "Run one configured ordered
 
     set -l cleanup_specs (printf "%s\n" "$plan" | jq -r '.cleanup[]?')
     set -l failed 0
-    for spec in $cleanup_specs
-        workspace_run_step "cleanup $spec" workspace_run_cleanup_specs $spec
+    set -l parent_owns_cleanup 0
+    if test "$WORKSPACE_SKIP_LABELED_CLEANUP" = "1"
+        set parent_owns_cleanup 1
+    end
+    if test "$parent_owns_cleanup" -eq 0; and test (count $cleanup_specs) -gt 0
+        workspace_run_step "cleanup configured mode" workspace_run_cleanup_specs $cleanup_specs
         or set failed 1
     end
     set -l old_skip_labeled_cleanup "$WORKSPACE_SKIP_LABELED_CLEANUP"
@@ -489,8 +522,8 @@ function workspace_run_configured_mode --description "Run one configured ordered
     else
         set -e WORKSPACE_SKIP_LABELED_CLEANUP
     end
-    for spec in $cleanup_specs
-        workspace_run_step "final cleanup $spec" workspace_run_cleanup_specs $spec
+    if test "$parent_owns_cleanup" -eq 0; and test (count $cleanup_specs) -gt 0
+        workspace_run_step "final cleanup configured mode" workspace_run_cleanup_specs $cleanup_specs
         or set failed 1
     end
     if set -q SPACEWRIGHT_CONTEXTUAL_FOCUS_RUNTIME_ID; and test -n "$SPACEWRIGHT_CONTEXTUAL_FOCUS_RUNTIME_ID"

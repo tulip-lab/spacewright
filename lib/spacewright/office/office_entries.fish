@@ -184,6 +184,15 @@ function office_apply_document_space --description "Apply an Office workspace fo
     set -l windows_json (ws_query_windows $_flag_label initial)
     or return 1
 
+    set -l office_app_keys $_flag_primary_app_key
+    if test -n "$helper_app_key"
+        set -a office_app_keys $helper_app_key
+    end
+    set windows_json (printf '%s\n' "$windows_json" | workspace_normalize_native_fullscreen_windows \
+        --caller "$_flag_label" \
+        $office_app_keys)
+    or return 1
+
     set -l primary_windows (echo $windows_json | workspace_app_key_windows --app-key $_flag_primary_app_key --movable)
     or return 1
 

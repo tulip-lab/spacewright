@@ -140,7 +140,62 @@ function ws_move_windows_to_space; return 0; end
 function ws_window; return 0; end
 workspace_run_configured spacewright_demo_wide
 or exit 26
+test "$__generic_query_count" -eq 2
+or exit 33
 
+set -g __generic_fullscreen_toggle ""
+function ws_query_windows
+    set -l phase $argv[2]
+    switch "$phase"
+        case all
+            printf '%s\n' '[{"id":42,"app":"Code","title":"Demo","is-minimized":false,"is-visible":true,"is-native-fullscreen":true,"can-move":false,"space":1}]'
+        case native_fullscreen_1
+            printf '%s\n' '[{"id":42,"app":"Code","title":"Demo","is-minimized":false,"is-visible":true,"is-native-fullscreen":false,"can-move":true,"space":1}]'
+        case 'final_*'
+            printf '%s\n' '[{"id":42,"app":"Code","title":"Demo","is-minimized":false,"is-visible":true,"is-native-fullscreen":false,"can-move":true,"space":9}]'
+        case '*'
+            return 1
+    end
+end
+function ws_window
+    if test "$argv[2]" = --toggle
+        set -g __generic_fullscreen_toggle (string join " " -- $argv)
+    end
+end
+workspace_run_configured spacewright_demo_wide
+or exit 29
+test "$__generic_fullscreen_toggle" = "42 --toggle native-fullscreen"
+or exit 30
+
+function workspace_config_plan
+    printf '%s\n' '{"kind":"workspace","id":"spacewright_demo_wide","runner":"generic_layout","label":"demo_wide","display_role":"task__wide","space_layout":"float","windows":[{"role":"primary","app_key":"code","required":true,"app_names":["Code"],"selector":{"movable":true}},{"role":"helper","app_key":"chatgpt","required":false,"app_names":["ChatGPT"],"selector":{"movable":true}}],"layout":[{"role":"primary","grid":"1:1:0:0:1:1"},{"role":"helper","grid":"1:1:0:0:1:1"}],"runner_options":{},"cleanup":null,"mutates":false}'
+end
+set -g __generic_fullscreen_toggle ""
+function ws_query_windows
+    printf '%s\n' '[{"id":43,"app":"ChatGPT","title":"Helper","is-minimized":false,"is-visible":true,"is-native-fullscreen":true,"can-move":false,"space":1}]'
+end
+workspace_run_configured spacewright_demo_wide >/dev/null 2>&1
+and exit 31
+test -z "$__generic_fullscreen_toggle"
+or exit 32
+
+set -g __generic_query_count 0
+function ws_query_windows
+    set -g __generic_query_count (math $__generic_query_count + 1)
+    if test "$argv[2]" = all
+        printf '%s\n' '[{"id":42,"app":"Code","title":"Demo","is-minimized":false,"is-visible":true,"is-native-fullscreen":false,"can-move":true,"space":1}]'
+    else
+        printf '%s\n' '[{"id":42,"app":"Code","title":"Demo","is-minimized":false,"is-visible":true,"is-native-fullscreen":false,"can-move":true,"space":9}]'
+    end
+end
+workspace_run_configured spacewright_demo_wide
+or exit 34
+test "$__generic_query_count" -eq 2
+or exit 35
+
+function workspace_config_plan
+    printf '%s\n' '{"kind":"workspace","id":"spacewright_demo_wide","runner":"generic_layout","label":"demo_wide","display_role":"task__wide","space_layout":"float","windows":[{"role":"primary","app_key":"code","required":true,"app_names":["Code"],"selector":{"movable":true}}],"layout":[{"role":"primary","grid":"1:1:0:0:1:1"}],"runner_options":{},"cleanup":null,"mutates":false}'
+end
 set -g __generic_query_count 0
 function ws_query_windows
     set -g __generic_query_count (math $__generic_query_count + 1)
@@ -148,5 +203,67 @@ function ws_query_windows
 end
 workspace_run_configured spacewright_demo_wide >/dev/null 2>&1
 and exit 27
+
+set -g __primary_helper_find_count 0
+function workspace_run_cleanup_specs; return 0; end
+function workspace_find_app_key_window
+    set -g __primary_helper_find_count (math $__primary_helper_find_count + 1)
+    echo 42
+end
+function ws_query_windows
+    printf '%s\n' '[{"id":42,"app":"Code","title":"Demo","is-minimized":false,"is-visible":true,"is-native-fullscreen":false,"can-move":true,"space":9}]'
+end
+function ws_focus_space; return 0; end
+function cleanup_unlabeled_empty_spaces; return 0; end
+workspace_apply_primary_helper_space \
+    --label demo_wide \
+    --display task__wide \
+    --primary-app-key code \
+    --primary-window 42 \
+    --primary-grid 1:1:0:0:1:1
+or exit 41
+test "$__primary_helper_find_count" -eq 1
+or exit 42
+
+set -g __primary_helper_find_count 0
+set -g __primary_helper_apply_args
+function workspace_config_plan
+    printf '%s\n' '{"kind":"workspace","id":"primary_helper_demo","runner":"primary_helper","label":"demo_wide","display_role":"task__wide","space_layout":"float","windows":[{"role":"primary","app_key":"code","required":true,"app_names":["Code"],"selector":{"movable":true}}],"layout":[{"role":"primary","grid":"1:1:0:0:1:1"}],"primary_alone_layout":[],"runner_options":{},"cleanup":null}'
+end
+function workspace_apply_primary_helper_space
+    set -g __primary_helper_apply_args $argv
+end
+workspace_run_configured primary_helper_demo
+or exit 43
+test "$__primary_helper_find_count" -eq 1
+or exit 44
+contains -- --primary-window $__primary_helper_apply_args
+or exit 45
+set -l primary_window_arg_index (math (contains --index -- --primary-window $__primary_helper_apply_args) + 1)
+test "$__primary_helper_apply_args[$primary_window_arg_index]" = 42
+or exit 46
+
+set -g __nested_cleanup_count 0
+function workspace_config_plan
+    printf '%s\n' '{"kind":"mode","id":"nested_mode","cleanup":["office:wide","office:solo"],"steps":[{"workspace":"nested_test_step"}],"contextual_apps":[]}'
+end
+function workspace_run_cleanup_specs
+    set -g __nested_cleanup_count (math $__nested_cleanup_count + 1)
+end
+function nested_test_step
+    return 0
+end
+set -gx WORKSPACE_SKIP_LABELED_CLEANUP 1
+workspace_run_configured_mode nested_mode >/dev/null
+or exit 36
+workspace_run_mode_steps office:wide -- nested_test_step >/dev/null
+or exit 37
+test "$__nested_cleanup_count" -eq 0
+or exit 38
+set -e WORKSPACE_SKIP_LABELED_CLEANUP
+workspace_run_configured_mode nested_mode >/dev/null
+or exit 39
+test "$__nested_cleanup_count" -eq 2
+or exit 40
 
 echo "OK      v2 schema, split compiler, migrated Fish dry-runs, modes, and machine bindings"

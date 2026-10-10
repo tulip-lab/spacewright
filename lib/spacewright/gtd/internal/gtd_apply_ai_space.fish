@@ -204,6 +204,12 @@ function gtd_apply_ai_space --description "Apply a GTD AI workspace for Hermes, 
 
     set -l windows_json_initial (ws_query_windows $_flag_label initial)
     or return 1
+    if test (count $enabled_app_keys) -gt 0
+        set windows_json_initial (printf '%s\n' "$windows_json_initial" | workspace_normalize_native_fullscreen_windows \
+            --caller "$_flag_label" \
+            $enabled_app_keys)
+        or return 1
+    end
 
     set -l hermes_movable_info
     if not set -q _flag_skip_hermes
