@@ -237,6 +237,11 @@ Notes、Thunderbird、DingTalk 等特殊行为仍保留在 fish helper 中，不
 workspace 以 Thunderbird 为必需主窗口，Outlook 存在时作为辅助窗口进入同一
 workspace；wide 左右分，tall 上下分。
 
+配置化 workspace 若发现其管理的窗口处于 macOS 原生全屏，会先退出原生全屏并确认窗口恢复，
+再继续窗口选择、Space 迁移和布局。该规则覆盖 primary、helper 和 multi-window runner；
+恢复失败时会在任何 Space 变更前停止，避免窗口静默留在错误显示器。保留的 legacy
+primary/helper、Office、GTD、meeting 和 fixed-workspace adapter 也使用同一恢复逻辑。
+
 Review wide 使用 2×16 网格：Finder 占左侧 25% 全高，Preview 占中间 37.5%
 全高，Obsidian 占右侧 37.5% 的上半区，ChatGPT 和 Notes 平分右侧下半区。
 Review tall 使用 4×2 网格：Preview 占顶部 50% 全宽，中间一行是 Finder 和

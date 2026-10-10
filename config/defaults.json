@@ -119,10 +119,10 @@
       { "role": "chatgpt", "grid": "1:4:3:0:1:1" }
     ],
     "gtd_ai_tall": [
-      { "role": "hermes", "grid": "4:2:0:0:2:2" },
-      { "role": "chatgpt", "grid": "4:2:0:2:2:1" },
-      { "role": "obsidian", "grid": "4:2:0:3:1:1" },
-      { "role": "notes", "grid": "4:2:1:3:1:1" }
+      { "role": "hermes", "grid": "2:3:0:0:2:1" },
+      { "role": "chatgpt", "grid": "2:3:0:1:2:1" },
+      { "role": "obsidian", "grid": "2:3:2:0:1:1" },
+      { "role": "notes", "grid": "2:3:2:1:1:1" }
     ],
     "coding_control": [
       { "role": "warp", "grid": "3:1:0:0:1:2" },

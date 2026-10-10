@@ -236,10 +236,10 @@ function __gtd_ai_tall_body --description "Collect Hermes and AI support apps on
     gtd_apply_ai_space \
         --label gtd_ai \
         --display tall \
-        --hermes-grid 4:2:0:0:2:2 \
-        --chatgpt-grid 4:2:0:2:2:1 \
-        --obsidian-grid 4:2:0:3:1:1 \
-        --notes-grid 4:2:1:3:1:1 \
+        --hermes-grid 2:3:0:0:2:1 \
+        --chatgpt-grid 2:3:0:1:2:1 \
+        --obsidian-grid 2:3:2:0:1:1 \
+        --notes-grid 2:3:2:1:1:1 \
         gtd:wide gtd:solo $argv
 end
 

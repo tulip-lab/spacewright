@@ -26,6 +26,30 @@ preferences into validated user configuration.
 skhd and displayplacer are optional integrations rather than required runtime
 dependencies.
 
+## Quick start for new users
+
+After a public release is available:
+
+```sh
+brew install asmvik/formulae/yabai
+yabai --start-service
+brew install tulip-lab/tap/spacewright
+spacewright doctor
+spacewright configure
+```
+
+Each user must grant yabai Accessibility permission, register their own apps,
+bind portable display roles to the displays on their Mac, and save Solo, Wide,
+and Tall workspace layouts. Preview the result before allowing desktop changes:
+
+```sh
+spacewright mode wide --dry-run
+spacewright mode wide
+```
+
+See [Getting started](docs/getting-started.md) for the complete permission,
+configuration, validation, first-run, upgrade, and troubleshooting workflow.
+
 ## Safe mode switching
 
 Use `spacewright mode solo`, `spacewright mode wide`, or `spacewright mode tall`
@@ -90,6 +114,7 @@ depend on its directory layout or read its source files directly.
 
 See:
 
+- [Getting started](docs/getting-started.md)
 - [Architecture](docs/architecture.md)
 - [State discovery and reconciliation](docs/state-reconciliation.md)
 - [Configuration](docs/configuration.md)

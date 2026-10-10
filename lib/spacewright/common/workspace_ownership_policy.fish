@@ -15,7 +15,7 @@ function workspace_ownership_policy_rows --description "Print static workspace a
     printf "%s\t%s\t%s\t%s\t%s\n" "office_slides_*" "Microsoft PowerPoint" "all-movable-windows" "required document windows; layout adapts to count" powerpoint
     printf "%s\t%s\t%s\t%s\t%s\n" "office_slides_*" "ChatGPT" "optional-helper" "single helper window when present" chatgpt
 
-    printf "%s\t%s\t%s\t%s\t%s\n" "gtd_support_*" "Dia" "all-movable-windows" "movable non-native-fullscreen Dia windows" dia
+    printf "%s\t%s\t%s\t%s\t%s\n" "gtd_support_*" "Dia" "all-movable-windows" "exits native fullscreen, then collects all movable Dia windows" dia
     printf "%s\t%s\t%s\t%s\t%s\n" "gtd_review_*" "Finder" "all-movable-windows" "snapshot-first; reconciled from final window snapshot" finder
     printf "%s\t%s\t%s\t%s\t%s\n" "gtd_review_*" "Preview" "all-movable-windows;fallback-space-owner" "movable windows; non-movable Preview can own fallback space" preview
     printf "%s\t%s\t%s\t%s\t%s\n" "gtd_review_*" "Notes" "all-movable-windows;fallback-space-owner" "movable windows; non-movable Notes can own fallback space" notes

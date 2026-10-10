@@ -59,6 +59,10 @@ function __gtd_chat_body --description "Fast GTD chat workspace layout on worksp
     # 1. first capture
     #    At least one chat app must exist before creating the workspace.
     set -l windows_json (ws_query_windows gtd_chat initial); or return 1
+    set windows_json (printf '%s\n' "$windows_json" | workspace_normalize_native_fullscreen_windows \
+        --caller "$label" \
+        wechat keybase dingtalk messages whatsapp facetime)
+    or return 1
 
     set -l wechat (workspace_find_app_key_window --app-key wechat --caller $label)
     set -l wechat_status $status

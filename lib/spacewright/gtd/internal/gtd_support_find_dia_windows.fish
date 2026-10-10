@@ -35,12 +35,17 @@ function gtd_support_find_dia_windows --description "Find all movable Dia window
     set -l dia_app (workspace_app_name dia)
     set -l dia_window_json (printf '%s\n' "$windows_json" | __gtd_support_filter_dia_window_json)
     or return 1
-    set -l dia_present (printf '%s\n' "$dia_window_json" | ws_find_windows "$dia_app" --not-native-fullscreen)
-    set -l dia_windows (printf '%s\n' "$dia_window_json" | ws_find_windows "$dia_app" --movable --not-native-fullscreen)
+    set dia_window_json (printf '%s\n' "$dia_window_json" | workspace_normalize_native_fullscreen_windows \
+        --caller "$caller" \
+        --app "$dia_app")
+    or return 1
+    set -l dia_present (printf '%s\n' "$dia_window_json" | ws_find_windows "$dia_app")
 
     if test (count $dia_present) -eq 0
         return 0
     end
+
+    set -l dia_windows (printf '%s\n' "$dia_window_json" | ws_find_windows "$dia_app" --movable --not-native-fullscreen)
 
     if test (count $dia_windows) -eq (count $dia_present)
         __gtd_support_clear_bad_dia_windows $dia_windows
@@ -56,7 +61,7 @@ function gtd_support_find_dia_windows --description "Find all movable Dia window
 
     set dia_window_json (printf '%s\n' "$windows_json" | __gtd_support_filter_dia_window_json)
     or return 1
-    set dia_present (printf '%s\n' "$dia_window_json" | ws_find_windows "$dia_app" --not-native-fullscreen)
+    set dia_present (printf '%s\n' "$dia_window_json" | ws_find_windows "$dia_app")
     set dia_windows (printf '%s\n' "$dia_window_json" | ws_find_windows "$dia_app" --movable --not-native-fullscreen)
 
     if test (count $dia_present) -gt 0 -a (count $dia_windows) -eq (count $dia_present)
@@ -76,7 +81,7 @@ function gtd_support_find_dia_windows --description "Find all movable Dia window
 
     set dia_window_json (printf '%s\n' "$windows_json" | __gtd_support_filter_dia_window_json)
     or return 1
-    set dia_present (printf '%s\n' "$dia_window_json" | ws_find_windows "$dia_app" --not-native-fullscreen)
+    set dia_present (printf '%s\n' "$dia_window_json" | ws_find_windows "$dia_app")
     set dia_windows (printf '%s\n' "$dia_window_json" | ws_find_windows "$dia_app" --movable --not-native-fullscreen)
 
     if test (count $dia_present) -gt 0 -a (count $dia_windows) -eq (count $dia_present)

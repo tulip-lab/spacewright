@@ -134,6 +134,10 @@ function workspace_run_mode_steps --description "Run workspace mode steps with s
     end
 
     set -l failed 0
+    set -l parent_owns_cleanup 0
+    if test "$WORKSPACE_SKIP_LABELED_CLEANUP" = "1"
+        set parent_owns_cleanup 1
+    end
 
     if test "$dry_run" -eq 1
         printf "dry_run=workspace_run_mode_steps\n"
@@ -142,8 +146,8 @@ function workspace_run_mode_steps --description "Run workspace mode steps with s
         return 0
     end
 
-    for cleanup_spec in $cleanup_specs
-        workspace_run_step "cleanup $cleanup_spec" workspace_run_cleanup_specs $cleanup_spec
+    if test "$parent_owns_cleanup" -eq 0; and test (count $cleanup_specs) -gt 0
+        workspace_run_step "cleanup mode" workspace_run_cleanup_specs $cleanup_specs
         or set failed 1
     end
 
@@ -161,8 +165,8 @@ function workspace_run_mode_steps --description "Run workspace mode steps with s
         set -e WORKSPACE_SKIP_LABELED_CLEANUP
     end
 
-    for cleanup_spec in $cleanup_specs
-        workspace_run_step "final cleanup $cleanup_spec" workspace_run_cleanup_specs $cleanup_spec
+    if test "$parent_owns_cleanup" -eq 0; and test (count $cleanup_specs) -gt 0
+        workspace_run_step "final cleanup mode" workspace_run_cleanup_specs $cleanup_specs
         or set failed 1
     end
 

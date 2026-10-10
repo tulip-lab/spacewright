@@ -13,6 +13,7 @@ function source_workspace_common --description "Source shared workspace helper f
     source "$SPACEWRIGHT_ROOT/common/workspace_label_recovery.fish"
     source "$SPACEWRIGHT_ROOT/common/ws_find_windows.fish"
     source "$SPACEWRIGHT_ROOT/common/workspace_app_window_selectors.fish"
+    source "$SPACEWRIGHT_ROOT/common/workspace_native_fullscreen.fish"
     source "$SPACEWRIGHT_ROOT/common/workspace_app_window_lifecycle.fish"
     source "$SPACEWRIGHT_ROOT/common/workspace_app_space_fallback.fish"
     source "$SPACEWRIGHT_ROOT/common/workspace_app_bounds.fish"

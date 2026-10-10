@@ -155,6 +155,18 @@ function workspace_find_app_window --description "Find a movable app window, act
         return 0
     end
 
+    set windows_json (printf '%s\n' "$windows_json" | workspace_normalize_native_fullscreen_windows \
+        --caller "$caller" \
+        --app "$_flag_app")
+    or return 1
+    set window_id (echo $windows_json | workspace_select_app_window $selector_args)
+    if test -n "$window_id"
+        workspace_debug_step $caller find-$app_key-found-after-native-fullscreen-exit $window_id
+        rm -f "$bad_window_dir/$window_id" 2>/dev/null
+        echo $window_id
+        return 0
+    end
+
     set -l app_present_space (echo $windows_json | ws_jq -r --arg app "$_flag_app" '
         first(
             .[]

@@ -11,6 +11,10 @@
 
 `skhd` and `displayplacer` remain optional integrations.
 
+New Homebrew users should follow [Getting started](getting-started.md) for the
+required yabai permission, personal app registration, display binding,
+workspace layout, dry-run, and first live-run steps.
+
 ## Install from a trusted checkout
 
 For this private prerelease, clone or update the repository through your
@@ -104,3 +108,6 @@ brew uninstall spacewright
 
 Homebrew keeps user configuration and machine state outside its Cellar, so an
 upgrade or uninstall does not delete either one.
+
+Continue with [Getting started](getting-started.md) to create and validate the
+user's personal configuration before running a live workspace command.

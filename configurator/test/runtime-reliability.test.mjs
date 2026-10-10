@@ -59,10 +59,18 @@ test('unlabeled cleanup uses authoritative windows and keeps the last space on a
 
 test('generic layouts retain role alignment when a middle optional window is absent', () => {
   const output = fish(`
+    source lib/spacewright/common/workspace_native_fullscreen.fish
     source lib/spacewright/common/workspace_config_runtime.fish
     set -g grids
     function sleep; end
     function ws_jq; command jq $argv; end
+    function workspace_app_names
+      switch $argv[1]
+        case primary; echo Primary
+        case helper; echo Missing
+        case third; echo Third
+      end
+    end
     function ws_query_windows
       echo '[{"id":11,"app":"Primary","space":8,"is-minimized":false,"can-move":true},{"id":33,"app":"Third","space":8,"is-minimized":false,"can-move":true}]'
     end
