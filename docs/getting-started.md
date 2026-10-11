@@ -185,3 +185,23 @@ When a layout does not run as expected:
 6. review `spacewright transition-history` before retrying a live command.
 
 Do not start by weakening validation or copying another Mac's display UUIDs.
+
+On a Mac where the installed yabai build cannot load its scripting addition,
+SpaceWright can keep window layouts usable without treating unsupported Space
+maintenance as a successful mutation. Set these machine-local Fish variables:
+
+```fish
+set -Ux WORKSPACE_SKIP_SPACE_ORDER 1
+set -Ux WORKSPACE_SKIP_UNLABELED_CLEANUP 1
+```
+
+The first setting skips final Space reordering and its verification. The second
+skips opportunistic deletion of empty unlabeled Spaces. Required-window checks,
+window movement and layout failures continue to fail closed. Remove the
+variables after installing a yabai build whose scripting addition supports the
+current macOS release:
+
+```fish
+set -eU WORKSPACE_SKIP_SPACE_ORDER
+set -eU WORKSPACE_SKIP_UNLABELED_CLEANUP
+```

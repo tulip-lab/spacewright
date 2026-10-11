@@ -1519,6 +1519,64 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
+    set -l workspace_order_skip_smoke '
+        work_reload >/dev/null
+        if set -q WORKSPACE_TEST_SOURCE_ROOT
+            source "$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_order_spaces.fish"
+        end
+
+        set -gx WORKSPACE_SKIP_SPACE_ORDER 1
+
+        function workspace_order_mode_spaces
+            exit 41
+        end
+
+        function workspace_verify_mode_space_order
+            exit 42
+        end
+
+        set -l output (workspace_order_and_verify_mode_spaces tall 2>&1)
+        or exit 1
+        string match -q "*Space ordering skipped*" -- "$output"
+        or exit 2
+    '
+    fish -lc "$workspace_order_skip_smoke" >/tmp/work-order-skip-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      explicit Space ordering compatibility skip"
+    else
+        echo "FAIL    explicit Space ordering compatibility skip"
+        cat /tmp/work-order-skip-smoke.out
+        set failed 1
+    end
+
+    set -l workspace_unlabeled_cleanup_skip_smoke '
+        work_reload >/dev/null
+        if set -q WORKSPACE_TEST_SOURCE_ROOT
+            source "$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_cleanup_spaces.fish"
+        end
+
+        set -gx WORKSPACE_SKIP_UNLABELED_CLEANUP 1
+
+        function workspace_cleanup_query_spaces
+            exit 41
+        end
+
+        function workspace_cleanup_query_windows
+            exit 42
+        end
+
+        cleanup_unlabeled_empty_spaces
+        or exit 1
+    '
+    fish -lc "$workspace_unlabeled_cleanup_skip_smoke" >/tmp/work-unlabeled-cleanup-skip-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      explicit unlabeled Space cleanup compatibility skip"
+    else
+        echo "FAIL    explicit unlabeled Space cleanup compatibility skip"
+        cat /tmp/work-unlabeled-cleanup-skip-smoke.out
+        set failed 1
+    end
+
     set -l ownership_policy_rows (workspace_ownership_policy_rows)
 
     set -l required_ownership_patterns \
