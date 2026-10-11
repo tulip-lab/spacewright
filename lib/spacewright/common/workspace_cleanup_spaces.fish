@@ -139,6 +139,10 @@ function cleanup_labeled_empty_spaces --description "Destroy empty spaces whose 
 end
 
 function cleanup_unlabeled_empty_spaces --description "Remove unlabeled empty spaces on all displays except a protected space"
+    if test "$WORKSPACE_SKIP_UNLABELED_CLEANUP" = "1"
+        return 0
+    end
+
     set -l protected_space $argv[1]
 
     if test -z "$protected_space"

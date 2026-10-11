@@ -299,6 +299,11 @@ function workspace_order_and_verify_mode_spaces --description "Order and verify 
         return 2
     end
 
+    if test "$WORKSPACE_SKIP_SPACE_ORDER" = "1"
+        echo "[WARN] Space ordering skipped by WORKSPACE_SKIP_SPACE_ORDER=1" >&2
+        return 0
+    end
+
     for attempt in 1 2
         workspace_order_mode_spaces $mode
         or return 1

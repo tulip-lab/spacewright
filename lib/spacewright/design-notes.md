@@ -401,6 +401,14 @@ WORKSPACE_SKIP_LABELED_CLEANUP=1
 This prevents repeated labeled-space scans and destroy attempts while preserving standalone module behavior.
 Nested aggregate modes check this ownership marker before collecting cleanup snapshots, and each top-level cleanup phase batches all cleanup specs so they share one Spaces snapshot and one windows snapshot.
 
+Machines whose current yabai build cannot load a compatible scripting addition
+may explicitly set `WORKSPACE_SKIP_SPACE_ORDER=1` and
+`WORKSPACE_SKIP_UNLABELED_CLEANUP=1`. These machine-local compatibility flags
+skip only final Space ordering/verification and opportunistic unlabeled-Space
+deletion. They do not relax required-window selection, window movement, or
+layout failures, and should be removed when full scripting-addition support is
+restored.
+
 Common cleanup wrappers are intentionally thin and mode-named:
 
 - ``workspace_cleanup_mode_spaces <family> solo``
