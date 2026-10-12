@@ -2,7 +2,7 @@ import { confirmAction, promptValue } from './dialog.js';
 
 const token = new URLSearchParams(location.search).get('token');
 const headers = { 'content-type': 'application/json', 'x-spacewright-token': token || '' };
-const state = { config: null, savedConfig: null, serverRevision: null, source: null, requiresInitialSave: false, legacyAvailable: false, machine: { version: 1, displayBindings: {} }, view: new URLSearchParams(location.search).get('view') || 'current', mode: new URLSearchParams(location.search).get('mode') || 'wide', selectedWorkspace: null, shortcutView: 'workspace', workspaceSearch: '', workspaceTab: 'apps', appSearch: '', appInventory: null, externalShortcuts: [], shortcutSources: [], autoImportedShortcuts: 0, recordingCleanup: null, runtime: null, liveSnapshot: null, livePlan: null, runPreview: null, dirty: false, importChanges: [], undoStack: [], redoStack: [], lastDraft: null };
+const state = { config: null, savedConfig: null, serverRevision: null, source: null, requiresInitialSave: false, legacyAvailable: false, legacyEditorReadOnly: false, machine: { version: 1, displayBindings: {} }, view: new URLSearchParams(location.search).get('view') || 'current', mode: new URLSearchParams(location.search).get('mode') || 'wide', selectedWorkspace: null, shortcutView: 'workspace', workspaceSearch: '', workspaceTab: 'apps', appSearch: '', appInventory: null, externalShortcuts: [], shortcutSources: [], autoImportedShortcuts: 0, recordingCleanup: null, runtime: null, liveSnapshot: null, livePlan: null, runPreview: null, dirty: false, importChanges: [], undoStack: [], redoStack: [], lastDraft: null, v3Config: null, v3SavedConfig: null, v3Revision: null, v3Source: null, v3SetupState: null, v3Hardware: null, v3Setup: null, v3Workspace: null, v3Configuration: null, v3DisplayKinds: {}, v3Bindings: {} };
 const root = document.querySelector('#workspace');
 let renderEpoch = 0;
 let undoBatchTimer = null;
@@ -101,7 +101,7 @@ function syncPersistenceControls() {
   if (!draft || !save) return;
   draft.textContent = state.dirty ? 'Draft has unsaved changes' : 'Saved configuration';
   draft.classList.toggle('dirty', state.dirty);
-  save.disabled = !state.dirty;
+  save.disabled = state.legacyEditorReadOnly || !state.dirty;
   undo.disabled = !state.undoStack.length;
   redo.disabled = !state.redoStack.length;
 }
@@ -257,6 +257,82 @@ function onboarding() {
   ];
   const complete = steps.filter(([, done]) => done).length;
   return `<aside class="onboarding" aria-label="Configuration progress"><div><p class="kicker">Setup progress</p><strong>${complete} / ${steps.length} ready</strong></div>${steps.map(([label, done]) => `<span class="${done ? 'done' : ''}">${done ? '✓' : '○'} ${label}</span>`).join('')}</aside>`;
+}
+
+async function ensureV3() {
+  if (state.v3Config) return;
+  const [document, setup] = await Promise.all([request('/api/v3/config'), request('/api/v3/setup')]);
+  state.v3Config = document.config;
+  state.v3SavedConfig = structuredClone(document.config);
+  state.v3Revision = document.revision;
+  state.v3Source = document.source;
+  state.v3SetupState = setup;
+  state.v3Hardware = setup.hardwareSelection.id || ids(document.config.hardwareProfiles)[0];
+  state.v3Setup = setup.confirmedSetup || setup.setupCandidates[0] || ids(document.config.hardwareProfiles[state.v3Hardware]?.setups)[0];
+  state.v3Workspace = ids(document.config.workspaces)[0];
+  const selectedSetup = document.config.hardwareProfiles[state.v3Hardware]?.setups?.[state.v3Setup];
+  state.v3Configuration = selectedSetup?.workspaceConfigurations?.[state.v3Workspace] || document.config.workspaces[state.v3Workspace]?.defaultConfiguration || ids(document.config.workspaces[state.v3Workspace]?.configurations)[0];
+  state.v3DisplayKinds = Object.fromEntries((setup.displays || []).map((display) => [display.uuid, display.kind]));
+  state.v3Bindings = { ...(setup.machine?.displayBindings || {}) };
+}
+
+function v3Dirty() { return JSON.stringify(state.v3Config) !== JSON.stringify(state.v3SavedConfig); }
+
+function v3LayoutPreview(layout, workspace) {
+  if (layout?.type !== 'canvas') return `<div class="layout-preview">${layoutNode(layout)}</div>`;
+  return `<div class="layout-preview canvas-editor">${layout.regions.map((region) => {
+    const { x, y, w, h } = gridValues(region); const app = workspace.windows[region.role]?.app;
+    return `<div class="canvas-window" style="--x:${x};--y:${y};--w:${w};--h:${h}"><span class="window-app">${escapeHtml(state.v3Config.apps[app]?.name || app || 'Unassigned')}</span><strong>${escapeHtml(region.role)}</strong><small>${x},${y} · ${w}×${h}</small></div>`;
+  }).join('')}</div>`;
+}
+
+async function hardwareView(epoch = renderEpoch) {
+  root.innerHTML = title('Hardware-aware v3', 'Detecting this Mac', 'Hardware profiles are portable. Physical displays and confirmations remain local to this Mac.') + '<div class="history-loading">Reading hardware and displays…</div>';
+  try { await ensureV3(); } catch (error) { if (viewIsCurrent('hardware', epoch)) root.innerHTML = `<div class="errors">${escapeHtml(error.message)}</div>`; return; }
+  if (!viewIsCurrent('hardware', epoch)) return;
+  const config = state.v3Config;
+  const setupState = state.v3SetupState;
+  const hardware = config.hardwareProfiles[state.v3Hardware];
+  if (!hardware) { state.v3Hardware = ids(config.hardwareProfiles)[0]; return hardwareView(epoch); }
+  const setup = hardware.setups[state.v3Setup] || Object.values(hardware.setups)[0];
+  if (!hardware.setups[state.v3Setup]) state.v3Setup = Object.keys(hardware.setups)[0];
+  const workspace = config.workspaces[state.v3Workspace] || Object.values(config.workspaces)[0];
+  if (!config.workspaces[state.v3Workspace]) state.v3Workspace = Object.keys(config.workspaces)[0];
+  const configuration = workspace.configurations[state.v3Configuration] || Object.values(workspace.configurations)[0];
+  if (!workspace.configurations[state.v3Configuration]) state.v3Configuration = Object.keys(workspace.configurations)[0];
+  const placed = setup.lanes.flatMap((lane) => lane.workspaceOrder);
+  const ready = setupState.ready && setupState.hardwareSelection.id === state.v3Hardware && setupState.confirmedSetup === state.v3Setup;
+  const sourceBanner = state.v3Source === 'v3' ? 'Active v3 configuration' : state.v3Source === 'v2-migration-preview' ? 'Unsaved migration preview from v2' : 'Unsaved v3 starter';
+  const hardwareTabs = Object.entries(config.hardwareProfiles).map(([id, item]) => `<button data-v3-hardware="${id}" class="${id === state.v3Hardware ? 'active' : ''}"><span>${escapeHtml(item.name)}</span><small>${escapeHtml(item.match.family)}</small></button>`).join('');
+  const setupTabs = Object.entries(hardware.setups).map(([id, item]) => `<button data-v3-setup="${id}" class="${id === state.v3Setup ? 'active' : ''}"><span>${escapeHtml(item.name)}</span><small>${item.match.displays.map((display) => `${display.kind || 'display'}${display.orientation ? ` · ${display.orientation}` : ''}`).join(' + ')}</small></button>`).join('');
+  const displayCards = (setupState.displays || []).map((display) => `<article class="v3-display"><div><strong>Display ${display.index}</strong><small>${display.orientation} · ${escapeHtml(display.uuid)}</small></div><select aria-label="Display ${display.index} kind" data-v3-display-kind="${escapeHtml(display.uuid)}"><option value="built_in" ${state.v3DisplayKinds[display.uuid] === 'built_in' ? 'selected' : ''}>Built-in</option><option value="external" ${state.v3DisplayKinds[display.uuid] === 'external' ? 'selected' : ''}>External</option><option value="sidecar" ${state.v3DisplayKinds[display.uuid] === 'sidecar' ? 'selected' : ''}>Sidecar</option></select></article>`).join('');
+  const requirementRows = setup.match.displays.map((display, index) => `<div class="v3-requirement"><span>${String(index + 1).padStart(2, '0')}</span><select aria-label="Display requirement ${index + 1} role" data-v3-requirement="role:${index}">${ids(config.displayRoles).map((role) => `<option value="${role}" ${display.role === role ? 'selected' : ''}>${escapeHtml(config.displayRoles[role].name)}</option>`).join('')}</select><select aria-label="Display requirement ${index + 1} kind" data-v3-requirement="kind:${index}">${['built_in','external','sidecar'].map((kind) => `<option value="${kind}" ${display.kind === kind ? 'selected' : ''}>${kind.replace('_',' ')}</option>`).join('')}</select><select aria-label="Display requirement ${index + 1} orientation" data-v3-requirement="orientation:${index}"><option value="">Any orientation</option>${['wide','tall','square'].map((orientation) => `<option value="${orientation}" ${display.orientation === orientation ? 'selected' : ''}>${orientation}</option>`).join('')}</select><select aria-label="Display requirement ${index + 1} physical binding" data-v3-bind-role="${escapeHtml(display.role || '')}"><option value="">Auto bind</option>${(setupState.displays || []).map((physical) => `<option value="${escapeHtml(physical.uuid)}" ${state.v3Bindings[display.role] === physical.uuid ? 'selected' : ''}>Display ${physical.index} · ${physical.orientation}</option>`).join('')}</select></div>`).join('');
+  const assignmentRows = placed.map((workspaceId) => {
+    const item = config.workspaces[workspaceId]; const selected = setup.workspaceConfigurations[workspaceId] || item.defaultConfiguration;
+    return `<div class="v3-assignment"><span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(workspaceId)}</small></span><select aria-label="Configuration for ${escapeHtml(item.name)}" data-v3-assignment="${workspaceId}">${Object.keys(item.configurations).map((id) => `<option value="${id}" ${selected === id ? 'selected' : ''}>${escapeHtml(id)}</option>`).join('')}</select></div>`;
+  }).join('');
+  const geometry = configuration.layout.type === 'canvas' ? `<div class="layout-geometry-list">${configuration.layout.regions.map((region) => { const grid=gridValues(region); return `<div><strong>${escapeHtml(region.role)}</strong><div class="geometry-grid">${[['x','Left'],['y','Top'],['w','Width'],['h','Height']].map(([field,label]) => `<label>${label}<input type="number" min="${field === 'w' || field === 'h' ? 1 : 0}" max="12" data-v3-geometry="${field}:${escapeHtml(region.role)}" value="${grid[field]}"></label>`).join('')}</div></div>`; }).join('')}</div>` : '';
+  root.innerHTML = title('Hardware-aware v3', 'Mac → setup → workspace configuration', 'Confirm each new physical topology once. Afterwards SpaceWright resolves the matching workspace configuration automatically.', `<span class="badge">${escapeHtml(sourceBanner)}</span>`) +
+    `<section class="v3-detection ${ready ? 'ready' : ''}"><div><p class="kicker">This Mac</p><h3>${escapeHtml(setupState.hardware.modelIdentifier || 'Unknown model')} · ${escapeHtml(setupState.hardware.family)}</h3><p>Topology <code>${escapeHtml(setupState.topologyKey)}</code>${ready ? ` · confirmed as <strong>${escapeHtml(state.v3Setup)}</strong>` : ' · confirmation required'}</p></div><div class="actions"><button id="v3-refresh" class="quiet">Refresh detection</button><button id="v3-confirm" class="primary">Confirm this setup</button><button id="v3-save" class="primary" ${ready ? '' : 'disabled'}>${v3Dirty() || state.v3Source !== 'v3' ? 'Save v3 Configuration' : 'Saved'}</button></div></section>${displayCards ? `<div class="v3-connected">${displayCards}</div>` : `<div class="errors">${escapeHtml(setupState.message || 'No displays detected')}</div>`}` +
+    `<div class="v3-shell"><aside><p class="kicker">Hardware profiles</p><div class="v3-tabs">${hardwareTabs}</div><p class="kicker setup-kicker">Display setups</p><div class="v3-tabs">${setupTabs}</div><button id="v3-add-setup" class="quiet">+ Duplicate setup</button></aside><div class="v3-main"><article class="card"><div class="layout-heading"><div><p class="kicker">${escapeHtml(state.v3Hardware)} / ${escapeHtml(state.v3Setup)}</p><h3>${escapeHtml(setup.name)}</h3></div><label>Runtime compatibility <select id="v3-compatibility"><option ${setup.compatibilityMode==='solo'?'selected':''}>solo</option><option ${setup.compatibilityMode==='wide'?'selected':''}>wide</option><option ${setup.compatibilityMode==='tall'?'selected':''}>tall</option></select></label></div><div class="v3-requirements"><div class="v3-requirement header"><span>#</span><span>Role</span><span>Kind</span><span>Orientation</span><span>Physical binding</span></div>${requirementRows}</div></article><article class="card"><p class="kicker">Workspace resolution</p><h3>Configuration selected by this setup</h3><div class="v3-assignments">${assignmentRows || '<p class="empty-lane">No workspaces are placed in this setup.</p>'}</div></article><article class="card"><div class="layout-heading"><div><p class="kicker">Workspace configuration</p><h3>Edit one reusable layout</h3></div><div class="v3-editor-selects"><select id="v3-workspace" aria-label="Workspace to edit">${Object.entries(config.workspaces).map(([id,item]) => `<option value="${id}" ${id===state.v3Workspace?'selected':''}>${escapeHtml(item.name)}</option>`).join('')}</select><select id="v3-configuration" aria-label="Workspace configuration to edit">${Object.keys(workspace.configurations).map((id) => `<option value="${id}" ${id===state.v3Configuration?'selected':''}>${escapeHtml(id)}</option>`).join('')}</select><button id="v3-copy-configuration" class="quiet">Duplicate</button></div></div>${v3LayoutPreview(configuration.layout, workspace)}${geometry}<div class="actions layout-presets">${['full','half-columns','half-rows','third-columns','two-third-columns','three-columns','three-rows','left-stack','right-stack','quad','main-left','main-top'].map((preset) => `<button class="template-button" data-v3-template="${preset}">${preset.replaceAll('-',' ')}</button>`).join('')}<button id="v3-free-layout" class="quiet">Edit exact grid</button></div></article></div></div>`;
+
+  root.querySelectorAll('[data-v3-hardware]').forEach((button) => button.onclick = () => { state.v3Hardware=button.dataset.v3Hardware;state.v3Setup=ids(config.hardwareProfiles[state.v3Hardware].setups)[0];const selected=config.hardwareProfiles[state.v3Hardware].setups[state.v3Setup];state.v3Configuration=selected.workspaceConfigurations[state.v3Workspace]||config.workspaces[state.v3Workspace].defaultConfiguration;render(); });
+  root.querySelectorAll('[data-v3-setup]').forEach((button) => button.onclick = () => { state.v3Setup=button.dataset.v3Setup;const selected=hardware.setups[state.v3Setup];state.v3Configuration=selected.workspaceConfigurations[state.v3Workspace]||config.workspaces[state.v3Workspace].defaultConfiguration;render(); });
+  root.querySelectorAll('[data-v3-display-kind]').forEach((select) => select.onchange = () => { state.v3DisplayKinds[select.dataset.v3DisplayKind]=select.value; });
+  root.querySelectorAll('[data-v3-requirement]').forEach((select) => select.onchange = () => { const [field,index]=select.dataset.v3Requirement.split(':'); if(select.value)setup.match.displays[Number(index)][field]=select.value;else delete setup.match.displays[Number(index)][field];render(); });
+  root.querySelectorAll('[data-v3-bind-role]').forEach((select) => select.onchange = () => { if(select.dataset.v3BindRole&&select.value)state.v3Bindings[select.dataset.v3BindRole]=select.value; });
+  root.querySelectorAll('[data-v3-assignment]').forEach((select) => select.onchange = () => { setup.workspaceConfigurations[select.dataset.v3Assignment]=select.value;if(select.dataset.v3Assignment===state.v3Workspace)state.v3Configuration=select.value;render(); });
+  root.querySelector('#v3-compatibility').onchange = (event) => { setup.compatibilityMode=event.target.value;render(); };
+  root.querySelector('#v3-workspace').onchange = (event) => { state.v3Workspace=event.target.value;state.v3Configuration=setup.workspaceConfigurations[state.v3Workspace]||config.workspaces[state.v3Workspace].defaultConfiguration||ids(config.workspaces[state.v3Workspace].configurations)[0];render(); };
+  root.querySelector('#v3-configuration').onchange = (event) => { state.v3Configuration=event.target.value;render(); };
+  root.querySelector('#v3-copy-configuration').onclick = async () => { const id=await promptValue('New configuration ID',`${state.v3Configuration}_copy`,'Use a lowercase stable ID.');if(!id||!validId(id)||workspace.configurations[id])return toast('Choose a unique lowercase ID.',true);workspace.configurations[id]=structuredClone(configuration);state.v3Configuration=id;render(); };
+  root.querySelectorAll('[data-v3-template]').forEach((button) => button.onclick = () => { configuration.layout=layoutTemplate(button.dataset.v3Template,ids(workspace.windows));render(); });
+  root.querySelector('#v3-free-layout').onclick = () => { configuration.layout=canvasFromLayout(configuration.layout,ids(workspace.windows));render(); };
+  root.querySelectorAll('[data-v3-geometry]').forEach((input) => input.onchange = () => { const [field,role]=input.dataset.v3Geometry.split(':');const region=configuration.layout.regions.find((item)=>item.role===role);const values=gridValues(region);values[field]=input.value;setRegionGrid(region,values);render(); });
+  root.querySelector('#v3-add-setup').onclick = async () => { const id=await promptValue('New display setup ID',`${state.v3Setup}_copy`,'Duplicate the selected setup, then adjust its display match.');if(!id||!validId(id)||hardware.setups[id])return toast('Choose a unique lowercase ID.',true);hardware.setups[id]=structuredClone(setup);hardware.setups[id].name=`${setup.name} Copy`;state.v3Setup=id;render(); };
+  root.querySelector('#v3-refresh').onclick = async () => { state.v3SetupState=await request('/api/v3/setup');state.v3DisplayKinds=Object.fromEntries(state.v3SetupState.displays.map((display)=>[display.uuid,display.kind]));render(); };
+  root.querySelector('#v3-confirm').onclick = async () => { try { const result=await request('/api/v3/setup/confirm',{method:'POST',body:JSON.stringify({config,hardwareProfile:state.v3Hardware,setup:state.v3Setup,displayKinds:state.v3DisplayKinds,displayBindings:state.v3Bindings})});state.machine=result.machine;state.v3SetupState=result.setupState||await request('/api/v3/setup');toast(`Confirmed ${result.hardwareProfile} · ${result.setup}`);render(); } catch(error){toast(error.message,true);} };
+  root.querySelector('#v3-save').onclick = async () => { try { const validation=await request('/api/v3/validate',{method:'POST',body:JSON.stringify(config)});if(validation.warnings?.length&&!await confirmAction(`Save with ${validation.warnings.length} warning(s)?`,{title:'Save v3 configuration',confirmLabel:'Save'}))return;const result=await request('/api/v3/save',{method:'POST',body:JSON.stringify({config,baseRevision:state.v3Revision})});state.v3SavedConfig=structuredClone(config);state.v3Revision=result.revision;state.v3Source='v3';toast(`Saved and verified: ${result.path}`);render(); } catch(error){toast(error.message,true);} };
 }
 
 function mapView() {
@@ -994,7 +1070,8 @@ function render() {
   const epoch = ++renderEpoch;
   closeRecording();
   document.querySelectorAll('#nav button').forEach((button) => { const active = button.dataset.view === state.view; button.classList.toggle('active', active); if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
-  if (state.view === 'current') currentView(epoch);
+  if (state.view === 'hardware') hardwareView(epoch);
+  else if (state.view === 'current') currentView(epoch);
   else if (state.view === 'map') mapView();
   else if (state.view === 'displays') displaysView();
   else if (state.view === 'workspaces') workspacesView();
@@ -1048,19 +1125,22 @@ async function initialize() {
       state.savedConfig = structuredClone(payload.config);
       state.lastDraft = structuredClone(payload.config);
       state.serverRevision = payload.revision;
-      if (!['current', 'map', 'displays', 'workspaces', 'apps', 'shortcuts', 'automation', 'history', 'diagnostics', 'tasks', 'review'].includes(state.view)) state.view = 'current';
+      if (!['current', 'hardware', 'map', 'displays', 'workspaces', 'apps', 'shortcuts', 'automation', 'history', 'diagnostics', 'tasks', 'review'].includes(state.view)) state.view = 'current';
       if (!['solo', 'wide', 'tall'].includes(state.mode)) state.mode = 'wide';
       state.source = payload.source;
+      state.legacyEditorReadOnly = payload.source === 'v3-projection' || payload.source === 'v3-unresolved';
       state.requiresInitialSave = payload.source === 'starter';
       state.legacyAvailable = payload.legacyAvailable;
       state.machine = machinePayload.machine;
       state.externalShortcuts = shortcutPayload.bindings || [];
       state.shortcutSources = shortcutPayload.inspected || [];
       autoImportExternalShortcuts();
-      if (state.autoImportedShortcuts) markDirty();
+      if (payload.setupRequired && !new URLSearchParams(location.search).has('view')) state.view = 'hardware';
+      if (state.autoImportedShortcuts && !state.legacyEditorReadOnly) markDirty();
       else if (payload.source === 'v2') markClean();
+      else if (state.legacyEditorReadOnly) markClean('Hardware-aware · edit in Hardware & Setups');
       else markDirty();
-      document.querySelector('#status').textContent = state.autoImportedShortcuts ? `Local · ${state.autoImportedShortcuts} shortcut${state.autoImportedShortcuts===1?'':'s'} ready to save` : payload.source === 'v2' ? 'Local · read/write' : 'Starter · unsaved';
+      document.querySelector('#status').textContent = state.legacyEditorReadOnly ? 'Hardware-aware · edit in Hardware & Setups' : state.autoImportedShortcuts ? `Local · ${state.autoImportedShortcuts} shortcut${state.autoImportedShortcuts===1?'':'s'} ready to save` : payload.source === 'v2' ? 'Local · read/write' : 'Starter · unsaved';
       document.querySelector('#path').textContent = payload.path;
       render();
       if (payload.source === 'starter') toast('No v2 file yet. Review can import your current v1 setup before saving.');

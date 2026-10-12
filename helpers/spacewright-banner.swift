@@ -10,6 +10,8 @@ struct TransitionState: Decodable {
     let startedAt: String
     let deadlineAt: String
     let targetLabel: String?
+    let hardwareLabel: String?
+    let setupLabel: String?
 }
 
 final class BannerController: NSObject, NSApplicationDelegate {
@@ -24,6 +26,7 @@ final class BannerController: NSObject, NSApplicationDelegate {
     private let panel: NSPanel
     private let accent = NSView()
     private let modeLabel = NSTextField(labelWithString: "SPACEWRIGHT")
+    private let contextLabel = NSTextField(labelWithString: "Hardware setup unavailable")
     private let phaseLabel = NSTextField(labelWithString: "Preparing workspace transition")
     private let timeLabel = NSTextField(labelWithString: "")
     private let progress = NSProgressIndicator()
@@ -36,7 +39,7 @@ final class BannerController: NSObject, NSApplicationDelegate {
         self.cancelURL = cancelURL
         self.expectedRunId = expectedRunId
         self.panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 124),
+            contentRect: NSRect(x: 0, y: 0, width: 580, height: 146),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -83,6 +86,12 @@ final class BannerController: NSObject, NSApplicationDelegate {
         modeLabel.textColor = lime
         effect.addSubview(modeLabel)
 
+        contextLabel.translatesAutoresizingMaskIntoConstraints = false
+        contextLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        contextLabel.textColor = secondaryText
+        contextLabel.lineBreakMode = .byTruncatingTail
+        effect.addSubview(contextLabel)
+
         phaseLabel.translatesAutoresizingMaskIntoConstraints = false
         phaseLabel.font = .systemFont(ofSize: 17, weight: .bold)
         phaseLabel.textColor = primaryText
@@ -122,8 +131,11 @@ final class BannerController: NSObject, NSApplicationDelegate {
             modeLabel.leadingAnchor.constraint(equalTo: effect.leadingAnchor, constant: 24),
             modeLabel.topAnchor.constraint(equalTo: effect.topAnchor, constant: 18),
             modeLabel.trailingAnchor.constraint(lessThanOrEqualTo: cancelButton.leadingAnchor, constant: -12),
+            contextLabel.leadingAnchor.constraint(equalTo: modeLabel.leadingAnchor),
+            contextLabel.topAnchor.constraint(equalTo: modeLabel.bottomAnchor, constant: 4),
+            contextLabel.trailingAnchor.constraint(lessThanOrEqualTo: cancelButton.leadingAnchor, constant: -12),
             phaseLabel.leadingAnchor.constraint(equalTo: modeLabel.leadingAnchor),
-            phaseLabel.topAnchor.constraint(equalTo: modeLabel.bottomAnchor, constant: 6),
+            phaseLabel.topAnchor.constraint(equalTo: contextLabel.bottomAnchor, constant: 7),
             phaseLabel.trailingAnchor.constraint(equalTo: cancelButton.leadingAnchor, constant: -16),
             timeLabel.leadingAnchor.constraint(equalTo: modeLabel.leadingAnchor),
             timeLabel.topAnchor.constraint(equalTo: phaseLabel.bottomAnchor, constant: 7),
@@ -171,6 +183,8 @@ final class BannerController: NSObject, NSApplicationDelegate {
 
         let title = state.targetLabel ?? (state.mode.prefix(1).uppercased() + state.mode.dropFirst())
         modeLabel.stringValue = "SPACEWRIGHT  /  \(title)"
+        let context = [state.hardwareLabel, state.setupLabel].compactMap { $0 }.filter { !$0.isEmpty }
+        contextLabel.stringValue = context.isEmpty ? "Hardware setup unavailable" : context.joined(separator: ": ")
         phaseLabel.stringValue = state.phase
 
         let formatter = ISO8601DateFormatter()

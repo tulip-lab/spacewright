@@ -5,7 +5,10 @@ Configurable macOS workspace orchestration for yabai.
 > Status: pre-release. The history-preserving runtime import, relocatable
 > bootstrap, packaging, and full v1 workspace configuration are complete.
 
-The portable v2 user module includes semantic validation, a digest-verified
+The portable v3 user module adds shared Mac-family profiles, confirmed display
+setups, explicit Sidecar roles, and per-setup workspace configurations. It
+projects the selected setup into the proven v2 execution engine, which includes
+semantic validation, a digest-verified
 compiled runtime, live state discovery, desired-state comparison, executable
 plans, post-apply verification, bounded reconciliation, guarded
 import/export/backup flows, and generated shortcut fragments. Personal
@@ -39,12 +42,12 @@ spacewright configure
 ```
 
 Each user must grant yabai Accessibility permission, register their own apps,
-bind portable display roles to the displays on their Mac, and save Solo, Wide,
-and Tall workspace layouts. Preview the result before allowing desktop changes:
+confirm the detected Mac/display setup, and define the workspace configuration
+used by that setup. Preview the result before allowing desktop changes:
 
 ```sh
-spacewright mode wide --dry-run
-spacewright mode wide
+spacewright setup status
+spacewright workspace coding --dry-run
 ```
 
 See [Getting started](docs/getting-started.md) for the complete permission,
@@ -62,9 +65,9 @@ See [Mode transitions](docs/mode-transitions.md).
 
 ## Web Configurator
 
-Run `spacewright configure` to edit portable apps, named workspaces, display
-lanes, solo/wide/tall split layouts, ordering, and structured skhd shortcuts in
-a local browser UI. Saving writes only SpaceWright's own configuration root;
+Run `spacewright configure` to edit hardware profiles, display setups, portable
+apps, named workspaces, per-setup layouts, ordering, and structured skhd
+shortcuts in a local browser UI. Saving writes only SpaceWright's own configuration root;
 it does not modify a Mackup checkout or the user's complete skhd configuration.
 
 See [Web Configurator](docs/configurator.md).
@@ -118,6 +121,7 @@ See:
 - [Architecture](docs/architecture.md)
 - [State discovery and reconciliation](docs/state-reconciliation.md)
 - [Configuration](docs/configuration.md)
+- [Hardware profiles and display setups](docs/hardware-profiles.md)
 - [Installation and upgrades](docs/installation.md)
 - [Release process](docs/releasing.md)
 - [Repository boundary and file inventory](docs/repository-boundary.md)

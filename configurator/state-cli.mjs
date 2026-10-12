@@ -8,6 +8,8 @@ import { dirname, join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState, normalizeSnapshot, summarizeComparison } from './lib/state-engine.mjs';
 import { compileV2, validateV2 } from './lib/config-v2.mjs';
+import { resolveV3, validateV3 } from './lib/config-v3.mjs';
+import { detectMacHardware } from './lib/hardware-detection.mjs';
 
 const execFileAsync = promisify(execFile);
 const command = process.argv[2] || 'help';
@@ -19,7 +21,8 @@ const flags = Object.fromEntries(process.argv.slice(3).filter((value) => value.s
 const packageRoot = resolve(flags['package-root'] || join(import.meta.dirname, '..'));
 const configRoot = resolve(flags['config-root'] || process.env.SPACEWRIGHT_CONFIG_ROOT || join(process.env.HOME, '.config', 'spacewright'));
 const stateRoot = resolve(flags['state-root'] || process.env.SPACEWRIGHT_STATE_ROOT || join(process.env.HOME, '.local', 'state', 'spacewright'));
-const configFile = join(configRoot, 'config.v2.json');
+const v2ConfigFile = join(configRoot, 'config.v2.json');
+const v3ConfigFile = join(configRoot, 'config.v3.json');
 const machineFile = join(stateRoot, 'machine.json');
 const executable = join(packageRoot, 'bin', 'spacewright');
 
@@ -54,12 +57,18 @@ export async function discover(machineOverride = null) {
 }
 
 async function context() {
-  if (!existsSync(configFile)) throw new Error(`v2 configuration not found at ${configFile}; run “spacewright configure” first`);
-  const [config, machine] = await Promise.all([readJson(configFile, null), readJson(machineFile, { version: 1, displayBindings: {} })]);
+  const configFile = existsSync(v3ConfigFile) ? v3ConfigFile : v2ConfigFile;
+  if (!existsSync(configFile)) throw new Error(`portable configuration not found under ${configRoot}; run “spacewright configure” first`);
+  const [portableConfig, machine] = await Promise.all([readJson(configFile, null), readJson(machineFile, { version: 1, displayBindings: {} })]);
   const snapshot = await discover(machine);
-  const validation = validateV2(config);
+  const validation = portableConfig.version === 3 ? validateV3(portableConfig) : validateV2(portableConfig);
   if (!validation.valid) throw new Error(`configuration is invalid:\n${validation.errors.join('\n')}`);
-  return { config, machine, snapshot, runtime: compileV2(config) };
+  if (portableConfig.version === 3) {
+    const hardware = await detectMacHardware();
+    const resolution = resolveV3(portableConfig, { machine, hardware, snapshot });
+    return { config: resolution.v2, portableConfig, configFile, machine, snapshot, resolution, runtime: compileV2(resolution.v2) };
+  }
+  return { config: portableConfig, portableConfig, configFile, machine, snapshot, resolution: null, runtime: compileV2(portableConfig) };
 }
 
 function parseTarget(values = positional) {
@@ -73,7 +82,10 @@ function parseTarget(values = positional) {
 
 async function livePlan(target = parseTarget()) {
   const value = await context();
-  const desired = buildDesiredState(value.config, value.runtime, target, value.snapshot);
+  const normalizedTarget = value.resolution && target.kind === 'workspace' && !target.mode
+    ? { ...target, mode: value.config.modes[value.portableConfig.hardwareProfiles[value.resolution.hardwareProfileId].setups[value.resolution.setupId].compatibilityMode] ? value.portableConfig.hardwareProfiles[value.resolution.hardwareProfileId].setups[value.resolution.setupId].compatibilityMode : null }
+    : target;
+  const desired = buildDesiredState(value.config, value.runtime, normalizedTarget, value.snapshot);
   const comparison = compareState(value.snapshot, desired, value.machine);
   const plan = buildExecutionPlan(value.snapshot, desired, comparison);
   return { ...value, desired, comparison, plan };
@@ -196,6 +208,12 @@ async function runCommand(args, journal, journalFile, plannedStep, attempt = 0) 
   return await completion;
 }
 
+async function waitForDesktopStateToSettle(executionSteps) {
+  if (executionSteps.some((step) => step.action === 'focus')) {
+    await new Promise((resolveWait) => setTimeout(resolveWait, 500));
+  }
+}
+
 let activeChild = null;
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
   if (activeChild?.pid) try { process.kill(-activeChild.pid, 'SIGTERM'); } catch {}
@@ -249,6 +267,7 @@ async function applyPlan(target) {
       await atomicWrite(journalFile, journal);
       if (journal.exitCode !== 0) break;
     }
+    if (journal.exitCode === 0) await waitForDesktopStateToSettle(initial.plan.executionSteps);
     let verification = await livePlan(target);
     journal.after = verification.snapshot;
     journal.verification = verification.comparison;
@@ -260,6 +279,7 @@ async function applyPlan(target) {
         await atomicWrite(journalFile, journal);
         if (journal.exitCode !== 0) break;
       }
+      if (journal.exitCode === 0) await waitForDesktopStateToSettle(verification.plan.executionSteps);
       verification = await livePlan(target);
       journal.after = verification.snapshot;
       journal.verification = verification.comparison;

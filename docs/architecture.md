@@ -50,6 +50,13 @@ It owns declarative facts:
 It does not own execution logic, shell fragments, arbitrary jq, retries, or
 app-specific recovery programs.
 
+Version 3 resolves `hardware profile -> display setup -> workspace
+configuration` before entering the existing deterministic runtime. Portable
+files describe Mac families and semantic display kinds; `machine.json` alone
+stores physical UUID bindings, Sidecar classification, and confirmation of a
+topology. An unmatched, ambiguous, or unconfirmed topology fails before the
+snapshot plan can mutate anything.
+
 ### Snapshot and plan layer
 
 One read-only snapshot captures displays, Spaces, and windows for a planning

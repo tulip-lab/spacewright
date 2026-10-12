@@ -20,6 +20,7 @@ The editor and guarded transition controller own only:
 
 ```text
 $SPACEWRIGHT_CONFIG_ROOT/config.v2.json
+$SPACEWRIGHT_CONFIG_ROOT/config.v3.json
 $SPACEWRIGHT_CONFIG_ROOT/generated/spacewright.skhdrc
 $SPACEWRIGHT_STATE_ROOT/machine.json
 $SPACEWRIGHT_STATE_ROOT/transition-history/*.json
@@ -38,6 +39,10 @@ The configurator never reads or writes a Mackup checkout, the user's complete
 fragment is inert until the user explicitly integrates it with skhd.
 
 ## Editor model
+
+- **Hardware & Setups** detects the current Mac family and display topology,
+  confirms a portable setup against physical displays, classifies Sidecar
+  displays, and assigns one named configuration to each placed workspace.
 
 - **Apps** map portable app keys to one or more macOS application names.
 - **AI Routing** maps named providers to registered apps and assigns a semantic
@@ -62,8 +67,10 @@ Saving configuration does not move windows, create Spaces, apply display
 profiles, or reload skhd. Live changes still require an explicit workspace or
 display command.
 
-Saving validates the complete document and writes both `config.v2.json` and a
-digest-bound `generated/runtime.json`. Import validates external JSON as an
+The hardware-aware page validates and writes `config.v3.json` plus a
+digest-bound `generated/runtime.json`. The legacy editor continues to validate
+and write `config.v2.json`, so existing users can migrate deliberately rather
+than being rewritten automatically. Import validates external JSON as an
 unsaved preview. Export downloads the portable document. Restore Backup
 revalidates and recompiles the previous saved document before activating it.
 The service also keeps the 10 most recent prior portable documents under
@@ -181,7 +188,8 @@ sections.
 
 ## Configuration data flow
 
-The portable v2 file is the authoritative configuration source:
+For the hardware-aware page, `config.v3.json` is authoritative and physical
+bindings remain in `machine.json`. The legacy v2 editor retains this flow:
 
 ```text
 $SPACEWRIGHT_CONFIG_ROOT/config.v2.json
@@ -218,8 +226,11 @@ backend is mocked.
 ```fish
 spacewright config-v2-check
 spacewright config-v2-compile
+spacewright config-v3-check
+spacewright config-v3-compile
 spacewright config-compile
 spacewright config-migrate-v1 ~/.config/spacewright/config.json
+spacewright config-migrate-v2 ~/.config/spacewright/config.v2.json
 ```
 
 Migration prints v2 JSON to standard output and does not overwrite its input.

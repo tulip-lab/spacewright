@@ -14,7 +14,11 @@ function spacewright_config_v2_file --description "Print the portable v2 user co
     echo "$SPACEWRIGHT_CONFIG_ROOT/config.v2.json"
 end
 
-function spacewright_config_runtime_file --description "Print the compiled v2 runtime path"
+function spacewright_config_v3_file --description "Print the hardware-aware portable v3 user configuration path"
+    echo "$SPACEWRIGHT_CONFIG_ROOT/config.v3.json"
+end
+
+function spacewright_config_runtime_file --description "Print the compiled portable runtime path"
     echo "$SPACEWRIGHT_CONFIG_ROOT/generated/runtime.json"
 end
 
@@ -35,6 +39,7 @@ function spacewright_config_effective --description "Merge package defaults with
     set -l default_file (spacewright_config_default_file)
     set -l user_file (spacewright_config_user_file)
     set -l v2_file (spacewright_config_v2_file)
+    set -l v3_file (spacewright_config_v3_file)
     set -l runtime_file (spacewright_config_runtime_file)
 
     if not test -r "$default_file"
@@ -47,7 +52,23 @@ function spacewright_config_effective --description "Merge package defaults with
         return 1
     end
 
-    if test -r "$v2_file"
+    if test -r "$v3_file"
+        if test -r "$runtime_file"
+            set -l source_hash (__spacewright_config_sha256 "$v3_file")
+            set -l compiled_hash (jq -r 'select(.generated.format_version == 1 and .generated.compiler_version == 3 and .generated.source_version == 3) | .generated.source_sha256 // empty' "$runtime_file" 2>/dev/null)
+            if test -n "$source_hash"; and test "$source_hash" = "$compiled_hash"
+                jq 'del(.generated)' "$runtime_file"
+                return $status
+            end
+        end
+        if command -q node
+            command node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/cli.mjs" compile "$v3_file" "--state-root=$SPACEWRIGHT_STATE_ROOT"
+        else
+            echo "[WARN] SpaceWright v3 configuration is not compiled or is stale" >&2
+            echo "[INFO] Run 'spacewright setup activate' after installing Node.js, or save it with 'spacewright configure'" >&2
+            return 1
+        end
+    else if test -r "$v2_file"
         if test -r "$runtime_file"
             set -l source_hash (__spacewright_config_sha256 "$v2_file")
             set -l compiled_hash (jq -r 'select(.generated.format_version == 1 and .generated.compiler_version == 3 and .generated.source_version == 2) | .generated.source_sha256 // empty' "$runtime_file" 2>/dev/null)
@@ -72,12 +93,18 @@ end
 
 function spacewright_config_status --description "Report configuration source and compiled runtime freshness"
     set -l v2_file (spacewright_config_v2_file)
+    set -l v3_file (spacewright_config_v3_file)
     set -l runtime_file (spacewright_config_runtime_file)
-    if not test -r "$v2_file"
+    set -l source_file "$v2_file"
+    set -l source_version 2
+    if test -r "$v3_file"
+        set source_file "$v3_file"
+        set source_version 3
+    else if not test -r "$v2_file"
         jq -n --arg source (spacewright_config_user_file) '{version:1, source:$source, compiled_runtime:null, current:true}'
         return 0
     end
-    set -l source_hash (__spacewright_config_sha256 "$v2_file")
+    set -l source_hash (__spacewright_config_sha256 "$source_file")
     set -l compiled_hash (jq -r '.generated.source_sha256 // empty' "$runtime_file" 2>/dev/null)
     set -l format_version (jq -r '.generated.format_version // empty' "$runtime_file" 2>/dev/null)
     set -l compiler_version (jq -r '.generated.compiler_version // empty' "$runtime_file" 2>/dev/null)
@@ -87,13 +114,14 @@ function spacewright_config_status --description "Report configuration source an
         set current true
     end
     jq -n \
-        --arg source "$v2_file" \
+        --arg source "$source_file" \
         --arg runtime "$runtime_file" \
         --arg source_hash "$source_hash" \
         --arg compiled_hash "$compiled_hash" \
         --arg generation_id "$generation_id" \
         --argjson current "$current" \
-        '{version:2, source:$source, compiled_runtime:$runtime, source_sha256:$source_hash, compiled_source_sha256:$compiled_hash, generation_id:$generation_id, current:$current}'
+        --argjson source_version "$source_version" \
+        '{version:$source_version, source:$source, compiled_runtime:$runtime, source_sha256:$source_hash, compiled_source_sha256:$compiled_hash, generation_id:$generation_id, current:$current}'
     test "$current" = true
 end
 

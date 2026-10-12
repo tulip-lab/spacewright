@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { runTransition } from '../mode-transition.mjs';
+import { resolveHardwareContext, runTransition } from '../mode-transition.mjs';
 import { readTransitionHistory } from '../lib/transition-history.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -50,6 +50,24 @@ function args(stateRoot, mode) {
 function workspaceArgs(stateRoot, workspace, mode) {
   return [script, 'workspace', workspace, mode, `--package-root=${process.cwd()}`, `--state-root=${stateRoot}`];
 }
+
+test('hardware context uses the confirmed profile and a concise setup label', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'spacewright-mode-context-'));
+  const stateRoot = join(root, 'state');
+  const configRoot = join(root, 'config');
+  await mkdir(stateRoot, { recursive: true });
+  await mkdir(configRoot, { recursive: true });
+  await writeFile(join(stateRoot, 'machine.json'), `${JSON.stringify({ hardwareProfile: 'mac_mini', activeSetup: 'single_tall' })}\n`);
+  await writeFile(join(configRoot, 'config.v3.json'), `${JSON.stringify({ hardwareProfiles: { mac_mini: { name: 'Mac mini', setups: { single_tall: { name: 'Single tall' } } } } })}\n`);
+  try {
+    assert.deepEqual(await resolveHardwareContext({ stateRoot, configRoot }), {
+      hardwareLabel: 'Mac mini',
+      setupLabel: 'Tall',
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test('a repeated request for the same mode is coalesced', async () => {
   const { root, stateRoot, fakeFish, log } = await fixture();
@@ -207,8 +225,8 @@ test('a different workspace in the same mode replaces the active scoped transiti
     await execFileAsync(process.execPath, workspaceArgs(stateRoot, 'research', 'solo'), { env: { ...common, FAKE_DURATION: '0.1' } });
     await waitForChild(first);
     const lines = await readFile(log, 'utf8');
-    assert.match(lines, /started .*WORKSPACE_SKIP_FINALIZATION 1.*spacewright run gtd_ai solo/);
-    assert.match(lines, /started .*WORKSPACE_SKIP_FINALIZATION 1.*spacewright run research solo/);
+    assert.match(lines, /started .*SPACEWRIGHT_TRANSITION_PACKAGE_ROOT.*WORKSPACE_SKIP_FINALIZATION 1.*SPACEWRIGHT_TRANSITION_PACKAGE_ROOT\/bin\/spacewright.*run gtd_ai solo/);
+    assert.match(lines, /started .*SPACEWRIGHT_TRANSITION_PACKAGE_ROOT.*WORKSPACE_SKIP_FINALIZATION 1.*SPACEWRIGHT_TRANSITION_PACKAGE_ROOT\/bin\/spacewright.*run research solo/);
     assert.doesNotMatch(lines, /completed .*gtd_ai solo/);
     assert.match(lines, /completed .*research solo/);
     const status = JSON.parse(await readFile(join(stateRoot, 'mode-transition', 'status.json'), 'utf8'));

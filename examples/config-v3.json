@@ -1,0 +1,160 @@
+{
+  "version": 3,
+  "metadata": { "name": "Hardware-aware SpaceWright example" },
+  "apps": {
+    "code": {
+      "name": "Visual Studio Code",
+      "match": { "appNames": ["Code", "Visual Studio Code"] }
+    }
+  },
+  "displayRoles": {
+    "built_in": { "name": "Built-in display", "portableMatch": { "builtIn": true } },
+    "wide": { "name": "Wide display", "portableMatch": { "orientation": "wide" } },
+    "tall": { "name": "Tall display", "portableMatch": { "orientation": "tall" } },
+    "sidecar": { "name": "Sidecar" }
+  },
+  "workspaces": {
+    "coding": {
+      "name": "Coding",
+      "spaceLabel": "coding",
+      "defaultConfiguration": "laptop",
+      "windows": {
+        "editor": {
+          "app": "code",
+          "required": true,
+          "selector": { "movable": true }
+        }
+      },
+      "configurations": {
+        "laptop": { "layout": { "type": "window", "role": "editor" } },
+        "wide": { "layout": { "type": "window", "role": "editor" } },
+        "tall": { "layout": { "type": "window", "role": "editor" } },
+        "sidecar": { "layout": { "type": "window", "role": "editor" } }
+      }
+    }
+  },
+  "hardwareProfiles": {
+    "macbook": {
+      "name": "MacBook",
+      "match": { "family": "macbook" },
+      "setups": {
+        "built_in": {
+          "name": "Built-in display",
+          "compatibilityMode": "solo",
+          "match": { "displays": [{ "role": "built_in", "kind": "built_in" }] },
+          "lanes": [{ "role": "built_in", "workspaceOrder": ["coding"] }],
+          "workspaceConfigurations": { "coding": "laptop" }
+        },
+        "built_in_wide": {
+          "name": "Built-in + wide",
+          "compatibilityMode": "wide",
+          "match": {
+            "displays": [
+              { "role": "built_in", "kind": "built_in" },
+              { "role": "wide", "kind": "external", "orientation": "wide" }
+            ]
+          },
+          "lanes": [{ "role": "wide", "workspaceOrder": ["coding"] }],
+          "workspaceConfigurations": { "coding": "wide" }
+        },
+        "built_in_sidecar": {
+          "name": "Built-in + Sidecar",
+          "compatibilityMode": "solo",
+          "match": {
+            "displays": [
+              { "role": "built_in", "kind": "built_in" },
+              { "role": "sidecar", "kind": "sidecar" }
+            ]
+          },
+          "lanes": [
+            { "role": "built_in", "workspaceOrder": ["coding"] },
+            { "role": "sidecar", "workspaceOrder": [] }
+          ],
+          "workspaceConfigurations": { "coding": "laptop" }
+        }
+      }
+    },
+    "mac_mini": {
+      "name": "Mac mini",
+      "match": { "family": "mac_mini" },
+      "setups": {
+        "single_wide": {
+          "name": "Single wide",
+          "compatibilityMode": "wide",
+          "match": { "displays": [{ "role": "wide", "kind": "external", "orientation": "wide" }] },
+          "lanes": [{ "role": "wide", "workspaceOrder": ["coding"] }],
+          "workspaceConfigurations": { "coding": "wide" }
+        },
+        "single_tall": {
+          "name": "Single tall",
+          "compatibilityMode": "tall",
+          "match": { "displays": [{ "role": "tall", "kind": "external", "orientation": "tall" }] },
+          "lanes": [{ "role": "tall", "workspaceOrder": ["coding"] }],
+          "workspaceConfigurations": { "coding": "tall" }
+        },
+        "wide_tall": {
+          "name": "Wide + tall",
+          "compatibilityMode": "wide",
+          "match": {
+            "displays": [
+              { "role": "wide", "kind": "external", "orientation": "wide" },
+              { "role": "tall", "kind": "external", "orientation": "tall" }
+            ]
+          },
+          "lanes": [
+            { "role": "wide", "workspaceOrder": ["coding"] },
+            { "role": "tall", "workspaceOrder": [] }
+          ],
+          "workspaceConfigurations": { "coding": "wide" }
+        },
+        "wide_sidecar": {
+          "name": "Wide + Sidecar",
+          "compatibilityMode": "wide",
+          "match": {
+            "displays": [
+              { "role": "wide", "kind": "external", "orientation": "wide" },
+              { "role": "sidecar", "kind": "sidecar" }
+            ]
+          },
+          "lanes": [
+            { "role": "wide", "workspaceOrder": ["coding"] },
+            { "role": "sidecar", "workspaceOrder": [] }
+          ],
+          "workspaceConfigurations": { "coding": "wide" }
+        },
+        "tall_sidecar": {
+          "name": "Tall + Sidecar",
+          "compatibilityMode": "tall",
+          "match": {
+            "displays": [
+              { "role": "tall", "kind": "external", "orientation": "tall" },
+              { "role": "sidecar", "kind": "sidecar" }
+            ]
+          },
+          "lanes": [
+            { "role": "tall", "workspaceOrder": ["coding"] },
+            { "role": "sidecar", "workspaceOrder": [] }
+          ],
+          "workspaceConfigurations": { "coding": "sidecar" }
+        }
+      }
+    },
+    "other": {
+      "name": "Other Mac",
+      "match": { "family": "other" },
+      "setups": {
+        "default": {
+          "name": "Default external display",
+          "compatibilityMode": "solo",
+          "match": {
+            "displays": [{ "kind": "external" }],
+            "allowAdditionalDisplays": true
+          },
+          "lanes": [{ "role": "wide", "workspaceOrder": ["coding"] }],
+          "workspaceConfigurations": { "coding": "laptop" }
+        }
+      }
+    }
+  },
+  "shortcuts": []
+}

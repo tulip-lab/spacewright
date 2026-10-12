@@ -58,11 +58,11 @@ function terminateProcessGroup(pid, signal = 'SIGTERM') {
 
 function modeCommand(mode) {
   const profile = mode === 'solo' ? 'display_apply_solo' : `display_apply_${mode}_left`;
-  return `workspace_run_step "display profile" ${profile}; and work_${mode}`;
+  return `source "$SPACEWRIGHT_TRANSITION_PACKAGE_ROOT/conf.d/spacewright.fish"; or exit 1; workspace_run_step "display profile" ${profile}; and work_${mode}`;
 }
 
 function workspaceCommand(workspace, mode) {
-  return `set -lx WORKSPACE_SKIP_FINALIZATION 1; workspace_run_step "Arrange ${workspace} (${mode})" spacewright run ${workspace} ${mode}`;
+  return `source "$SPACEWRIGHT_TRANSITION_PACKAGE_ROOT/conf.d/spacewright.fish"; or exit 1; set -lx WORKSPACE_SKIP_FINALIZATION 1; workspace_run_step "Arrange ${workspace} (${mode})" "$SPACEWRIGHT_TRANSITION_PACKAGE_ROOT/bin/spacewright" run ${workspace} ${mode}`;
 }
 
 async function focusedSpaceLabel() {
@@ -88,7 +88,33 @@ function publicState(owner, overrides = {}) {
     scope: owner.scope,
     workspace: owner.workspace,
     targetLabel: owner.targetLabel,
+    hardwareLabel: owner.hardwareLabel,
+    setupLabel: owner.setupLabel,
     ...overrides,
+  };
+}
+
+function presentationSetupName(name = '') {
+  return String(name)
+    .replace(/^Single\s+/i, '')
+    .replace(/\b(wide|tall|sidecar)\b/gi, (value) => value[0].toUpperCase() + value.slice(1).toLowerCase());
+}
+
+export async function resolveHardwareContext({ stateRoot, configRoot } = {}) {
+  if (!stateRoot || !configRoot) return {};
+  const [machine, config] = await Promise.all([
+    readJson(join(stateRoot, 'machine.json'), {}),
+    readJson(join(configRoot, 'config.v3.json'), {}),
+  ]);
+  const profileId = machine.hardwareProfile;
+  const setupId = machine.activeSetup;
+  const profile = config.hardwareProfiles?.[profileId];
+  const setup = profile?.setups?.[setupId];
+  const hardwareLabel = profile?.name || machine.detectedHardware?.productName;
+  const setupLabel = presentationSetupName(setup?.name);
+  return {
+    ...(hardwareLabel ? { hardwareLabel } : {}),
+    ...(setupLabel ? { setupLabel } : {}),
   };
 }
 
@@ -197,6 +223,7 @@ async function resolveBanner(packageRoot) {
 export async function runTransition({
   mode,
   packageRoot,
+  configRoot,
   stateRoot,
   timeoutMs = configuredTimeoutMs(),
   fishExecutable = process.env.SPACEWRIGHT_TRANSITION_FISH || 'fish',
@@ -207,11 +234,15 @@ export async function runTransition({
   workspace,
   targetKey = `mode:${mode}`,
   targetLabel,
+  hardwareContext,
 } = {}) {
   if (!VALID_MODES.has(mode)) throw new Error(`invalid mode: ${mode}`);
   await mkdir(stateRoot, { recursive: true, mode: 0o700 });
 
   const resolvedTargetLabel = targetLabel || `${mode[0].toUpperCase()}${mode.slice(1)}`;
+  const resolvedHardwareContext = hardwareContext === undefined
+    ? await resolveHardwareContext({ stateRoot, configRoot })
+    : hardwareContext;
 
   const transitionRoot = join(stateRoot, 'mode-transition');
   const lockRoot = join(stateRoot, 'execution.lock');
@@ -229,6 +260,8 @@ export async function runTransition({
     workspace,
     targetKey,
     targetLabel: resolvedTargetLabel,
+    hardwareLabel: resolvedHardwareContext?.hardwareLabel,
+    setupLabel: resolvedHardwareContext?.setupLabel,
     pid: process.pid,
     childPid: null,
     startedAt: new Date(now).toISOString(),
@@ -322,7 +355,12 @@ export async function runTransition({
     await updateState({ sourceSpaceLabel: transitionSourceLabel });
     child = spawn(fishExecutable, ['-lc', command], {
       detached: true,
-      env: { ...process.env, SPACEWRIGHT_TRANSITION_RUN_ID: runId, SPACEWRIGHT_SOURCE_SPACE_LABEL: transitionSourceLabel },
+      env: {
+        ...process.env,
+        SPACEWRIGHT_TRANSITION_PACKAGE_ROOT: packageRoot,
+        SPACEWRIGHT_TRANSITION_RUN_ID: runId,
+        SPACEWRIGHT_SOURCE_SPACE_LABEL: transitionSourceLabel,
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const childResult = new Promise((resolve) => {
@@ -384,12 +422,13 @@ async function main() {
   const [action = 'help', firstTarget, secondTarget] = process.argv.slice(2);
   const option = (name, fallback) => process.argv.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3) || fallback;
   const packageRoot = option('package-root', fileURLToPath(new URL('..', import.meta.url)));
+  const configRoot = option('config-root', process.env.SPACEWRIGHT_CONFIG_ROOT);
   const stateRoot = option('state-root', process.env.SPACEWRIGHT_STATE_ROOT);
   if (!stateRoot) throw new Error('state root is required');
 
   if (action === 'run') {
     const mode = firstTarget;
-    const result = await runTransition({ mode, packageRoot, stateRoot });
+    const result = await runTransition({ mode, packageRoot, configRoot, stateRoot });
     if (!['completed', 'duplicate'].includes(result.status)) process.exitCode = 1;
   } else if (action === 'workspace') {
     const workspace = firstTarget;
@@ -399,6 +438,7 @@ async function main() {
     const result = await runTransition({
       mode,
       packageRoot,
+      configRoot,
       stateRoot,
       command: workspaceCommand(workspace, mode),
       scope: 'workspace',
@@ -415,7 +455,7 @@ async function main() {
   } else if (action === 'history') {
     process.stdout.write(`${JSON.stringify({ transitions: await readTransitionHistory(stateRoot) }, null, 2)}\n`);
   } else {
-    process.stderr.write('usage: mode-transition.mjs <run MODE|workspace WORKSPACE MODE|cancel|status|history> --package-root=PATH --state-root=PATH\n');
+    process.stderr.write('usage: mode-transition.mjs <run MODE|workspace WORKSPACE MODE|cancel|status|history> --package-root=PATH --config-root=PATH --state-root=PATH\n');
     process.exitCode = 2;
   }
 }
