@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { starterConfig } from '../lib/config-v2.mjs';
+import { starterV3 } from '../lib/config-v3.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -124,6 +125,51 @@ esac
     assert.equal(journal.steps[1].action, 'finalize_mode');
     assert.deepEqual(journal.steps[1].command, ['spacewright', 'finalize', 'solo']);
     assert.equal(journal.steps[1].status, 'completed');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('v3 plan resolves the confirmed hardware setup without a mode argument', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'spacewright-v3-plan-'));
+  const configRoot = join(root, 'config');
+  const stateRoot = join(root, 'state');
+  const fakeBin = join(root, 'fake-bin');
+  await Promise.all([mkdir(configRoot), mkdir(stateRoot), mkdir(fakeBin)]);
+  const config = starterV3();
+  await writeFile(join(configRoot, 'config.v3.json'), `${JSON.stringify(config, null, 2)}\n`);
+  await writeFile(join(stateRoot, 'machine.json'), `${JSON.stringify({
+    version: 2,
+    hardwareProfile: 'mac_mini',
+    hardwareProfileConfirmed: true,
+    displayBindings: { tall: 'DISPLAY-TALL' },
+    displayKinds: {},
+    topologySelections: { 'external:tall': 'single_tall' },
+    activeSetup: 'single_tall'
+  }, null, 2)}\n`);
+  await writeFile(join(fakeBin, 'sysctl'), '#!/bin/sh\nprintf "%s\\n" "Macmini9,1"\n');
+  await writeFile(join(fakeBin, 'yabai'), `#!/bin/sh
+case "$3" in
+  --displays) printf '%s\n' '[{"index":1,"uuid":"DISPLAY-TALL","frame":{"x":0,"y":0,"w":1200,"h":1920},"is-built-in":false,"spaces":[1]}]' ;;
+  --spaces) printf '%s\n' '[{"index":1,"uuid":"SPACE-CODING","display":1,"label":"coding_tall","type":"float"}]' ;;
+  --windows) printf '%s\n' '[{"id":10,"app":"Code","display":1,"space":1,"frame":{"x":0,"y":0,"w":1200,"h":1920},"can-move":true,"can-resize":true,"is-visible":true}]' ;;
+esac
+`);
+  await Promise.all([chmod(join(fakeBin, 'sysctl'), 0o755), chmod(join(fakeBin, 'yabai'), 0o755)]);
+  try {
+    const { stdout } = await execFileAsync(process.execPath, [
+      new URL('../state-cli.mjs', import.meta.url).pathname,
+      'plan', 'coding', '--json',
+      `--package-root=${new URL('../..', import.meta.url).pathname}`,
+      `--config-root=${configRoot}`,
+      `--state-root=${stateRoot}`
+    ], { env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` } });
+    const plan = JSON.parse(stdout);
+    assert.equal(plan.plan.target.kind, 'workspace');
+    assert.equal(plan.plan.target.id, 'coding');
+    assert.equal(plan.plan.target.mode, 'tall');
+    assert.equal(plan.desired.workspaces[0].label, 'coding_tall');
+    assert.equal(plan.plan.executable, true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

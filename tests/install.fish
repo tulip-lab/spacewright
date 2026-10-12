@@ -28,7 +28,10 @@ or exit 19
 for configurator_file in \
         server.mjs \
         cli.mjs \
+        setup-cli.mjs \
         lib/config-v2.mjs \
+        lib/config-v3.mjs \
+        lib/hardware-detection.mjs \
         lib/transition-history.mjs \
         public/index.html \
         public/app.js \
@@ -36,6 +39,8 @@ for configurator_file in \
     test -f "$installed_release_root/configurator/$configurator_file"
     or exit 15
 end
+test -f "$installed_release_root/schemas/spacewright-v3.schema.json"
+or exit 30
 test -f "$installed_release_root/node_modules/yaml/package.json"
 or exit 20
 test -x "$installed_release_root/bin/spacewright-banner"
@@ -48,6 +53,8 @@ node --check "$installed_release_root/configurator/public/app.js"
 or exit 18
 node "$installed_release_root/configurator/cli.mjs" starter | jq -e '.version == 2 and (.modes | keys == ["solo", "tall", "wide"])' >/dev/null
 or exit 17
+node "$installed_release_root/configurator/cli.mjs" starter-v3 | jq -e '.version == 3 and .hardwareProfiles.mac_mini.setups.single_tall and .hardwareProfiles.mac_mini.setups.wide_sidecar' >/dev/null
+or exit 31
 "$bin_root/spacewright" mode wide --dry-run | string match -q '*policy=latest_request_wins*'
 or exit 27
 set -l workspace_dry_run (env \

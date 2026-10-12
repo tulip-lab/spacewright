@@ -34,16 +34,22 @@ function work_doctor --description "Run read-only workspace system checks"
     echo
     echo "===== CONFIG CHECK ====="
     if workspace_config_check
-        if test -r (spacewright_config_v2_file)
+        if test -r (spacewright_config_v3_file); or test -r (spacewright_config_v2_file)
             set -l runtime_file (spacewright_config_runtime_file)
-            set -l source_hash (__spacewright_config_sha256 (spacewright_config_v2_file))
-            set -l compiled_hash (jq -r 'select(.generated.format_version == 1 and .generated.compiler_version == 3 and .generated.source_version == 2) | .generated.source_sha256 // empty' "$runtime_file" 2>/dev/null)
+            set -l source_file (spacewright_config_v2_file)
+            set -l source_version 2
+            if test -r (spacewright_config_v3_file)
+                set source_file (spacewright_config_v3_file)
+                set source_version 3
+            end
+            set -l source_hash (__spacewright_config_sha256 "$source_file")
+            set -l compiled_hash (jq -r --argjson version "$source_version" 'select(.generated.format_version == 1 and .generated.compiler_version == 3 and .generated.source_version == $version) | .generated.source_sha256 // empty' "$runtime_file" 2>/dev/null)
             if test -n "$source_hash"; and test "$source_hash" = "$compiled_hash"
-                __work_doctor_ok "SpaceWright configuration v2 and compiled runtime"
+                __work_doctor_ok "SpaceWright configuration v$source_version and compiled runtime"
             else if command -q node
-                __work_doctor_warn "SpaceWright configuration v2 is valid but compiled runtime is missing or stale"
+                __work_doctor_warn "SpaceWright configuration v$source_version is valid but compiled runtime is missing or stale"
             else
-                __work_doctor_fail "SpaceWright configuration v2 requires a fresh compiled runtime"
+                __work_doctor_fail "SpaceWright configuration v$source_version requires a fresh compiled runtime"
             end
         else
             __work_doctor_ok "SpaceWright configuration v1"

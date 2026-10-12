@@ -21,16 +21,16 @@ function schemaValueKey(value) {
   return JSON.stringify(value, Object.keys(object(value) ? value : {}).sort());
 }
 
-function validateSchemaNode(value, schema, path, errors) {
+function validateSchemaNode(value, schema, path, errors, rootSchema = V2_SCHEMA) {
   if (schema.$ref) {
-    const target = schema.$ref.split('/').slice(1).reduce((node, token) => node[token.replaceAll('~1', '/').replaceAll('~0', '~')], V2_SCHEMA);
-    return validateSchemaNode(value, target, path, errors);
+    const target = schema.$ref.split('/').slice(1).reduce((node, token) => node[token.replaceAll('~1', '/').replaceAll('~0', '~')], rootSchema);
+    return validateSchemaNode(value, target, path, errors, rootSchema);
   }
   if (schema.oneOf || schema.anyOf) {
     const branches = schema.oneOf || schema.anyOf;
     const matches = branches.filter((branch) => {
       const branchErrors = [];
-      validateSchemaNode(value, branch, path, branchErrors);
+      validateSchemaNode(value, branch, path, branchErrors, rootSchema);
       return branchErrors.length === 0;
     }).length;
     const valid = schema.oneOf ? matches === 1 : matches > 0;
@@ -53,23 +53,27 @@ function validateSchemaNode(value, schema, path, errors) {
   if (Array.isArray(value)) {
     if (schema.minItems != null && value.length < schema.minItems) errors.push(`${path} must contain at least ${schema.minItems} item(s)`);
     if (schema.uniqueItems && new Set(value.map(schemaValueKey)).size !== value.length) errors.push(`${path} must contain unique items`);
-    if (schema.items) value.forEach((item, index) => validateSchemaNode(item, schema.items, `${path}[${index}]`, errors));
+    if (schema.items) value.forEach((item, index) => validateSchemaNode(item, schema.items, `${path}[${index}]`, errors, rootSchema));
   }
   if (object(value)) {
     if (schema.minProperties != null && Object.keys(value).length < schema.minProperties) errors.push(`${path} must contain at least ${schema.minProperties} field(s)`);
     for (const required of schema.required || []) if (!(required in value)) errors.push(`${path}.${required} is required`);
     for (const [key, child] of Object.entries(value)) {
-      if (schema.propertyNames) validateSchemaNode(key, schema.propertyNames, `${path}.${key}`, errors);
-      if (schema.properties?.[key]) validateSchemaNode(child, schema.properties[key], `${path}.${key}`, errors);
-      else if (object(schema.additionalProperties)) validateSchemaNode(child, schema.additionalProperties, `${path}.${key}`, errors);
+      if (schema.propertyNames) validateSchemaNode(key, schema.propertyNames, `${path}.${key}`, errors, rootSchema);
+      if (schema.properties?.[key]) validateSchemaNode(child, schema.properties[key], `${path}.${key}`, errors, rootSchema);
+      else if (object(schema.additionalProperties)) validateSchemaNode(child, schema.additionalProperties, `${path}.${key}`, errors, rootSchema);
       else if (schema.additionalProperties === false) errors.push(`${path}.${key} is not supported`);
     }
   }
 }
 
 export function validateV2Schema(config) {
+  return validateJsonSchema(config, V2_SCHEMA);
+}
+
+export function validateJsonSchema(config, schema) {
   const errors = [];
-  validateSchemaNode(config, V2_SCHEMA, '$', errors);
+  validateSchemaNode(config, schema, '$', errors, schema);
   return errors;
 }
 

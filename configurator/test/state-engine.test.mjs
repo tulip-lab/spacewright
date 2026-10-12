@@ -169,6 +169,40 @@ test('aggregate comparison assigns shared apps to the last active workspace', ()
   assert.equal(buildExecutionPlan(snapshot, desiredState, comparison).actions.length, 0);
 });
 
+test('aggregate reconciliation reapplies downstream owners of shared windows', () => {
+  const snapshot = normalizeSnapshot({
+    capturedAt: '2026-10-02T00:00:00.000Z',
+    displays: [{ index: 1, uuid: 'DISPLAY-PRIMARY', frame: { x: 0, y: 0, w: 1200, h: 900 }, spaces: [1, 2] }],
+    spaces: [
+      { index: 1, uuid: 'SPACE-CHAT', display: 1, label: 'chat_tall', type: 'float' },
+      { index: 2, uuid: 'SPACE-CALENDAR', display: 1, label: 'calendar_tall', type: 'float' }
+    ],
+    windows: [
+      { id: 10, app: 'Calendar', display: 1, space: 2, frame: { x: 0, y: 0, w: 600, h: 900 }, 'can-move': true },
+      { id: 11, app: 'Chat', display: 1, space: 1, frame: { x: 0, y: 0, w: 300, h: 450 }, 'can-move': true }
+    ]
+  });
+  const desiredState = {
+    desiredStateId: 'SHARED-RECONCILIATION', target: { kind: 'mode', id: 'tall', mode: 'tall' },
+    orchestration: { displayProfile: null, focusWorkspace: null, reconcile: true },
+    workspaces: [
+      { workspaceId: 'chat', runtimeId: 'chat_tall', label: 'chat_tall', displayRole: 'primary', runner: 'generic_layout', layout: [{ role: 'calendar', grid: '1:1:0:0:1:1' }, { role: 'chat', grid: '1:1:0:0:1:1' }], windows: [
+        { role: 'calendar', appKey: 'calendar', appNames: ['Calendar'], bundleIds: [], required: false, selector: {} },
+        { role: 'chat', appKey: 'chat', appNames: ['Chat'], bundleIds: [], required: false, selector: {} }
+      ] },
+      { workspaceId: 'calendar', runtimeId: 'calendar_tall', label: 'calendar_tall', displayRole: 'primary', runner: 'generic_layout', layout: [{ role: 'calendar', grid: '1:2:0:0:1:1' }], windows: [
+        { role: 'calendar', appKey: 'calendar', appNames: ['Calendar'], bundleIds: [], required: false, selector: {} }
+      ] }
+    ]
+  };
+  const comparison = compareState(snapshot, desiredState, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
+  assert.ok(comparison.drifts.some((item) => item.workspaceId === 'chat' && item.code === 'window_geometry_mismatch'));
+  assert.ok(!comparison.drifts.some((item) => item.workspaceId === 'calendar' && item.severity === 'change'));
+  const plan = buildExecutionPlan(snapshot, desiredState, comparison);
+  assert.deepEqual(plan.runnerCommands, [['run', 'chat', 'tall'], ['run', 'calendar', 'tall'], ['finalize', 'tall']]);
+  assert.ok(plan.actions.some((action) => action.type === 'reapply_workspace_dependency' && action.workspaceId === 'calendar'));
+});
+
 test('contextual ownership follows the focused workspace and becomes final focus', () => {
   const config = starterConfig();
   config.workspaces.review = structuredClone(config.workspaces.coding);

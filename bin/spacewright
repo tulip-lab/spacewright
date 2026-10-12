@@ -27,18 +27,32 @@ switch "$command_name"
         set -l config_file $argv[1]
         test -n "$config_file"; or set config_file "$SPACEWRIGHT_CONFIG_ROOT/config.v2.json"
         command node "$package_root/configurator/cli.mjs" compile "$config_file"
+    case config-v3-check
+        set -l config_file $argv[1]
+        test -n "$config_file"; or set config_file "$SPACEWRIGHT_CONFIG_ROOT/config.v3.json"
+        command node "$package_root/configurator/cli.mjs" validate "$config_file"
+    case config-v3-compile
+        set -l config_file $argv[1]
+        test -n "$config_file"; or set config_file "$SPACEWRIGHT_CONFIG_ROOT/config.v3.json"
+        command node "$package_root/configurator/cli.mjs" compile "$config_file" "--state-root=$SPACEWRIGHT_STATE_ROOT"
     case config-compile
         set -l config_file "$SPACEWRIGHT_CONFIG_ROOT/config.v2.json"
+        if test -r "$SPACEWRIGHT_CONFIG_ROOT/config.v3.json"
+            set config_file "$SPACEWRIGHT_CONFIG_ROOT/config.v3.json"
+        end
         set -l runtime_file "$SPACEWRIGHT_CONFIG_ROOT/generated/runtime.json"
-        command node "$package_root/configurator/cli.mjs" compile-to "$config_file" "$runtime_file"
+        command node "$package_root/configurator/cli.mjs" compile-to "$config_file" "$runtime_file" "--state-root=$SPACEWRIGHT_STATE_ROOT"
         and printf 'compiled=%s\n' "$runtime_file"
     case config-status
         spacewright_config_status
     case config-diff
         set -l config_file "$SPACEWRIGHT_CONFIG_ROOT/config.v2.json"
+        if test -r "$SPACEWRIGHT_CONFIG_ROOT/config.v3.json"
+            set config_file "$SPACEWRIGHT_CONFIG_ROOT/config.v3.json"
+        end
         set -l runtime_file "$SPACEWRIGHT_CONFIG_ROOT/generated/runtime.json"
         if not test -r "$config_file"
-            echo 'spacewright: config-diff requires config.v2.json' >&2
+            echo 'spacewright: config-diff requires config.v2.json or config.v3.json' >&2
             exit 1
         end
         if not command -q node
@@ -46,7 +60,7 @@ switch "$command_name"
             exit 1
         end
         set -l candidate (mktemp -t spacewright-runtime.XXXXXX)
-        command node "$package_root/configurator/cli.mjs" compile-to "$config_file" "$candidate"
+        command node "$package_root/configurator/cli.mjs" compile-to "$config_file" "$candidate" "--state-root=$SPACEWRIGHT_STATE_ROOT"
         or exit 1
         diff -u "$runtime_file" "$candidate"
         set -l diff_status $status
@@ -57,13 +71,16 @@ switch "$command_name"
             exit "$diff_status"
         end
     case config-explain
-        if test (count $argv) -ne 2
-            echo 'usage: spacewright config-explain <workspace> <solo|wide|tall>' >&2
+        if test (count $argv) -lt 1
+            echo 'usage: spacewright config-explain <workspace> [solo|wide|tall]' >&2
             exit 2
         end
         set -l config_file "$SPACEWRIGHT_CONFIG_ROOT/config.v2.json"
         set -l runtime_id
-        if test -r "$config_file"
+        if test -r "$SPACEWRIGHT_CONFIG_ROOT/config.v3.json"
+            set -l resolved (spacewright_config_effective | string collect)
+            set runtime_id (printf '%s\n' "$resolved" | jq -r --arg workspace "$argv[1]" 'first(.workspaces | to_entries[] | select(.value.ui.workspace_id == $workspace) | .key) // empty')
+        else if test -r "$config_file"
             set runtime_id (jq -r --arg workspace "$argv[1]" --arg mode "$argv[2]" '.workspaces[$workspace].variants[$mode] as $variant | if $variant then ($variant.command // ("spacewright_" + $workspace + "_" + $mode)) else empty end' "$config_file")
         else
             set runtime_id (spacewright_config_effective | jq -r --arg workspace "$argv[1]" --arg mode "$argv[2]" 'first(.workspaces | to_entries[] | select(.value.ui.workspace_id == $workspace and .value.ui.mode == $mode) | .key) // empty')
@@ -132,16 +149,32 @@ switch "$command_name"
         end
         command node "$package_root/configurator/mode-transition.mjs" run "$mode" \
             "--package-root=$package_root" \
+            "--config-root=$SPACEWRIGHT_CONFIG_ROOT" \
             "--state-root=$SPACEWRIGHT_STATE_ROOT"
     case workspace
-        if test (count $argv) -lt 2
-            echo 'usage: spacewright workspace <workspace> <solo|wide|tall> [--dry-run]' >&2
+        if test (count $argv) -lt 1
+            echo 'usage: spacewright workspace <workspace> [solo|wide|tall] [--dry-run]' >&2
             exit 2
         end
         set -l workspace_id $argv[1]
         set -l mode $argv[2]
+        if test -r "$SPACEWRIGHT_CONFIG_ROOT/config.v3.json"; and not contains -- "$mode" solo wide tall
+            set -l setup_command activate
+            if contains -- --dry-run $argv
+                set setup_command status
+            end
+            set -l activation (command node "$package_root/configurator/setup-cli.mjs" "$setup_command" \
+                    "--config-root=$SPACEWRIGHT_CONFIG_ROOT" \
+                    "--state-root=$SPACEWRIGHT_STATE_ROOT")
+            or exit 1
+            if test "$setup_command" = status; and test (printf '%s\n' "$activation" | jq -r '.ready') != true
+                echo 'spacewright: current hardware/display setup has not been confirmed' >&2
+                exit 1
+            end
+            set mode (printf '%s\n' "$activation" | jq -r '.compatibilityMode')
+        end
         if not string match -qr '^[a-z][a-z0-9_]*$' -- "$workspace_id"; or not contains -- "$mode" solo wide tall
-            echo 'usage: spacewright workspace <workspace> <solo|wide|tall> [--dry-run]' >&2
+            echo 'usage: spacewright workspace <workspace> [solo|wide|tall] [--dry-run]' >&2
             exit 2
         end
         set -l effective_config (spacewright_config_effective | string collect)
@@ -162,6 +195,7 @@ switch "$command_name"
         command node "$package_root/configurator/mode-transition.mjs" workspace "$workspace_id" "$mode" \
             "--label=$workspace_label · $mode" \
             "--package-root=$package_root" \
+            "--config-root=$SPACEWRIGHT_CONFIG_ROOT" \
             "--state-root=$SPACEWRIGHT_STATE_ROOT"
     case mode-cancel
         command node "$package_root/configurator/mode-transition.mjs" cancel \
@@ -194,22 +228,29 @@ switch "$command_name"
                 display_apply_tall_left
         end
     case focus
-        if test (count $argv) -lt 2
-            echo 'usage: spacewright focus <workspace> <solo|wide|tall> [--dry-run]' >&2
+        if test (count $argv) -lt 1
+            echo 'usage: spacewright focus <workspace> [solo|wide|tall] [--dry-run]' >&2
             exit 2
         end
         set -l workspace_id $argv[1]
         set -l mode $argv[2]
-        if not contains -- "$mode" solo wide tall
+        set -l label
+        if test -r "$SPACEWRIGHT_CONFIG_ROOT/config.v3.json"
+            set -l effective (spacewright_config_effective | string collect)
+            set label (printf '%s\n' "$effective" | jq -r --arg workspace "$workspace_id" 'first(.workspaces[]? | select(.ui.workspace_id == $workspace) | .label) // empty')
+            set mode (printf '%s\n' "$effective" | jq -r '.active_setup // empty')
+        else if not contains -- "$mode" solo wide tall
             echo 'spacewright: focus mode must be solo, wide, or tall' >&2
             exit 2
         end
         set -l config_file "$SPACEWRIGHT_CONFIG_ROOT/config.v2.json"
-        if not test -r "$config_file"
+        if test -z "$label"; and not test -r "$config_file"
             echo 'spacewright: focus requires config.v2.json' >&2
             exit 1
         end
-        set -l label (jq -r --arg workspace "$workspace_id" --arg mode "$mode" '.workspaces[$workspace] as $w | $w.variants[$mode] as $v | if ($w and $v) then ($v.spaceLabel // ($w.spaceLabel + "_" + $mode)) else empty end' "$config_file")
+        if test -z "$label"
+            set label (jq -r --arg workspace "$workspace_id" --arg mode "$mode" '.workspaces[$workspace] as $w | $w.variants[$mode] as $v | if ($w and $v) then ($v.spaceLabel // ($w.spaceLabel + "_" + $mode)) else empty end' "$config_file")
+        end
         if test -z "$label"
             echo "spacewright: no configured variant for $workspace_id $mode" >&2
             exit 1
@@ -252,6 +293,21 @@ switch "$command_name"
         set -l config_file $argv[1]
         test -n "$config_file"; or set config_file (spacewright_config_user_file)
         command node "$package_root/configurator/cli.mjs" migrate-v1 "$config_file"
+    case config-migrate-v2
+        set -l config_file $argv[1]
+        test -n "$config_file"; or set config_file "$SPACEWRIGHT_CONFIG_ROOT/config.v2.json"
+        command node "$package_root/configurator/cli.mjs" migrate-v2 "$config_file"
+    case setup
+        set -l setup_command $argv[1]
+        contains -- "$setup_command" detect status confirm activate; or begin
+            echo 'usage: spacewright setup <detect|status|confirm|activate> [hardware-profile] [setup]' >&2
+            exit 2
+        end
+        set -e argv[1]
+        command node "$package_root/configurator/setup-cli.mjs" "$setup_command" \
+            "--config-root=$SPACEWRIGHT_CONFIG_ROOT" \
+            "--state-root=$SPACEWRIGHT_STATE_ROOT" \
+            $argv
     case configure
         if not command -q node
             echo 'spacewright configure requires Node.js 20 or newer' >&2
@@ -267,7 +323,9 @@ switch "$command_name"
             set -e argv[1..2]
             set -l runtime_id "$workspace_id"_"$mode"
             set -l config_file "$SPACEWRIGHT_CONFIG_ROOT/config.v2.json"
-            if test -r "$config_file"
+            if test -r "$SPACEWRIGHT_CONFIG_ROOT/config.v3.json"
+                set runtime_id (spacewright_config_effective | jq -r --arg workspace "$workspace_id" --arg mode "$mode" 'first(.workspaces | to_entries[] | select(.value.ui.workspace_id == $workspace and .value.ui.mode == $mode) | .key) // empty')
+            else if test -r "$config_file"
                 set runtime_id (jq -r --arg workspace "$workspace_id" --arg mode "$mode" '.workspaces[$workspace].variants[$mode] as $variant | if $variant then ($variant.command // ("spacewright_" + $workspace + "_" + $mode)) else empty end' "$config_file")
             end
             if test -z "$runtime_id"
@@ -293,7 +351,9 @@ switch "$command_name"
             '  config-plan <target>    print a read-only workspace or mode plan' \
             '  config-v2-check [file]  validate a portable v2 configuration' \
             '  config-v2-compile [file] compile v2 to a normalized runtime plan' \
-            '  config-compile          atomically compile v2 for normal runtime use' \
+            '  config-v3-check [file]  validate a hardware-aware v3 configuration' \
+            '  config-v3-compile [file] compile the confirmed v3 setup' \
+            '  config-compile          atomically compile the active portable configuration' \
             '  config-status           report source and compiled runtime freshness' \
             '  config-diff             compare compiled runtime with current v2 source' \
             '  config-explain ID MODE  explain one compiled workspace plan' \
@@ -305,7 +365,8 @@ switch "$command_name"
             '  apply TARGET [MODE]      execute a live plan; --dry-run only previews' \
             '  recover RUN_ID           restore matched windows; --dry-run only previews' \
             '  mode MODE                switch display and workspace with progress feedback' \
-            '  workspace ID MODE        arrange one workspace with progress feedback' \
+            '  workspace ID [MODE]      arrange one workspace; v3 resolves configuration automatically' \
+            '  setup COMMAND            detect, confirm, activate, or report the current display setup' \
             '  mode-cancel              cancel the active mode transition' \
             '  mode-status              show the latest mode transition state' \
             '  transition-history       show recent mode and workspace transitions' \
@@ -315,6 +376,7 @@ switch "$command_name"
             '  finalize MODE [--dry-run] collect Sandbox, clean, order, and restore focus' \
             '  postprocess HOOK [--dry-run] run a closed reconciliation hook' \
             '  config-migrate-v1 [file] print a v2 migration without writing' \
+            '  config-migrate-v2 [file] print a hardware-aware v3 migration without writing' \
             '  configure               open the local Web configurator' \
             '  run <workspace>         run a compiled workspace entry' \
             '  doctor                  run read-only dependency and config checks' \

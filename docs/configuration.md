@@ -2,6 +2,18 @@
 
 ## Configuration versions
 
+Version 3 is the preferred hardware-aware format:
+
+```text
+$SPACEWRIGHT_CONFIG_ROOT/config.v3.json
+```
+
+It adds shared hardware-family profiles, confirmed display setups, Sidecar
+classification, and named workspace configurations. When v3 exists it takes
+precedence over v2. See [Hardware profiles and display setups](hardware-profiles.md)
+and the authoritative
+[`spacewright-v3.schema.json`](../schemas/spacewright-v3.schema.json).
+
 The Web Configurator writes the portable v2 document to:
 
 ```text
@@ -15,7 +27,8 @@ $SPACEWRIGHT_CONFIG_ROOT/generated/runtime.json
 ```
 
 The generated document records the SHA-256 of the canonical portable source.
-Fish uses it only while that digest matches `config.v2.json`, so it never
+Fish uses it only while that digest matches the active `config.v3.json` or
+`config.v2.json`, so it never
 silently runs a stale plan. Normal workspace commands therefore do not require
 Node.js after configuration has been compiled. `spacewright config-compile`
 performs the same compilation without opening the Web Configurator.
@@ -66,7 +79,8 @@ $SPACEWRIGHT_CONFIG_ROOT/config.json
 
 Objects merge recursively and user arrays replace package arrays. This lets a
 consumer override one app or workspace without copying unrelated defaults.
-If `config.v2.json` is present it takes precedence over this v1 merge path.
+If `config.v3.json` is present it takes precedence over v2; otherwise
+`config.v2.json` takes precedence over this v1 merge path.
 
 ## Read-Only Commands
 
@@ -166,6 +180,11 @@ coalescing, and a safety deadline while keeping execution scoped to the target
 workspace. `spacewright run` remains the lower-level stable entry used inside
 that controller and by non-interactive integrations.
 
+Under v3, `spacewright workspace <workspace-id>` is the normal form. It detects
+the current topology, activates the confirmed setup, and derives the compatible
+mode plus named workspace configuration automatically. The explicit mode form
+remains available for v2 compatibility.
+
 Runner names are also a closed enum. Generic primary/helper workspaces use the
 shared configured runner. Office and recovery-heavy GTD workspaces use trusted
 Fish adapters that consume configured labels, display roles, apps, layouts,
@@ -219,6 +238,9 @@ workspace_plan --json coding_editor_wide
 workspace_verify --json coding_editor_wide
 workspace_verify --all --json
 spacewright config-compile
+spacewright config-v3-check
+spacewright setup detect
+spacewright setup status
 spacewright config-status
 spacewright config-diff
 spacewright config-explain coding wide

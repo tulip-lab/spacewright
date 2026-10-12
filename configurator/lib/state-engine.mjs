@@ -444,7 +444,24 @@ export function buildExecutionPlan(snapshot, desired, comparison, options = {}) 
   for (const item of comparison.drifts.filter((entry) => entry.code === 'empty_space_cleanup_required')) actions.push({ type: 'remove_empty_space', spaceUuid: item.spaceUuid, spaceIndex: item.spaceIndex, display: item.display, label: item.label });
   if (desired.target.kind !== 'workspace' && (actions.some((action) => ['ensure_space', 'recover_space_label', 'move_space'].includes(action.type)) || comparison.drifts.some((item) => item.code === 'space_order_mismatch'))) actions.push({ type: 'order_spaces', mode: desired.target.mode });
   const blockers = comparison.drifts.filter((item) => item.severity === 'blocker');
-  const affectedWorkspaceIds = new Set(comparison.drifts.filter((item) => item.severity === 'change' && item.workspaceId).map((item) => item.workspaceId));
+  const directlyAffectedWorkspaceIds = new Set(comparison.drifts.filter((item) => item.severity === 'change' && item.workspaceId).map((item) => item.workspaceId));
+  const affectedWorkspaceIds = new Set(directlyAffectedWorkspaceIds);
+  if (desired.target.kind === 'mode') {
+    let expanded = true;
+    while (expanded) {
+      expanded = false;
+      for (const match of comparison.matches) {
+        if (!affectedWorkspaceIds.has(match.workspaceId) || !match.supersededByWorkspaceId || affectedWorkspaceIds.has(match.supersededByWorkspaceId)) continue;
+        affectedWorkspaceIds.add(match.supersededByWorkspaceId);
+        expanded = true;
+      }
+    }
+    for (const workspace of desired.workspaces) {
+      if (affectedWorkspaceIds.has(workspace.workspaceId) && !directlyAffectedWorkspaceIds.has(workspace.workspaceId)) {
+        actions.push({ type: 'reapply_workspace_dependency', workspaceId: workspace.workspaceId, reason: 'shared_window_owner' });
+      }
+    }
+  }
   const affectedWorkspaces = desired.workspaces.filter((workspace) => affectedWorkspaceIds.has(workspace.workspaceId));
   const needsFinalization = affectedWorkspaces.length > 0 || actions.some((action) => ['remove_empty_space', 'order_spaces'].includes(action.type));
   if (needsFinalization) actions.push({ type: 'finalize_mode', mode: desired.target.mode });

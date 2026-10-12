@@ -826,6 +826,8 @@ function work_smoke_finalization --description "Run fixture-only workspace final
             if set -q WORKSPACE_TEST_SOURCE_ROOT
                 set -l child_commands \
                     'set -e WORKSPACE_SKIP_FINALIZATION' \
+                    'set -gx WORKSPACE_SKIP_SPACE_ORDER 0' \
+                    'set -gx WORKSPACE_SKIP_UNLABELED_CLEANUP 0' \
                     "set -gx SPACEWRIGHT_ROOT \"$WORKSPACE_TEST_SOURCE_ROOT\"" \
                     "source \"$WORKSPACE_TEST_SOURCE_ROOT/common/spacewright_paths.fish\"" \
                     "source \"$WORKSPACE_TEST_SOURCE_ROOT/common/work_reload.fish\"" \
@@ -851,7 +853,7 @@ function work_smoke_finalization --description "Run fixture-only workspace final
                 set -l child_command (string join '; ' -- $child_commands)
                 fish -lc "$child_command"
             else
-                fish -lc "set -e WORKSPACE_SKIP_FINALIZATION; work_reload >/dev/null; work_smoke_finalization $case_name"
+                fish -lc "set -e WORKSPACE_SKIP_FINALIZATION; set -gx WORKSPACE_SKIP_SPACE_ORDER 0; set -gx WORKSPACE_SKIP_UNLABELED_CLEANUP 0; work_reload >/dev/null; work_smoke_finalization $case_name"
             end
             or set failed 1
         end

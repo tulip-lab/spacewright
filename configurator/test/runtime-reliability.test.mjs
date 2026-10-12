@@ -35,6 +35,7 @@ test('window moves retry until every requested window is confirmed', () => {
 test('unlabeled cleanup uses authoritative windows and keeps the last space on a display', () => {
   const output = fish(`
     source lib/spacewright/common/workspace_cleanup_spaces.fish
+    set -g WORKSPACE_SKIP_UNLABELED_CLEANUP 0
     set -g destroyed
     function sleep; end
     function ws_jq; command jq $argv; end

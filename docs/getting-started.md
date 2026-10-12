@@ -65,17 +65,17 @@ Complete these pages for the current user:
    can appear under more than one name.
 2. **AI Routing** — optionally select the provider used by each semantic AI
    role and add mode-specific overrides only where needed.
-3. **Display roles** — create portable roles such as `primary`, `wide`, or
-   `tall`, discover connected displays, and bind each role to the correct
-   display on this Mac. Display UUID bindings are machine-local and must be
-   repeated on another Mac.
+3. **Hardware & Setups** — confirm the automatically detected MacBook, Mac mini,
+   or other-Mac profile and the current display setup. Mark an iPad display as
+   Sidecar when needed. Display UUID bindings and topology confirmations are
+   machine-local and must be repeated on another Mac.
 4. **Workspaces** — define stable workspace IDs, Space labels, required and
    optional windows, and the selector that identifies each window.
-5. **Layouts** — arrange windows for Solo, Wide, and Tall variants. A required
-   window must appear in every applicable layout; optional windows may be
-   omitted.
-6. **Modes** — place workspaces in their desired order on each display role.
-   This lane order controls both execution and final Space ordering.
+5. **Workspace configurations** — create reusable laptop, wide, tall, Sidecar,
+   or other named layouts and choose the configuration used by each hardware
+   setup. A required window must appear in every applicable layout.
+6. **Display setup lanes** — place workspaces in their desired order on each
+   display role. This lane order controls both execution and final Space ordering.
 7. **Shortcuts** — optionally create structured SpaceWright shortcuts. Saving
    generates a fragment; the user must explicitly include that fragment from
    their own skhd configuration.
@@ -84,7 +84,7 @@ Complete these pages for the current user:
 Portable configuration is stored at:
 
 ```text
-~/.config/spacewright/config.v2.json
+~/.config/spacewright/config.v3.json
 ```
 
 The compiled runtime is stored below the same configuration directory. Local
@@ -96,7 +96,8 @@ under the user's state directory and should not be copied between Macs.
 Run the read-only checks after saving:
 
 ```sh
-spacewright config-v2-check
+spacewright config-v3-check
+spacewright setup status
 spacewright config-status
 spacewright doctor
 spacewright inspect
@@ -114,8 +115,8 @@ Preview one configured workspace by replacing the placeholders with IDs from
 the configurator:
 
 ```sh
-spacewright plan <workspace-id> <solo|wide|tall>
-spacewright workspace <workspace-id> <solo|wide|tall> --dry-run
+spacewright plan <workspace-id>
+spacewright workspace <workspace-id> --dry-run
 ```
 
 Do not continue to a live command while a preview reports an unavailable
@@ -136,7 +137,7 @@ spacewright mode tall
 Or arrange one workspace:
 
 ```sh
-spacewright workspace <workspace-id> <solo|wide|tall>
+spacewright workspace <workspace-id>
 ```
 
 The progress banner reports the active phase. Use these commands if a run needs
@@ -169,7 +170,7 @@ brew uninstall spacewright
 ```
 
 Homebrew upgrades and uninstallations do not remove personal configuration or
-machine-local state. Back up `~/.config/spacewright/config.v2.json` separately
+machine-local state. Back up `~/.config/spacewright/config.v3.json` separately
 if the configuration should be retained outside this Mac.
 
 ## Troubleshooting order

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
@@ -12,6 +13,11 @@ import { writeTransitionRecord } from '../lib/transition-history.mjs';
 const packageRoot = new URL('../..', import.meta.url).pathname;
 const token = 'configuration-round-trip-token';
 const execFileAsync = promisify(execFile);
+const systemChrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+
+async function launchBrowser() {
+  return chromium.launch({ headless: true, ...(existsSync(systemChrome) ? { executablePath: systemChrome } : {}) });
+}
 
 async function startServer(configRoot, stateRoot, extraEnv = {}) {
   const skhdFile = join(stateRoot, 'test.skhdrc');
@@ -95,7 +101,7 @@ esac
   const serverEnv = { PATH: `${fakeBin}:${process.env.PATH}` };
 
   let service = await startServer(configRoot, stateRoot, serverEnv);
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   context.after(async () => {
     await browser.close();
