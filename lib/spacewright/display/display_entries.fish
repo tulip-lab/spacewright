@@ -45,6 +45,10 @@ function display_apply_profile_mode --description "Apply a display profile, relo
         return 2
     end
 
+    # Consumer profiles retain the public environment contract. Resolve it from
+    # the authoritative machine binding for this invocation, so an inherited
+    # legacy Fish UUID cannot override a newly confirmed hardware setup.
+    set -lx WORKSPACE_PRIMARY_DISPLAY_UUID (get_workspace_primary_display_uuid)
     $profile_command
     or return $status
 

@@ -33,6 +33,7 @@ function normalizedWindow(window) {
     display: number(window.display),
     space: number(window.space),
     frame: frame(window.frame),
+    frameVerified:window.frameVerified!==false,
     movable: truthy(window['can-move']),
     resizable: truthy(window['can-resize']),
     visible: window['is-visible'] !== false,
@@ -214,6 +215,7 @@ function normalizedFrame(windowFrame, displayFrame) {
 }
 
 export function geometryMatches(window, display, layout, tolerance = 2) {
+  if(window.frameVerified===false)return {comparable:false,matches:null,reason:'native window geometry unavailable'};
   if (layout?.move_abs || layout?.resize_abs) {
     const expected = gridFrame(display,layout.grid) || {...window.frame};
     if (layout.move_abs) [expected.x, expected.y] = layout.move_abs.replace(/^abs:/,'').split(':').map(Number);

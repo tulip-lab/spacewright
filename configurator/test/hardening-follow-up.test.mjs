@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { starterConfig, compileV2 } from '../lib/config-v2.mjs';
 import { normalizeSnapshot, buildDesiredState, compareState, buildExecutionPlan,geometryMatches } from '../lib/state-engine.mjs';
 import { gridFrame } from '../lib/grid-geometry.mjs';
-import { discoverGridGeometry } from '../lib/discovery.mjs';
+import { discoverGridGeometry,applyNativeWindowFrames } from '../lib/discovery.mjs';
 import { executePinnedWorkspace,executePinnedCleanup,executePinnedOrder } from '../lib/pinned-executor.mjs';
 import { journalMutation,operationRecords } from '../lib/operation-journal.mjs';
 import { acquireExecution } from '../lib/execution-coordinator.mjs';
@@ -19,6 +19,25 @@ import { withConfigurationWrite,stableRead,atomicText,generationDocument } from 
 import { spawn } from 'node:child_process';
 const machine = {displayBindings:{primary:'D'}};
 const raw = () => ({displays:[{index:1,uuid:'D',frame:{x:0,y:0,w:1000,h:800}}], spaces:[{index:1,uuid:'S',display:1,label:'coding_solo'},{index:2,uuid:'O',display:1,label:'custom_wide'},{index:3,uuid:'USER',display:1,label:'personal'}],windows:[{id:10,pid:100,app:'Code',display:1,space:1,frame:{x:0,y:0,w:1000,h:800},'can-move':true,'can-resize':true}]});
+test('display profiles receive the confirmed machine UUID instead of an inherited legacy UUID',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'spacewright-primary-contract-'));
+  try {
+    await writeFile(join(directory,'machine.json'),JSON.stringify({displayBindings:{primary:'CURRENT'}}));
+    const output=execFileSync('fish',['--no-config','-c',`
+      source conf.d/spacewright.fish
+      set -gx SPACEWRIGHT_STATE_ROOT "$TEST_MACHINE_ROOT"
+      set -gx WORKSPACE_PRIMARY_DISPLAY_UUID STALE
+      function workspace_execution_owned; return 0; end
+      function fixture_profile; echo received=$WORKSPACE_PRIMARY_DISPLAY_UUID; end
+      function display_reload; return 0; end
+      function work_reload; return 0; end
+      function display_verify_mode; return 0; end
+      display_apply_profile_mode fixture_profile tall
+      echo inherited=$WORKSPACE_PRIMARY_DISPLAY_UUID
+    `],{encoding:'utf8',env:{...process.env,TEST_MACHINE_ROOT:directory}});
+    assert.match(output,/received=CURRENT/);assert.match(output,/inherited=STALE/);
+  }finally{await rm(directory,{recursive:true,force:true});}
+});
 function make(value=raw(), config=starterConfig(), target={kind:'workspace',id:'coding',mode:'solo'}) {
   config.workspaces.coding.variants.wide.spaceLabel='custom_wide';
   const snapshot=normalizeSnapshot(value,machine), desired=buildDesiredState(config,compileV2(config),target,snapshot);
@@ -59,16 +78,38 @@ test('tall percentages remain consumer configuration rather than hardcoded 49/51
     assert.deepEqual(desired.workspaces[0].layout.map(l=>l.grid),[`100:1:0:0:1:${percent}`,`100:1:0:${percent}:1:${100-percent}`]);
   }
 });
+test('overflowing adapter grids compare the same edge-clamped frame that yabai applies',()=>{
+  const display={frame:{x:0,y:0,w:1620,h:2025},gridGeometry:{frame:{x:0,y:31,w:1620,h:1994},padding:{top:4,bottom:4,left:4,right:4},gap:4}};
+  assert.deepEqual(gridFrame(display,'20:10:0:15:6:6'),gridFrame(display,'20:10:0:15:6:5'));
+  const expected=gridFrame(display,'20:10:0:15:6:6');
+  assert.ok(expected);assert.equal(geometryMatches({frame:expected},display,{grid:'20:10:0:15:6:6'}).matches,true);
+  assert.deepEqual(gridFrame(display,'2:2:5:5:0:0'),gridFrame(display,'2:2:1:1:1:1'));
+  assert.equal(gridFrame(display,'0:2:0:0:1:1'),null);
+  assert.equal(gridFrame(display,'2:2:-1:0:1:1'),null);
+});
+test('native bounds replace stale yabai frames only for an exact unique ID and owner PID',()=>{
+  const stale={id:10,pid:100,frame:{x:154,y:31,w:1612,h:971},'can-move':true};
+  const native={id:10,pid:100,frame:{x:4,y:35,w:1612,h:971}};
+  const good=applyNativeWindowFrames([stale],[native]);
+  assert.deepEqual(good.windows[0].frame,native.frame);assert.deepEqual(good.missing,[]);
+  for(const frames of [[],[{...native,pid:101}],[native,native],[{...native,frame:{...native.frame,h:NaN}}]]) {
+    const result=applyNativeWindowFrames([stale],frames);assert.deepEqual(result.missing,['window_geometry:10']);assert.deepEqual(result.windows[0].frame,stale.frame);
+  }
+  const unmapped=applyNativeWindowFrames([{...stale,'can-move':false}],[]);
+  assert.deepEqual(unmapped.missing,[]);assert.equal(unmapped.windows[0].frameVerified,false);
+  assert.equal(geometryMatches(unmapped.windows[0],{frame:{x:0,y:0,w:1620,h:2025}},{grid:'1:1:0:0:1:1'}).comparable,false);
+  assert.deepEqual(applyNativeWindowFrames([stale],null).windows,[stale]);
+});
 test('native grid discovery resolves the exact UUID and active Space and rejects failed padding queries',async()=>{
   const displays=[{id:1,index:1,uuid:'D',frame:{x:0,y:0,w:1620,h:2025}}],spaces=[{index:4,display:1,'is-visible':true}];
   const calls=[];
-  const run=async(exe,args)=>{calls.push([exe,args]);return {code:0,stdout:args[0]==='-m'?(args.at(-1)==='external_bar'?'off:0:0':'4'):JSON.stringify([{uuid:'D',frame:{x:0,y:31,w:1620,h:1994}}])};};
+  const run=async(exe,args)=>{calls.push([exe,args]);return {code:0,stdout:args[0]==='-m'?(args.at(-1)==='external_bar'?'off:0:0':'4'):JSON.stringify({displays:[{uuid:'D',frame:{x:0,y:31,w:1620,h:1994}}],windows:[]})};};
   const result=await discoverGridGeometry(displays,spaces,{executable:'fixture-yabai',deadline:Date.now()+5000,run});
   assert.equal(gridFrame(result[0],'100:3:0:0:2:49').h,971.18);
   assert.equal(calls.filter(([,a])=>a.includes('--space')).length,5);
   assert.ok(calls.filter(([,a])=>a.includes('--space')).every(([,a])=>a[3]==='4'));
   await assert.rejects(discoverGridGeometry(displays,spaces,{executable:'fixture-yabai',deadline:Date.now()+5000,run:async(exe,args)=>args.at(-1)==='window_gap'?{code:1,stderr:'query unavailable'}:run(exe,args)}),/grid configuration query failed/);
-  await assert.rejects(discoverGridGeometry(displays,spaces,{deadline:Date.now()+5000,run:async()=>({code:0,stdout:'[]'})}),/invalid external bar geometry/);
+  await assert.rejects(discoverGridGeometry(displays,spaces,{deadline:Date.now()+5000,run:async()=>({code:0,stdout:'[]'})}),/native display geometry is invalid/);
 });
 test('workspace cleanup names only its configured opposite UUID, including shared runtime ids',()=>{
   const config=starterConfig();config.workspaces.coding.variants.solo.command='shared';config.workspaces.coding.variants.wide.command='shared';

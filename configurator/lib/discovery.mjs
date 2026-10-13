@@ -4,14 +4,18 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 const packageRoot=fileURLToPath(new URL('../..',import.meta.url));
-export async function discoverGridGeometry(displays,spaces,{executable='yabai',deadline=Date.now()+5000,signal,run=runBounded}={}) {
+export async function discoverGridGeometry(displays,spaces,{executable='yabai',deadline=Date.now()+5000,signal,run=runBounded,onWindowFrames=()=>{}}={}) {
   // Fixture/query providers may already supply geometry or omit native display
   // IDs. Native yabai always supplies IDs; its usable frame must be discovered.
   if(!displays.some(d=>d.id && !d.gridGeometry))return displays;
   const binary=join(packageRoot,'bin','spacewright-screen-geometry');
   const result=await run(existsSync(binary)?binary:'/usr/bin/swift',existsSync(binary)?[]:[join(packageRoot,'helpers','spacewright-screen-geometry.swift')],{deadline:Math.min(deadline,Date.now()+5000),signal});
   if(result.code)throw new Error(`usable display geometry unavailable: ${result.stderr}`);
-  const screens=JSON.parse(result.stdout);
+  const native=JSON.parse(result.stdout);
+  const screens=native.displays;
+  if(!Array.isArray(screens))throw new Error('native display geometry is invalid');
+  if(!Array.isArray(native.windows))throw new Error('native window geometry is invalid');
+  onWindowFrames(native.windows);
   const config=async args=>{
     const r=await run(executable,['-m','config',...args],{deadline:Math.min(deadline,Date.now()+3000),signal});
     if(r.code)throw new Error(`grid configuration query failed: ${r.stderr}`);
@@ -35,6 +39,21 @@ export async function discoverGridGeometry(displays,spaces,{executable='yabai',d
     return {...display,gridGeometry:{frame,padding:{top,bottom,left,right},gap}};
   }));
 }
+export function applyNativeWindowFrames(windows,frames) {
+  if(frames===null)return {windows,missing:[]}; // fixture provider without native IDs
+  const missing=[];
+  const resolved=windows.map(window=>{
+    const candidates=frames.filter(f=>Number(f.id)===Number(window.id));
+    const native=candidates.length===1 && Number(candidates[0].pid)===Number(window.pid)?candidates[0]:null;
+    const valid=native && ['x','y','w','h'].every(k=>Number.isFinite(native.frame?.[k])) && native.frame.w>=0 && native.frame.h>=0;
+    if(valid)return {...window,frame:native.frame,frameVerified:true};
+    // Noninteractive root/helper surfaces can be absent from WindowServer.
+    // Movable windows used for layout cannot silently use cached AX bounds.
+    if(window['can-move'] && !window['is-minimized'] && !window['is-native-fullscreen'])missing.push(`window_geometry:${window.id}`);
+    return {...window,frameVerified:false};
+  });
+  return {windows:resolved,missing};
+}
 export async function discoverState(machine = {}, { deadline = Date.now() + 15000, signal, executable = 'yabai' } = {}) {
   const capturedAt = new Date().toISOString();
   const query = async (...args) => {
@@ -49,7 +68,8 @@ export async function discoverState(machine = {}, { deadline = Date.now() + 1500
   const spaces = results[1].status === 'fulfilled' ? results[1].value : [];
   let windows = results[2].status === 'fulfilled' ? results[2].value : [];
   const missingQueries = results.slice(0, 2).flatMap((r, i) => r.status === 'rejected' ? [i ? 'spaces' : 'displays'] : []);
-  try { displays=await discoverGridGeometry(displays,spaces,{executable,deadline,signal}); }
+  let nativeFrames=null;
+  try { displays=await discoverGridGeometry(displays,spaces,{executable,deadline,signal,onWindowFrames:value=>{nativeFrames=value;}}); }
   catch(error) { missingQueries.push(`grid_geometry:${error.message}`); }
   if (results[2].status === 'rejected') {
     windows = [];
@@ -60,6 +80,8 @@ export async function discoverState(machine = {}, { deadline = Date.now() + 1500
       windows = [...new Map(windows.map((w) => [w.id, w])).values()];
     }
   }
+  const geometry=applyNativeWindowFrames(windows,nativeFrames);
+  windows=geometry.windows;missingQueries.push(...geometry.missing);
   const pids = [...new Set(windows.map((w) => Number(w.pid)).filter((pid) => pid > 1))];
   const processes = new Map(await Promise.all(pids.map(async (pid) => [pid, await processIdentity(pid)])));
   windows = windows.map((w) => ({ ...w, processFingerprint: processes.get(Number(w.pid)) || null }));
