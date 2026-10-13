@@ -36,10 +36,56 @@ set -l release_root "$prefix/releases/$package_version"
 set -l current_link "$prefix/current"
 set -l bootstrap_link "$fish_config_root/conf.d/spacewright.fish"
 set -l cli_link "$bin_root/spacewright"
+set -l install_marker "$prefix/.spacewright-install-root"
 
 if set -q _flag_dry_run
     printf 'release=%s\ncurrent=%s\nfish_bootstrap=%s\ncli=%s\n' "$release_root" "$current_link" "$bootstrap_link" "$cli_link"
     exit 0
+end
+
+if test -L "$prefix"; or begin; test -e "$prefix"; and not test -d "$prefix"; end
+    echo "spacewright install: refusing non-directory install prefix: $prefix" >&2
+    exit 1
+end
+if test -d "$prefix"
+    if test -e "$install_marker"
+        if not test -f "$install_marker"; or test (string trim < "$install_marker") != spacewright-install-root-v1
+            echo "spacewright install: refusing unrecognized install prefix: $prefix" >&2
+            exit 1
+        end
+    else if test -n (command find "$prefix" -mindepth 1 -maxdepth 1 -print -quit | string collect)
+        echo "spacewright install: refusing to adopt non-empty unmarked prefix: $prefix" >&2
+        exit 1
+    end
+end
+
+if test -e "$current_link"; and not test -L "$current_link"
+    echo "spacewright install: refusing to replace non-symlink $current_link" >&2
+    exit 1
+end
+
+if test -e "$bootstrap_link"; or test -L "$bootstrap_link"
+    if not test -L "$bootstrap_link"
+        echo "spacewright install: refusing to replace non-symlink $bootstrap_link" >&2
+        exit 1
+    end
+    set -l existing_target (readlink "$bootstrap_link")
+    if not string match -q "$prefix/*" -- "$existing_target"
+        echo "spacewright install: refusing to replace unmanaged symlink $bootstrap_link" >&2
+        exit 1
+    end
+end
+
+if test -e "$cli_link"; or test -L "$cli_link"
+    if not test -L "$cli_link"
+        echo "spacewright install: refusing to replace non-symlink $cli_link" >&2
+        exit 1
+    end
+    set -l existing_cli_target (readlink "$cli_link")
+    if not string match -q "$prefix/*" -- "$existing_cli_target"
+        echo "spacewright install: refusing to replace unmanaged symlink $cli_link" >&2
+        exit 1
+    end
 end
 
 for required in lib config schemas conf.d bin configurator helpers package.json package-lock.json VERSION LICENSE README.md
@@ -50,7 +96,7 @@ for required in lib config schemas conf.d bin configurator helpers package.json 
 end
 
 command mkdir -p "$prefix/releases" "$fish_config_root/conf.d" "$bin_root"
-printf '%s\n' spacewright-install-root-v1 > "$prefix/.spacewright-install-root"
+printf '%s\n' spacewright-install-root-v1 > "$install_marker"
 
 if test -e "$release_root"
     if not test -f "$release_root/.spacewright-release"; or test (string trim < "$release_root/.spacewright-release") != "$package_version"
@@ -111,38 +157,12 @@ else
     or exit 1
 end
 
-if test -e "$current_link"; and not test -L "$current_link"
-    echo "spacewright install: refusing to replace non-symlink $current_link" >&2
-    exit 1
-end
 command ln -sfn "$release_root" "$current_link"
 or exit 1
 
-if test -e "$bootstrap_link"; or test -L "$bootstrap_link"
-    if not test -L "$bootstrap_link"
-        echo "spacewright install: refusing to replace non-symlink $bootstrap_link" >&2
-        exit 1
-    end
-    set -l existing_target (readlink "$bootstrap_link")
-    if not string match -q "$prefix/*" -- "$existing_target"
-        echo "spacewright install: refusing to replace unmanaged symlink $bootstrap_link" >&2
-        exit 1
-    end
-end
 command ln -sfn "$current_link/conf.d/spacewright.fish" "$bootstrap_link"
 or exit 1
 
-if test -e "$cli_link"; or test -L "$cli_link"
-    if not test -L "$cli_link"
-        echo "spacewright install: refusing to replace non-symlink $cli_link" >&2
-        exit 1
-    end
-    set -l existing_cli_target (readlink "$cli_link")
-    if not string match -q "$prefix/*" -- "$existing_cli_target"
-        echo "spacewright install: refusing to replace unmanaged symlink $cli_link" >&2
-        exit 1
-    end
-end
 command ln -sfn "$current_link/bin/spacewright" "$cli_link"
 or exit 1
 

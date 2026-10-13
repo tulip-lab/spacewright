@@ -12,6 +12,7 @@ import {
   describeDisplays,
   matchingSetups,
   selectHardwareProfile,
+  setupBindingStatus,
   topologyKey,
   validateV3
 } from './lib/config-v3.mjs';
@@ -121,6 +122,9 @@ try {
   if (command === 'detect' || command === 'status') {
     const confirmedSetup = value.machine.topologySelections?.[value.topologyKey] || null;
     const setup = confirmedSetup ? value.config.hardwareProfiles?.[value.selectedHardware.id]?.setups?.[confirmedSetup] : null;
+    const bindingStatus = confirmedSetup && value.selectedHardware.id
+      ? setupBindingStatus(value.config, value.selectedHardware.id, confirmedSetup, value.snapshot, value.machine)
+      : { ready: false, missingRoles: [] };
     print({
       mutates: false,
       hardware: value.hardware,
@@ -132,7 +136,8 @@ try {
       activeSetup: value.machine.activeSetup || null,
       compatibilityMode: setup?.compatibilityMode || null,
       workspaceConfigurations: setup?.workspaceConfigurations || {},
-      ready: Boolean(value.machine.hardwareProfileConfirmed && confirmedSetup && value.setupCandidates.includes(confirmedSetup))
+      bindingStatus,
+      ready: Boolean(value.machine.hardwareProfileConfirmed && confirmedSetup && value.setupCandidates.includes(confirmedSetup) && bindingStatus.ready)
     });
   } else if (command === 'confirm') {
     const hardwareProfileId = positional[0] || value.selectedHardware.id;
@@ -160,6 +165,8 @@ try {
     const setupId = value.machine.topologySelections?.[value.topologyKey];
     if (!value.machine.hardwareProfileConfirmed || !hardwareProfileId) throw new Error('hardware profile has not been confirmed; run “spacewright setup confirm”');
     if (!setupId || !value.setupCandidates.includes(setupId)) throw new Error(`current topology “${value.topologyKey}” has not been confirmed; run “spacewright setup confirm”`);
+    const bindingStatus = setupBindingStatus(value.config, hardwareProfileId, setupId, value.snapshot, value.machine);
+    if (!bindingStatus.ready) throw new Error(`current display roles require confirmation: ${bindingStatus.missingRoles.join(', ')}`);
     const next = { ...value.machine, activeSetup: setupId };
     await atomicWrite(machineFile, next);
     const runtime = await compileActive(value.config, next, value.hardware, value.snapshot);

@@ -23,12 +23,29 @@ function work_doctor --description "Run read-only workspace system checks"
     echo
 
     echo "===== TOOL CHECKS ====="
-    for tool in fish jq yabai displayplacer skhd
+    for tool in fish jq yabai perl
         if command -q $tool
             __work_doctor_ok "$tool found"
         else
             __work_doctor_fail "$tool missing"
         end
+    end
+    for tool in displayplacer skhd
+        if command -q $tool
+            __work_doctor_ok "$tool found (optional integration)"
+        else
+            __work_doctor_warn "$tool missing (optional integration unavailable)"
+        end
+    end
+    if command -q node
+        set -l node_major (node -p 'Number(process.versions.node.split(".")[0])' 2>/dev/null)
+        if string match -qr '^[0-9]+$' -- "$node_major"; and test "$node_major" -ge 20
+            __work_doctor_ok "Node.js found (Configurator and compilation available)"
+        else
+            __work_doctor_warn "Node.js 20 or newer is required for the Configurator and compilation"
+        end
+    else
+        __work_doctor_warn "Node.js missing (Configurator and compilation unavailable)"
     end
 
     echo
@@ -43,7 +60,7 @@ function work_doctor --description "Run read-only workspace system checks"
                 set source_version 3
             end
             set -l source_hash (__spacewright_config_sha256 "$source_file")
-            set -l compiled_hash (jq -r --argjson version "$source_version" 'select(.generated.format_version == 1 and .generated.compiler_version == 3 and .generated.source_version == $version) | .generated.source_sha256 // empty' "$runtime_file" 2>/dev/null)
+            set -l compiled_hash (jq -r --argjson version "$source_version" 'select(.generated.format_version == 1 and .generated.compiler_version == 4 and .generated.source_version == $version) | .generated.source_sha256 // empty' "$runtime_file" 2>/dev/null)
             if test -n "$source_hash"; and test "$source_hash" = "$compiled_hash"
                 __work_doctor_ok "SpaceWright configuration v$source_version and compiled runtime"
             else if command -q node

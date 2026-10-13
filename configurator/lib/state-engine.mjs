@@ -167,6 +167,7 @@ export function buildDesiredState(config, runtime, target = {}, snapshot = null)
     target: { kind: resolved.kind, id: resolved.id, mode: resolved.mode },
     workspaces,
     cleanup: clone(runtime.modes?.[`work_${resolved.mode}`]?.cleanup || []),
+    cleanupEmptySpaces: config.settings?.cleanupEmptySpaces || 'managed',
     postprocessors: clone(config.modes?.[resolved.mode]?.postprocessors || []),
     contextualApps,
     nonoccupyingGhostApps: ['word', 'powerpoint', 'input_source_pro']
@@ -275,6 +276,7 @@ function windowOccupiesSpace(window, knownGhostApps = []) {
 }
 
 function emptyCleanupSpaces(snapshot, desired, bindings) {
+  if (desired.cleanupEmptySpaces === 'none' || desired.target.kind === 'workspace') return [];
   const occupants = snapshot.windows.filter((window) => windowOccupiesSpace(window, desired.nonoccupyingGhostApps || []));
   const ordinaryCount = (space) => occupants.filter((window) => window.space === space.index).length;
   const primaryDisplay = snapshot.displays.find((display) => display.uuid === bindings.primary);
@@ -289,7 +291,9 @@ function emptyCleanupSpaces(snapshot, desired, bindings) {
       || lane[0];
     for (const space of lane) {
       if (!space.uuid || space.uuid === survivor?.uuid || ordinaryCount(space) > 0) continue;
-      if (space.label && !/^sandbox_(solo|wide|tall)$/.test(space.label)) continue;
+      const managed = /^sandbox_(solo|wide|tall)$/.test(space.label);
+      if (desired.cleanupEmptySpaces === 'managed' && !managed) continue;
+      if (space.label && !managed) continue;
       candidates.push(space);
     }
   }

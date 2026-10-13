@@ -1,5 +1,5 @@
 function gtd_apply_support_space --description "Apply a GTD support workspace for Dia windows"
-    argparse 'label=' 'display=' 'dia-layout=' dry-run -- $argv
+    argparse 'label=' 'display=' 'dia-layout=' 'dia-grid=' dry-run -- $argv
     or return 1
 
     if not set -q _flag_label; or not set -q _flag_display; or not set -q _flag_dia_layout
@@ -65,7 +65,11 @@ function gtd_apply_support_space --description "Apply a GTD support workspace fo
     end
 
     set dia_windows (printf '%s\n' "$windows_json_final" | ws_find_windows (workspace_app_name dia) --space $target_space --movable --not-native-fullscreen)
-    gtd_support_layout_dia_windows $_flag_dia_layout $dia_windows
+    if set -q _flag_dia_grid; and test -n "$_flag_dia_grid"
+        gtd_support_layout_dia_windows $_flag_dia_layout --tall-bottom-grid "$_flag_dia_grid" $dia_windows
+    else
+        gtd_support_layout_dia_windows $_flag_dia_layout $dia_windows
+    end
 
     ws_focus_space $target_space
 

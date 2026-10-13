@@ -1,6 +1,16 @@
+function __office_grid_column --description "Split one full-width grid into a left or right column"
+    set -l parts (string split : -- "$argv[1]")
+    set -l column $argv[2]
+    if test (count $parts) -ne 6; or not string match -qr '^[0-9]+$' -- $parts
+        return 1
+    end
+    echo "$parts[1]:2:$column:$parts[4]:1:$parts[6]"
+end
+
 function __office_helper_grid --description "Return the helper grid for an office workspace"
     set -l mode $argv[1]
     set -l primary_count $argv[2]
+    set -l configured_top_grid $argv[3]
 
     switch "$mode"
         case solo
@@ -8,10 +18,12 @@ function __office_helper_grid --description "Return the helper grid for an offic
         case wide
             echo 1:3:0:0:1:1
         case tall
+            set -l top_grid 2:1:0:0:1:1
+            test -n "$configured_top_grid"; and set top_grid "$configured_top_grid"
             if test "$primary_count" -le 1
-                echo 2:1:0:0:1:1
+                echo "$top_grid"
             else
-                echo 2:2:0:0:1:1
+                __office_grid_column "$top_grid" 0
             end
     end
 end
@@ -21,6 +33,13 @@ function __office_primary_grid --description "Return a document window grid for 
     set -l index $argv[2]
     set -l primary_count $argv[3]
     set -l has_helper $argv[4]
+    set -l configured_top_grid $argv[5]
+    set -l configured_bottom_grid $argv[6]
+
+    set -l top_grid 2:1:0:0:1:1
+    set -l bottom_grid 2:1:0:1:1:1
+    test -n "$configured_top_grid"; and set top_grid "$configured_top_grid"
+    test -n "$configured_bottom_grid"; and set bottom_grid "$configured_bottom_grid"
 
     if test "$has_helper" -eq 1
         switch "$mode"
@@ -66,22 +85,22 @@ function __office_primary_grid --description "Return a document window grid for 
                 end
             case tall
                 if test "$primary_count" -le 1
-                    echo 2:1:0:1:1:1
+                    echo "$bottom_grid"
                 else if test "$primary_count" -eq 2
                     switch "$index"
                         case 1
-                            echo 2:2:1:0:1:1
+                            __office_grid_column "$top_grid" 1
                         case 2
-                            echo 2:1:0:1:1:1
+                            echo "$bottom_grid"
                     end
                 else
                     switch "$index"
                         case 1
-                            echo 2:2:1:0:1:1
+                            __office_grid_column "$top_grid" 1
                         case 2
-                            echo 2:2:0:1:1:1
+                            __office_grid_column "$bottom_grid" 0
                         case 3
-                            echo 2:2:1:1:1:1
+                            __office_grid_column "$bottom_grid" 1
                     end
                 end
         end
@@ -113,20 +132,20 @@ function __office_primary_grid --description "Return a document window grid for 
                 else if test "$primary_count" -eq 2
                     switch "$index"
                         case 1
-                            echo 2:1:0:0:1:1
+                            echo "$top_grid"
                         case 2
-                            echo 2:1:0:1:1:1
+                            echo "$bottom_grid"
                     end
                 else
                     switch "$index"
                         case 1
-                            echo 2:2:0:0:1:1
+                            __office_grid_column "$top_grid" 0
                         case 2
-                            echo 2:2:1:0:1:1
+                            __office_grid_column "$top_grid" 1
                         case 3
-                            echo 2:2:0:1:1:1
+                            __office_grid_column "$bottom_grid" 0
                         case 4
-                            echo 2:2:1:1:1:1
+                            __office_grid_column "$bottom_grid" 1
                     end
                 end
         end
@@ -139,6 +158,8 @@ function office_apply_document_space --description "Apply an Office workspace fo
         'display=' \
         'primary-app-key=' \
         'helper-app-key=' \
+        'primary-grid=' \
+        'helper-grid=' \
         'mode=' \
         skip-helper \
         dry-run \
@@ -160,6 +181,10 @@ function office_apply_document_space --description "Apply an Office workspace fo
     if set -q _flag_helper_app_key; and not set -q _flag_skip_helper
         set helper_app_key $_flag_helper_app_key
     end
+    set -l configured_primary_grid ""
+    set -l configured_helper_grid ""
+    set -q _flag_primary_grid; and set configured_primary_grid "$_flag_primary_grid"
+    set -q _flag_helper_grid; and set configured_helper_grid "$_flag_helper_grid"
     set -l helper_app
     if test -n "$helper_app_key"
         set helper_app (workspace_app_name $helper_app_key)
@@ -237,14 +262,20 @@ function office_apply_document_space --description "Apply an Office workspace fo
     set -l has_helper 0
     if test -n "$helper"
         set has_helper 1
-        set -l helper_grid (__office_helper_grid $_flag_mode (count $primary_windows))
+        set -l helper_grid (__office_helper_grid $_flag_mode (count $primary_windows) "$configured_helper_grid")
         if test -n "$helper_grid"
             ws_window $helper --grid $helper_grid
         end
     end
 
     for index in (seq 1 (count $primary_windows))
-        set -l primary_grid (__office_primary_grid $_flag_mode $index (count $primary_windows) $has_helper)
+        set -l primary_grid (__office_primary_grid \
+            $_flag_mode \
+            $index \
+            (count $primary_windows) \
+            $has_helper \
+            "$configured_helper_grid" \
+            "$configured_primary_grid")
         if test -n "$primary_grid"
             ws_window $primary_windows[$index] --grid $primary_grid
         end

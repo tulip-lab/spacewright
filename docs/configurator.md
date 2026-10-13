@@ -8,8 +8,10 @@ spacewright configure
 
 The command starts a local HTTP service on a random loopback port and opens the
 editor in the default browser. It never binds to a LAN interface. A random
-session token protects every write request, and the service sends a restrictive
-Content Security Policy.
+session token protects every API request, including reads. The browser keeps it
+in tab-scoped session storage, removes it from the visible URL after loading,
+and sends it only in a request header. Host and Origin checks reject cross-site access, and the service sends
+a restrictive Content Security Policy and no-referrer policy.
 
 The configurator requires Node.js 20 or newer. Existing v1 configurations and
 ordinary Fish commands continue to work without opening the configurator.
@@ -139,6 +141,17 @@ may match app, workspace, display, layout, orientation, or one of these
 topologies: `solo`, `wide_left`, `wide_right`, `tall_left`, `tall_right`,
 `dual_external`, and `clamshell`. Actions can activate only a declared profile
 or workspace; arbitrary shell is not accepted.
+
+`settings.cleanupEmptySpaces` controls final mode cleanup. `managed` (the
+default) removes only safe empty SpaceWright Sandbox Spaces, `all` also removes
+safe empty unlabeled Spaces, and `none` disables cleanup. A single-workspace
+activation never performs global empty-Space cleanup regardless of this
+setting.
+
+`settings.tallTopPercent` controls the common boundary used by upper/lower
+tall-layout bands. It can be adjusted from Hardware & Setups for v3 or
+Automation for v2; changing one value and saving recompiles every applicable
+tall workspace while leaving full-screen and centre-crossing regions alone.
 
 The Current state and Profiles & rules pages expose a dry-run plan from a fresh
 display, Space, and window snapshot. They show blockers, changes, warnings, and

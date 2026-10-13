@@ -348,12 +348,37 @@ test('empty Sandbox and headless root surfaces become explicit finalization drif
       { id: 13, app: 'Other', title: 'Visible', role: 'AXWindow', subrole: 'AXStandardWindow', display: 2, space: 4, frame: { x: -600, y: 0, w: 600, h: 900 }, 'can-move': true, 'can-resize': true, 'is-visible': true }
     ]
   }, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
-  const { desired: state } = desired();
+  const config = starterConfig();
+  config.settings = { ...(config.settings || {}), cleanupEmptySpaces: 'all' };
+  const state = buildDesiredState(config, compileV2(config), { kind: 'mode', id: 'solo', mode: 'solo' });
   const comparison = compareState(snapshot, state, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
   assert.deepEqual(comparison.drifts.filter((item) => item.code === 'empty_space_cleanup_required').map((item) => item.spaceIndex), [3, 2]);
   const plan = buildExecutionPlan(snapshot, state, comparison);
   assert.deepEqual(plan.runnerCommands, [['finalize', 'solo']]);
   assert.ok(plan.actions.some((action) => action.type === 'finalize_mode'));
+});
+
+test('managed cleanup preserves unrelated unlabeled Spaces and workspace targets never clean globally', () => {
+  const snapshot = normalizeSnapshot({
+    displays: [{ index: 1, uuid: 'DISPLAY-PRIMARY', frame: { x: 0, y: 0, w: 1200, h: 900 }, spaces: [1, 2, 3] }],
+    spaces: [
+      { index: 1, uuid: 'SPACE-CODING', display: 1, label: 'coding_solo', type: 'float' },
+      { index: 2, uuid: 'SPACE-USER-EMPTY', display: 1, label: '', type: 'float' },
+      { index: 3, uuid: 'SPACE-SANDBOX', display: 1, label: 'sandbox_solo', type: 'float' }
+    ],
+    windows: [
+      { id: 10, app: 'Code', display: 1, space: 1, frame: { x: 0, y: 0, w: 1200, h: 900 }, 'can-move': true, 'can-resize': true, 'is-visible': true },
+      { id: 11, app: 'ChatGPT', display: 1, space: 1, frame: { x: 600, y: 0, w: 600, h: 900 }, 'can-move': true, 'can-resize': true, 'is-visible': true }
+    ]
+  }, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
+  const config = starterConfig();
+  const runtime = compileV2(config);
+  const modeState = buildDesiredState(config, runtime, { kind: 'mode', id: 'solo', mode: 'solo' });
+  const modeComparison = compareState(snapshot, modeState, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
+  assert.deepEqual(modeComparison.drifts.filter((item) => item.code === 'empty_space_cleanup_required').map((item) => item.spaceIndex), [3]);
+  const workspaceState = buildDesiredState(config, runtime, { kind: 'workspace', id: 'coding', mode: 'solo' });
+  const workspaceComparison = compareState(snapshot, workspaceState, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
+  assert.deepEqual(workspaceComparison.drifts.filter((item) => item.code === 'empty_space_cleanup_required'), []);
 });
 
 test('comparison recovers a uniquely identifiable unlabeled Space', () => {

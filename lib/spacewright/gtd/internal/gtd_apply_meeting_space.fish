@@ -47,7 +47,6 @@ function gtd_apply_meeting_space --description "Apply a GTD meeting workspace fo
     set -l teams_initial $teams_windows
 
     set -l zoom_space_fallback_used 0
-    set -l zoom_skip_final_bounds_fallback 0
     set -l zoom_fallback_window
     set -l zoom_fallback_space
     set -l zoom_fallback_display
@@ -97,7 +96,6 @@ function gtd_apply_meeting_space --description "Apply a GTD meeting workspace fo
                     set zoom_fallback_display $zoom_fallback_parts[3]
 
                     if test "$zoom_fallback_display" = "$target_display"
-                        set zoom_skip_final_bounds_fallback 1
                     else
                         set zoom_fallback_window
                         set zoom_fallback_space
@@ -118,7 +116,6 @@ function gtd_apply_meeting_space --description "Apply a GTD meeting workspace fo
                             set zoom_fallback_window
                             set zoom_fallback_space
                             set zoom_fallback_display
-                            set zoom_skip_final_bounds_fallback 0
                         end
                     end
                 end
@@ -430,22 +427,19 @@ function gtd_apply_meeting_space --description "Apply a GTD meeting workspace fo
     set -l effective_teams_grid "$_flag_teams_grid"
     if test (count $zoom_windows) -gt 0 -a (count $teams_windows) -eq 0
         set effective_zoom_grid 1:1:0:0:1:1
-        set zoom_skip_final_bounds_fallback 0
     else if test (count $teams_windows) -gt 0 -a (count $zoom_windows) -eq 0
         set effective_teams_grid 1:1:0:0:1:1
     end
 
-    if test (count $zoom_windows) -gt 0 -a -n "$effective_zoom_grid"
+    if test -n "$effective_zoom_grid"; and begin; test (count $zoom_windows) -gt 0; or test "$zoom_space_fallback_used" -eq 1; end
         if test "$zoom_space_fallback_used" -eq 1
-            if test "$zoom_skip_final_bounds_fallback" -ne 1
-                workspace_apply_app_key_grid_bounds \
-                    --app-key zoom \
-                    --display $target_display \
-                        --grid $effective_zoom_grid \
-                    --caller $_flag_label \
-                    --all-windows \
-                    --system-events-first
-            end
+            workspace_apply_app_key_grid_bounds \
+                --app-key zoom \
+                --display $target_display \
+                --grid $effective_zoom_grid \
+                --caller $_flag_label \
+                --all-windows \
+                --system-events-first
         else
             for zoom_window in $zoom_windows
                 ws_window $zoom_window --grid $effective_zoom_grid

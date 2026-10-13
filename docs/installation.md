@@ -32,7 +32,9 @@ The installer copies the tagged build to:
 
 It then atomically points `current` at that version and creates managed links
 for Fish startup and `~/.local/bin/spacewright`. Existing non-managed files or
-links are never overwritten.
+links are never overwritten. An existing non-empty installation prefix must
+already carry SpaceWright's marker; the installer refuses to adopt or later
+delete an unrelated directory.
 
 The installer does not create, replace, or remove
 `~/.config/spacewright/config.json` or `config.v2.json`. Re-running it for the same version is
@@ -54,8 +56,11 @@ spacewright configure
 These checks are read-only. A live workspace command remains a separate,
 explicit action.
 
-`spacewright doctor` distinguishes a current v2 runtime from a missing or
-stale compiled runtime. It never recompiles or changes configuration.
+`spacewright doctor` distinguishes a current v2/v3 runtime from a missing or
+stale compiled runtime. Fish, jq, yabai, and Perl are required checks. Node.js
+20+ is required for configuration and compilation; skhd and displayplacer are
+reported as optional integrations. Doctor never recompiles or changes
+configuration.
 
 ## Roll back
 
@@ -89,10 +94,11 @@ The supported public distribution is the `tulip-lab/homebrew-tap` formula:
 brew install tulip-lab/tap/spacewright
 ```
 
-The release archive contains Fish and JavaScript source rather than native
-machine code. The same archive supports Apple Silicon and Intel Macs; Homebrew
-selects compatible bottles for the `fish`, `jq`, and `node` dependencies.
-SpaceWright itself does not need separate architecture-specific artifacts.
+The release archive contains portable Fish and JavaScript source, its locked
+YAML production dependency, and Swift source for the small progress banner.
+The same archive supports Apple Silicon and Intel Macs; Homebrew selects
+compatible bottles for Fish, jq, and Node.js and compiles the banner on the
+target Mac. SpaceWright does not need separate architecture-specific archives.
 
 `yabai` is not in Homebrew Core and is deliberately not an automatic formula
 dependency. Install and configure it from its official tap before running live

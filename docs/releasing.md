@@ -6,10 +6,12 @@ SpaceWright uses a dedicated Homebrew tap rather than Homebrew Core while the
 project is in prerelease. The source repository owns validation and release
 artifacts; `tulip-lab/homebrew-tap` owns the generated formula.
 
-There is no native compilation step. The distributable is an
-architecture-independent `spacewright-<version>.tar.gz` containing the Fish
-runtime, JavaScript configurator, schemas, examples, installer, and docs. A
-tagged release also publishes `SHA256SUMS`.
+The distributable is an architecture-independent
+`spacewright-<version>.tar.gz` containing the Fish runtime, JavaScript
+configurator, schemas, examples, installer, docs, package manifests, banner
+source, and production-only Node modules. Homebrew compiles the small native
+banner helper for the target Mac during installation. A tagged release also
+publishes `SHA256SUMS`.
 
 The version authority is the root `VERSION` file. A release tag must be exactly
 `v` followed by that value. Versions containing a hyphen, such as
@@ -22,7 +24,8 @@ published as normal releases.
 
 1. rejects a tag that does not match `VERSION`;
 2. runs the complete macOS release checks;
-3. builds the architecture-independent archive and SHA-256 checksum file;
+3. installs the locked production Node dependency, builds the
+   architecture-independent archive, and writes its SHA-256 checksum file;
 4. creates the GitHub Release, or safely replaces assets when rerun;
 5. renders `Formula/spacewright.rb` with the immutable release URL and digest;
 6. commits and pushes that formula to `tulip-lab/homebrew-tap`.
@@ -120,6 +123,11 @@ set release_tag v(string trim < VERSION)
 fish scripts/package-release.fish --tag "$release_tag" --output /tmp/spacewright-dist
 shasum -a 256 -c /tmp/spacewright-dist/SHA256SUMS
 ```
+
+The release regression test extracts this archive into a clean temporary
+directory and starts the packaged Configurator from that extraction. This
+guards against accidentally relying on files or dependencies from the source
+checkout.
 
 The full release check also exercises formula rendering:
 

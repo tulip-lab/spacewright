@@ -115,10 +115,13 @@ function __workspace_run_configured_office_document --description "Run a configu
         --label (printf "%s\n" "$plan" | jq -r '.label') \
         --display (printf "%s\n" "$plan" | jq -r '.display_role') \
         --mode (printf "%s\n" "$plan" | jq -r '.runner_options.mode') \
-        --primary-app-key (__workspace_config_plan_app_key "$plan" primary)
+        --primary-app-key (__workspace_config_plan_app_key "$plan" primary) \
+        --primary-grid (__workspace_config_plan_grid "$plan" primary)
     set -l helper_app_key (__workspace_config_plan_app_key "$plan" helper)
     if test -n "$helper_app_key"
-        set -a args --helper-app-key "$helper_app_key"
+        set -a args \
+            --helper-app-key "$helper_app_key" \
+            --helper-grid (__workspace_config_plan_grid "$plan" helper)
     else
         set -a args --skip-helper
     end
@@ -135,7 +138,8 @@ function __workspace_run_configured_gtd_support --description "Run a configured 
     set -l args \
         --label (printf "%s\n" "$plan" | jq -r '.label') \
         --display (printf "%s\n" "$plan" | jq -r '.display_role') \
-        --dia-layout (printf "%s\n" "$plan" | jq -r '.runner_options.mode')
+        --dia-layout (printf "%s\n" "$plan" | jq -r '.runner_options.mode') \
+        --dia-grid (__workspace_config_plan_grid "$plan" dia)
     set -a args (__workspace_config_cleanup_specs "$plan")
     if test "$dry_run" = 1
         set -a args --dry-run

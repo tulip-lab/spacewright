@@ -8,9 +8,10 @@ import { starterConfig } from '../lib/config-v2.mjs';
 import { writeTransitionRecord } from '../lib/transition-history.mjs';
 
 const packageRoot = new URL('../..', import.meta.url).pathname;
+const integrationToken = 'integration-test-token';
 
 async function startServer(configRoot, stateRoot, skhdFile) {
-  const token = 'integration-test-token';
+  const token = integrationToken;
   const child = spawn(process.execPath, [
     join(packageRoot, 'configurator/server.mjs'),
     `--package-root=${packageRoot}`,
@@ -36,7 +37,11 @@ async function startServer(configRoot, stateRoot, skhdFile) {
 }
 
 async function json(url, path, options = {}) {
-  const response = await fetch(new URL(path.slice(1), url), options);
+  const { authenticated = true, ...fetchOptions } = options;
+  const response = await fetch(new URL(path.slice(1), url), {
+    ...fetchOptions,
+    headers: { ...(authenticated ? { 'x-spacewright-token': integrationToken } : {}), ...(fetchOptions.headers || {}) }
+  });
   return { status: response.status, body: await response.json() };
 }
 
@@ -68,6 +73,10 @@ test('local server isolates machine bindings and generated skhd output', async (
   assert.equal(initial.status, 200);
   assert.deepEqual(initial.body.machine, { version: 1, displayBindings: {} });
 
+  const crossSite = await json(url, '/api/machine', { headers: { origin: 'https://example.invalid' } });
+  assert.equal(crossSite.status, 403);
+  assert.match(crossSite.body.error, /untrusted local request origin/);
+
   const legacy = await json(url, '/api/legacy-preview');
   assert.equal(legacy.status, 200);
   assert.equal(legacy.body.config.version, 2);
@@ -75,7 +84,7 @@ test('local server isolates machine bindings and generated skhd output', async (
   assert.equal(legacy.body.writes, false);
 
   const unauthorized = await json(url, '/api/display-bindings', {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ displayBindings: {} })
+    authenticated: false, method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ displayBindings: {} })
   });
   assert.equal(unauthorized.status, 403);
 

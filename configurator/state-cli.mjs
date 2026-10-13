@@ -6,6 +6,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState, normalizeSnapshot, summarizeComparison } from './lib/state-engine.mjs';
 import { compileV2, validateV2 } from './lib/config-v2.mjs';
 import { resolveV3, validateV3 } from './lib/config-v3.mjs';
@@ -18,7 +19,7 @@ const flags = Object.fromEntries(process.argv.slice(3).filter((value) => value.s
   const [key, ...rest] = value.slice(2).split('=');
   return [key, rest.length ? rest.join('=') : true];
 }));
-const packageRoot = resolve(flags['package-root'] || join(import.meta.dirname, '..'));
+const packageRoot = resolve(flags['package-root'] || join(dirname(fileURLToPath(import.meta.url)), '..'));
 const configRoot = resolve(flags['config-root'] || process.env.SPACEWRIGHT_CONFIG_ROOT || join(process.env.HOME, '.config', 'spacewright'));
 const stateRoot = resolve(flags['state-root'] || process.env.SPACEWRIGHT_STATE_ROOT || join(process.env.HOME, '.local', 'state', 'spacewright'));
 const v2ConfigFile = join(configRoot, 'config.v2.json');
@@ -215,16 +216,32 @@ async function waitForDesktopStateToSettle(executionSteps) {
 }
 
 let activeChild = null;
+let cancellationSignal = null;
+
+function cancellationError() {
+  const error = new Error(`operation cancelled by ${cancellationSignal || 'signal'}`);
+  error.code = 'SPACEWRIGHT_CANCELLED';
+  return error;
+}
+
+function assertNotCancelled() {
+  if (cancellationSignal) throw cancellationError();
+}
+
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
+  cancellationSignal ||= signal;
   if (activeChild?.pid) try { process.kill(-activeChild.pid, 'SIGTERM'); } catch {}
-  process.exitCode = 130;
 });
 
 async function applyPlan(target) {
   const runId = `${Date.now()}-${randomBytes(4).toString('hex')}`;
   const releaseLock = await acquireLock(runId);
+  let journalFile = null;
+  let journal = null;
   try {
+    assertNotCancelled();
     const initial = await livePlan(target);
+    assertNotCancelled();
     if (initial.snapshot.unavailable) throw new Error(initial.snapshot.message);
     const expected = {
       planId: flags['expected-plan-id'],
@@ -238,8 +255,8 @@ async function applyPlan(target) {
     }
     if (!initial.plan.executable) throw new Error(`plan ${initial.plan.planId} is blocked: ${initial.plan.blockers.map((item) => item.code).join(', ')}`);
     if (!initial.plan.actions.length) return { noop: true, plan: initial.plan, comparison: initial.comparison };
-    const journalFile = join(stateRoot, 'runs', `${runId}.json`);
-    const journal = {
+    journalFile = join(stateRoot, 'runs', `${runId}.json`);
+    journal = {
       formatVersion: 2,
       runId,
       status: 'preflight',
@@ -253,6 +270,7 @@ async function applyPlan(target) {
     };
     await atomicWrite(journalFile, journal);
     const preflight = await livePlan(target);
+    assertNotCancelled();
     if (preflight.plan.configDigest !== initial.plan.configDigest || preflight.snapshot.snapshotId !== initial.snapshot.snapshotId || preflight.plan.planId !== initial.plan.planId) {
       journal.status = 'stale'; journal.exitCode = 75; journal.finishedAt = new Date().toISOString();
       journal.preflight = { snapshotId: preflight.snapshot.snapshotId, planId: preflight.plan.planId, configDigest: preflight.plan.configDigest };
@@ -263,20 +281,26 @@ async function applyPlan(target) {
     journal.status = 'running';
     await atomicWrite(journalFile, journal);
     for (const step of initial.plan.executionSteps) {
+      assertNotCancelled();
       journal.exitCode = await runCommand(step.command, journal, journalFile, step, 0);
       await atomicWrite(journalFile, journal);
+      assertNotCancelled();
       if (journal.exitCode !== 0) break;
     }
     if (journal.exitCode === 0) await waitForDesktopStateToSettle(initial.plan.executionSteps);
+    assertNotCancelled();
     let verification = await livePlan(target);
+    assertNotCancelled();
     journal.after = verification.snapshot;
     journal.verification = verification.comparison;
     if (journal.exitCode === 0 && !verification.comparison.converged && verification.plan.executable && verification.plan.actions.length && initial.plan.recovery.automaticAttempts > 0 && !flags['no-reconcile']) {
       journal.steps.push({ type: 'reconciliation', status: 'started', startedAt: new Date().toISOString(), remaining: verification.comparison.counts, planId: verification.plan.planId });
       await atomicWrite(journalFile, journal);
       for (const step of verification.plan.executionSteps) {
+        assertNotCancelled();
         journal.exitCode = await runCommand(step.command, journal, journalFile, step, 1);
         await atomicWrite(journalFile, journal);
+        assertNotCancelled();
         if (journal.exitCode !== 0) break;
       }
       if (journal.exitCode === 0) await waitForDesktopStateToSettle(verification.plan.executionSteps);
@@ -288,6 +312,16 @@ async function applyPlan(target) {
     journal.finishedAt = new Date().toISOString();
     await atomicWrite(journalFile, journal);
     return { runId, status: journal.status, exitCode: journal.exitCode, plan: initial.plan, verification: journal.verification, journal: journalFile };
+  } catch (error) {
+    if (error.code !== 'SPACEWRIGHT_CANCELLED') throw error;
+    if (journal && journalFile) {
+      const interruptedStep = [...journal.steps].reverse().find((step) => step.status === 'running' || step.exitCode === 130);
+      if (interruptedStep) interruptedStep.status = 'cancelled';
+      journal.status = 'cancelled'; journal.exitCode = 130; journal.finishedAt = new Date().toISOString();
+      journal.logs.push({ timestamp: journal.finishedAt, stream: 'system', line: error.message });
+      await atomicWrite(journalFile, journal);
+    }
+    return { runId, status: 'cancelled', exitCode: 130, journal: journalFile };
   } finally {
     await releaseLock();
   }
@@ -305,29 +339,57 @@ async function restoreRun(runId) {
     const currentIds = new Set(current.windows.map((window) => window.id));
     return { dryRun: true, mutates: false, runId, snapshotId: current.snapshotId, windowIds: [...recoverableWindowIds].filter((id) => currentIds.has(id)), missingWindowIds: [...recoverableWindowIds].filter((id) => !currentIds.has(id)) };
   }
-  const recoveryId = `${runId}-recovery`;
+  const recoveryId = `${Date.now()}-${randomBytes(4).toString('hex')}`;
   const releaseLock = await acquireLock(recoveryId);
-  const result = { runId, recoveryId, restored: [], skipped: [], failed: [] };
+  const recoveryFile = join(stateRoot, 'runs', `${recoveryId}.json`);
+  const result = { runId, recoveryId, status: 'running', restored: [], skipped: [], failed: [] };
+  const recoveryJournal = { formatVersion: 2, runId: recoveryId, kind: 'recovery', sourceRunId: runId, status: 'running', createdAt: new Date().toISOString(), steps: [], result };
   try {
+    assertNotCancelled();
+    await atomicWrite(recoveryFile, recoveryJournal);
     const current = await discover();
+    assertNotCancelled();
     if (current.unavailable) throw new Error(current.message);
     const currentSpacesByUuid = new Map(current.spaces.map((space) => [space.uuid, space]));
     const beforeSpacesByIndex = new Map(journal.before.spaces.map((space) => [space.index, space]));
     const currentWindows = new Map(current.windows.map((window) => [window.id, window]));
     for (const window of journal.before.windows.filter((item) => recoverableWindowIds.has(item.id))) {
-      if (!currentWindows.has(window.id)) { result.skipped.push({ windowId: window.id, reason: 'window no longer exists' }); continue; }
+      assertNotCancelled();
+      const step = { windowId: window.id, status: 'running', startedAt: new Date().toISOString() };
+      recoveryJournal.steps.push(step);
+      await atomicWrite(recoveryFile, recoveryJournal);
+      if (!currentWindows.has(window.id)) { step.status = 'skipped'; step.reason = 'window no longer exists'; result.skipped.push({ windowId: window.id, reason: step.reason }); await atomicWrite(recoveryFile, recoveryJournal); continue; }
       const beforeSpace = beforeSpacesByIndex.get(window.space);
       const targetSpace = beforeSpace ? currentSpacesByUuid.get(beforeSpace.uuid) : null;
-      if (!targetSpace) { result.skipped.push({ windowId: window.id, reason: 'original Space no longer exists' }); continue; }
+      if (!targetSpace) { step.status = 'skipped'; step.reason = 'original Space no longer exists'; result.skipped.push({ windowId: window.id, reason: step.reason }); await atomicWrite(recoveryFile, recoveryJournal); continue; }
       try {
         await execFileAsync('yabai', ['-m', 'window', String(window.id), '--space', String(targetSpace.index)], { timeout: 3000 });
+        assertNotCancelled();
         if (window.movable) await execFileAsync('yabai', ['-m', 'window', String(window.id), '--move', `abs:${Math.round(window.frame.x)}:${Math.round(window.frame.y)}`], { timeout: 3000 });
+        assertNotCancelled();
         if (window.resizable) await execFileAsync('yabai', ['-m', 'window', String(window.id), '--resize', `abs:${Math.round(window.frame.w)}:${Math.round(window.frame.h)}`], { timeout: 3000 });
-        result.restored.push(window.id);
-      } catch (error) { result.failed.push({ windowId: window.id, error: error.message }); }
+        step.status = 'completed'; result.restored.push(window.id);
+      } catch (error) {
+        if (error.code === 'SPACEWRIGHT_CANCELLED') throw error;
+        step.status = 'failed'; step.error = error.message; result.failed.push({ windowId: window.id, error: error.message });
+      }
+      step.finishedAt = new Date().toISOString();
+      await atomicWrite(recoveryFile, recoveryJournal);
     }
-    await atomicWrite(join(stateRoot, 'runs', `${recoveryId}.json`), { formatVersion: 1, status: result.failed.length ? 'partial' : 'completed', createdAt: new Date().toISOString(), result });
+    result.status = result.failed.length ? 'partial' : 'completed';
+    recoveryJournal.status = result.status; recoveryJournal.finishedAt = new Date().toISOString();
+    await atomicWrite(recoveryFile, recoveryJournal);
     return result;
+  } catch (error) {
+    recoveryJournal.status = error.code === 'SPACEWRIGHT_CANCELLED' ? 'cancelled' : 'failed';
+    recoveryJournal.finishedAt = new Date().toISOString();
+    recoveryJournal.error = error.message;
+    const interruptedStep = [...recoveryJournal.steps].reverse().find((step) => step.status === 'running');
+    if (interruptedStep) { interruptedStep.status = recoveryJournal.status; interruptedStep.finishedAt = recoveryJournal.finishedAt; }
+    result.status = recoveryJournal.status;
+    await atomicWrite(recoveryFile, recoveryJournal);
+    if (error.code === 'SPACEWRIGHT_CANCELLED') return result;
+    throw error;
   } finally { await releaseLock(); }
 }
 
@@ -377,13 +439,15 @@ async function main() {
     const result = await applyPlan(target);
     const label = result.status === 'completed' ? 'OK' : result.status === 'stale' ? 'STALE' : 'FAIL';
     flags.json ? print(result) : console.log(result.noop ? 'OK      target is already converged' : `${label}    run=${result.runId} journal=${result.journal}`);
-    if (!result.noop && result.status !== 'completed') process.exitCode = 1;
+    if (!result.noop && result.status !== 'completed') process.exitCode = result.exitCode || 1;
     return;
   }
   if (command === 'recover') {
     const result = await restoreRun(positional[0]);
-    flags.json ? print(result) : console.log(result.dryRun ? `DRY RUN window candidates=${result.windowIds.length} missing=${result.missingWindowIds.length}` : `${result.failed.length ? 'PARTIAL' : 'OK'}    restored=${result.restored.length} skipped=${result.skipped.length} failed=${result.failed.length}`);
-    if (!result.dryRun && result.failed.length) process.exitCode = 1;
+    const label = result.status === 'cancelled' ? 'CANCELLED' : result.failed.length ? 'PARTIAL' : 'OK';
+    flags.json ? print(result) : console.log(result.dryRun ? `DRY RUN window candidates=${result.windowIds.length} missing=${result.missingWindowIds.length}` : `${label}    restored=${result.restored.length} skipped=${result.skipped.length} failed=${result.failed.length}`);
+    if (!result.dryRun && result.status === 'cancelled') process.exitCode = 130;
+    else if (!result.dryRun && result.failed.length) process.exitCode = 1;
     return;
   }
   console.log([

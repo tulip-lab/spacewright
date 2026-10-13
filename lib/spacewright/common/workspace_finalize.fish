@@ -40,8 +40,8 @@ function workspace_space_occupant_windows_json --description "Return non-sticky 
     '
 end
 
-function workspace_cleanup_empty_spaces --description "Destroy live-empty Spaces except Home and one survivor per display"
-    argparse 'home-uuid=' 'focus-uuid=' -- $argv
+function workspace_cleanup_empty_spaces --description "Destroy policy-approved empty Spaces except Home and one survivor per display"
+    argparse 'home-uuid=' 'focus-uuid=' 'policy=' -- $argv
     or return 1
 
     set -l home_uuid ""
@@ -54,6 +54,21 @@ function workspace_cleanup_empty_spaces --description "Destroy live-empty Spaces
         set focus_uuid $_flag_focus_uuid
     end
 
+    set -l cleanup_policy
+    if set -q _flag_policy
+        set cleanup_policy $_flag_policy
+    else
+        set cleanup_policy (spacewright_config_effective | ws_jq -r '.settings.cleanupEmptySpaces // "managed"')
+        or return 1
+    end
+    if test "$cleanup_policy" = none
+        return 0
+    end
+    if not contains -- "$cleanup_policy" managed all
+        echo "[WARN] invalid cleanupEmptySpaces policy: $cleanup_policy" >&2
+        return 1
+    end
+
     set -l spaces_json (ws_query_spaces workspace_cleanup_empty_spaces spaces)
     or return 1
     set -l windows_json (ws_query_windows workspace_cleanup_empty_spaces windows)
@@ -63,6 +78,7 @@ function workspace_cleanup_empty_spaces --description "Destroy live-empty Spaces
 
     set -l candidates (echo $spaces_json | ws_jq -r \
         --arg home "$home_uuid" \
+        --arg policy "$cleanup_policy" \
         --argjson windows "$occupant_windows_json" '
             def ordinary_count($space):
                 [$windows[] | select(.space==$space.index)] | length;
@@ -77,7 +93,10 @@ function workspace_cleanup_empty_spaces --description "Destroy live-empty Spaces
                   ) as $survivor
                 | [$group[]
                     | select(.uuid != $survivor.uuid)
-                    | select((.label // "") == "" or ((.label // "") | test("^sandbox_(solo|wide|tall)$")))
+                    | select(
+                        ((.label // "") | test("^sandbox_(solo|wide|tall)$"))
+                        or ($policy == "all" and (.label // "") == "")
+                      )
                     | select(.label != "coding_control")
                     | select(.label != "gtd_chat")
                     | select(.label != "gtd_calendar")

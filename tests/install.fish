@@ -8,6 +8,20 @@ set -l fish_root "$test_root/fish"
 set -l bin_root "$test_root/bin"
 set -l installed_release_root "$install_root/releases/"(string trim < "$package_root/VERSION")
 
+set -l unrelated_prefix "$test_root/unrelated-prefix"
+command mkdir -p "$unrelated_prefix"
+printf '%s\n' preserve-me > "$unrelated_prefix/personal.txt"
+fish "$package_root/scripts/install.fish" \
+    --source-root "$package_root" \
+    --prefix "$unrelated_prefix" \
+    --fish-config-root "$fish_root" \
+    --bin-root "$bin_root" >/dev/null 2>&1
+and exit 32
+test (string trim < "$unrelated_prefix/personal.txt") = preserve-me
+or exit 33
+not test -e "$unrelated_prefix/.spacewright-install-root"
+or exit 34
+
 fish "$package_root/scripts/install.fish" \
     --source-root "$package_root" \
     --prefix "$install_root" \

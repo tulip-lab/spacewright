@@ -80,6 +80,19 @@ export function matchingSetups(config, hardwareProfileId, snapshot = {}, machine
   )).map(([id]) => id);
 }
 
+export function setupBindingStatus(config, hardwareProfileId, setupId, snapshot = {}, machine = {}) {
+  const requirements = config.hardwareProfiles?.[hardwareProfileId]?.setups?.[setupId]?.match?.displays || [];
+  const displays = describeDisplays(snapshot, machine);
+  const missingRoles = [];
+  for (const requirement of requirements) {
+    if (!requirement.role) continue;
+    const uuid = machine.displayBindings?.[requirement.role];
+    const display = uuid ? displays.find((candidate) => candidate.uuid === uuid) : null;
+    if (!display || !displayMatches(display, requirement)) missingRoles.push(requirement.role);
+  }
+  return { ready: missingRoles.length === 0, missingRoles };
+}
+
 export function selectHardwareProfile(config, machine = {}, hardware = {}) {
   if (machine.hardwareProfile && config.hardwareProfiles?.[machine.hardwareProfile]) {
     return { id: machine.hardwareProfile, source: machine.hardwareProfileConfirmed ? 'confirmed' : 'saved', candidates: [machine.hardwareProfile] };
@@ -107,26 +120,36 @@ export function resolveV3(config, { machine = {}, hardware = {}, snapshot = {}, 
   if (!selectedSetup && candidates.length === 1) selectedSetup = candidates[0];
   if (!selectedSetup) throw new Error(`display setup is ${candidates.length ? 'ambiguous' : 'unmatched'} for topology “${key}”`);
   if (requireConfirmation && machine.topologySelections?.[key] !== selectedSetup) throw new Error(`display setup “${selectedSetup}” for topology “${key}” requires confirmation`);
+  const bindingStatus = setupBindingStatus(config, selectedHardware.id, selectedSetup, snapshot, machine);
+  if (requireConfirmation && !bindingStatus.ready) throw new Error(`display setup “${selectedSetup}” requires renewed role binding: ${bindingStatus.missingRoles.join(', ')}`);
   return {
     hardwareProfileId: selectedHardware.id,
     setupId: selectedSetup,
     topologyKey: key,
     displays,
     candidates,
+    bindingStatus,
     source,
     v2: projectSetupToV2(config, selectedHardware.id, selectedSetup)
   };
 }
 
 function configurationWindows(workspace, configuration) {
-  return configuration.runtime?.windows || Object.entries(workspace.windows || {}).map(([role, window]) => ({
-    role,
-    app_key: window.app,
-    required: window.required,
-    ...(window.ownership ? { ownership: window.ownership } : {}),
-    ...(window.cardinality ? { cardinality: window.cardinality } : {}),
-    ...(window.selector ? { selector: clone(window.selector) } : {})
-  }));
+  if (!configuration.runtime?.windows) {
+    return Object.entries(workspace.windows || {}).map(([role, window]) => ({
+      role,
+      app_key: window.app,
+      required: window.required,
+      ...(window.ownership ? { ownership: window.ownership } : {}),
+      ...(window.cardinality ? { cardinality: window.cardinality } : {}),
+      ...(window.selector ? { selector: clone(window.selector) } : {})
+    }));
+  }
+  return configuration.runtime.windows.map((window) => {
+    const sharedSelector = workspace.windows?.[window.role]?.selector || {};
+    const selector = { ...clone(sharedSelector), ...clone(window.selector || {}) };
+    return { ...clone(window), ...(Object.keys(selector).length ? { selector } : {}) };
+  });
 }
 
 function layoutRoles(layout, roles = []) {
@@ -154,6 +177,7 @@ export function projectSetupToV2(config, hardwareProfileId, setupId) {
       wide: { displays: [{ role: Object.keys(config.displayRoles)[0], workspaceOrder: [] }] },
       tall: { displays: [{ role: Object.keys(config.displayRoles)[0], workspaceOrder: [] }] }
     },
+    ...(config.settings ? { settings: clone(config.settings) } : {}),
     shortcuts: []
   };
   v2.modes[mode] = {
@@ -212,6 +236,7 @@ export function validateV3(config) {
   if (!object(config) || config.version !== 3) return { valid: false, errors: [...errors, 'version must be 3'], warnings };
   if (errors.length) return { valid: false, errors, warnings };
   rejectUnknown(config, new Set(['version', 'metadata', 'apps', 'aiProviders', 'aiRouting', 'displayRoles', 'workspaces', 'hardwareProfiles', 'shortcuts', 'settings']), 'config', errors);
+  rejectUnknown(config.settings, new Set(['eventAutomationEnabled', 'cleanupEmptySpaces', 'tallTopPercent', 'topologyStableSamples', 'topologyCooldownSeconds']), 'settings', errors);
   for (const key of ['apps', 'displayRoles', 'workspaces', 'hardwareProfiles']) if (!object(config[key]) || !Object.keys(config[key]).length) errors.push(`${key} must be a non-empty object`);
   for (const [profileId, profile] of Object.entries(config.hardwareProfiles || {})) {
     const path = `hardwareProfiles.${profileId}`;

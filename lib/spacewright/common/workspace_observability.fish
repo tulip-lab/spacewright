@@ -339,6 +339,10 @@ function __workspace_observation_plan_json --description "Build a read-only work
                       | $role.selected_windows | to_entries[]
                       | .key as $index
                       | .value as $window
+                      | (($role.layout.grid // "") | split(":") | map(tonumber?)) as $configured_grid
+                      | ($configured_grid[0] // 2) as $tall_rows
+                      | ($configured_grid[3] // 1) as $tall_boundary
+                      | ($configured_grid[5] // 1) as $tall_bottom_height
                       | (
                           if $mode == "wide" then
                               (($count + 1) / 2 | floor) as $left_count
@@ -347,6 +351,12 @@ function __workspace_observation_plan_json --description "Build a read-only work
                                 else "\($right_count):2:1:\($index - $left_count):1:1"
                                 end
                           elif $count == 1 and $mode == "solo" then "1:1:0:0:1:1"
+                          elif $mode == "tall" and $count == 1 then "\($tall_rows):1:0:\($tall_boundary):1:\($tall_bottom_height)"
+                          elif $mode == "tall" and $count == 2 and $index == 0 then "\($tall_rows):1:0:0:1:\($tall_boundary)"
+                          elif $mode == "tall" and $count == 2 then "\($tall_rows):1:0:\($tall_boundary):1:\($tall_bottom_height)"
+                          elif $mode == "tall" and ($count == 3 or $count == 4) and $index < 2 then "\($tall_rows):2:\($index):0:1:\($tall_boundary)"
+                          elif $mode == "tall" and $count == 3 then "\($tall_rows):1:0:\($tall_boundary):1:\($tall_bottom_height)"
+                          elif $mode == "tall" and $count == 4 then "\($tall_rows):2:\($index - 2):\($tall_boundary):1:\($tall_bottom_height)"
                           elif $count == 1 then "2:1:0:1:1:1"
                           elif $count == 2 then "2:1:0:\($index):1:1"
                           elif $count == 3 and $index < 2 then "2:2:\($index):0:1:1"

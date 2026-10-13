@@ -99,12 +99,14 @@ After execution, SpaceWright discovers state again. If executable drift remains
 and reconciliation is enabled, it performs one retry and verifies once more.
 It never loops indefinitely.
 
-An empty Sandbox, or an unlabeled Space containing only a headless surface, is
-reported as `empty_space_cleanup_required` instead of being hidden behind the
-Fish backend. A generic headless surface must have no title or AX role, be
-invisible and non-movable/non-resizable, and have no AX reference. This keeps
-the cleanup rule narrow while covering background root surfaces left by apps
-such as media players.
+An empty managed Sandbox is reported as `empty_space_cleanup_required` instead
+of being hidden behind the Fish backend. With the explicit `all` cleanup
+policy, a safe empty unlabeled Space can also be reported. The default
+`managed` policy preserves unlabeled user Spaces, `none` disables cleanup, and
+a single-workspace target never runs global cleanup. A generic headless surface
+must have no title or AX role, be invisible and non-movable/non-resizable, and
+have no AX reference. This keeps the cleanup rule narrow while covering
+background root surfaces left by apps such as media players.
 
 `spacewright recover RUN_ID --dry-run` lists the still-present candidate
 windows without changing them. Recovery without that flag is explicit and
@@ -112,7 +114,9 @@ best-effort. It restores the
 original Space and absolute frame only for windows matched by that run. It does
 not undo application launches, recreate deleted Spaces, reverse displayplacer
 changes, or restore windows that no longer exist. Recovery itself receives a
-journal.
+journal before discovery begins. SIGINT and SIGTERM stop further preflight or
+recovery work, terminate the active child process group, and persist a
+cancelled journal with an interrupted step when one had started.
 
 ## Workspace capture
 
@@ -144,7 +148,8 @@ final focus. A focus-only mismatch is represented as ordinary change drift and
 therefore remains visible in plans and verification.
 
 Topological automation uses stable sampling and a cooldown. The optional root
-settings are `eventAutomationEnabled`, `topologyStableSamples` (1–12), and
+settings are `eventAutomationEnabled`, `cleanupEmptySpaces` (`managed`, `all`,
+or `none`), `tallTopPercent` (35–65), `topologyStableSamples` (1–12), and
 `topologyCooldownSeconds` (0–600). Automation is serialized through the same
 task queue and execution lock as manual runs.
 

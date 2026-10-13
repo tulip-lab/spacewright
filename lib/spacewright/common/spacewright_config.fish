@@ -55,7 +55,7 @@ function spacewright_config_effective --description "Merge package defaults with
     if test -r "$v3_file"
         if test -r "$runtime_file"
             set -l source_hash (__spacewright_config_sha256 "$v3_file")
-            set -l compiled_hash (jq -r 'select(.generated.format_version == 1 and .generated.compiler_version == 3 and .generated.source_version == 3) | .generated.source_sha256 // empty' "$runtime_file" 2>/dev/null)
+            set -l compiled_hash (jq -r 'select(.generated.format_version == 1 and .generated.compiler_version == 4 and .generated.source_version == 3) | .generated.source_sha256 // empty' "$runtime_file" 2>/dev/null)
             if test -n "$source_hash"; and test "$source_hash" = "$compiled_hash"
                 jq 'del(.generated)' "$runtime_file"
                 return $status
@@ -71,7 +71,7 @@ function spacewright_config_effective --description "Merge package defaults with
     else if test -r "$v2_file"
         if test -r "$runtime_file"
             set -l source_hash (__spacewright_config_sha256 "$v2_file")
-            set -l compiled_hash (jq -r 'select(.generated.format_version == 1 and .generated.compiler_version == 3 and .generated.source_version == 2) | .generated.source_sha256 // empty' "$runtime_file" 2>/dev/null)
+            set -l compiled_hash (jq -r 'select(.generated.format_version == 1 and .generated.compiler_version == 4 and .generated.source_version == 2) | .generated.source_sha256 // empty' "$runtime_file" 2>/dev/null)
             if test -n "$source_hash"; and test "$source_hash" = "$compiled_hash"
                 jq 'del(.generated)' "$runtime_file"
                 return $status
@@ -110,7 +110,7 @@ function spacewright_config_status --description "Report configuration source an
     set -l compiler_version (jq -r '.generated.compiler_version // empty' "$runtime_file" 2>/dev/null)
     set -l generation_id (jq -r '.generated.generation_id // empty' "$runtime_file" 2>/dev/null)
     set -l current false
-    if test -n "$source_hash"; and test "$source_hash" = "$compiled_hash"; and test "$format_version" = 1; and test "$compiler_version" = 3
+    if test -n "$source_hash"; and test "$source_hash" = "$compiled_hash"; and test "$format_version" = 1; and test "$compiler_version" = 4
         set current true
     end
     jq -n \

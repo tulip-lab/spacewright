@@ -8,16 +8,17 @@ import { randomBytes } from 'node:crypto';
 import { createHash } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import { CONFIG_COMPILER_VERSION, compileSkhd, compileV2, migrateV1, starterConfig, validateV2 } from './lib/config-v2.mjs';
-import { compileV3, describeDisplays, matchingSetups, migrateV2ToV3, resolveV3, selectHardwareProfile, starterV3, topologyKey, validateV3 } from './lib/config-v3.mjs';
+import { compileV3, describeDisplays, matchingSetups, migrateV2ToV3, resolveV3, selectHardwareProfile, setupBindingStatus, starterV3, topologyKey, validateV3 } from './lib/config-v3.mjs';
 import { detectMacHardware } from './lib/hardware-detection.mjs';
 import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState, normalizeSnapshot } from './lib/state-engine.mjs';
 import { clearTransitionHistory, readTransitionHistory } from './lib/transition-history.mjs';
 
 const execFileAsync = promisify(execFile);
 const args = Object.fromEntries(process.argv.slice(2).map((arg) => arg.split('=', 2)));
-const packageRoot = resolve(args['--package-root'] || join(import.meta.dirname, '..'));
+const packageRoot = resolve(args['--package-root'] || join(dirname(fileURLToPath(import.meta.url)), '..'));
 const configRoot = resolve(args['--config-root'] || join(process.env.HOME, '.config', 'spacewright'));
 const stateRoot = resolve(args['--state-root'] || join(process.env.HOME, '.local', 'state', 'spacewright'));
 const configFile = join(configRoot, 'config.v2.json');
@@ -179,6 +180,9 @@ async function v3SetupState(config, machineOverride = null) {
   const setupCandidates = hardwareSelection.id ? matchingSetups(config, hardwareSelection.id, snapshot, machine) : [];
   const confirmedSetup = machine.topologySelections?.[key] || null;
   const setup = confirmedSetup && hardwareSelection.id ? config.hardwareProfiles[hardwareSelection.id]?.setups?.[confirmedSetup] : null;
+  const bindingStatus = confirmedSetup && hardwareSelection.id
+    ? setupBindingStatus(config, hardwareSelection.id, confirmedSetup, snapshot, machine)
+    : { ready: false, missingRoles: [] };
   return {
     mutates: false,
     hardware,
@@ -192,7 +196,8 @@ async function v3SetupState(config, machineOverride = null) {
     activeSetup: machine.activeSetup || null,
     compatibilityMode: setup?.compatibilityMode || null,
     workspaceConfigurations: setup?.workspaceConfigurations || {},
-    ready: Boolean(machine.hardwareProfileConfirmed && confirmedSetup && setupCandidates.includes(confirmedSetup)),
+    bindingStatus,
+    ready: Boolean(machine.hardwareProfileConfirmed && confirmedSetup && setupCandidates.includes(confirmedSetup) && bindingStatus.ready),
     machine,
     snapshot
   };
@@ -445,7 +450,7 @@ function compiledDocument(config) {
 }
 
 async function api(request, response, url) {
-  if (request.method !== 'GET' && request.headers['x-spacewright-token'] !== token) return json(response, 403, { error: 'invalid session token' });
+  if (request.headers['x-spacewright-token'] !== token) return json(response, 403, { error: 'invalid session token' });
   if (url.pathname === '/api/v3/config' && request.method === 'GET') {
     const config = existsSync(configV3File) ? JSON.parse(await readFile(configV3File, 'utf8')) : existsSync(configFile) ? migrateV2ToV3(await readConfig()) : starterV3();
     return json(response, 200, { config, revision: configRevision(config), path: configV3File, source: existsSync(configV3File) ? 'v3' : existsSync(configFile) ? 'v2-migration-preview' : 'v3-starter' });
@@ -779,8 +784,18 @@ async function api(request, response, url) {
 }
 
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
+function trustedLoopbackRequest(request) {
+  const address = server.address();
+  const port = typeof address === 'object' && address ? address.port : null;
+  const host = String(request.headers.host || '').toLowerCase();
+  const trustedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`]);
+  if (!trustedHosts.has(host)) return false;
+  const origin = request.headers.origin;
+  return !origin || origin === `http://${host}`;
+}
 const server = http.createServer(async (request, response) => {
   try {
+    if (!trustedLoopbackRequest(request)) return json(response, 403, { error: 'untrusted local request origin' });
     const url = new URL(request.url, 'http://127.0.0.1');
     if (url.pathname.startsWith('/api/')) return await api(request, response, url);
     const relative = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
@@ -790,6 +805,7 @@ const server = http.createServer(async (request, response) => {
       'content-type': mime[extname(relative)] || 'application/octet-stream',
       'cache-control': 'no-store',
       'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'",
+      'referrer-policy': 'no-referrer',
       'x-content-type-options': 'nosniff',
       'x-frame-options': 'DENY'
     });

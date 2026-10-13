@@ -18,6 +18,35 @@ test('starter config validates and compiles all modes', () => {
   assert.deepEqual(runtime.modes.work_tall.steps, [{ workspace: 'spacewright_coding_tall' }]);
 });
 
+test('one tall top percentage remaps upper and lower bands without moving full-screen or centre-crossing regions', () => {
+  const config = starterConfig();
+  config.settings = { tallTopPercent: 45 };
+  config.workspaces.coding.variants.tall.layout = {
+    type: 'canvas',
+    regions: [
+      { role: 'assistant', grid: '2:1:0:0:1:1' },
+      { role: 'editor', grid: '2:1:0:1:1:1' }
+    ]
+  };
+  const runtime = compileV2(config);
+  assert.deepEqual(runtime.layouts.spacewright_coding_tall, [
+    { role: 'assistant', grid: '100:1:0:0:1:45' },
+    { role: 'editor', grid: '100:1:0:45:1:55' }
+  ]);
+
+  config.workspaces.coding.variants.tall.layout = {
+    type: 'canvas',
+    regions: [
+      { role: 'assistant', grid: '1:1:0:0:1:1' },
+      { role: 'editor', grid: '4:4:1:1:2:2' }
+    ]
+  };
+  assert.deepEqual(compileV2(config).layouts.spacewright_coding_tall, [
+    { role: 'assistant', grid: '1:1:0:0:1:1' },
+    { role: 'editor', grid: '4:4:1:1:2:2' }
+  ]);
+});
+
 test('profiles and event rules validate and compile as declarative automation', () => {
   const config = starterConfig();
   config.profiles = { research: { name: 'Research', mode: 'wide', workspaces: ['coding'], displayConfig: { profile: 'wide_left' }, focusBehaviour: { workspace: 'coding' }, settings: { reconcile: true } } };
@@ -48,7 +77,7 @@ test('repository schema is the structural validation authority', () => {
   const errors = validateV2Schema(config).join('\n');
   assert.match(errors, /apps.code.match.appNames must contain at least 1 item/);
   assert.match(errors, /workspaces.coding.variants.wide.layout does not match a supported shape/);
-  assert.equal(CONFIG_COMPILER_VERSION, 3);
+  assert.equal(CONFIG_COMPILER_VERSION, 4);
 });
 
 test('AI routing shares defaults across modes and compiles explicit overrides', () => {
