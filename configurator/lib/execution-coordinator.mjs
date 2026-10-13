@@ -3,7 +3,10 @@ import { promisify } from 'node:util';
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { operationRecords } from './operation-journal.mjs';
 const exec = promisify(execFile);
+// Kept here to avoid an initialization cycle with the authenticated consumer.
+export const DEFAULT_BUDGETS=Object.freeze({confirmation:256,commandRetry:2,appRecovery:2,serviceRecovery:1,reconciliation:1});
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function readJson(path, fallback = null) {
   try { return JSON.parse(await readFile(path, 'utf8')); } catch (error) { if (error.code === 'ENOENT' || error instanceof SyntaxError) return fallback; throw error; }
@@ -70,11 +73,17 @@ export async function acquireExecution(stateRoot, requestedOwner = {}, { replace
   await mkdir(stateRoot, { recursive: true, mode: 0o700 });
   const root = join(stateRoot, 'execution.lock');
   const owner = { ...requestedOwner, pid: process.pid, token: randomBytes(24).toString('hex'), processIdentity: await processIdentity(process.pid) };
+  owner.deadlineAt ||= new Date(Date.now()+120000).toISOString();
   owner.runId ||= `${Date.now()}-${randomBytes(4).toString('hex')}`;
   for (let attempt = 0; attempt < 20; attempt++) {
     try {
       await mkdir(root, { mode: 0o700 });
-      try { await atomicJson(join(root, 'owner.json'), owner); }
+      try {
+        const remaining={...DEFAULT_BUDGETS,...requestedOwner.budgets};
+        if(Object.keys(remaining).some(k=>!(k in DEFAULT_BUDGETS) || !Number.isInteger(remaining[k]) || remaining[k]<0))throw new Error('invalid execution budgets');
+        await atomicJson(join(root,'budgets.json'),{runId:owner.runId,token:owner.token,remaining,consumed:Object.fromEntries(Object.keys(remaining).map(k=>[k,0]))});
+        await atomicJson(join(root, 'owner.json'), owner);
+      }
       catch (error) { await rm(root, { recursive: true, force: true }); throw error; }
       return executionLease(stateRoot, owner);
     } catch (error) { if (error.code !== 'EEXIST') throw error; }
@@ -123,6 +132,8 @@ async function finishInterruptedJournals(root) {
     const journal = await readJson(record.path);
     if(!journal || !['preflight','running'].includes(journal.status))continue;
     journal.status='failed';journal.exitCode=1;journal.finishedAt=new Date().toISOString();journal.error='execution controller exited before a terminal result; child processes stopped';
+    journal.operations=await operationRecords(dirname(root),journal.runId);
+    journal.effects=[...(journal.effects || []),...journal.operations.filter(r=>r.id && !(journal.effects || []).some(e=>e.id===r.id))];
     for(const step of journal.steps || [])if(step.status==='running'){step.status='failed';step.finishedAt=journal.finishedAt;}
     try{await atomicJson(record.path,journal);}catch(error){process.stderr.write(`terminal journal write failed: ${error.message}; run=${journal.runId} status=failed\n`);}
   }
@@ -135,6 +146,11 @@ function executionLease(stateRoot, owner, inherited = false) {
   let trackedPid = null;
   const groups = join(stateRoot, 'execution.lock', 'groups');
   return { owner, inherited, env: leaseEnvironment(owner), release: inherited ? async () => {} : () => releaseLock(stateRoot, owner),
+    cancel:async()=>{
+      const current=await readJson(join(stateRoot,'execution.lock','owner.json'));
+      if(current?.token!==owner.token)return;
+      await writeFile(join(stateRoot,'execution.lock','cancelled.json'),JSON.stringify({runId:owner.runId,token:owner.token,at:new Date().toISOString()}),{flag:'wx',mode:0o600}).catch(error=>{if(!['ENOENT','EEXIST'].includes(error.code))throw error;});
+    },
     trackJournal: async (path) => { const journals=join(stateRoot,'execution.lock','journals');await mkdir(journals,{recursive:true,mode:0o700});await atomicJson(join(journals,`${randomBytes(8).toString('hex')}.json`),{path}); },
     trackChild: async (child) => {
       if (child?.pid) {
@@ -151,11 +167,18 @@ export function leaseEnvironment(owner) {
   return { SPACEWRIGHT_EXECUTION_TOKEN: owner.token, SPACEWRIGHT_EXECUTION_RUN_ID: owner.runId,
     ...(owner.deadlineAt ? { SPACEWRIGHT_EXECUTION_DEADLINE_MS: String(new Date(owner.deadlineAt).getTime()) } : {}) };
 }
+export async function assertExecutionAllowed(stateRoot,env=process.env,pid=process.pid) {
+  if(!await verifyLease(stateRoot,env,pid))throw new Error('execution requires a verified lease');
+  const root=join(stateRoot,'execution.lock'),owner=await readJson(join(root,'owner.json')),cancelled=await readJson(join(root,'cancelled.json'));
+  if(owner.cancelledAt || cancelled?.token===owner.token)throw Object.assign(new Error('execution cancelled'),{code:'SPACEWRIGHT_CANCELLED'});
+  if(Date.now()>=new Date(owner.deadlineAt).getTime())throw Object.assign(new Error('execution deadline exceeded'),{code:'SPACEWRIGHT_TIMEOUT'});
+  return owner;
+}
 export async function runBounded(executable, args, { env = process.env, deadline = Date.now() + 120000, signal, onChild = () => {}, onOutput = () => {}, graceMs = 750 } = {}) {
   if (signal?.aborted) throw signal.reason || new Error('cancelled');
   const remaining = deadline - Date.now();
   if (remaining <= 0) throw Object.assign(new Error('execution deadline exceeded'), { code: 'SPACEWRIGHT_TIMEOUT' });
-  const child = spawn(executable, args, { env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, [new URL('./process-worker.mjs',import.meta.url).pathname,executable,...args], { env, detached: true, stdio: ['ignore', 'pipe', 'pipe', 'pipe'] });
 
   let reason = null;
   let stopping = null;
@@ -164,7 +187,7 @@ export async function runBounded(executable, args, { env = process.env, deadline
   signal?.addEventListener('abort', abort, { once: true });
   const timeout = setTimeout(() => stop(Object.assign(new Error('execution deadline exceeded'), { code: 'SPACEWRIGHT_TIMEOUT' })), remaining);
   const output = { stdout: '', stderr: '' };
-  for (const name of ['stdout', 'stderr']) child[name].on('data', (chunk) => { output[name] += chunk; onOutput(name, String(chunk)); });
+  for (const name of ['stdout', 'stderr']) child[name].on('data', (chunk) => { output[name] += chunk;try{onOutput(name,String(chunk));}catch(error){stop(error);} });
   const completion = new Promise((resolve, reject) => {
     child.once('error', reject);
     child.once('close', (code, signalName) => resolve({ code: code ?? 130, signal: signalName, ...output }));
@@ -172,6 +195,8 @@ export async function runBounded(executable, args, { env = process.env, deadline
   completion.catch(() => {});
   try {
     await onChild(child);
+    if(reason)throw reason;
+    await new Promise((resolve,reject)=>{child.stdio[3].once('error',reject);child.stdio[3].end('execute\n',error=>error?reject(error):resolve());});
     const result = await completion;
     if (stopping) await stopping;
     // Descendants may close inherited pipes then continue mutating. Drain them before release.

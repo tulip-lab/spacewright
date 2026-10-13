@@ -1,4 +1,8 @@
 function work_smoke --description "Run read-only workspace smoke checks for helper wiring and dry-run paths"
+    if test "$SPACEWRIGHT_TEST_ISOLATED" != 1
+        command node "$SPACEWRIGHT_PACKAGE_ROOT/scripts/isolated-check.mjs" "$SPACEWRIGHT_PACKAGE_ROOT/bin/spacewright" smoke
+        return $status
+    end
     # External desktop commands are denied even if a fixture forgets a function mock.
     set -lx SPACEWRIGHT_PUBLIC_ENTRY_DIRECT 1
     set -lx SPACEWRIGHT_CONFIG_DISABLE 1
@@ -13,7 +17,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
             chmod +x "$mock_bin/$blocked"
         end
         set -lx PATH "$mock_bin" $PATH
-        command node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/execution-cli.mjs" exec fish --no-config -c 'source "$SPACEWRIGHT_PACKAGE_ROOT/conf.d/spacewright.fish"; work_smoke'
+        command node "$SPACEWRIGHT_PACKAGE_ROOT/scripts/smoke-check.mjs"
         set -l result $status
         rm -rf "$SPACEWRIGHT_SMOKE_STATE_ROOT"
         return $result
@@ -947,21 +951,10 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     set -l legacy_yabai_service_restart_smoke '
         work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
-        set -g __work_smoke_launchctl_calls
-
-        function launchctl
-            set -ga __work_smoke_launchctl_calls (string join " " -- $argv)
-
-            if test "$argv[1]" = print
-                return 0
-            end
-
-            if test "$argv[1]" = kickstart
-                return 0
-            end
-
-            return 1
-        end
+        set -l fixture_bin (mktemp -d "$SPACEWRIGHT_STATE_ROOT/service-bin.XXXXXX")
+        set -lx PATH "$fixture_bin" $PATH
+        printf "%s\n" "#!/bin/sh" "echo \$* >>\"\$SPACEWRIGHT_STATE_ROOT/launchctl-calls\"" "exit 0" >"$fixture_bin/launchctl"
+        chmod +x "$fixture_bin/launchctl"
 
         function ws_yabai
             return 1
@@ -971,10 +964,11 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         or exit 1
 
         set -l service "gui/"(id -u)"/com.asmvik.yabai"
-        contains -- "print $service" $__work_smoke_launchctl_calls
+        set -l calls (cat "$SPACEWRIGHT_STATE_ROOT/launchctl-calls")
+        contains -- "print $service" $calls
         or exit 2
 
-        contains -- "kickstart -k $service" $__work_smoke_launchctl_calls
+        contains -- "kickstart -k $service" $calls
         or exit 3
     '
     fish -lc "$legacy_yabai_service_restart_smoke" >$SPACEWRIGHT_STATE_ROOT/work-legacy-yabai-service-restart-smoke.out 2>&1

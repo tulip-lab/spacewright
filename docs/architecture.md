@@ -190,55 +190,107 @@ State has three lifetimes:
 write guard. Generation format 2 binds the source bytes, compiler version,
 resolved runtime, hardware identity, display topology and machine state. v3
 Fish loading resolves live topology before exposing runtime; a source-only
-cache hit cannot authorize execution. A save guard remains after an incomplete
+cache hit cannot authorize execution. Generation construction also verifies that
+source bytes describe the exact configuration being compiled. A save guard remains after an incomplete
 write, so readers fail closed rather than combine generations. An explicit
 `spacewright config-compile --repair-incomplete-save` may rebuild a generation
 only after its prior writer has stopped. It does not discard a live writer.
 
-The server delegates discovery, configuration generation/storage, task
-lifecycle and automation policy to focused modules. Its HTTP authorization,
-route handling and event monitor remain in `server.mjs`.
+The server delegates discovery, configuration generation/storage, task lifecycle
+and automation policy to focused modules. `automation-monitor.mjs` owns serialized
+sampling, topology debounce, event dispatch and stop/drain. HTTP writes use an
+async-local save scope; unrelated HTTP readers cannot bypass a running writer.
+Responses are sent after the save guard is released. Binding updates, setup
+activation, backup/history restoration and topology activation use that guard.
 
-### Recovery adapters
+### Fixed planning and preparation
 
-Legacy Office/GTD app reopen, activation and native-fullscreen adapters remain
-explicit Fish code. Their inputs are configured app/role/layout and the shared
-execution deadline; output is a status plus diagnostics; side effects include
-activation, app restart or fullscreen changes. Issued window commands propagate
-failure. A pinned plan does not invoke an adapter to replace a missing or
-fullscreen window: recovery must finish, rediscover and produce a new plan.
-This conservative boundary intentionally blocks a required window needing app
-recovery rather than changing its identity silently. Declarative existing-window
-placement, Office multi-document geometry and Dia multi-window geometry use the
-pinned backend. Automatic app recovery inside a pinned execution is not yet
-supported; legacy adapter recovery still needs a separate explicit invocation.
+`finalization-policy.mjs` adds exact opposite-variant cleanup candidates and a
+synthetic mode Sandbox workspace. The Sandbox uses independently pinned IDs and
+explicit balanced float grids; its geometry uses the same comparison as ordinary
+workspaces. Anchored postprocessors have fixed object lists. Hermes expansion is
+computed from final role ownership and configured labels. Primary separation uses
+those same workspace assignments rather than rerunning legacy selectors.
+
+`pinned-executor.mjs` consumes only the immutable workspace/actions. Runtime command IDs shared by modes do not replace the requested variant
+contract; role compilation uses that variant directly. Every step
+rediscovers and resolves physical displays and Space UUIDs, checks object identity
+and selectors, and validates the command's postcondition. Creation records the
+new UUID before labeling or subsequent placement. Cleanup rechecks complete,
+fresh occupancy, label/display identity and a surviving Space; ordering carries
+its workspace/UUID/display list and resolves both source and anchor again.
+New mode objects invalidate the census; they are never silently collected.
+Single-workspace cleanup includes only that workspace's configured opposite
+labels. Occupied, conflicting or last-survivor candidates are retained/rejected.
+
+`adapter-preparation.mjs` defines observed-app refresh and native-fullscreen
+preparation inputs, side effects, eight-second phase bounds and verification.
+The explicit Fish preparation entry dispatches these closed actions. Office,
+Dia, Outlook/Preview and fixed adapters retain their legacy Fish recovery bodies.
+Outlook preparation uses activate/reopen; other refreshes use the configured app
+name. Minimized windows are excluded. Preparation consumes the shared recovery
+budget, records input/output incarnations, then requires rediscovery and a new
+immutable plan with a persisted relation to its predecessor. A missing object
+inside an established layout plan never selects a replacement.
+
+Grid and canvas absolute geometry are compared and applied by the same policy.
+`grid-geometry.mjs` models yabai's constrained display bounds, padding and edge
+gaps, using the read-only `spacewright-screen-geometry` native helper. All grid
+postconditions use a two-pixel tolerance rather than a percentage of the full
+screen. Native geometry/configuration discovery failure blocks mutation; a
+changed usable frame, padding or gap invalidates an issued display contract.
+Tall splits remain configured by `settings.tallTopPercent`, including 49/51.
+Coding-control absolute positions are offsets from its target display origin.
+Fixed adapters with no selectable windows stay inactive. A foreign occupant
+blocks workspace-scoped execution; a mode may move it only through an explicit
+other workspace/Sandbox assignment. Persistently non-movable foreign occupants
+block the mode instead of being reported as separated. Existing selected optional
+windows propagate failures like required ones.
+
+### Shared budgets and durable operations
+
+The lease initializes `settings.executionBudgets`: confirmation 256, commandRetry
+2, appRecovery 2, serviceRecovery 1 and reconciliation 1 by default. Schema limits
+bound overrides. Every consumer verifies token, owner lifetime and ancestry;
+updates use an exclusive writer gate and durable atomic budget document. Nested
+processes share the owner deadline and counters. Cancellation prevents later
+budget consumption; pinned apply disables automatic service restart. Legacy
+confirmation/retry loops charge the same run when a lease is present.
+
+`process-worker.mjs` waits for an inherited pipe grant. The coordinator persists
+its process-group identity before granting execution. A crash before registration
+therefore cannot launch an untracked mutator. TERM escalates to KILL with a bounded
+wait; an unrecognized or still-active process group retains ownership.
+
+`operation-journal.mjs` synchronizes intent, command exit acknowledgment and queried
+postconditions to individual files in `runs/<run-id>.operations/`. Records
+separate attempted/unknown, verified success, failure, cancellation and timeout.
+Selected-but-unoperated objects never become recovery candidates. Interrupted
+controllers import durable operations into failed journals after stopping their
+registered groups. Storage failures block further mutation and report the last
+available state on stderr. Recovery resolves each original UUID anew and verifies
+each command plus final Space/frame/identity; replacement incarnations use their
+actual pre-layout snapshot, rather than an old object with a reused ID.
 
 ## Remaining hardening boundaries
 
-The existing-window pinned path and shared lease are implemented and covered by
-isolated tests. This is not a complete migration of every legacy adapter:
+The migrated paths are fixture-verified, not a claim of full legacy equivalence.
+App-owned Space fallback and AppleScript/System Events bounds for persistently
+non-movable SmartGit, DingTalk, Calendar, Outlook or Preview windows remain in
+legacy adapters. They can select scriptable windows by app-wide heuristics, so
+forwarding them through an immutable window envelope would break its identity
+contract. The fixed path fails closed when explicit refresh cannot make its
+planned role selectable. The next migration must establish an independently
+verifiable mapping from the yabai identity to the scriptable/AX window, then plan
+any whole-Space transfer and foreign-window handling explicitly.
 
-- Aggregate Sandbox collection and anchored postprocessors still calculate
-  some actions inside Fish. `ws_window` refuses a window absent from the
-  immutable envelope, so these flows can fail closed until their complete
-  object lists and geometry are added to the planner. Space creation, ordering
-  and cleanup effects remain explicitly nonrecoverable.
-- Single-workspace pinned execution preserves opposite variants. Add a planner
-  action for the exact workspace's opposite-variant Space UUIDs, together with
-  fresh completeness and occupancy gates, before enabling local destruction.
-- Fixed adapters (coding control, GTD chat/calendar) retain their explicit
-  recovery bodies on the legacy path. Their custom geometry, reopen effects
-  and verification need dedicated planner contracts; the pinned path only uses
-  declared existing-window layouts and cannot promise full adapter equivalence.
-- Cancellation and total deadlines cover the shared child process machinery.
-  Individual legacy recovery adapters still have their own bounded confirmation
-  loops; consolidate those into a lease-wide retry budget before removing the
-  legacy path. Recovery attempts currently record issued operations, not a
-  durable per-command acknowledgment that survives an abrupt controller kill.
-- The HTTP event monitor remains in the server, although discovery, storage,
-  task coordination and pure automation policy have separate modules. Splitting
-  monitor lifecycle and all remaining persistence routes requires further work.
+Standalone legacy compatibility helpers remain available; they do not provide
+all of the immutable aggregate apply guarantees. Legacy app-wide scripting bounds charge the shared retry allowance for fallback
+methods and check execution admission between commands. Their target selection
+still needs that same fixed identity migration. Deleted/created Spaces, app activation/reopen/fullscreen
+changes and display-profile effects are reported as nonrecoverable. There is no
+promise of complete desktop rollback.
 
-True macOS app recovery, native fullscreen transitions, yabai label/Space
-reordering races and real display-profile application require an explicitly
-approved desktop test. Fixture convergence is not evidence of those behaviours.
+Real macOS app recovery, usable-screen grid geometry, native fullscreen, yabai
+Space reordering and display profiles require explicitly authorized desktop
+observation. No live desktop test was used for this implementation.

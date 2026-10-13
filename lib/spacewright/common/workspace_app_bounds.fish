@@ -1,4 +1,5 @@
 function workspace_apply_app_key_grid_bounds --description "Apply a grid by setting scriptable app window bounds"
+    set -l bounds_attempt 0
     argparse 'app-key=' 'display=' 'grid=' 'caller=' all-windows system-events-first -- $argv
     or return 1
 
@@ -68,6 +69,13 @@ function workspace_apply_app_key_grid_bounds --description "Apply a grid by sett
     for app_name in $app_names
         if set -q _flag_all_windows
             if not set -q _flag_system_events_first
+                if set -q SPACEWRIGHT_EXECUTION_RUN_ID
+                    workspace_execution_owned; or return 1
+                end
+                if test "$bounds_attempt" -gt 0
+                    ws_execution_budget commandRetry; or return 1
+                end
+                set bounds_attempt (math "$bounds_attempt + 1")
                 perl -e '
                 my $timeout = shift;
                 my $pid = fork();
@@ -102,6 +110,13 @@ function workspace_apply_app_key_grid_bounds --description "Apply a grid by sett
                 end
             end
 
+            if set -q SPACEWRIGHT_EXECUTION_RUN_ID
+                workspace_execution_owned; or return 1
+            end
+            if test "$bounds_attempt" -gt 0
+                ws_execution_budget commandRetry; or return 1
+            end
+            set bounds_attempt (math "$bounds_attempt + 1")
             perl -e '
                 my $timeout = shift;
                 my $pid = fork();
@@ -140,6 +155,13 @@ function workspace_apply_app_key_grid_bounds --description "Apply a grid by sett
             end
 
             if set -q _flag_system_events_first
+                if set -q SPACEWRIGHT_EXECUTION_RUN_ID
+                    workspace_execution_owned; or return 1
+                end
+                if test "$bounds_attempt" -gt 0
+                    ws_execution_budget commandRetry; or return 1
+                end
+                set bounds_attempt (math "$bounds_attempt + 1")
                 perl -e '
                     my $timeout = shift;
                     my $pid = fork();
@@ -178,6 +200,13 @@ function workspace_apply_app_key_grid_bounds --description "Apply a grid by sett
         end
 
         if not set -q _flag_system_events_first
+            if set -q SPACEWRIGHT_EXECUTION_RUN_ID
+                workspace_execution_owned; or return 1
+            end
+            if test "$bounds_attempt" -gt 0
+                ws_execution_budget commandRetry; or return 1
+            end
+            set bounds_attempt (math "$bounds_attempt + 1")
             perl -e '
             my $timeout = shift;
             my $pid = fork();
@@ -218,6 +247,13 @@ function workspace_apply_app_key_grid_bounds --description "Apply a grid by sett
             end
         end
 
+        if set -q SPACEWRIGHT_EXECUTION_RUN_ID
+            workspace_execution_owned; or return 1
+        end
+        if test "$bounds_attempt" -gt 0
+            ws_execution_budget commandRetry; or return 1
+        end
+        set bounds_attempt (math "$bounds_attempt + 1")
         perl -e '
             my $timeout = shift;
             my $pid = fork();
@@ -262,6 +298,13 @@ function workspace_apply_app_key_grid_bounds --description "Apply a grid by sett
         end
 
         if set -q _flag_system_events_first
+            if set -q SPACEWRIGHT_EXECUTION_RUN_ID
+                workspace_execution_owned; or return 1
+            end
+            if test "$bounds_attempt" -gt 0
+                ws_execution_budget commandRetry; or return 1
+            end
+            set bounds_attempt (math "$bounds_attempt + 1")
             perl -e '
                 my $timeout = shift;
                 my $pid = fork();
@@ -308,6 +351,7 @@ function workspace_apply_app_key_grid_bounds --description "Apply a grid by sett
 end
 
 function workspace_apply_app_key_absolute_bounds --description "Apply absolute bounds by setting scriptable app window bounds"
+    set -l bounds_attempt 0
     argparse 'app-key=' 'x/x=' 'y/y=' 'width=' 'height=' 'caller=' -- $argv
     or return 1
 
@@ -337,6 +381,13 @@ function workspace_apply_app_key_absolute_bounds --description "Apply absolute b
     end
 
     for app_name in $app_names
+        if set -q SPACEWRIGHT_EXECUTION_RUN_ID
+            workspace_execution_owned; or return 1
+        end
+        if test "$bounds_attempt" -gt 0
+            ws_execution_budget commandRetry; or return 1
+        end
+        set bounds_attempt (math "$bounds_attempt + 1")
         perl -e '
             my $timeout = shift;
             my $pid = fork();
@@ -376,6 +427,13 @@ function workspace_apply_app_key_absolute_bounds --description "Apply absolute b
             return 0
         end
 
+        if set -q SPACEWRIGHT_EXECUTION_RUN_ID
+            workspace_execution_owned; or return 1
+        end
+        if test "$bounds_attempt" -gt 0
+            ws_execution_budget commandRetry; or return 1
+        end
+        set bounds_attempt (math "$bounds_attempt + 1")
         perl -e '
             my $timeout = shift;
             my $pid = fork();

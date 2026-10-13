@@ -11,7 +11,8 @@ function __gtd_support_refresh_dia_app --description "Activate Dia briefly befor
         return 1
     end
 
-    perl -e 'alarm shift; exec @ARGV' 2 open -a "$dia_app" >/dev/null 2>&1
+    ws_execution_budget appRecovery; or return 1
+    ws_bounded_external open -a "$dia_app" >/dev/null 2>&1
 end
 
 function __gtd_support_filter_dia_window_json --description "Exclude Dia accessibility helpers from window selection"

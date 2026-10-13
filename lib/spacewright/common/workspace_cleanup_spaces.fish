@@ -1,15 +1,17 @@
 function workspace_cleanup_query_spaces --description "Query spaces for opportunistic cleanup with a short timeout"
-    set -l old_timeout "$WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS"
     set -l cleanup_timeout "$WORKSPACE_CLEANUP_QUERY_TIMEOUT_SECONDS"
 
     if test -z "$cleanup_timeout"
         set cleanup_timeout 1
     end
 
-    set -gx WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS "$cleanup_timeout"
+    set -lx WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS "$cleanup_timeout"
     set -l spaces_json
     set -l query_status 1
     for attempt in (seq 1 2)
+        if test "$attempt" -gt 1; and set -q SPACEWRIGHT_EXECUTION_RUN_ID
+            ws_execution_budget commandRetry; or return 1
+        end
         set spaces_json (ws_yabai -m query --spaces 2>/dev/null)
         set query_status $status
         if test "$query_status" -eq 0 -a -n "$spaces_json"
@@ -17,12 +19,6 @@ function workspace_cleanup_query_spaces --description "Query spaces for opportun
             and break
         end
         sleep 0.15
-    end
-
-    if test -n "$old_timeout"
-        set -gx WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS "$old_timeout"
-    else
-        set -e WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS
     end
 
     if test "$query_status" -ne 0 -o -z "$spaces_json"
@@ -38,17 +34,19 @@ function workspace_cleanup_query_spaces --description "Query spaces for opportun
 end
 
 function workspace_cleanup_query_windows --description "Query windows for opportunistic cleanup with a short timeout"
-    set -l old_timeout "$WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS"
     set -l cleanup_timeout "$WORKSPACE_CLEANUP_QUERY_TIMEOUT_SECONDS"
 
     if test -z "$cleanup_timeout"
         set cleanup_timeout 1
     end
 
-    set -gx WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS "$cleanup_timeout"
+    set -lx WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS "$cleanup_timeout"
     set -l windows_json
     set -l query_status 1
     for attempt in (seq 1 2)
+        if test "$attempt" -gt 1; and set -q SPACEWRIGHT_EXECUTION_RUN_ID
+            ws_execution_budget commandRetry; or return 1
+        end
         set windows_json (ws_yabai -m query --windows 2>/dev/null)
         set query_status $status
         if test "$query_status" -eq 0 -a -n "$windows_json"
@@ -56,12 +54,6 @@ function workspace_cleanup_query_windows --description "Query windows for opport
             and break
         end
         sleep 0.15
-    end
-
-    if test -n "$old_timeout"
-        set -gx WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS "$old_timeout"
-    else
-        set -e WORKSPACE_YABAI_QUERY_TIMEOUT_SECONDS
     end
 
     if test "$query_status" -ne 0 -o -z "$windows_json"

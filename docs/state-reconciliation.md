@@ -25,7 +25,10 @@ diagnosis and may include titles returned by yabai.
 `spacewright plan TARGET [MODE]` supports one workspace, an aggregate mode, or
 `--profile=ID`. It compiles the current v2 configuration, then compares exact
 Space labels, display bindings, window selectors, Space membership, and
-approximate normalized geometry with the fresh snapshot.
+pixel geometry with the fresh snapshot. Grid verification uses the usable macOS
+display frame plus yabai padding and edge gaps, with a two-pixel rounding
+tolerance. `settings.tallTopPercent` is applied to the same grids in planning,
+execution and verification; 50/50 cannot satisfy a configured 49/51 split.
 
 Drift is classified as:
 
@@ -85,9 +88,10 @@ are removed.
 Only workspaces with change drift are invoked. Single-workspace execution never
 collects Sandbox, globally orders or finalizes other workspaces. An aggregate-mode workspace batch or
 detected empty-Space/order drift ends with one closed mode finalization step;
-that step collects unmanaged windows, removes safe empty Spaces, verifies
-ordering, and restores focus. Closed postprocessors retain their configured
-anchors. The existing Fish runners remain the mutation backend. Output, the plan,
+Sandbox objects and geometry are already pinned in the plan before execution.
+The final step only consumes listed cleanup and ordering objects. Explicit focus
+orchestration is applied last. Closed postprocessors retain their anchors and
+fixed object lists. Public Fish wrappers dispatch the fixed backend. Output, the plan,
 before/after snapshots, exact per-command lifecycle, and verification are
 written to:
 
@@ -172,7 +176,10 @@ configuration, ownership/eligible candidates, selected-window identity and
 frame, target Space identity and display geometry. Unrelated title or frame
 changes do not invalidate a workspace preview. Optional ambiguous roles are
 skipped instead of selecting an arbitrary candidate. Minimized/native fullscreen
-windows are excluded; required roles needing recovery block the plan.
+windows are excluded from immutable layout selection. Observed fullscreen or
+unmovable complex-app candidates may instead produce an explicit preparation
+phase. Successful preparation records its new window identities and a new plan;
+it cannot alter an existing layout plan's selected objects.
 
 All established journals finish as completed, failed, stale, cancelled or
 timed out. A completed apply requires fresh convergence and unchanged selected
@@ -180,12 +187,40 @@ identities. Interactive and Web controllers require this verification result,
 not merely a zero exit code. One total deadline covers discovery, backend
 commands and a single optional reconciliation. Service recovery is disabled
 inside pinned apply; retained adapters have one shared service-recovery allowance
-per lease. Read-only confirmation polling remains bounded by that deadline.
+per lease. Read-only confirmation polling, retries and app/service recovery consume atomic
+lease-wide counters in `settings.executionBudgets`; the owner deadline never
+resets for a subprocess.
 
 Recovery results distinguish completed, partial, skipped, failed and cancelled.
 Space creation/destruction, display profile changes and other non-window effects
-are reported as nonrecoverable. Command records describe issued/attempted
-operations, including uncertain failures, rather than promising that every
-command took effect or that the entire desktop can be rolled back. If the state
+are reported as nonrecoverable. Individual operation files persist intent before issue, exit acknowledgment
+before verification, and fresh postconditions before verified success. A crash
+between these points preserves an attempted/unknown result. Recovery uses only
+operated objects, including the actual pre-layout incarnation after preparation;
+it never restores merely selected windows. App and Space side effects remain
+nonrecoverable, and there is no complete desktop rollback guarantee. If the state
 directory becomes unwritable, the controller reports terminal status on stderr;
 it cannot guarantee an on-disk terminal journal while storage is unavailable.
+
+## Exact local cleanup
+
+Workspace `apply`, Web execution and interactive `workspace` all use the same
+configured opposite-variant labels and discovered UUIDs. Inactive workspaces also
+plan their empty target UUID; labels shared by their opposite modes are deduplicated. Shared runtime command
+IDs do not widen the scope. Duplicate labels or cross-workspace label claims
+block execution. Occupied and last-survivor Spaces are retained with a reason;
+cleanup never treats an unselected window as absent. Each deletion rechecks full
+fresh discovery and resolves its UUID after any previous renumbering. This local
+phase has no global Sandbox, ordering or finalization step.
+
+## Validation boundary
+
+The inherited macOS process sandbox and temporary HOME/config/state/cache/log
+roots in `scripts/isolated-check.mjs` block real desktop programs, including
+absolute executable paths. Explicit fake commands provide fixture behavior.
+A child lacking a parent's Fish mock is tested to remain blocked. Smoke is a
+batch of independent fake scenarios and receives explicit test-batch allowances;
+normal run-budget limits are verified in separate concurrent lease tests. The full
+check entry enters that sandbox before installation, packaging or smoke checks.
+Persistently non-movable app-owned Space/AX fallback remains a migration boundary
+as documented in `architecture.md`; fixture success does not establish it.

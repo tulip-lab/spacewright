@@ -58,6 +58,17 @@
     "settings": {
       "type": "object",
       "properties": {
+        "executionBudgets": {
+          "type": "object",
+          "properties": {
+            "confirmation": { "type": "integer", "minimum": 0, "maximum": 4096 },
+            "commandRetry": { "type": "integer", "minimum": 0, "maximum": 16 },
+            "appRecovery": { "type": "integer", "minimum": 0, "maximum": 64 },
+            "serviceRecovery": { "type": "integer", "minimum": 0, "maximum": 4 },
+            "reconciliation": { "type": "integer", "minimum": 0, "maximum": 1 }
+          },
+          "additionalProperties": false
+        },
         "eventAutomationEnabled": { "type": "boolean" },
         "cleanupEmptySpaces": { "enum": ["managed", "all", "none"] },
         "tallTopPercent": { "type": "integer", "minimum": 35, "maximum": 65 },

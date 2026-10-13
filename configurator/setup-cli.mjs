@@ -3,12 +3,9 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { createHash } from 'node:crypto';
-import { CONFIG_COMPILER_VERSION } from './lib/config-v2.mjs';
 import {
-  compileV3,
   describeDisplays,
   matchingSetups,
   selectHardwareProfile,
@@ -16,7 +13,7 @@ import {
   topologyKey,
   validateV3
 } from './lib/config-v3.mjs';
-import { generationDocument, withConfigurationWrite, stableRead } from './lib/config-store.mjs';
+import { generationDocument, withConfigurationWrite, stableRead,atomicText } from './lib/config-store.mjs';
 import { detectMacHardware } from './lib/hardware-detection.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -32,16 +29,8 @@ const configFile = resolve(flags.config || join(configRoot, 'config.v3.json'));
 const machineFile = join(stateRoot, 'machine.json');
 const runtimeFile = resolve(flags.runtime || join(configRoot, 'generated', 'runtime.json'));
 
-async function readJson(path, fallback) {
-  if (!existsSync(path)) return structuredClone(fallback);
-  return JSON.parse(await readFile(path, 'utf8'));
-}
-
 async function atomicWrite(path, value) {
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const temporary = `${path}.tmp-${process.pid}`;
-  await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-  await rename(temporary, path);
+  await atomicText(path,`${JSON.stringify(value,null,2)}\n`);
 }
 
 async function detectHardware() {
@@ -76,12 +65,12 @@ function assignmentForSetup(config, hardwareProfileId, setupId, displays) {
 
 async function inspect() {
   if (!existsSync(configFile)) throw new Error(`v3 configuration not found at ${configFile}`);
-  const [config, machine, hardware, snapshot] = await Promise.all([
-    readJson(configFile, null),
-    readJson(machineFile, { version: 2, displayBindings: {}, displayKinds: {}, topologySelections: {} }),
+  const [document, hardware, snapshot] = await Promise.all([
+    stableRead(configFile,machineFile),
     detectHardware(),
     detectDisplays()
   ]);
+  const {config,machine}=document;
   const validation = validateV3(config);
   if (!validation.valid) throw new Error(`configuration is invalid:\n${validation.errors.join('\n')}`);
   const selectedHardware = selectHardwareProfile(config, machine, hardware);
@@ -153,6 +142,7 @@ try {
     const runtime = await withConfigurationWrite(dirname(configFile), async () => {
       const currentSource = JSON.parse(await readFile(configFile, 'utf8'));
       if (JSON.stringify(currentSource) !== JSON.stringify(value.config)) throw new Error('configuration changed during setup activation');
+      if(JSON.stringify((await stableRead(configFile,machineFile,{ownedWrite:true})).machine)!==JSON.stringify(value.machine))throw new Error('machine configuration changed during setup activation');
       await atomicWrite(machineFile, next);
       return compileActive(value.config, next, value.hardware, value.snapshot);
     });
@@ -168,6 +158,7 @@ try {
     const runtime = await withConfigurationWrite(dirname(configFile), async () => {
       const currentSource = JSON.parse(await readFile(configFile, 'utf8'));
       if (JSON.stringify(currentSource) !== JSON.stringify(value.config)) throw new Error('configuration changed during setup activation');
+      if(JSON.stringify((await stableRead(configFile,machineFile,{ownedWrite:true})).machine)!==JSON.stringify(value.machine))throw new Error('machine configuration changed during setup activation');
       await atomicWrite(machineFile, next);
       return compileActive(value.config, next, value.hardware, value.snapshot);
     });

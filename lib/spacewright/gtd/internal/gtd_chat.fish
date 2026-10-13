@@ -250,7 +250,7 @@ function __gtd_chat_body --description "Fast GTD chat workspace layout on worksp
         end
 
         if test -n "$wechat"
-            ws_move_windows_to_space $target_space $wechat
+            __ws_retry_move_windows_to_space $target_space $wechat
             set windows_json_final (ws_query_windows gtd_chat final_wechat_retry); or return 1
             set wechat (workspace_find_app_key_window --app-key wechat --caller $label --space $target_space --no-refresh --target-only)
         end
@@ -264,7 +264,7 @@ function __gtd_chat_body --description "Fast GTD chat workspace layout on worksp
         end
 
         if test -n "$keybase"
-            ws_move_windows_to_space $target_space $keybase
+            __ws_retry_move_windows_to_space $target_space $keybase
             set windows_json_final (ws_query_windows gtd_chat final_keybase_retry); or return 1
             set keybase (workspace_find_app_key_window --app-key keybase --caller $label --space $target_space --no-refresh --target-only)
         end
@@ -278,7 +278,7 @@ function __gtd_chat_body --description "Fast GTD chat workspace layout on worksp
         end
 
         if test -n "$dingtalk"
-            ws_move_windows_to_space $target_space $dingtalk
+            __ws_retry_move_windows_to_space $target_space $dingtalk
             set windows_json_final (ws_query_windows gtd_chat final_dingtalk_retry); or return 1
             set dingtalk (echo $windows_json_final | ws_find_window --app-regex "$dingtalk_regex" --space $target_space)
         end
@@ -292,7 +292,7 @@ function __gtd_chat_body --description "Fast GTD chat workspace layout on worksp
         end
 
         if test -n "$messages"
-            ws_move_windows_to_space $target_space $messages
+            __ws_retry_move_windows_to_space $target_space $messages
             set windows_json_final (ws_query_windows gtd_chat final_messages_retry); or return 1
             set messages (echo $windows_json_final | ws_find_window "$messages_app" --space $target_space)
         end
@@ -306,7 +306,7 @@ function __gtd_chat_body --description "Fast GTD chat workspace layout on worksp
         end
 
         if test -n "$facetime"
-            ws_move_windows_to_space $target_space $facetime
+            __ws_retry_move_windows_to_space $target_space $facetime
             set windows_json_final (ws_query_windows gtd_chat final_facetime_retry); or return 1
             set facetime (workspace_find_app_key_window --app-key facetime --caller $label --space $target_space --no-refresh --target-only)
         end

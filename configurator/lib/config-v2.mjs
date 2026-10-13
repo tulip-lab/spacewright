@@ -206,7 +206,7 @@ export function validateV2(config) {
   if (config.profiles != null && !object(config.profiles)) errors.push('profiles must be an object');
   if (config.rules != null && !Array.isArray(config.rules)) errors.push('rules must be an array');
   if (config.settings != null && !object(config.settings)) errors.push('settings must be an object');
-  rejectUnknown(config.settings, new Set(['eventAutomationEnabled', 'cleanupEmptySpaces', 'tallTopPercent', 'topologyStableSamples', 'topologyCooldownSeconds']), 'settings', errors);
+  rejectUnknown(config.settings, new Set(['executionBudgets', 'eventAutomationEnabled', 'cleanupEmptySpaces', 'tallTopPercent', 'topologyStableSamples', 'topologyCooldownSeconds']), 'settings', errors);
 
   if (config.aiProviders != null && !object(config.aiProviders)) errors.push('aiProviders must be an object');
   if (config.aiRouting != null && !object(config.aiRouting)) errors.push('aiRouting must be an object');
@@ -490,7 +490,7 @@ export function resolvedAIRole(config, workspaceId, mode) {
   return assignment ? (assignment.roleOverrides?.[mode] || assignment.role) : null;
 }
 
-function configuredWindows(config, workspaceId, mode) {
+export function configuredWindows(config, workspaceId, mode) {
   const workspace = config.workspaces[workspaceId];
   const variant = workspace.variants[mode];
   const windows = structuredClone(variant.runtime?.windows || Object.entries(workspace.windows).map(([role, window]) => ({

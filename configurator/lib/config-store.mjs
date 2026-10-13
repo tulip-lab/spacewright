@@ -1,10 +1,12 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, stat, writeFile,open } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { CONFIG_COMPILER_VERSION, compileV2 } from './config-v2.mjs';
 import { compileV3 } from './config-v3.mjs';
+import { isDeepStrictEqual } from 'node:util';
 export const hash = (value) => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
 export function generationDocument(config, resolution, source = `${JSON.stringify(config, null, 2)}\n`) {
+  if(!isDeepStrictEqual(JSON.parse(source),config))throw new Error('source bytes no longer match the configuration being compiled');
   const runtime = config.version === 3 ? compileV3(config, resolution) : compileV2(config);
   const context = config.version === 3 ? {
     machine: resolution.machine,
@@ -17,10 +19,11 @@ export function generationDocument(config, resolution, source = `${JSON.stringif
   generated.generation_id = hash(generated).slice(0, 24);
   return { ...runtime, generated };
 }
-export async function stableRead(configPath, machinePath, { ownedWrite = false } = {}) {
+export async function stableRead(configPath, machinePath, { ownedWrite = false,allowMissingConfig=false } = {}) {
   const guard = join(dirname(configPath), '.configuration-write');
   const read = async () => {
-    const source = await readFile(configPath, 'utf8');
+    let source;
+    try{source=await readFile(configPath,'utf8');}catch(error){if(error.code!=='ENOENT' || !allowMissingConfig)throw error;source='{}';}
     let machine = '{}';
     if (machinePath) try { machine = await readFile(machinePath, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
     return { source, machine };
@@ -36,7 +39,11 @@ export async function stableRead(configPath, machinePath, { ownedWrite = false }
 export async function atomicText(path, value) {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const temp = `${path}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
-  try { await writeFile(temp, value, { mode: 0o600 }); await rename(temp, path); }
+  try {
+    const handle=await open(temp,'wx',0o600);try{await handle.writeFile(value);await handle.sync();}finally{await handle.close();}
+    await rename(temp,path);
+    const directory=await open(dirname(path),'r');try{await directory.sync();}finally{await directory.close();}
+  }
   finally { await rm(temp, { force: true }); }
 }
 // The guard is retained on incomplete writes. Readers fail closed, including

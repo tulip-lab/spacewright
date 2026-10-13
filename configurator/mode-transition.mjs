@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { acquireExecution, releaseLock as sharedReleaseLock, runBounded } from './lib/execution-coordinator.mjs';
 import { readTransitionHistory, writeTransitionRecord } from './lib/transition-history.mjs';
+import { stableRead } from './lib/config-store.mjs';
 
 const VALID_MODES = new Set(['solo', 'wide', 'tall']);
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -193,6 +194,10 @@ export async function runTransition({
     timeoutSeconds: Math.ceil(timeoutMs / 1000),
     controller: 'mode-transition',
   };
+  for(const name of (configRoot?['config.v3.json','config.v2.json']:[])) {
+    try {owner.budgets=(await stableRead(join(configRoot,name),join(stateRoot,'machine.json'))).config.settings?.executionBudgets;break;}
+    catch(error){if(error.code!=='ENOENT')throw error;}
+  }
   const lock = await acquireLock(lockRoot, targetKey, owner);
   if (lock.duplicate) {
     process.stderr.write(`[INFO] SpaceWright ${resolvedTargetLabel} transition is already running; duplicate request ignored\n`);
@@ -253,6 +258,7 @@ export async function runTransition({
   const requestStop = (reason) => {
     if (requestedReason) return;
     requestedReason = reason;
+    void lock.lease.cancel().catch(error=>process.stderr.write(`cancellation state write failed: ${error.message}\n`));
     cancellation.abort(Object.assign(new Error(reason), { code: reason === 'timed_out' ? 'SPACEWRIGHT_TIMEOUT' : 'SPACEWRIGHT_CANCELLED' }));
   };
   const onTerm = () => requestStop('replaced');

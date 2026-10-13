@@ -284,10 +284,14 @@ function workspace_run_finalized_entry --description "Run an entry and finalize 
     if test $outermost -eq 1
         and not contains -- --dry-run $argv
         and test "$restart_generation_after" -ne "$restart_generation_before"
-        echo "[INFO] workspace yabai restarted during layout; replaying the complete workspace once" >&2
-        set -lx WORKSPACE_DISABLE_YABAI_AUTO_RESTART 1
-        $_flag_command $argv
-        set body_status $status
+        if ws_execution_budget reconciliation
+            echo "[INFO] workspace yabai restarted during layout; replaying the complete workspace once" >&2
+            set -lx WORKSPACE_DISABLE_YABAI_AUTO_RESTART 1
+            $_flag_command $argv
+            set body_status $status
+        else
+            set body_status 1
+        end
     end
 
     set -g __WORKSPACE_FINALIZATION_DEPTH (math $__WORKSPACE_FINALIZATION_DEPTH - 1)

@@ -270,6 +270,9 @@ function __workspace_run_configured_generic_layout --description "Run a declarat
         and set app_present 1
         if test "$required" = true; or test "$app_present" -eq 1
             for retry in (seq 1 3)
+                if test "$retry" -gt 1; and set -q SPACEWRIGHT_EXECUTION_RUN_ID
+                    ws_execution_budget confirmation; or return 1
+                end
                 test -n "$window_id"; and break
                 sleep 0.25
                 set windows_json (ws_query_windows "$workspace_id-config-preflight" retry_$retry)
@@ -322,6 +325,9 @@ function __workspace_run_configured_generic_layout --description "Run a declarat
     end
     set -l settled 0
     for attempt in (seq 1 4)
+        if test "$attempt" -gt 1; and set -q SPACEWRIGHT_EXECUTION_RUN_ID
+            ws_execution_budget confirmation; or return 1
+        end
         set -l final_windows (ws_query_windows "$workspace_id-config-verify" final_$attempt)
         if test $status -eq 0
             jq -n -e --argjson ids "$selected_json" --argjson space "$target_space" --argjson windows "$final_windows" '

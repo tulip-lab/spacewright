@@ -50,7 +50,8 @@ function workspace_refresh_app_window --description "Find an app window, activat
     end
 
     workspace_debug_step $caller refresh-$_flag_app-open
-    perl -e 'alarm shift; exec @ARGV' 2 open -a "$_flag_app" >/dev/null 2>&1
+    ws_execution_budget appRecovery; or return 1
+    ws_bounded_external open -a "$_flag_app" >/dev/null 2>&1
     sleep 0.4
 
     workspace_debug_step $caller refresh-$_flag_app-query-after-open
@@ -194,9 +195,13 @@ function workspace_find_app_window --description "Find a movable app window, act
     end
 
     workspace_debug_step $caller find-$app_key-activate
-    perl -e 'alarm shift; exec @ARGV' 2 open -a "$_flag_app" >/dev/null 2>&1
+    ws_execution_budget appRecovery; or return 1
+    ws_bounded_external open -a "$_flag_app" >/dev/null 2>&1
 
     for attempt in (seq 1 $attempts)
+        if test "$attempt" -gt 1; and set -q SPACEWRIGHT_EXECUTION_RUN_ID
+            ws_execution_budget confirmation; or return 1
+        end
         sleep $wait_seconds
         workspace_debug_step $caller find-$app_key-refresh-query-after-activate-$attempt
         set phase find_{$app_key}_refresh_after_activate_$attempt
@@ -312,9 +317,13 @@ function workspace_find_app_key_window --description "Find a movable app window 
     if test "$saw_unmovable" -eq 1
         if not set -q _flag_no_refresh
             workspace_debug_step $caller find-$_flag_app_key-activate-canonical $app_names[1]
-            perl -e 'alarm shift; exec @ARGV' 2 open -a "$app_names[1]" >/dev/null 2>&1
+            ws_execution_budget appRecovery; or return 1
+            ws_bounded_external open -a "$app_names[1]" >/dev/null 2>&1
 
             for attempt in (seq 1 $attempts)
+                if test "$attempt" -gt 1; and set -q SPACEWRIGHT_EXECUTION_RUN_ID
+                    ws_execution_budget confirmation; or return 1
+                end
                 sleep $wait_seconds
 
                 for app_name in $app_names

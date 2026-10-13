@@ -237,11 +237,33 @@ function workspace_resolve_display_role --description "Resolve a workspace displ
 end
 
 function workspace_detect_display_mode --description "Detect solo, wide, or tall from connected displays"
+    # Hardware-aware setups own the compatibility mode. Display count alone
+    # cannot distinguish a MacBook's solo screen from a Mac mini's tall screen.
+    if test -r "$SPACEWRIGHT_CONFIG_ROOT/config.v3.json"
+        set -l runtime (spacewright_config_effective | string collect)
+        or return 1
+        set -l mode (printf '%s\n' "$runtime" | ws_jq -r '
+            .modes | keys | if length == 1 then .[0] else empty end
+            | select(test("^work_(solo|wide|tall)$")) | sub("^work_"; "")
+        ')
+        or return 1
+        if not contains -- "$mode" solo wide tall
+            echo '[WARN] workspace_detect_display_mode: configured setup has no unique mode' >&2
+            return 1
+        end
+        echo "$mode"
+        return 0
+    end
+
     set -l displays_json (ws_query_displays workspace_detect_display_mode display_mode)
     or return 1
 
     set -l display_count (echo $displays_json | ws_jq -r 'length')
-    if test -z "$display_count" -o "$display_count" -le 1
+    if test -z "$display_count" -o "$display_count" -eq 0
+        echo '[WARN] workspace_detect_display_mode: no displays available' >&2
+        return 1
+    end
+    if test "$display_count" -eq 1
         echo solo
         return 0
     end

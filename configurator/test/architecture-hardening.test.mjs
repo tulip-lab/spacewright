@@ -46,17 +46,35 @@ if(data.fail || data.failId===Number(args[2])) process.exit(7);
 if(kind==='window') {
  const w=data.windows.find(w=>w.id===Number(args[2])); if(!w)process.exit(3);
  if(!data.ineffective) {
- if(command==='--space') w.space=Number(args[4]);
+ if(command==='--space') {w.space=Number(args[4]);w.display=data.spaces.find(s=>s.index===w.space).display;}
  if(command==='--grid') {const [rows,cols,x,y,width,height]=args[4].split(':').map(Number); const f=data.displays.find(d=>d.index===w.display).frame; w.frame={x:f.x+f.w*x/cols,y:f.y+f.h*y/rows,w:f.w*width/cols,h:f.h*height/rows};}
  if(command==='--move') {const p=args[4].split(':').slice(1).map(Number);w.frame.x=p[0];w.frame.y=p[1];}
  if(command==='--resize') {const p=args[4].split(':').slice(1).map(Number);w.frame.w=p[0];w.frame.h=p[1];}
+ if(command==='--toggle' && args[4]==='native-fullscreen') w['is-native-fullscreen']=false;
  }
 }
 if(kind==='space' && command==='--label')data.spaces.find(s=>s.index===Number(args[2])).label=args[4];
+if(kind==='space' && args[2]==='--create')data.spaces.push({index:Math.max(...data.spaces.map(s=>s.index))+1,uuid:'CREATED-'+data.spaces.length,display:Number(args[3]),label:'',type:'bsp'});
+if(kind==='space' && command==='--layout')data.spaces.find(s=>s.index===Number(args[2])).type=args[4];
+if(kind==='space' && command==='--destroy') {
+ const removed=data.spaces.find(s=>s.index===Number(args[2]));data.spaces=data.spaces.filter(s=>s!==removed);
+ const indexes=new Map(data.spaces.map((s,i)=>[s.index,i+1]));data.windows.forEach(w=>w.space=indexes.get(w.space));data.spaces.forEach(s=>s.index=indexes.get(s.index));
+}
+if(kind==='space' && command==='--move') {
+ const old=new Map(data.spaces.map(s=>[s.uuid,s.index])),space=data.spaces.find(s=>s.index===Number(args[2]));data.spaces=data.spaces.filter(s=>s!==space);data.spaces.splice(Number(args[4])-1,0,space);
+ const indexes=new Map(data.spaces.map((s,i)=>[old.get(s.uuid),i+1]));data.windows.forEach(w=>w.space=indexes.get(w.space));data.spaces.forEach(s=>s.index=indexes.get(s.index));
+}
 fs.writeFileSync(process.env.MOCK_DATA,JSON.stringify(data));
 `;
   await writeFile(join(fakeBin,'yabai'), mock, {mode:0o755});
-  const env = {...process.env, PATH:`${fakeBin}:${process.env.PATH}`,SPACEWRIGHT_CONFIG_ROOT:configRoot,SPACEWRIGHT_STATE_ROOT:stateRoot,MOCK_DATA:dataFile,MOCK_LOG:logFile};
+  await writeFile(join(fakeBin,'open'), `#!${process.execPath}
+const fs=require('fs'),d=JSON.parse(fs.readFileSync(process.env.MOCK_DATA,'utf8'));
+fs.appendFileSync(process.env.MOCK_LOG,JSON.stringify(['open',...process.argv.slice(2)])+'\\n');
+if(d.recoveryMode==='fail')process.exit(7);
+if(d.recoveryMode!=='ineffective') { d.windows[0]['can-move']=true;if(d.recoveryMode==='replace')d.windows[0].id=20;if(d.recoveryMode==='reuse')d.windows[0].pid++; }
+fs.writeFileSync(process.env.MOCK_DATA,JSON.stringify(d));
+`,{mode:0o755});
+  const env = {...process.env, HOME:directory,XDG_CONFIG_HOME:configRoot,XDG_CACHE_HOME:join(directory,'cache'),PATH:`${fakeBin}:${process.env.PATH}`,SPACEWRIGHT_CONFIG_ROOT:configRoot,SPACEWRIGHT_STATE_ROOT:stateRoot,MOCK_DATA:dataFile,MOCK_LOG:logFile};
   const cli = (args) => exec(join(root,'bin/spacewright'), args, {env, timeout:15000, maxBuffer:4000000});
   const setData = async (change) => {const data=JSON.parse(await readFile(dataFile,'utf8'));change(data);await writeFile(dataFile,JSON.stringify(data));};
   const commands = async () => (await readFile(logFile,'utf8').catch(()=>'' )).trim().split('\n').filter(Boolean).map(JSON.parse);
@@ -262,5 +280,52 @@ test('recovery reports partial failure and records nonrecoverable effects',async
   const journal=JSON.parse(await readFile(applied.journal,'utf8'));journal.effects.push({type:'space_destroy',reversible:false});await writeFile(applied.journal,JSON.stringify(journal));
   await f.setData(d=>d.failId=11);
   await assert.rejects(f.cli(['recover',applied.runId,'--json']),e=>{const r=JSON.parse(e.stdout);assert.equal(r.status,'partial');assert.deepEqual(r.restored,[10]);assert.equal(r.failed[0].windowId,11);assert.equal(r.nonrecoverable[0].type,'space_destroy');return true;});
+ }finally{await f.close();}
+});
+
+for(const scenario of ['replace','reuse','fail','ineffective'])test(`explicit app preparation records ${scenario} and replans before layout`,async()=>{
+ const config=starterConfig();config.workspaces.coding.variants.solo.runtime={runner:'office_document'};
+ const f=await fixture(config);try{
+  await f.setData(d=>{d.windows[0]['can-move']=false;d.recoveryMode=scenario;});
+  const preview=JSON.parse((await f.cli(['apply','coding','solo','--dry-run','--json'])).stdout);
+  assert.equal(preview.plan.preparations[0].type,'refresh_app');assert.deepEqual(await f.commands(),[]);
+  let applied;try{applied=JSON.parse((await f.cli(['apply','coding','solo','--json'])).stdout);}catch(e){applied=JSON.parse(e.stdout);}
+  const journal=JSON.parse(await readFile(applied.journal,'utf8'));
+  if(['replace','reuse'].includes(scenario)) {
+   assert.equal(applied.status,'completed');assert.equal(journal.planRelations.length,1);
+   const expected=scenario==='replace'?20:10;assert.deepEqual(journal.plan.selectedWindows.map(w=>w.id),[expected]);
+   const operation=journal.operations.find(r=>r.type==='adapter_preparation');assert.equal(operation.status,'verified_success');
+   assert.equal(operation.postcondition.after[0].id,expected);
+   if(scenario==='reuse')assert.equal(operation.postcondition.after[0].pid,101);
+   const count=(await f.commands()).length;const again=JSON.parse((await f.cli(['apply','coding','solo','--json'])).stdout);assert.equal(again.noop,true);assert.equal((await f.commands()).length,count);
+  } else {assert.equal(applied.status,'failed');assert.ok(!(await f.commands()).some(a=>a[1]==='window'));}
+ }finally{await f.close();}
+});
+test('native fullscreen preparation is acknowledged before an immutable replacement plan',async()=>{
+ const f=await fixture();try{
+  await f.setData(d=>d.windows[0]['is-native-fullscreen']=true);
+  const applied=JSON.parse((await f.cli(['apply','coding','solo','--json'])).stdout);assert.equal(applied.status,'completed');
+  const journal=JSON.parse(await readFile(applied.journal,'utf8'));assert.equal(journal.preparationPlan.preparations[0].type,'native_fullscreen');assert.equal(journal.planRelations.length,1);
+  assert.equal(journal.operations.filter(r=>r.type==='adapter_preparation')[0].status,'verified_success');
+ }finally{await f.close();}
+});
+
+test('mode execution creates a recorded Sandbox UUID and converges without collecting new objects',async()=>{
+ const f=await fixture();try{
+  await f.setData(d=>{d.spaces.push({index:2,uuid:'OPPOSITE',display:1,label:'coding_wide',type:'float'},{index:3,uuid:'USER',display:1,label:'personal',type:'float'});d.windows.push({...d.windows[0],id:99,pid:101,app:'Other',space:3});});
+  const preview=JSON.parse((await f.cli(['apply','solo','--dry-run','--json'])).stdout);assert.deepEqual(preview.plan.selectedWindows.map(w=>w.id),[10,99]);assert.deepEqual(await f.commands(),[]);
+  const applied=JSON.parse((await f.cli(['apply','solo','--json'])).stdout);assert.equal(applied.status,'completed');
+  const journal=JSON.parse(await readFile(applied.journal,'utf8'));const created=journal.operations.find(r=>r.type==='ensure_space');assert.match(created.postcondition.createdSpaceUuid,/CREATED/);
+  const data=JSON.parse(await readFile(f.dataFile,'utf8'));assert.ok(data.spaces.some(s=>s.uuid==='USER'));assert.ok(!data.spaces.some(s=>s.uuid==='OPPOSITE'));assert.equal(data.spaces.find(s=>s.index===data.windows.find(w=>w.id===99).space).label,'sandbox_solo');
+  const count=(await f.commands()).length;const again=JSON.parse((await f.cli(['apply','solo','--json'])).stdout);assert.equal(again.noop,true);assert.equal((await f.commands()).length,count);
+ }finally{await f.close();}
+});
+test('workspace execution cleans only its empty opposite UUID and has no global finalization effects',async()=>{
+ const f=await fixture();try{
+  await f.setData(d=>d.spaces.push({index:2,uuid:'OPPOSITE',display:1,label:'coding_wide',type:'float'},{index:3,uuid:'OTHER',display:1,label:'gtd_other',type:'float'},{index:4,uuid:'USER',display:1,label:'personal',type:'float'}));
+  const applied=JSON.parse((await f.cli(['apply','coding','solo','--json'])).stdout);assert.equal(applied.status,'completed');
+  const commands=await f.commands();assert.equal(commands.filter(a=>a[3]==='--destroy').length,1);assert.ok(!commands.some(a=>a[3]==='--move' || a[2]==='--create'));
+  const data=JSON.parse(await readFile(f.dataFile,'utf8'));assert.deepEqual(data.spaces.map(s=>s.uuid),['S','OTHER','USER']);
+  const count=commands.length;const again=JSON.parse((await f.cli(['apply','coding','solo','--json'])).stdout);assert.equal(again.noop,true);assert.equal((await f.commands()).length,count);
  }finally{await f.close();}
 });

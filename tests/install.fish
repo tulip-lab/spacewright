@@ -35,6 +35,10 @@ test -L "$fish_root/conf.d/spacewright.fish"
 or exit 3
 test -L "$bin_root/spacewright"
 or exit 4
+if command -q swiftc
+    test -x "$installed_release_root/bin/spacewright-screen-geometry"
+    or exit 45
+end
 test ("$bin_root/spacewright" version) = (string trim < "$package_root/VERSION")
 or exit 5
 "$bin_root/spacewright" version >/dev/null
@@ -61,6 +65,10 @@ test -x "$installed_release_root/bin/spacewright-banner"
 or exit 25
 test -f "$installed_release_root/configurator/mode-transition.mjs"
 or exit 26
+test -f "$installed_release_root/scripts/smoke-check.mjs"
+or exit 35
+test -f "$installed_release_root/scripts/isolated-check.mjs"
+or exit 36
 node --check "$installed_release_root/configurator/server.mjs"
 or exit 16
 node --check "$installed_release_root/configurator/public/app.js"
