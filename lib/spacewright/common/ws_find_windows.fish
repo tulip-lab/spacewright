@@ -96,27 +96,10 @@ function ws_find_window --description "Find the first matching non-minimized win
     set -l candidates (printf '%s\n' "$windows_json" | ws_find_windows $argv)
     or return 1
 
-    set -l bad_window_ttl "$WORKSPACE_BAD_WINDOW_TTL_SECONDS"
-    if test -z "$bad_window_ttl"
-        set bad_window_ttl 600
-    end
-
-    set -l bad_window_dir /tmp/workspace-ws-window-bad
-
     for window_id in $candidates
-        set -l bad_window_file $bad_window_dir/$window_id
-
-        if test -f "$bad_window_file"
-            set -l now (date +%s)
-            set -l bad_at (cat "$bad_window_file" 2>/dev/null)
-
-            if string match -qr '^[0-9]+$' -- "$bad_at"
-                set -l age (math $now - $bad_at)
-
-                if test "$age" -lt "$bad_window_ttl"
-                    continue
-                end
-            end
+        set -l current (printf '%s\n' "$windows_json" | jq -c --argjson id "$window_id" 'first(.[] | select(.id == $id))')
+        if functions -q ws_window_cache_active; and ws_window_cache_active "$current"
+            continue
         end
 
         echo $window_id

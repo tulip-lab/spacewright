@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '../..');
 
 function fish(script) {
-  return execFileSync('fish', ['-c', script], { cwd: root, encoding: 'utf8' }).trim();
+  return execFileSync('fish', ['--no-config', '-c', script], { cwd: root, encoding: 'utf8' }).trim();
 }
 
 test('window moves retry until every requested window is confirmed', () => {
@@ -40,7 +40,7 @@ test('unlabeled cleanup uses authoritative windows and keeps the last space on a
     function sleep; end
     function ws_jq; command jq $argv; end
     function workspace_cleanup_query_spaces
-      echo '[{"index":1,"display":1,"label":"","windows":[]},{"index":2,"display":1,"label":"","windows":[]},{"index":3,"display":1,"label":"","windows":[]},{"index":4,"display":2,"label":"","windows":[]}]'
+      echo '[{"uuid":"S1","index":1,"display":1,"label":"","windows":[]},{"uuid":"S2","index":2,"display":1,"label":"","windows":[]},{"uuid":"S3","index":3,"display":1,"label":"","windows":[]},{"uuid":"S4","index":4,"display":2,"label":"","windows":[]}]'
     end
     function workspace_cleanup_query_windows
       echo '[{"id":40,"space":3,"is-sticky":false}]'

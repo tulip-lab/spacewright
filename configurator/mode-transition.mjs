@@ -2,19 +2,18 @@
 
 import { execFile, spawn } from 'node:child_process';
 import { constants } from 'node:fs';
-import { access, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { acquireExecution, releaseLock as sharedReleaseLock, runBounded } from './lib/execution-coordinator.mjs';
 import { readTransitionHistory, writeTransitionRecord } from './lib/transition-history.mjs';
 
 const VALID_MODES = new Set(['solo', 'wide', 'tall']);
 const DEFAULT_TIMEOUT_MS = 120_000;
-const REPLACEMENT_GRACE_MS = 4_000;
 const execFileAsync = promisify(execFile);
 let atomicSequence = 0;
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function configuredTimeoutMs() {
   const seconds = Number(process.env.SPACEWRIGHT_MODE_TIMEOUT_SECONDS || 0);
@@ -49,20 +48,13 @@ async function processOwnerKind(pid) {
   } catch { return false; }
 }
 
-function terminateProcessGroup(pid, signal = 'SIGTERM') {
-  if (!Number.isInteger(pid) || pid <= 1) return;
-  try { process.kill(-pid, signal); } catch (error) {
-    if (error.code !== 'ESRCH') throw error;
-  }
-}
-
 function modeCommand(mode) {
   const profile = mode === 'solo' ? 'display_apply_solo' : `display_apply_${mode}_left`;
-  return `source "$SPACEWRIGHT_TRANSITION_PACKAGE_ROOT/conf.d/spacewright.fish"; or exit 1; workspace_run_step "display profile" ${profile}; and work_${mode}`;
+  return `source "$SPACEWRIGHT_TRANSITION_PACKAGE_ROOT/conf.d/spacewright.fish"; or exit 1; workspace_run_step "display profile" ${profile}; and "$SPACEWRIGHT_TRANSITION_PACKAGE_ROOT/bin/spacewright" apply ${mode} --verified-marker --json`;
 }
 
 function workspaceCommand(workspace, mode) {
-  return `source "$SPACEWRIGHT_TRANSITION_PACKAGE_ROOT/conf.d/spacewright.fish"; or exit 1; set -lx WORKSPACE_SKIP_FINALIZATION 1; workspace_run_step "Arrange ${workspace} (${mode})" "$SPACEWRIGHT_TRANSITION_PACKAGE_ROOT/bin/spacewright" run ${workspace} ${mode}`;
+  return `source "$SPACEWRIGHT_TRANSITION_PACKAGE_ROOT/conf.d/spacewright.fish"; or exit 1; workspace_run_step "Arrange ${workspace} (${mode})" "$SPACEWRIGHT_TRANSITION_PACKAGE_ROOT/bin/spacewright" apply ${workspace} ${mode} --verified-marker --json`;
 }
 
 async function focusedSpaceLabel() {
@@ -120,79 +112,13 @@ export async function resolveHardwareContext({ stateRoot, configRoot } = {}) {
 
 async function releaseOwnedLock(lockRoot, runId) {
   const owner = await readJson(join(lockRoot, 'owner.json'));
-  if (owner?.runId !== runId) return;
-  const released = `${lockRoot}.released-${runId}`;
-  try {
-    await rename(lockRoot, released);
-    await rm(released, { recursive: true, force: true });
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
-  }
+  if (owner?.runId === runId && owner.pid === process.pid) await sharedReleaseLock(join(lockRoot, '..'), owner);
 }
-
-async function waitForExit(pid, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (processIsLive(pid) && Date.now() < deadline) await sleep(50);
-  return !processIsLive(pid);
-}
-
-async function replaceExistingOwner(lockRoot, requestedTargetKey) {
-  const owner = await readJson(join(lockRoot, 'owner.json'));
-  const ownerKind = owner ? await processOwnerKind(owner.pid) : false;
-  if (!owner) {
-    const age = Date.now() - (await stat(lockRoot)).mtimeMs;
-    if (age < 30_000) return { retry: true };
-    const stale = `${lockRoot}.stale-${Date.now()}-${process.pid}`;
-    try { await rename(lockRoot, stale); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-    await rm(stale, { recursive: true, force: true });
-    return { replaced: false };
-  }
-
-  if (!ownerKind) {
-    if (processIsLive(owner.pid)) throw new Error(`the SpaceWright execution lock has an unrecognized live owner (pid ${owner.pid}); refusing to replace it`);
-    const stale = `${lockRoot}.stale-${Date.now()}-${process.pid}`;
-    try { await rename(lockRoot, stale); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-    await rm(stale, { recursive: true, force: true });
-    return { replaced: false };
-  }
-
-  if (ownerKind !== 'mode-transition') {
-    throw new Error(`another SpaceWright mutation is active (run ${owner.runId || 'unknown'}, pid ${owner.pid}); wait for it to finish or cancel it`);
-  }
-
-  const ownerTargetKey = owner.targetKey || `mode:${owner.mode}`;
-  if (ownerTargetKey === requestedTargetKey) return { duplicate: true, owner };
-
-  terminateProcessGroup(owner.childPid);
-  try { process.kill(owner.pid, 'SIGTERM'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
-  if (!(await waitForExit(owner.pid, REPLACEMENT_GRACE_MS))) {
-    try { process.kill(owner.pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
-    await waitForExit(owner.pid, 1_000);
-  }
-
-  const current = await readJson(join(lockRoot, 'owner.json'));
-  if (current?.runId === owner.runId) {
-    const stale = `${lockRoot}.replaced-${owner.runId}`;
-    try { await rename(lockRoot, stale); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-    await rm(stale, { recursive: true, force: true });
-  }
-  return { replaced: true, owner };
-}
-
 async function acquireLock(lockRoot, requestedTargetKey, owner) {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    try {
-      await mkdir(lockRoot, { recursive: false, mode: 0o700 });
-      await atomicWrite(join(lockRoot, 'owner.json'), owner);
-      return { acquired: true };
-    } catch (error) {
-      if (error.code !== 'EEXIST') throw error;
-      const result = await replaceExistingOwner(lockRoot, requestedTargetKey);
-      if (result.duplicate) return { acquired: false, duplicate: true, owner: result.owner };
-      if (result.retry) await sleep(50);
-    }
-  }
-  throw new Error('could not acquire the workspace transition lock');
+  const lease = await acquireExecution(join(lockRoot, '..'), owner, { replaceInteractive: true, inherit: false });
+  if (lease.duplicate) return { duplicate: true, owner: lease.owner };
+  Object.assign(owner, lease.owner);
+  return { acquired: true, lease };
 }
 
 function attachLineParser(stream, destination, onLine) {
@@ -249,8 +175,6 @@ export async function runTransition({
   const stateFile = join(transitionRoot, 'status.json');
   const cancelFile = join(transitionRoot, 'cancel');
   await mkdir(transitionRoot, { recursive: true, mode: 0o700 });
-  await rm(cancelFile, { force: true });
-
   const now = Date.now();
   const runId = `${now}-${process.pid}-${Math.random().toString(16).slice(2, 10)}`;
   const owner = {
@@ -289,10 +213,9 @@ export async function runTransition({
     errors: diagnostics.errors,
     logTail: diagnostics.logTail,
   });
-  await Promise.all([atomicWrite(stateFile, state), writeTransitionRecord(stateRoot, historyDocument())]);
 
   let banner = null;
-  const resolvedBanner = bannerExecutable === undefined ? await resolveBanner(packageRoot) : bannerExecutable;
+  const resolvedBanner = bannerExecutable;
   if (resolvedBanner) {
     banner = spawn(resolvedBanner, [stateFile, cancelFile, runId], { stdio: 'ignore' });
     banner.on('error', () => {});
@@ -300,10 +223,11 @@ export async function runTransition({
 
   let child = null;
   let requestedReason = null;
+  const cancellation = new AbortController();
   let step = 0;
   let stateWrites = Promise.resolve();
   const updateState = async (overrides) => {
-    stateWrites = stateWrites.then(async () => {
+    stateWrites = stateWrites.catch(() => {}).then(async () => {
       state = { ...state, ...overrides };
       await Promise.all([atomicWrite(stateFile, state), writeTransitionRecord(stateRoot, historyDocument())]);
     });
@@ -324,17 +248,12 @@ export async function runTransition({
     const match = value.match(/^==>\s+(.+)$/);
     if (!match) return;
     step += 1;
-    void updateState({ phase: match[1], step });
+    void updateState({ phase: match[1], step }).catch((error) => { rememberDiagnostic(diagnostics.errors, `status write failed: ${error.message}`); requestStop('failed'); });
   };
   const requestStop = (reason) => {
     if (requestedReason) return;
     requestedReason = reason;
-    if (child?.pid) {
-      terminateProcessGroup(child.pid);
-      const childPid = child.pid;
-      const escalation = setTimeout(() => terminateProcessGroup(childPid, 'SIGKILL'), 2_000);
-      escalation.unref();
-    }
+    cancellation.abort(Object.assign(new Error(reason), { code: reason === 'timed_out' ? 'SPACEWRIGHT_TIMEOUT' : 'SPACEWRIGHT_CANCELLED' }));
   };
   const onTerm = () => requestStop('replaced');
   const onInterrupt = () => requestStop('cancelled');
@@ -350,39 +269,29 @@ export async function runTransition({
   const timeout = setTimeout(() => requestStop('timed_out'), timeoutMs);
 
   try {
+    await rm(cancelFile, { force: true });
+    await updateState({});
+    if (!banner && bannerExecutable === undefined) {
+      const resolved = await resolveBanner(packageRoot);
+      if (resolved) { banner = spawn(resolved, [stateFile, cancelFile, runId], { stdio: 'ignore' }); banner.on('error', () => {}); }
+    }
     const transitionSourceLabel = sourceSpaceLabel === undefined ? await focusedSpaceLabel() : sourceSpaceLabel;
     sourceLabel = transitionSourceLabel;
     await updateState({ sourceSpaceLabel: transitionSourceLabel });
-    child = spawn(fishExecutable, ['-lc', command], {
-      detached: true,
-      env: {
-        ...process.env,
-        SPACEWRIGHT_TRANSITION_PACKAGE_ROOT: packageRoot,
-        SPACEWRIGHT_TRANSITION_RUN_ID: runId,
-        SPACEWRIGHT_SOURCE_SPACE_LABEL: transitionSourceLabel,
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
+    const exitCode = await runBounded(fishExecutable, ['-lc', command], {
+      graceMs:2500, deadline: now + timeoutMs, signal: cancellation.signal,
+      env: { ...process.env, ...lock.lease.env, SPACEWRIGHT_CONFIG_ROOT: configRoot, SPACEWRIGHT_STATE_ROOT: stateRoot,
+        SPACEWRIGHT_TRANSITION_PACKAGE_ROOT: packageRoot, SPACEWRIGHT_TRANSITION_RUN_ID: runId, SPACEWRIGHT_SOURCE_SPACE_LABEL: transitionSourceLabel },
+      onChild: async (value) => { child = value; await lock.lease.trackChild(value); },
+      onOutput: (channel, value) => { process[channel].write(value); for (const line of value.split('\n')) inspectOutput(line, channel); }
     });
-    const childResult = new Promise((resolve) => {
-      child.once('error', (error) => resolve({ error }));
-      child.once('close', (code, signal) => resolve({ code, signal }));
-    });
-    owner.childPid = child.pid;
-    await atomicWrite(join(lockRoot, 'owner.json'), owner);
-
-    if (requestedReason) terminateProcessGroup(child.pid);
-
-    attachLineParser(child.stdout, process.stdout, (line) => inspectOutput(line, 'stdout'));
-    attachLineParser(child.stderr, process.stderr, (line) => inspectOutput(line, 'stderr'));
-
-    const exitCode = await childResult;
     if (exitCode.error) throw exitCode.error;
     let status = 'failed';
     let message = `Transition failed${exitCode.code === null ? ` (${exitCode.signal})` : ` with status ${exitCode.code}`}`;
     if (requestedReason === 'cancelled') { status = 'cancelled'; message = 'Transition cancelled'; }
     else if (requestedReason === 'replaced') { status = 'replaced'; message = 'A newer mode request took over'; }
     else if (requestedReason === 'timed_out') { status = 'timed_out'; message = `Stopped after ${Math.ceil(timeoutMs / 1000)} seconds`; }
-    else if (exitCode.code === 0) { status = 'completed'; message = scope === 'mode' ? `${resolvedTargetLabel} workspace is ready` : `${resolvedTargetLabel} is ready`; }
+    else if (exitCode.code === 0 && exitCode.stdout.split('\n').includes('SPACEWRIGHT_VERIFIED')) { status = 'completed'; message = scope === 'mode' ? `${resolvedTargetLabel} workspace is ready` : `${resolvedTargetLabel} is ready`; }
 
     const finishedAt = new Date().toISOString();
     await updateState({ status, phase: message, finishedAt, durationMs: Math.max(0, new Date(finishedAt).getTime() - now) });
@@ -390,7 +299,10 @@ export async function runTransition({
   } catch (error) {
     rememberDiagnostic(diagnostics.errors, error.message);
     const finishedAt = new Date().toISOString();
-    await updateState({ status: 'failed', phase: `Transition could not start: ${error.message}`, finishedAt, durationMs: Math.max(0, new Date(finishedAt).getTime() - now) });
+    const status = requestedReason || 'failed';
+    try { await updateState({ status, phase: status === 'timed_out' ? `Stopped after ${Math.ceil(timeoutMs / 1000)} seconds` : `Transition stopped: ${error.message}`, finishedAt, durationMs: Math.max(0, new Date(finishedAt).getTime() - now) }); }
+    catch (writeError) { process.stderr.write(`terminal status write failed: ${writeError.message}; run=${runId} status=${status}\n`); }
+    if (requestedReason) return { status, runId, mode, exitCode: status === 'timed_out' ? 124 : 130 };
     throw error;
   } finally {
     clearInterval(cancelPoll);

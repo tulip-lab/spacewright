@@ -17,12 +17,24 @@ function ws_yabai --description "Run a yabai command with a bounded timeout"
         end
     end
 
+    if set -q SPACEWRIGHT_EXECUTION_DEADLINE_MS
+        set -l remaining (perl -MTime::HiRes=time -e 'print (($ARGV[0]/1000)-time)' "$SPACEWRIGHT_EXECUTION_DEADLINE_MS")
+        if test "$remaining" -le 0
+            echo '[WARN] execution deadline exceeded' >&2
+            return 124
+        end
+        set timeout_seconds (math "min($timeout_seconds, $remaining)")
+    end
+    if set -q SPACEWRIGHT_EXECUTION_ENVELOPE; and test "$argv[2]" != query
+        set -l args_json (printf '%s\n' $argv | jq -R . | jq -s .)
+        printf '[MUTATION] %s\n' (printf '%s\n' "$args_json" | jq -c '{type:.[1],arguments:.,attempted:true,windowId:(if .[1] == "window" then (.[2] | tonumber? // null) else null end),reversible:(.[1] == "window")}') >&2
+    end
     set -l output_file (mktemp -t ws-yabai-output.XXXXXX)
     set -l error_file (mktemp -t ws-yabai-error.XXXXXX)
 
     if test "$WORKSPACE_DEBUG_YABAI" = "1"
         set -l started_at (perl -MTime::HiRes=time -e 'printf "%.0f\n", time * 1000')
-        perl -e 'alarm shift; exec @ARGV' $timeout_seconds yabai $argv >$output_file 2>$error_file
+        perl -MTime::HiRes=alarm -e 'alarm shift; exec @ARGV' $timeout_seconds yabai $argv >$output_file 2>$error_file
         set -l status_code $status
         set -l ended_at (perl -MTime::HiRes=time -e 'printf "%.0f\n", time * 1000')
         set -l elapsed (math $ended_at - $started_at)
@@ -43,7 +55,7 @@ function ws_yabai --description "Run a yabai command with a bounded timeout"
         return $status_code
     end
 
-    perl -e 'alarm shift; exec @ARGV' $timeout_seconds yabai $argv >$output_file 2>$error_file
+    perl -MTime::HiRes=alarm -e 'alarm shift; exec @ARGV' $timeout_seconds yabai $argv >$output_file 2>$error_file
     set -l status_code $status
 
     if test "$status_code" -eq 0
@@ -133,6 +145,12 @@ function ws_recover_yabai_once --description "Restart yabai at most once within 
 
     ws_yabai_auto_restart_allowed "$caller"
     or return 1
+    if set -q SPACEWRIGHT_EXECUTION_RUN_ID
+        # The directory belongs to the verified execution lease, shared by all child steps.
+        workspace_execution_owned; or return 1
+        mkdir "$SPACEWRIGHT_STATE_ROOT/execution.lock/recovery-used" 2>/dev/null
+        or return 1
+    end
 
     set -l cooldown_seconds "$WORKSPACE_YABAI_RESTART_COOLDOWN_SECONDS"
     if test -z "$cooldown_seconds"
@@ -175,7 +193,7 @@ function ws_jq --description "Run jq against JSON with a bounded timeout"
         set timeout_seconds 3
     end
 
-    perl -e 'alarm shift; exec @ARGV' $timeout_seconds jq $argv
+    perl -MTime::HiRes=alarm -e 'alarm shift; exec @ARGV' $timeout_seconds jq $argv
 end
 
 function ws_query_windows --description "Query yabai windows with timeout and fail-closed warning"
@@ -198,6 +216,7 @@ function ws_query_windows --description "Query yabai windows with timeout and fa
             set windows_json (__ws_query_windows_by_space)
 
             if test $status -ne 0 -o -z "$windows_json"
+                set windows_json ""
                 set failure_reason "could not query $phase windows from yabai"
             end
         end
@@ -401,6 +420,7 @@ function __ws_query_windows_by_space --description "Fallback windows query that 
 
     set -l windows_file (mktemp -t ws-yabai-windows-by-space.XXXXXX)
     set -l found 0
+    set -l missing_spaces
 
     for space in $spaces
         set -l space_windows (ws_yabai -m query --windows --space $space 2>/dev/null)
@@ -409,8 +429,18 @@ function __ws_query_windows_by_space --description "Fallback windows query that 
             if test $status -eq 0
                 printf "%s\n" "$space_windows" >>$windows_file
                 set found 1
+                continue
             end
         end
+        set -a missing_spaces $space
+    end
+
+    if test (count $missing_spaces) -gt 0
+        set -l completeness unavailable
+        test "$found" -eq 1; and set completeness partial
+        printf '[WARN] window discovery status=%s missing_spaces=%s; destructive decisions blocked\n' "$completeness" (string join , -- $missing_spaces) >&2
+        rm -f $windows_file
+        return 1
     end
 
     if test "$found" -ne 1

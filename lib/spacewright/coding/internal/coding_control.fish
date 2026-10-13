@@ -397,6 +397,7 @@ function __coding_control_body --description "Collect Warp, SmartGit, KeePassXC,
 
     if test -n "$warp"
         ws_window $warp --grid 3:1:0:0:1:2
+        or return 1
     end
 
     if test -n "$smartgit"
@@ -410,20 +411,26 @@ function __coding_control_body --description "Collect Warp, SmartGit, KeePassXC,
                 --caller $label
         else
             ws_window $smartgit --move abs:$smartgit_x:$smartgit_y
+            or return 1
             ws_window $smartgit --resize abs:1200:1040
+            or return 1
         end
     end
 
     for wid in $flclash
         if test -n "$wid"
             ws_window $wid --move abs:$flclash_x:$flclash_y
+            or return 1
             ws_window $wid --resize abs:1200:1040
+            or return 1
         end
     end
 
     if test -n "$portfolio_performance"
         ws_window $portfolio_performance --move abs:$portfolio_x:$portfolio_y
+        or return 1
         ws_window $portfolio_performance --resize abs:1220:852
+        or return 1
     end
 
     # -------------------------------------------------------------------------

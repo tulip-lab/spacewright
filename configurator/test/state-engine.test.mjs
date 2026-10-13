@@ -46,7 +46,7 @@ test('plan reports live move and resize actions without mutating', () => {
   assert.equal(plan.executable, true);
   assert.ok(plan.actions.some((action) => action.type === 'move_window' && action.windowId === 11));
   assert.ok(plan.actions.some((action) => action.type === 'resize_window' && action.windowId === 10));
-  assert.deepEqual(plan.runnerCommands, [['run', 'coding', 'solo'], ['finalize', 'solo']]);
+  assert.deepEqual(plan.runnerCommands, [['run', 'coding', 'solo']]);
 });
 
 test('missing required windows block execution while optional windows warn', () => {
@@ -240,14 +240,14 @@ test('office workspaces without their primary document stay inactive', () => {
   assert.ok(!comparison.drifts.some((item) => item.code === 'space_missing'));
 });
 
-test('declarative multi-window roles select every match without false ambiguity or geometry drift', () => {
+test('multi-window roles verify every object using the adapter geometry', () => {
   const snapshot = normalizeSnapshot({
     displays: [{ index: 1, uuid: 'DISPLAY-PRIMARY', frame: { x: 0, y: 0, w: 1200, h: 900 }, spaces: [1] }],
     spaces: [{ index: 1, uuid: 'SPACE-SUPPORT', display: 1, label: 'support_wide', type: 'float' }],
     windows: [
       { id: 20, app: 'Dia', display: 1, space: 1, frame: { x: 0, y: 0, w: 600, h: 450 }, 'can-move': true },
-      { id: 21, app: 'Dia', display: 1, space: 1, frame: { x: 600, y: 0, w: 600, h: 900 }, 'can-move': true },
-      { id: 22, app: 'Dia', display: 1, space: 1, frame: { x: 0, y: 450, w: 600, h: 450 }, 'can-move': true }
+      { id: 21, app: 'Dia', display: 1, space: 1, frame: { x: 0, y: 450, w: 600, h: 450 }, 'can-move': true },
+      { id: 22, app: 'Dia', display: 1, space: 1, frame: { x: 600, y: 0, w: 600, h: 900 }, 'can-move': true }
     ]
   });
   const desiredState = {
@@ -264,7 +264,7 @@ test('declarative multi-window roles select every match without false ambiguity 
   const single = structuredClone(snapshot);
   single.windows = [single.windows[0]];
   const singleComparison = compareState(single, desiredState, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
-  assert.ok(!singleComparison.drifts.some((item) => item.code === 'window_geometry_mismatch'));
+  assert.ok(singleComparison.drifts.some((item) => item.code === 'window_geometry_mismatch'));
 });
 
 test('independent ownership lets distinct selectors assign one app to different workspaces', () => {

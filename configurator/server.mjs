@@ -14,6 +14,10 @@ import { CONFIG_COMPILER_VERSION, compileSkhd, compileV2, migrateV1, starterConf
 import { compileV3, describeDisplays, matchingSetups, migrateV2ToV3, resolveV3, selectHardwareProfile, setupBindingStatus, starterV3, topologyKey, validateV3 } from './lib/config-v3.mjs';
 import { detectMacHardware } from './lib/hardware-detection.mjs';
 import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState, normalizeSnapshot } from './lib/state-engine.mjs';
+import { generationDocument, withConfigurationWrite } from './lib/config-store.mjs';
+import { discoverState } from './lib/discovery.mjs';
+import { matchingRules, ruleContext } from './lib/automation-policy.mjs';
+import { runWebTask, cancelWebTask } from './lib/task-coordinator.mjs';
 import { clearTransitionHistory, readTransitionHistory } from './lib/transition-history.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -40,7 +44,8 @@ let taskQueue = Promise.resolve();
 let configWriteQueue = Promise.resolve();
 
 function serializeConfigWrite(operation) {
-  const queued = configWriteQueue.then(operation, operation);
+  const guarded = () => withConfigurationWrite(configRoot, operation);
+  const queued = configWriteQueue.then(guarded, guarded);
   configWriteQueue = queued.catch(() => {});
   return queued;
 }
@@ -204,23 +209,10 @@ async function v3SetupState(config, machineOverride = null) {
 }
 
 function compiledV3Document(config, resolution, source = serializedConfig(config)) {
-  const sourceSha256 = createHash('sha256').update(source).digest('hex');
-  return { ...compileV3(config, resolution), generated: { format_version: 1, compiler_version: CONFIG_COMPILER_VERSION, source_version: 3, generation_id: sourceSha256.slice(0, 16), source_sha256: sourceSha256 } };
+  return generationDocument(config, resolution, source);
 }
 
-async function querySnapshot() {
-  try {
-    const [{ stdout: displays }, { stdout: spaces }, { stdout: windows }, machine] = await Promise.all([
-      execFileAsync('yabai', ['-m', 'query', '--displays'], { timeout: 5000, maxBuffer: 1_000_000 }),
-      execFileAsync('yabai', ['-m', 'query', '--spaces'], { timeout: 5000, maxBuffer: 2_000_000 }),
-      execFileAsync('yabai', ['-m', 'query', '--windows'], { timeout: 5000, maxBuffer: 4_000_000 }),
-      readMachine()
-    ]);
-    return normalizeSnapshot({ displays: JSON.parse(displays), spaces: JSON.parse(spaces), windows: JSON.parse(windows), capturedAt: new Date().toISOString() }, machine);
-  } catch (error) {
-    return normalizeSnapshot({ unavailable: true, message: `live yabai discovery failed: ${error.message}`, displays: [], spaces: [], windows: [], capturedAt: new Date().toISOString() }, await readMachine());
-  }
-}
+async function querySnapshot() { return discoverState(await readMachine()); }
 
 function targetFromPayload(payload) {
   if (payload.kind === 'profile') return { kind: 'profile', id: payload.target };
@@ -347,26 +339,8 @@ function commandsForExecution(config, payload) {
 }
 
 async function runTask(task, commands) {
-  if (task.status === 'cancelled') {
-    task.exitCode = 130; task.finishedAt = new Date().toISOString();
-    await activity('info', 'task_cancelled', { id: task.id, phase: 'queued' });
-    return;
-  }
-  task.status = 'running'; task.startedAt = new Date().toISOString(); await activity('info', 'task_started', { id: task.id, kind: task.kind, target: task.target });
-  for (const commandArgs of commands) {
-    if (task.status === 'cancelled') break;
-    await new Promise((resolveTask) => {
-      const child = spawn(join(packageRoot, 'bin', 'spacewright'), commandArgs, { env: { ...process.env, SPACEWRIGHT_CONFIG_ROOT: configRoot, SPACEWRIGHT_STATE_ROOT: stateRoot }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
-      task.child = child; appendTaskLog(task, `$ spacewright ${commandArgs.join(' ')}`);
-      const append = (level) => (chunk) => { for (const line of String(chunk).split('\n').filter(Boolean)) appendTaskLog(task, `${level} ${line}`); };
-      child.stdout.on('data', append('OUT')); child.stderr.on('data', append('ERR'));
-      child.once('error', (error) => { appendTaskLog(task, `ERR ${error.message}`); task.exitCode = 1; resolveTask(); });
-      child.once('exit', (code, signal) => { task.exitCode = code ?? (signal ? 130 : 1); task.child = null; resolveTask(); });
-    });
-    if (task.exitCode !== 0) break;
-  }
-  if (task.status !== 'cancelled') task.status = task.exitCode === 0 ? 'completed' : 'failed';
-  task.finishedAt = new Date().toISOString(); await activity(task.status === 'completed' ? 'info' : 'error', 'task_finished', { id: task.id, status: task.status, exitCode: task.exitCode });
+  return runWebTask(task, commands, { executable: join(packageRoot, 'bin', 'spacewright'),
+    env: { ...process.env, SPACEWRIGHT_CONFIG_ROOT: configRoot, SPACEWRIGHT_STATE_ROOT: stateRoot }, activity, append: appendTaskLog });
 }
 
 function enqueueTask(task, commands) {
@@ -374,21 +348,6 @@ function enqueueTask(task, commands) {
   return taskQueue;
 }
 
-function matchingRules(config, context) {
-  return (config.rules || []).filter((rule) => rule.enabled && Object.entries(rule.when || {}).every(([key, value]) => {
-    if (key === 'app') return context.apps?.includes(value);
-    return context[key] === value;
-  }));
-}
-
-function ruleContext(config, event, snapshot, topology) {
-  const appNames = new Set(snapshot.windows.map((window) => window.app));
-  const apps = Object.entries(config.apps || {}).filter(([, app]) => app.match.appNames.some((name) => appNames.has(name))).map(([id]) => id);
-  const focusedSpace = snapshot.spaces.find((space) => space.focused);
-  const workspace = focusedSpace ? Object.entries(config.workspaces || {}).find(([, definition]) => Object.entries(definition.variants || {}).some(([mode, variant]) => (variant.spaceLabel || `${definition.spaceLabel}_${mode}`) === focusedSpace.label))?.[0] || null : null;
-  const display = snapshot.displays.find((item) => item.focused)?.role || null;
-  return { event, topology, orientation: topology.startsWith('tall') ? 'tall' : topology.startsWith('wide') ? 'wide' : null, apps, workspace, display, layout: focusedSpace?.layout || null };
-}
 
 async function executeRule(config, rule) {
   const kind = rule.then.activateProfile ? 'profile' : 'workspace'; const target = rule.then.activateProfile || rule.then.activateWorkspace;
@@ -444,9 +403,7 @@ async function currentEditorDocument() {
 }
 
 function compiledDocument(config) {
-  const source = serializedConfig(config);
-  const sourceSha256 = createHash('sha256').update(source).digest('hex');
-  return { ...compileV2(config), generated: { format_version: 1, compiler_version: CONFIG_COMPILER_VERSION, source_version: config.version, generation_id: sourceSha256.slice(0, 16), source_sha256: sourceSha256 } };
+  return generationDocument(config, null, serializedConfig(config));
 }
 
 async function api(request, response, url) {
@@ -492,13 +449,14 @@ async function api(request, response, url) {
       topologySelections: { ...(provisional.topologySelections || {}), [key]: setupId },
       activeSetup: setupId
     };
-    await atomicWrite(machineFile, `${JSON.stringify(machine, null, 2)}\n`);
     let runtime = null;
-    if (existsSync(configV3File)) {
-      const resolution = { machine, hardware, snapshot };
-      runtime = compiledV3Document(config, resolution);
-      await atomicWrite(runtimeFile, `${JSON.stringify(runtime, null, 2)}\n`);
-    }
+    await serializeConfigWrite(async () => {
+      await atomicWrite(machineFile, `${JSON.stringify(machine, null, 2)}\n`);
+      if (existsSync(configV3File)) {
+        runtime = compiledV3Document(config, {machine,hardware,snapshot});
+        await atomicWrite(runtimeFile, `${JSON.stringify(runtime, null, 2)}\n`);
+      }
+    });
     const setupState = await v3SetupState(config, machine);
     return json(response, 200, { confirmed: true, machine, topologyKey: key, hardwareProfile: hardwareProfileId, setup: setupId, setupState, runtimePath: runtime ? runtimeFile : null });
   }
@@ -507,9 +465,11 @@ async function api(request, response, url) {
     const config = JSON.parse(await readFile(configV3File, 'utf8')); const state = await v3SetupState(config);
     if (!state.ready) return json(response, 422, { error: 'the current topology has not been confirmed', ...state });
     const machine = { ...state.machine, activeSetup: state.confirmedSetup };
+    await serializeConfigWrite(async () => {
     await atomicWrite(machineFile, `${JSON.stringify(machine, null, 2)}\n`);
     const runtime = compiledV3Document(config, { machine, hardware: state.hardware, snapshot: state.snapshot });
     await atomicWrite(runtimeFile, `${JSON.stringify(runtime, null, 2)}\n`);
+    });
     return json(response, 200, { activated: true, setup: state.confirmedSetup, compatibilityMode: state.compatibilityMode, runtimePath: runtimeFile });
   }
   if (url.pathname === '/api/v3/save' && request.method === 'POST') {
@@ -590,7 +550,7 @@ async function api(request, response, url) {
   if (url.pathname.match(/^\/api\/history\/[^/]+\/restore$/) && request.method === 'POST') {
     const id = url.pathname.split('/')[3]; const path = join(historyRoot, `${id}.json`); if (!existsSync(path)) return json(response, 404, { error: 'snapshot not found' });
     const snapshot = JSON.parse(await readFile(path, 'utf8')); const validation = validateV2(snapshot.config); if (!validation.valid) return json(response, 422, validation);
-    await createSnapshot(await readConfig(), 'before-restore'); await atomicWrite(runtimeFile, `${JSON.stringify(compiledDocument(snapshot.config), null, 2)}\n`); await atomicWrite(configFile, serializedConfig(snapshot.config)); await activity('info', 'snapshot_restored', { id });
+    await serializeConfigWrite(async () => { await createSnapshot(await readConfig(), 'before-restore'); await atomicWrite(runtimeFile, `${JSON.stringify(compiledDocument(snapshot.config), null, 2)}\n`); await atomicWrite(configFile, serializedConfig(snapshot.config)); }); await activity('info', 'snapshot_restored', { id });
     return json(response, 200, { restored: true, config: snapshot.config, revision: configRevision(snapshot.config) });
   }
   if (url.pathname.startsWith('/api/history/') && request.method === 'DELETE') {
@@ -606,7 +566,7 @@ async function api(request, response, url) {
   if (url.pathname === '/api/state' && request.method === 'GET') return json(response, 200, { snapshot: await querySnapshot(), mutates: false });
   if (url.pathname === '/api/capture' && request.method === 'POST') {
     const payload = await body(request); const snapshot = await querySnapshot();
-    if (snapshot.unavailable) return json(response, 503, { error: snapshot.message });
+    if (snapshot.completeness !== 'complete') return json(response, 503, { error: snapshot.message });
     try { return json(response, 200, { ...captureWorkspace(snapshot, payload), mutates: false }); }
     catch (error) { return json(response, 422, { error: error.message }); }
   }
@@ -627,7 +587,7 @@ async function api(request, response, url) {
     const topology = snapshot.unavailable ? 'unknown' : classifyTopology(snapshot.displays.map((display) => ({ ...display, 'is-built-in': display.builtIn, 'is-visible': display.visible })));
     const context = ruleContext(config, payload.event || 'manual', snapshot, topology); const rules = matchingRules(config, context);
     if (!payload.execute) return json(response, 200, { context, matches: rules, mutates: false });
-    if (snapshot.unavailable) return json(response, 503, { error: snapshot.message });
+    if (snapshot.completeness !== 'complete') return json(response, 503, { error: snapshot.message });
     if (payload.confirmed !== true) return json(response, 422, { error: 'explicit execution confirmation is required' });
     const launched = []; for (const rule of rules) launched.push(taskView(await executeRule(config, rule)));
     return json(response, 202, { context, tasks: launched });
@@ -639,7 +599,7 @@ async function api(request, response, url) {
     let currentPlan;
     try { currentPlan = await livePlan(config, payload); } catch (error) { return json(response, 422, { error: error.message }); }
     if (!currentPlan.validation.valid) return json(response, 422, currentPlan.validation);
-    if (currentPlan.plan.planId !== payload.expectedPlanId || currentPlan.plan.configDigest !== payload.expectedConfigDigest || currentPlan.snapshot.snapshotId !== payload.expectedSnapshotId) {
+    if (currentPlan.plan.planId !== payload.expectedPlanId || currentPlan.plan.configDigest !== payload.expectedConfigDigest || false /* full snapshot is diagnostic; stable plan carries relevant preconditions */) {
       return json(response, 409, { error: 'the configuration or desktop changed after preview; review the refreshed plan before running', code: 'plan_stale', plan: currentPlan.plan, comparison: currentPlan.comparison });
     }
     const executionPayload = config.version === 3 && payload.kind === 'workspace' && !payload.mode
@@ -652,7 +612,7 @@ async function api(request, response, url) {
     void enqueueTask(task, execution.commands); return json(response, 202, { task: taskView(task) });
   }
   if (url.pathname.match(/^\/api\/tasks\/[a-f0-9]+$/) && request.method === 'GET') { const id = url.pathname.split('/').at(-1); const task = tasks.get(id); return task ? json(response, 200, { task: taskView(task) }) : json(response, 404, { error: 'task not found' }); }
-  if (url.pathname.match(/^\/api\/tasks\/[a-f0-9]+\/cancel$/) && request.method === 'POST') { const id = url.pathname.split('/')[3]; const task = tasks.get(id); if (!task) return json(response, 404, { error: 'task not found' }); if (!['queued', 'running'].includes(task.status)) return json(response, 409, { error: 'task is no longer running' }); task.status = 'cancelled'; if (task.child?.pid) try { process.kill(-task.child.pid, 'SIGTERM'); } catch {} appendTaskLog(task, 'SYSTEM cancellation requested'); return json(response, 200, { task: taskView(task) }); }
+  if (url.pathname.match(/^\/api\/tasks\/[a-f0-9]+\/cancel$/) && request.method === 'POST') { const id = url.pathname.split('/')[3]; const task = tasks.get(id); if (!task) return json(response, 404, { error: 'task not found' }); if (!['queued', 'running'].includes(task.status)) return json(response, 409, { error: 'task is no longer running' }); cancelWebTask(task); appendTaskLog(task, 'SYSTEM cancellation requested'); return json(response, 200, { task: taskView(task) }); }
   if (url.pathname === '/api/topology' && request.method === 'GET') { const result = await queryDisplays(); return json(response, 200, { ...result, topology: classifyTopology(result.displays), mutates: false }); }
   if (url.pathname === '/api/diagnostics' && request.method === 'GET') {
     const portableConfig = await readOperationalConfig(); const validation = portableConfig.version === 3 ? validateV3(portableConfig) : validateV2(portableConfig); const snapshot = await querySnapshot(); const machine = await readMachine(); const yabai = await commandCheck('yabai');
@@ -737,8 +697,10 @@ async function api(request, response, url) {
     const config = JSON.parse(await readFile(backup, 'utf8'));
     const validation = validateV2(config);
     if (!validation.valid) return json(response, 422, { error: 'the configuration backup is invalid', ...validation });
+    await serializeConfigWrite(async () => {
     await atomicWrite(runtimeFile, `${JSON.stringify(compiledDocument(config), null, 2)}\n`);
     await atomicWrite(configFile, serializedConfig(config));
+    });
     return json(response, 200, { restored: true, config, revision: configRevision(config), path: configFile, runtimePath: runtimeFile });
   }
   if (url.pathname === '/api/skhd' && request.method === 'POST') {
@@ -834,7 +796,7 @@ async function triggerRuleEvent(event) {
   const config = await readConfig();
   if (config.settings?.eventAutomationEnabled !== true) { await activity('info', 'event_ignored', { event, reason: 'automation_disabled' }); return; }
   const snapshot = await querySnapshot();
-  if (snapshot.unavailable) { await activity('error', 'event_query_unavailable', { event, message: snapshot.message }); return; }
+  if (snapshot.completeness !== 'complete') { await activity('error', 'event_query_unavailable', { event, message: snapshot.message }); return; }
   const topology = classifyTopology(snapshot.displays.map((display) => ({ ...display, 'is-built-in': display.builtIn, 'is-visible': display.visible })));
   const matches = matchingRules(config, ruleContext(config, event, snapshot, topology));
   await activity('info', 'event_evaluated', { event, topology, matches: matches.map((rule) => rule.id) });
@@ -842,7 +804,9 @@ async function triggerRuleEvent(event) {
 }
 
 process.on('SIGUSR1', () => { void triggerRuleEvent('wake').catch((error) => activity('error', 'wake_event_failed', { message: error.message })); });
-for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, async () => {
+  for (const task of tasks.values()) if (['queued','running'].includes(task.status)) cancelWebTask(task);
+  await taskQueue.catch(() => {});
   server.close(async () => {
     try { const session = JSON.parse(await readFile(sessionFile, 'utf8')); if (session.pid === process.pid) await unlink(sessionFile); } catch {}
     process.exit(0);
@@ -852,7 +816,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
 setInterval(async () => {
   try {
     const snapshot = await querySnapshot();
-    if (snapshot.unavailable) {
+    if (snapshot.completeness !== 'complete') {
       if (Date.now() - lastTopologyErrorAt >= 60_000) { lastTopologyErrorAt = Date.now(); await activity('error', 'topology_query_unavailable', { message: snapshot.message }); }
       return;
     }
@@ -877,9 +841,11 @@ setInterval(async () => {
         return;
       }
       const machine = { ...setupState.machine, activeSetup: setupState.confirmedSetup };
+      await serializeConfigWrite(async () => {
       await atomicWrite(machineFile, `${JSON.stringify(machine, null, 2)}\n`);
       const runtime = compiledV3Document(portableConfig, { machine, hardware: setupState.hardware, snapshot: setupState.snapshot });
       await atomicWrite(runtimeFile, `${JSON.stringify(runtime, null, 2)}\n`);
+      });
       await activity('info', 'v3_setup_activated', { hardwareProfile: setupState.hardwareSelection.id, setup: setupState.confirmedSetup, topologyKey: setupState.topologyKey });
       return;
     }

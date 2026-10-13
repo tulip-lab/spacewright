@@ -77,7 +77,7 @@ test('repository schema is the structural validation authority', () => {
   const errors = validateV2Schema(config).join('\n');
   assert.match(errors, /apps.code.match.appNames must contain at least 1 item/);
   assert.match(errors, /workspaces.coding.variants.wide.layout does not match a supported shape/);
-  assert.equal(CONFIG_COMPILER_VERSION, 4);
+  assert.equal(CONFIG_COMPILER_VERSION, 5);
 });
 
 test('AI routing shares defaults across modes and compiles explicit overrides', () => {

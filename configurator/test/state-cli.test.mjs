@@ -167,13 +167,11 @@ esac
     const journal = JSON.parse(await readFile(join(stateRoot, 'runs', journals[0]), 'utf8'));
     assert.equal(journal.status, 'completed');
     assert.equal(journal.verification.converged, true);
-    assert.equal(journal.steps.length, 2);
+    assert.equal(journal.steps.length, 1);
     assert.equal(journal.steps[0].action, 'workspace');
     assert.deepEqual(journal.steps[0].command, ['spacewright', 'run', 'coding', 'solo']);
     assert.equal(journal.steps[0].status, 'completed');
-    assert.equal(journal.steps[1].action, 'finalize_mode');
-    assert.deepEqual(journal.steps[1].command, ['spacewright', 'finalize', 'solo']);
-    assert.equal(journal.steps[1].status, 'completed');
+
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -192,16 +190,17 @@ test('recovery writes an independent step journal before restoring windows', asy
     before: {
       displays: [{ index: 1, uuid: 'DISPLAY-PRIMARY', frame: { x: 0, y: 0, w: 1200, h: 900 } }],
       spaces: [{ index: 1, uuid: 'SPACE-ORIGINAL', display: 1, label: 'coding_solo' }],
-      windows: [{ id: 10, app: 'Code', space: 1, display: 1, frame: { x: 10, y: 20, w: 800, h: 700 }, movable: true, resizable: true }]
+      windows: [{ id: 10, pid: 100, bundleId: '', app: 'Code', space: 1, display: 1, frame: { x: 10, y: 20, w: 800, h: 700 }, movable: true, resizable: true }]
     },
+    effects: [{ type: 'move_window', windowId: 10 }],
     plan: { recovery: { windowIds: [10] } }
   }, null, 2)}\n`);
   await writeFile(join(fakeBin, 'yabai'), `#!/bin/sh
-if test "$2" = window; then printf '%s\n' "$*" >> "${mutationLog}"; exit 0; fi
+if test "$2" = window; then printf '%s\n' "$*" >> "${mutationLog}"; touch "${mutationLog}.done"; exit 0; fi
 case "$3" in
   --displays) printf '%s\n' '[{"index":1,"uuid":"DISPLAY-PRIMARY","frame":{"x":0,"y":0,"w":1200,"h":900},"is-built-in":true,"spaces":[1]}]' ;;
   --spaces) printf '%s\n' '[{"index":1,"uuid":"SPACE-ORIGINAL","display":1,"label":"coding_solo","type":"float"}]' ;;
-  --windows) printf '%s\n' '[{"id":10,"app":"Code","display":1,"space":1,"frame":{"x":0,"y":0,"w":600,"h":500},"can-move":true,"can-resize":true,"is-visible":true}]' ;;
+  --windows) printf '%s\n' '[{"id":10,"pid":100,"app":"Code","display":1,"space":1,"frame":{"x":10,"y":20,"w":800,"h":700},"can-move":true,"can-resize":true,"is-visible":true}]' ;;
 esac
 `);
   await chmod(join(fakeBin, 'yabai'), 0o755);

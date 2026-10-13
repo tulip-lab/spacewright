@@ -27,6 +27,16 @@ function display_verify_mode --description "Wait briefly and verify the current 
 end
 
 function display_apply_profile_mode --description "Apply a display profile, reload workspace functions, and verify mode"
+    if contains -- --dry-run $argv
+        printf 'dry_run=display_apply_profile_mode\n'
+        return 0
+    end
+    if test -n "$SPACEWRIGHT_PACKAGE_ROOT"; and not contains -- --dry-run $argv
+        if not workspace_execution_owned 2>/dev/null
+            command node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/execution-cli.mjs" exec fish --no-config -c 'source "$SPACEWRIGHT_PACKAGE_ROOT/conf.d/spacewright.fish"; $argv' -- display_apply_profile_mode $argv
+            return $status
+        end
+    end
     set -l profile_command $argv[1]
     set -l mode $argv[2]
 
@@ -48,13 +58,13 @@ function display_apply_profile_mode --description "Apply a display profile, relo
 end
 
 function display_apply_solo --description "Apply solo primary-display layout and reload display/workspace functions"
-    display_apply_profile_mode "$SPACEWRIGHT_DISPLAY_PROFILES_ROOT/display-solo-primary.fish" solo
+    display_apply_profile_mode "$SPACEWRIGHT_DISPLAY_PROFILES_ROOT/display-solo-primary.fish" solo $argv
 end
 
 function display_apply_wide_left --description "Apply wide-left display layout and reload display/workspace functions"
-    display_apply_profile_mode "$SPACEWRIGHT_DISPLAY_PROFILES_ROOT/display-primary-plus-wide-left.fish" wide
+    display_apply_profile_mode "$SPACEWRIGHT_DISPLAY_PROFILES_ROOT/display-primary-plus-wide-left.fish" wide $argv
 end
 
 function display_apply_tall_left --description "Apply tall-left display layout and reload display/workspace functions"
-    display_apply_profile_mode "$SPACEWRIGHT_DISPLAY_PROFILES_ROOT/display-primary-plus-tall-left.fish" tall
+    display_apply_profile_mode "$SPACEWRIGHT_DISPLAY_PROFILES_ROOT/display-primary-plus-tall-left.fish" tall $argv
 end

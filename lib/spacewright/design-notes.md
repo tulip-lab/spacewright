@@ -235,7 +235,7 @@ standard service command.
 `ws_window` is the wrapper for direct `yabai -m window ...` operations. It uses bounded timeouts and caches window IDs that time out under:
 
 ```text
-/tmp/workspace-ws-window-bad
+$SPACEWRIGHT_STATE_ROOT/cache/bad-windows
 ```
 
 Move helpers move caller-provided IDs only. They do not rediscover other same-app windows during movement, because stale yabai IDs can cause repeated stalls.

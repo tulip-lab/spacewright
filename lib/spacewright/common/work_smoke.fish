@@ -1,5 +1,25 @@
 function work_smoke --description "Run read-only workspace smoke checks for helper wiring and dry-run paths"
+    # External desktop commands are denied even if a fixture forgets a function mock.
     set -lx SPACEWRIGHT_PUBLIC_ENTRY_DIRECT 1
+    set -lx SPACEWRIGHT_CONFIG_DISABLE 1
+    set -lx WORKSPACE_DISABLE_YABAI_AUTO_RESTART 1
+    if not set -q SPACEWRIGHT_SMOKE_STATE_ROOT
+        set -lx SPACEWRIGHT_SMOKE_STATE_ROOT (mktemp -d -t spacewright-smoke-state.XXXXXX)
+        set -lx SPACEWRIGHT_STATE_ROOT "$SPACEWRIGHT_SMOKE_STATE_ROOT"
+        set -l mock_bin "$SPACEWRIGHT_SMOKE_STATE_ROOT/mock-bin"
+        mkdir -p "$mock_bin"
+        for blocked in yabai displayplacer open launchctl osascript killall
+            printf '%s\n' '#!/bin/sh' 'echo "[TEST BLOCKED] external desktop command: $0 $*" >&2' 'exit 97' >"$mock_bin/$blocked"
+            chmod +x "$mock_bin/$blocked"
+        end
+        set -lx PATH "$mock_bin" $PATH
+        command node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/execution-cli.mjs" exec fish --no-config -c 'source "$SPACEWRIGHT_PACKAGE_ROOT/conf.d/spacewright.fish"; work_smoke'
+        set -l result $status
+        rm -rf "$SPACEWRIGHT_SMOKE_STATE_ROOT"
+        return $result
+    end
+    # The smoke controller owns a real lease; mocked helpers stay in-process.
+    workspace_execution_owned; or return 1
     set -l failed 0
     set -lx WORKSPACE_SKIP_FINALIZATION 1
     set -l had_fish_function 0
@@ -21,20 +41,23 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set -lx SPACEWRIGHT_CONFIG_ROOT "$smoke_config_root"
     end
 
+    set -lx SPACEWRIGHT_CONFIG_ROOT "$smoke_config_root"
+
     set -l smoke_fish_binary (command -s fish)
     function fish --inherit-variable smoke_fish_binary --inherit-variable smoke_source_root --inherit-variable smoke_package_root --inherit-variable smoke_config_root
         if test "$argv[1]" = -lc; and test -n "$smoke_source_root"
             set -l escaped_source_root (string escape -- "$smoke_source_root")
             set -l escaped_package_root (string escape -- "$smoke_package_root")
             set -l escaped_config_root (string escape -- "$smoke_config_root")
+            command rm -rf "$SPACEWRIGHT_STATE_ROOT/execution.lock/recovery-used"
             set argv[2] "set -gx SPACEWRIGHT_PACKAGE_ROOT $escaped_package_root; set -gx SPACEWRIGHT_ROOT $escaped_source_root; set -gx SPACEWRIGHT_CONFIG_ROOT $escaped_config_root; source $escaped_source_root/common/spacewright_paths.fish; source $escaped_source_root/common/work_reload.fish; $argv[2]"
         end
-        command $smoke_fish_binary $argv
+        command $smoke_fish_binary --no-config $argv
     end
 
     echo "===== WORKSPACE SMOKE ====="
 
-    work_reload >/dev/null
+    work_reload >/dev/null; function workspace_execution_owned; return 0; end
     or set failed 1
 
     if set -q WORKSPACE_TEST_SOURCE_ROOT
@@ -57,12 +80,12 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         source "$WORKSPACE_TEST_SOURCE_ROOT/gtd/gtd_entries.fish"
     end
 
-    work_command_check >/tmp/work-command-check.out
+    work_command_check >$SPACEWRIGHT_STATE_ROOT/work-command-check.out
     if test $status -eq 0
         echo "OK      command check"
     else
         echo "FAIL    command check"
-        cat /tmp/work-command-check.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-command-check.out
         set failed 1
     end
 
@@ -113,7 +136,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     end
 
     set -l gtd_chat_facetime_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_chat_moves
         set -g __work_smoke_chat_windows
@@ -172,12 +195,12 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         contains -- "61 --resize abs:885:560" $__work_smoke_chat_windows
         or exit 4
     '
-    fish -lc "$gtd_chat_facetime_smoke" >/tmp/work-gtd-chat-facetime-smoke.out 2>&1
+    fish -lc "$gtd_chat_facetime_smoke" >$SPACEWRIGHT_STATE_ROOT/work-gtd-chat-facetime-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      GTD chat FaceTime capture and centered layout"
     else
         echo "FAIL    GTD chat FaceTime capture and centered layout"
-        cat /tmp/work-gtd-chat-facetime-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-gtd-chat-facetime-smoke.out
         set failed 1
     end
 
@@ -261,7 +284,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     end
 
     set -l gtd_ai_hermes_space_fallback_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_ai_fallback_args ""
         set -g __work_smoke_ai_eviction_args ""
@@ -358,12 +381,12 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         and string match -q "*--grid 1:4:1:0:2:1*" -- "$__work_smoke_ai_bounds"
         or exit 7
     '
-    fish -lc "$gtd_ai_hermes_space_fallback_smoke" >/tmp/work-gtd-ai-hermes-space-fallback-smoke.out 2>&1
+    fish -lc "$gtd_ai_hermes_space_fallback_smoke" >$SPACEWRIGHT_STATE_ROOT/work-gtd-ai-hermes-space-fallback-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      GTD AI Hermes space fallback"
     else
         echo "FAIL    GTD AI Hermes space fallback"
-        cat /tmp/work-gtd-ai-hermes-space-fallback-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-gtd-ai-hermes-space-fallback-smoke.out
         set failed 1
     end
 
@@ -418,7 +441,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     end
 
     set -l workspace_observability_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_observation_fixture meeting_ok
         set -g __work_smoke_observation_display_queries 0
@@ -571,24 +594,24 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test "$__work_smoke_observation_mutations" -eq 0
         or exit 12
     '
-    fish -lc "$workspace_observability_smoke" >/tmp/work-observability-smoke.out 2>&1
+    fish -lc "$workspace_observability_smoke" >$SPACEWRIGHT_STATE_ROOT/work-observability-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      workspace snapshot plan verify"
     else
         echo "FAIL    workspace snapshot plan verify"
-        cat /tmp/work-observability-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-observability-smoke.out
         set failed 1
     end
 
     work_smoke_observability
     or set failed 1
 
-    work_smoke_finalization >/tmp/work-smoke-finalization.out 2>&1
+    work_smoke_finalization >$SPACEWRIGHT_STATE_ROOT/work-smoke-finalization.out 2>&1
     if test $status -eq 0
         echo "OK      workspace finalization fixtures"
     else
         echo "FAIL    workspace finalization fixtures"
-        cat /tmp/work-smoke-finalization.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-smoke-finalization.out
         set failed 1
     end
 
@@ -604,7 +627,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     end
 
     set -l windows_by_space_query_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         function ws_yabai
             if test (count $argv) -eq 3 -a "$argv[1]" = "-m" -a "$argv[2]" = "query" -a "$argv[3]" = "--windows"
@@ -638,17 +661,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test (string join , $window_ids) = "11,22"
         or exit 2
     '
-    fish -lc "$windows_by_space_query_smoke" >/tmp/work-windows-by-space-query-smoke.out 2>&1
+    fish -lc "$windows_by_space_query_smoke" >$SPACEWRIGHT_STATE_ROOT/work-windows-by-space-query-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      windows query per-space fallback"
     else
         echo "FAIL    windows query per-space fallback"
-        cat /tmp/work-windows-by-space-query-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-windows-by-space-query-smoke.out
         set failed 1
     end
 
     set -l displays_query_retry_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_display_query_calls 0
 
@@ -686,17 +709,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test "$__work_smoke_display_query_calls" -eq 4
         or exit 4
     '
-    fish -lc "$displays_query_retry_smoke" >/tmp/work-displays-query-retry-smoke.out 2>&1
+    fish -lc "$displays_query_retry_smoke" >$SPACEWRIGHT_STATE_ROOT/work-displays-query-retry-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      displays query retry"
     else
         echo "FAIL    displays query retry"
-        cat /tmp/work-displays-query-retry-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-displays-query-retry-smoke.out
         set failed 1
     end
 
     set -l spaces_query_retry_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_spaces_query_calls 0
 
@@ -726,17 +749,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test "$__work_smoke_spaces_query_calls" -eq 2
         or exit 3
     '
-    fish -lc "$spaces_query_retry_smoke" >/tmp/work-spaces-query-retry-smoke.out 2>&1
+    fish -lc "$spaces_query_retry_smoke" >$SPACEWRIGHT_STATE_ROOT/work-spaces-query-retry-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      spaces query retry"
     else
         echo "FAIL    spaces query retry"
-        cat /tmp/work-spaces-query-retry-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-spaces-query-retry-smoke.out
         set failed 1
     end
 
     set -l labeled_cleanup_query_failure_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_cleanup_query_calls 0
 
@@ -756,17 +779,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test "$__work_smoke_cleanup_query_calls" -eq 2
         or exit 2
     '
-    fish -lc "$labeled_cleanup_query_failure_smoke" >/tmp/work-labeled-cleanup-query-failure-smoke.out 2>&1
+    fish -lc "$labeled_cleanup_query_failure_smoke" >$SPACEWRIGHT_STATE_ROOT/work-labeled-cleanup-query-failure-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      labeled cleanup query failure is nonblocking"
     else
         echo "FAIL    labeled cleanup query failure is nonblocking"
-        cat /tmp/work-labeled-cleanup-query-failure-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-labeled-cleanup-query-failure-smoke.out
         set failed 1
     end
 
     set -l cleanup_specs_shared_query_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_cleanup_space_query_calls 0
         set -g __work_smoke_cleanup_window_query_calls 0
@@ -775,10 +798,11 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         function ws_yabai
             if test (count $argv) -eq 3 -a "$argv[1]" = "-m" -a "$argv[2]" = "query" -a "$argv[3]" = "--spaces"
                 set -g __work_smoke_cleanup_space_query_calls (math $__work_smoke_cleanup_space_query_calls + 1)
-                printf "%s\n" "[
-                    {\"index\": 3, \"display\": 2, \"label\": \"gtd_review_tall\", \"windows\": [99]},
-                    {\"index\": 4, \"display\": 2, \"label\": \"gtd_review_solo\", \"windows\": []}
-                ]"
+                if contains -- 3 $__work_smoke_cleanup_destroy_calls
+                    printf "%s\n" "[{\"uuid\": \"S4\", \"index\": 4, \"display\": 2, \"label\": \"gtd_review_solo\", \"windows\": []}]"
+                    return 0
+                end
+                printf "%s\n" "[{\"uuid\": \"S3\", \"index\": 3, \"display\": 2, \"label\": \"gtd_review_tall\", \"windows\": [99]}, {\"uuid\": \"S4\", \"index\": 4, \"display\": 2, \"label\": \"gtd_review_solo\", \"windows\": []}]"
                 return 0
             end
 
@@ -799,26 +823,26 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         workspace_run_cleanup_specs gtd:tall gtd:solo >/dev/null
         or exit 1
 
-        test "$__work_smoke_cleanup_space_query_calls" -eq 1
+        test "$__work_smoke_cleanup_space_query_calls" -eq 3
         or exit 2
 
-        test "$__work_smoke_cleanup_window_query_calls" -eq 1
+        test "$__work_smoke_cleanup_window_query_calls" -eq 3
         or exit 3
 
-        test (string join , -- $__work_smoke_cleanup_destroy_calls) = 3,4
+        test (string join , -- $__work_smoke_cleanup_destroy_calls) = 3
         or exit 4
     '
-    fish -lc "$cleanup_specs_shared_query_smoke" >/tmp/work-cleanup-specs-shared-query-smoke.out 2>&1
+    fish -lc "$cleanup_specs_shared_query_smoke" >$SPACEWRIGHT_STATE_ROOT/work-cleanup-specs-shared-query-smoke.out 2>&1
     if test $status -eq 0
-        echo "OK      cleanup specs share Space/window query"
+        echo "OK      cleanup candidates share discovery and destruction rechecks fresh state"
     else
-        echo "FAIL    cleanup specs share Space/window query"
-        cat /tmp/work-cleanup-specs-shared-query-smoke.out
+        echo "FAIL    cleanup candidates share discovery and destruction rechecks fresh state"
+        cat $SPACEWRIGHT_STATE_ROOT/work-cleanup-specs-shared-query-smoke.out
         set failed 1
     end
 
     set -l current_query_retry_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_current_display_query_calls 0
         set -g __work_smoke_current_space_query_calls 0
@@ -859,17 +883,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test "$__work_smoke_current_space_query_calls" -eq 2
         or exit 4
     '
-    fish -lc "$current_query_retry_smoke" >/tmp/work-current-query-retry-smoke.out 2>&1
+    fish -lc "$current_query_retry_smoke" >$SPACEWRIGHT_STATE_ROOT/work-current-query-retry-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      current display/space query retry"
     else
         echo "FAIL    current display/space query retry"
-        cat /tmp/work-current-query-retry-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-current-query-retry-smoke.out
         set failed 1
     end
 
     set -l query_restart_recovery_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_query_calls 0
         set -g __work_smoke_restart_calls 0
@@ -877,6 +901,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         function sleep
         end
 
+        set -gx WORKSPACE_DISABLE_YABAI_AUTO_RESTART 0
         function ws_restart_yabai
             set -g __work_smoke_restart_calls (math $__work_smoke_restart_calls + 1)
             return 0
@@ -910,17 +935,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test "$__work_smoke_query_calls" -eq 3
         or exit 4
     '
-    fish -lc "$query_restart_recovery_smoke" >/tmp/work-query-restart-recovery-smoke.out 2>&1
+    fish -lc "$query_restart_recovery_smoke" >$SPACEWRIGHT_STATE_ROOT/work-query-restart-recovery-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      query yabai restart recovery"
     else
         echo "FAIL    query yabai restart recovery"
-        cat /tmp/work-query-restart-recovery-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-query-restart-recovery-smoke.out
         set failed 1
     end
 
     set -l legacy_yabai_service_restart_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_launchctl_calls
 
@@ -952,23 +977,24 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         contains -- "kickstart -k $service" $__work_smoke_launchctl_calls
         or exit 3
     '
-    fish -lc "$legacy_yabai_service_restart_smoke" >/tmp/work-legacy-yabai-service-restart-smoke.out 2>&1
+    fish -lc "$legacy_yabai_service_restart_smoke" >$SPACEWRIGHT_STATE_ROOT/work-legacy-yabai-service-restart-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      legacy yabai LaunchAgent restart"
     else
         echo "FAIL    legacy yabai LaunchAgent restart"
-        cat /tmp/work-legacy-yabai-service-restart-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-legacy-yabai-service-restart-smoke.out
         set failed 1
     end
 
     set -l readonly_query_no_restart_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_restart_calls 0
 
         function sleep
         end
 
+        set -gx WORKSPACE_DISABLE_YABAI_AUTO_RESTART 0
         function ws_restart_yabai
             set -g __work_smoke_restart_calls (math $__work_smoke_restart_calls + 1)
             return 0
@@ -992,17 +1018,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test "$__work_smoke_restart_calls" -eq 0
         or exit 4
     '
-    fish -lc "$readonly_query_no_restart_smoke" >/tmp/work-readonly-query-no-restart-smoke.out 2>&1
+    fish -lc "$readonly_query_no_restart_smoke" >$SPACEWRIGHT_STATE_ROOT/work-readonly-query-no-restart-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      read-only query does not restart yabai"
     else
         echo "FAIL    read-only query does not restart yabai"
-        cat /tmp/work-readonly-query-no-restart-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-readonly-query-no-restart-smoke.out
         set failed 1
     end
 
     set -l app_unmovable_restart_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_restart_calls 0
         set -g __work_smoke_query_phases
@@ -1018,6 +1044,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         function ws_focus_space
         end
 
+        set -gx WORKSPACE_DISABLE_YABAI_AUTO_RESTART 0
         function ws_restart_yabai
             set -g __work_smoke_restart_calls (math $__work_smoke_restart_calls + 1)
             return 0
@@ -1063,17 +1090,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         contains -- find_Preview_after_yabai_restart $__work_smoke_query_phases
         or exit 4
     '
-    fish -lc "$app_unmovable_restart_smoke" >/tmp/work-app-unmovable-restart-smoke.out 2>&1
+    fish -lc "$app_unmovable_restart_smoke" >$SPACEWRIGHT_STATE_ROOT/work-app-unmovable-restart-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      app unmovable yabai restart recovery"
     else
         echo "FAIL    app unmovable yabai restart recovery"
-        cat /tmp/work-app-unmovable-restart-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-app-unmovable-restart-smoke.out
         set failed 1
     end
 
     set -l capture_confirm_restart_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_restart_calls 0
         set -g __work_smoke_moved ""
@@ -1082,6 +1109,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         function sleep
         end
 
+        set -gx WORKSPACE_DISABLE_YABAI_AUTO_RESTART 0
         function ws_restart_yabai
             set -g __work_smoke_restart_calls (math $__work_smoke_restart_calls + 1)
             set -g __work_smoke_target_available 1
@@ -1123,17 +1151,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test "$__work_smoke_restart_calls" -eq 1
         or exit 4
     '
-    fish -lc "$capture_confirm_restart_smoke" >/tmp/work-capture-confirm-restart-smoke.out 2>&1
+    fish -lc "$capture_confirm_restart_smoke" >$SPACEWRIGHT_STATE_ROOT/work-capture-confirm-restart-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      capture confirmation yabai restart recovery"
     else
         echo "FAIL    capture confirmation yabai restart recovery"
-        cat /tmp/work-capture-confirm-restart-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-capture-confirm-restart-smoke.out
         set failed 1
     end
 
     set -l focus_already_focused_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_focus_calls
 
@@ -1162,17 +1190,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test (string join , $__work_smoke_focus_calls) = "display,space"
         or exit 3
     '
-    fish -lc "$focus_already_focused_smoke" >/tmp/work-focus-already-focused-smoke.out 2>&1
+    fish -lc "$focus_already_focused_smoke" >$SPACEWRIGHT_STATE_ROOT/work-focus-already-focused-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      focus already-focused fallback"
     else
         echo "FAIL    focus already-focused fallback"
-        cat /tmp/work-focus-already-focused-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-focus-already-focused-smoke.out
         set failed 1
     end
 
     set -l holding_space_reuse_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         function ws_yabai
             if test (count $argv) -eq 3 -a "$argv[1]" = "-m" -a "$argv[2]" = "query" -a "$argv[3]" = "--spaces"
@@ -1202,17 +1230,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test (workspace_create_unlabeled_space_on_display 1) = 2
         or exit 1
     '
-    fish -lc "$holding_space_reuse_smoke" >/tmp/work-holding-space-reuse-smoke.out 2>&1
+    fish -lc "$holding_space_reuse_smoke" >$SPACEWRIGHT_STATE_ROOT/work-holding-space-reuse-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      holding space reuse"
     else
         echo "FAIL    holding space reuse"
-        cat /tmp/work-holding-space-reuse-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-holding-space-reuse-smoke.out
         set failed 1
     end
 
     set -l aggregate_space_order_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
         set -e WORKSPACE_SKIP_FINALIZATION
         if set -q WORKSPACE_TEST_SOURCE_ROOT
             source "$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_finalize.fish"
@@ -1261,17 +1289,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test "$__work_smoke_aggregate_calls[-1]" = finalize:solo
         or exit 6
     '
-    fish -lc "$aggregate_space_order_smoke" >/tmp/work-aggregate-space-order-smoke.out 2>&1
+    fish -lc "$aggregate_space_order_smoke" >$SPACEWRIGHT_STATE_ROOT/work-aggregate-space-order-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      aggregate commands finish with shared finalization"
     else
         echo "FAIL    aggregate commands finish with shared finalization"
-        cat /tmp/work-aggregate-space-order-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-aggregate-space-order-smoke.out
         set failed 1
     end
 
     set -l space_order_health_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         function defaults
             echo 0
@@ -1287,17 +1315,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         string match -q "*status=warning*" -- (workspace_space_order_health)
         or exit 2
     '
-    fish -lc "$space_order_health_smoke" >/tmp/work-space-order-health-smoke.out 2>&1
+    fish -lc "$space_order_health_smoke" >$SPACEWRIGHT_STATE_ROOT/work-space-order-health-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      Space ordering recent-use diagnostic"
     else
         echo "FAIL    Space ordering recent-use diagnostic"
-        cat /tmp/work-space-order-health-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-space-order-health-smoke.out
         set failed 1
     end
 
     set -l workspace_order_spaces_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
         if set -q WORKSPACE_TEST_SOURCE_ROOT
             source "$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_order_spaces.fish"
         end
@@ -1417,17 +1445,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
 
         exit 0
     '
-    fish -lc "$workspace_order_spaces_smoke" >/tmp/work-order-spaces-smoke.out 2>&1
+    fish -lc "$workspace_order_spaces_smoke" >$SPACEWRIGHT_STATE_ROOT/work-order-spaces-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      label-based primary and external Space ordering"
     else
         echo "FAIL    label-based primary and external Space ordering"
-        cat /tmp/work-order-spaces-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-order-spaces-smoke.out
         set failed 1
     end
 
     set -l workspace_order_all_modes_home_selector_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
         if set -q WORKSPACE_TEST_SOURCE_ROOT
             source "$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_order_spaces.fish"
         end
@@ -1469,17 +1497,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
             or exit 3
         end
     '
-    fish -lc "$workspace_order_all_modes_home_selector_smoke" >/tmp/work-order-all-modes-home-selector-smoke.out 2>&1
+    fish -lc "$workspace_order_all_modes_home_selector_smoke" >$SPACEWRIGHT_STATE_ROOT/work-order-all-modes-home-selector-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      solo/wide/tall Home ordering uses live index"
     else
         echo "FAIL    solo/wide/tall Home ordering uses live index"
-        cat /tmp/work-order-all-modes-home-selector-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-order-all-modes-home-selector-smoke.out
         set failed 1
     end
 
     set -l workspace_order_home_failure_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
         if set -q WORKSPACE_TEST_SOURCE_ROOT
             source "$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_order_spaces.fish"
         end
@@ -1510,17 +1538,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test $status -ne 0
         or exit 1
     '
-    fish -lc "$workspace_order_home_failure_smoke" >/tmp/work-order-home-failure-smoke.out 2>&1
+    fish -lc "$workspace_order_home_failure_smoke" >$SPACEWRIGHT_STATE_ROOT/work-order-home-failure-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      Home Space ordering failure propagation"
     else
         echo "FAIL    Home Space ordering failure propagation"
-        cat /tmp/work-order-home-failure-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-order-home-failure-smoke.out
         set failed 1
     end
 
     set -l workspace_order_skip_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
         if set -q WORKSPACE_TEST_SOURCE_ROOT
             source "$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_order_spaces.fish"
         end
@@ -1540,17 +1568,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         string match -q "*Space ordering skipped*" -- "$output"
         or exit 2
     '
-    fish -lc "$workspace_order_skip_smoke" >/tmp/work-order-skip-smoke.out 2>&1
+    fish -lc "$workspace_order_skip_smoke" >$SPACEWRIGHT_STATE_ROOT/work-order-skip-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      explicit Space ordering compatibility skip"
     else
         echo "FAIL    explicit Space ordering compatibility skip"
-        cat /tmp/work-order-skip-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-order-skip-smoke.out
         set failed 1
     end
 
     set -l workspace_unlabeled_cleanup_skip_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
         if set -q WORKSPACE_TEST_SOURCE_ROOT
             source "$WORKSPACE_TEST_SOURCE_ROOT/common/workspace_cleanup_spaces.fish"
         end
@@ -1568,12 +1596,12 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         cleanup_unlabeled_empty_spaces
         or exit 1
     '
-    fish -lc "$workspace_unlabeled_cleanup_skip_smoke" >/tmp/work-unlabeled-cleanup-skip-smoke.out 2>&1
+    fish -lc "$workspace_unlabeled_cleanup_skip_smoke" >$SPACEWRIGHT_STATE_ROOT/work-unlabeled-cleanup-skip-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      explicit unlabeled Space cleanup compatibility skip"
     else
         echo "FAIL    explicit unlabeled Space cleanup compatibility skip"
-        cat /tmp/work-unlabeled-cleanup-skip-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-unlabeled-cleanup-skip-smoke.out
         set failed 1
     end
 
@@ -1614,11 +1642,11 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         echo "OK      ownership policy registry"
     end
 
-    work_audit >/tmp/work-audit.out 2>&1
+    work_audit >$SPACEWRIGHT_STATE_ROOT/work-audit.out 2>&1
     set -l audit_status $status
     set -l audit_output
-    if test -e /tmp/work-audit.out
-        set audit_output (string collect </tmp/work-audit.out)
+    if test -e $SPACEWRIGHT_STATE_ROOT/work-audit.out
+        set audit_output (string collect <$SPACEWRIGHT_STATE_ROOT/work-audit.out)
     end
 
     if test "$audit_status" -eq 0
@@ -1630,8 +1658,8 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         echo "OK      workspace audit"
     else
         echo "FAIL    workspace audit"
-        if test -e /tmp/work-audit.out
-            cat /tmp/work-audit.out
+        if test -e $SPACEWRIGHT_STATE_ROOT/work-audit.out
+            cat $SPACEWRIGHT_STATE_ROOT/work-audit.out
         end
         set failed 1
     end
@@ -1655,7 +1683,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     end
 
     set -l fallback_eviction_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_moved ""
         set -g __work_smoke_focused ""
@@ -1697,17 +1725,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test "$__work_smoke_focused" = "6"
         or exit 3
     '
-    fish -lc "$fallback_eviction_smoke" >/tmp/work-fallback-eviction-smoke.out 2>&1
+    fish -lc "$fallback_eviction_smoke" >$SPACEWRIGHT_STATE_ROOT/work-fallback-eviction-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      fallback ownership eviction"
     else
         echo "FAIL    fallback ownership eviction"
-        cat /tmp/work-fallback-eviction-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-fallback-eviction-smoke.out
         set failed 1
     end
 
     set -l review_fallback_eviction_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_review_eviction_calls
 
@@ -1775,17 +1803,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         string match -q "*--allowed-app-regex*" -- "$__work_smoke_review_eviction_calls[1]"
         or exit 4
     '
-    fish -lc "$review_fallback_eviction_smoke" >/tmp/work-review-fallback-eviction-smoke.out 2>&1
+    fish -lc "$review_fallback_eviction_smoke" >$SPACEWRIGHT_STATE_ROOT/work-review-fallback-eviction-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      review fallback ownership eviction"
     else
         echo "FAIL    review fallback ownership eviction"
-        cat /tmp/work-review-fallback-eviction-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-review-fallback-eviction-smoke.out
         set failed 1
     end
 
     set -l review_snapshot_reconcile_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_review_move_calls
 
@@ -1853,17 +1881,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test "$__work_smoke_review_move_calls[2]" = "8,14,12"
         or exit 3
     '
-    fish -lc "$review_snapshot_reconcile_smoke" >/tmp/work-review-snapshot-reconcile-smoke.out 2>&1
+    fish -lc "$review_snapshot_reconcile_smoke" >$SPACEWRIGHT_STATE_ROOT/work-review-snapshot-reconcile-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      review snapshot Finder/Preview reconcile"
     else
         echo "FAIL    review snapshot Finder/Preview reconcile"
-        cat /tmp/work-review-snapshot-reconcile-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-review-snapshot-reconcile-smoke.out
         set failed 1
     end
 
     set -l review_notes_reconcile_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_review_move_calls
         set -g __work_smoke_review_grid_calls
@@ -1942,17 +1970,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         contains -- "15,--grid,1:1:0:0:1:1" $__work_smoke_review_grid_calls
         or exit 5
     '
-    fish -lc "$review_notes_reconcile_smoke" >/tmp/work-review-notes-reconcile-smoke.out 2>&1
+    fish -lc "$review_notes_reconcile_smoke" >$SPACEWRIGHT_STATE_ROOT/work-review-notes-reconcile-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      review movable Notes reconcile"
     else
         echo "FAIL    review movable Notes reconcile"
-        cat /tmp/work-review-notes-reconcile-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-review-notes-reconcile-smoke.out
         set failed 1
     end
 
     set -l review_noop_move_filter_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_review_move_calls
         set -g __work_smoke_review_focus_args
@@ -2007,17 +2035,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test "$__work_smoke_review_focus_args" = "gtd_review_wide,8,2,float"
         or exit 3
     '
-    fish -lc "$review_noop_move_filter_smoke" >/tmp/work-review-noop-move-filter-smoke.out 2>&1
+    fish -lc "$review_noop_move_filter_smoke" >$SPACEWRIGHT_STATE_ROOT/work-review-noop-move-filter-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      review no-op move filtering"
     else
         echo "FAIL    review no-op move filtering"
-        cat /tmp/work-review-noop-move-filter-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-review-noop-move-filter-smoke.out
         set failed 1
     end
 
     set -l review_obsidian_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
         if set -q WORKSPACE_TEST_SOURCE_ROOT
             source "$WORKSPACE_TEST_SOURCE_ROOT/gtd/internal/gtd_apply_review_space.fish"
         end
@@ -2139,17 +2167,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
 
         exit 0
     '
-    fish -lc "$review_obsidian_smoke" >/tmp/work-review-obsidian-smoke.out 2>&1
+    fish -lc "$review_obsidian_smoke" >$SPACEWRIGHT_STATE_ROOT/work-review-obsidian-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      review Obsidian ownership and layout"
     else
         echo "FAIL    review Obsidian ownership and layout"
-        cat /tmp/work-review-obsidian-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-review-obsidian-smoke.out
         set failed 1
     end
 
     set -l review_obsidian_unmovable_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
         if set -q WORKSPACE_TEST_SOURCE_ROOT
             source "$WORKSPACE_TEST_SOURCE_ROOT/gtd/internal/gtd_apply_review_space.fish"
         end
@@ -2179,24 +2207,24 @@ function work_smoke --description "Run read-only workspace smoke checks for help
             --label gtd_review_wide \
             --display wide \
             --obsidian-grid 2:16:10:0:6:1 \
-            2>/tmp/work-review-obsidian-warning.out
+            2>$SPACEWRIGHT_STATE_ROOT/work-review-obsidian-warning.out
         test $status -ne 0
         or exit 1
 
-        string match -q "*found Obsidian, but no movable window was available*" -- (cat /tmp/work-review-obsidian-warning.out)
+        string match -q "*found Obsidian, but no movable window was available*" -- (cat $SPACEWRIGHT_STATE_ROOT/work-review-obsidian-warning.out)
         or exit 2
     '
-    fish -lc "$review_obsidian_unmovable_smoke" >/tmp/work-review-obsidian-unmovable-smoke.out 2>&1
+    fish -lc "$review_obsidian_unmovable_smoke" >$SPACEWRIGHT_STATE_ROOT/work-review-obsidian-unmovable-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      review unmovable Obsidian failure"
     else
         echo "FAIL    review unmovable Obsidian failure"
-        cat /tmp/work-review-obsidian-unmovable-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-review-obsidian-unmovable-smoke.out
         set failed 1
     end
 
     set -l review_preview_movable_precedence_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_review_move_calls
         set -g __work_smoke_preview_fallback_called 0
@@ -2269,17 +2297,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test "$__work_smoke_review_move_calls[1]" = "8,14,12,11"
         or exit 3
     '
-    fish -lc "$review_preview_movable_precedence_smoke" >/tmp/work-review-preview-movable-precedence-smoke.out 2>&1
+    fish -lc "$review_preview_movable_precedence_smoke" >$SPACEWRIGHT_STATE_ROOT/work-review-preview-movable-precedence-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      review movable Preview precedence"
     else
         echo "FAIL    review movable Preview precedence"
-        cat /tmp/work-review-preview-movable-precedence-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-review-preview-movable-precedence-smoke.out
         set failed 1
     end
 
     set -l review_preview_move_fallback_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
         if set -q WORKSPACE_TEST_SOURCE_ROOT
             source "$WORKSPACE_TEST_SOURCE_ROOT/gtd/internal/gtd_apply_review_space.fish"
         end
@@ -2287,10 +2315,10 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set -g __work_smoke_review_move_calls
         set -g __work_smoke_preview_fallback_args ""
         set -g __work_smoke_preview_eviction_args ""
-        mkdir -p /tmp/workspace-ws-window-bad
-        printf "%s\n" (date +%s) >/tmp/workspace-ws-window-bad/12
-        printf "%s\n" (date +%s) >/tmp/workspace-ws-window-bad/16
-        printf "%s\n" (date +%s) >/tmp/workspace-ws-window-bad/17
+        mkdir -p $SPACEWRIGHT_STATE_ROOT/cache/bad-windows
+        printf "%s\n" (date +%s) >$SPACEWRIGHT_STATE_ROOT/cache/bad-windows/12
+        printf "%s\n" (date +%s) >$SPACEWRIGHT_STATE_ROOT/cache/bad-windows/16
+        printf "%s\n" (date +%s) >$SPACEWRIGHT_STATE_ROOT/cache/bad-windows/17
 
         function workspace_run_cleanup_specs
         end
@@ -2390,21 +2418,21 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         string match -q "*--space 6*" -- "$__work_smoke_preview_eviction_args"
         or exit 6
 
-        not test -e /tmp/workspace-ws-window-bad/12
+        not test -e $SPACEWRIGHT_STATE_ROOT/cache/bad-windows/12
         or exit 7
 
-        not test -e /tmp/workspace-ws-window-bad/16
+        not test -e $SPACEWRIGHT_STATE_ROOT/cache/bad-windows/16
         or exit 8
 
-        not test -e /tmp/workspace-ws-window-bad/17
+        not test -e $SPACEWRIGHT_STATE_ROOT/cache/bad-windows/17
         or exit 9
     '
-    fish -lc "$review_preview_move_fallback_smoke" >/tmp/work-review-preview-move-fallback-smoke.out 2>&1
+    fish -lc "$review_preview_move_fallback_smoke" >$SPACEWRIGHT_STATE_ROOT/work-review-preview-move-fallback-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      review Preview failed-move fallback"
     else
         echo "FAIL    review Preview failed-move fallback"
-        cat /tmp/work-review-preview-move-fallback-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-review-preview-move-fallback-smoke.out
         set failed 1
     end
 
@@ -2425,7 +2453,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     end
 
     set -l support_dia_fullscreen_recovery_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_dia_fullscreen_toggles
         set -g __work_smoke_dia_fullscreen_queries
@@ -2455,6 +2483,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
             exit 10
         end
 
+        set -gx WORKSPACE_DISABLE_YABAI_AUTO_RESTART 0
         function ws_restart_yabai
             exit 11
         end
@@ -2474,12 +2503,12 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         contains -- native_fullscreen_1 $__work_smoke_dia_fullscreen_queries
         or exit 4
     '
-    fish -lc "$support_dia_fullscreen_recovery_smoke" >/tmp/work-support-dia-fullscreen-recovery-smoke.out 2>&1
+    fish -lc "$support_dia_fullscreen_recovery_smoke" >$SPACEWRIGHT_STATE_ROOT/work-support-dia-fullscreen-recovery-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      support Dia native-fullscreen recovery"
     else
         echo "FAIL    support Dia native-fullscreen recovery"
-        cat /tmp/work-support-dia-fullscreen-recovery-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-support-dia-fullscreen-recovery-smoke.out
         set failed 1
     end
 
@@ -2497,7 +2526,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     end
 
     set -l support_tall_ratio_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_support_grids
         function ws_window
@@ -2521,17 +2550,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test (string join , -- $__work_smoke_support_grids) = "31=100:2:0:0:1:49,32=100:2:1:0:1:49,33=100:2:0:49:1:51,34=100:2:1:49:1:51"
         or exit 6
     '
-    fish -lc "$support_tall_ratio_smoke" >/tmp/work-support-tall-ratio-smoke.out 2>&1
+    fish -lc "$support_tall_ratio_smoke" >$SPACEWRIGHT_STATE_ROOT/work-support-tall-ratio-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      support tall ratio follows compiled grid"
     else
         echo "FAIL    support tall ratio follows compiled grid"
-        cat /tmp/work-support-tall-ratio-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-support-tall-ratio-smoke.out
         set failed 1
     end
 
     set -l support_retarget_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_support_retargeted 0
         set -g __work_smoke_support_moved ""
@@ -2596,17 +2625,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test "$__work_smoke_support_moved" = "21,31"
         or exit 3
     '
-    fish -lc "$support_retarget_smoke" >/tmp/work-support-retarget-smoke.out 2>&1
+    fish -lc "$support_retarget_smoke" >$SPACEWRIGHT_STATE_ROOT/work-support-retarget-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      support contaminated-space retarget"
     else
         echo "FAIL    support contaminated-space retarget"
-        cat /tmp/work-support-retarget-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-support-retarget-smoke.out
         set failed 1
     end
 
     set -l support_partial_dia_restart_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_dia_refreshed 0
         set -g __work_smoke_dia_restarted 0
@@ -2618,6 +2647,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
             set -g __work_smoke_dia_refreshed 1
         end
 
+        set -gx WORKSPACE_DISABLE_YABAI_AUTO_RESTART 0
         function ws_restart_yabai
             set -g __work_smoke_dia_restarted (math $__work_smoke_dia_restarted + 1)
             return 0
@@ -2661,17 +2691,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test "$__work_smoke_dia_restarted" = 1
         or exit 4
     '
-    fish -lc "$support_partial_dia_restart_smoke" >/tmp/work-support-partial-dia-restart-smoke.out 2>&1
+    fish -lc "$support_partial_dia_restart_smoke" >$SPACEWRIGHT_STATE_ROOT/work-support-partial-dia-restart-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      support partial Dia yabai restart recovery"
     else
         echo "FAIL    support partial Dia yabai restart recovery"
-        cat /tmp/work-support-partial-dia-restart-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-support-partial-dia-restart-smoke.out
         set failed 1
     end
 
     set -l support_dia_restart_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_dia_refreshed 0
         set -g __work_smoke_dia_restarted 0
@@ -2684,6 +2714,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
             set -g __work_smoke_dia_refreshed 1
         end
 
+        set -gx WORKSPACE_DISABLE_YABAI_AUTO_RESTART 0
         function ws_restart_yabai
             set -g __work_smoke_dia_restarted (math $__work_smoke_dia_restarted + 1)
             return 0
@@ -2731,17 +2762,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         contains -- dia_yabai_restart $__work_smoke_dia_query_phases
         or exit 6
     '
-    fish -lc "$support_dia_restart_smoke" >/tmp/work-support-dia-restart-smoke.out 2>&1
+    fish -lc "$support_dia_restart_smoke" >$SPACEWRIGHT_STATE_ROOT/work-support-dia-restart-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      support Dia yabai restart recovery"
     else
         echo "FAIL    support Dia yabai restart recovery"
-        cat /tmp/work-support-dia-restart-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-support-dia-restart-smoke.out
         set failed 1
     end
 
     set -l office_tall_ratio_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         test (__office_helper_grid tall 1 100:1:0:0:1:49) = 100:1:0:0:1:49
         or exit 1
@@ -2760,17 +2791,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test (__office_primary_grid tall 3 3 1 100:1:0:0:1:49 100:1:0:49:1:51) = 100:2:1:49:1:51
         or exit 8
     '
-    fish -lc "$office_tall_ratio_smoke" >/tmp/work-office-tall-ratio-smoke.out 2>&1
+    fish -lc "$office_tall_ratio_smoke" >$SPACEWRIGHT_STATE_ROOT/work-office-tall-ratio-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      office tall ratio follows compiled grids"
     else
         echo "FAIL    office tall ratio follows compiled grids"
-        cat /tmp/work-office-tall-ratio-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-office-tall-ratio-smoke.out
         set failed 1
     end
 
     set -l office_slides_tall_multi_window_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_office_capture_args ""
         set -g __work_smoke_office_moves
@@ -2847,17 +2878,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         contains -- "23 --grid 2:2:1:1:1:1" $__work_smoke_office_grids
         or exit 7
     '
-    fish -lc "$office_slides_tall_multi_window_smoke" >/tmp/work-office-slides-tall-multi-window-smoke.out 2>&1
+    fish -lc "$office_slides_tall_multi_window_smoke" >$SPACEWRIGHT_STATE_ROOT/work-office-slides-tall-multi-window-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      office slides tall multi-window layout"
     else
         echo "FAIL    office slides tall multi-window layout"
-        cat /tmp/work-office-slides-tall-multi-window-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-office-slides-tall-multi-window-smoke.out
         set failed 1
     end
 
     set -l office_writing_wide_multi_window_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_office_capture_args ""
         set -g __work_smoke_office_moves
@@ -2930,17 +2961,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         contains -- "32 --grid 1:3:2:0:1:1" $__work_smoke_office_grids
         or exit 6
     '
-    fish -lc "$office_writing_wide_multi_window_smoke" >/tmp/work-office-writing-wide-multi-window-smoke.out 2>&1
+    fish -lc "$office_writing_wide_multi_window_smoke" >$SPACEWRIGHT_STATE_ROOT/work-office-writing-wide-multi-window-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      office writing wide multi-window layout"
     else
         echo "FAIL    office writing wide multi-window layout"
-        cat /tmp/work-office-writing-wide-multi-window-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-office-writing-wide-multi-window-smoke.out
         set failed 1
     end
 
     set -l coding_control_portfolio_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_control_moves
         set -g __work_smoke_control_bounds
@@ -3017,17 +3048,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         contains -- "51 --resize abs:1220:852" $__work_smoke_control_bounds
         or exit 5
     '
-    fish -lc "$coding_control_portfolio_smoke" >/tmp/work-coding-control-portfolio-smoke.out 2>&1
+    fish -lc "$coding_control_portfolio_smoke" >$SPACEWRIGHT_STATE_ROOT/work-coding-control-portfolio-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      coding control Portfolio Performance optional layout"
     else
         echo "FAIL    coding control Portfolio Performance optional layout"
-        cat /tmp/work-coding-control-portfolio-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-coding-control-portfolio-smoke.out
         set failed 1
     end
 
     set -l coding_control_hidden_flclash_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_control_moves
         set -g __work_smoke_control_grids
@@ -3112,17 +3143,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         contains -- "41 --resize abs:1200:1040" $__work_smoke_control_grids
         or exit 5
     '
-    fish -lc "$coding_control_hidden_flclash_smoke" >/tmp/work-coding-control-hidden-flclash-smoke.out 2>&1
+    fish -lc "$coding_control_hidden_flclash_smoke" >$SPACEWRIGHT_STATE_ROOT/work-coding-control-hidden-flclash-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      coding control hidden FlClash no-open capture"
     else
         echo "FAIL    coding control hidden FlClash no-open capture"
-        cat /tmp/work-coding-control-hidden-flclash-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-coding-control-hidden-flclash-smoke.out
         set failed 1
     end
 
     set -l coding_control_smartgit_fallback_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_control_fallback_args ""
         set -g __work_smoke_control_eviction_args ""
@@ -3231,17 +3262,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test "$__work_smoke_control_grid" = "21 --grid 3:1:0:0:1:2"
         or exit 8
     '
-    fish -lc "$coding_control_smartgit_fallback_smoke" >/tmp/work-coding-control-smartgit-fallback-smoke.out 2>&1
+    fish -lc "$coding_control_smartgit_fallback_smoke" >$SPACEWRIGHT_STATE_ROOT/work-coding-control-smartgit-fallback-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      coding control SmartGit fallback"
     else
         echo "FAIL    coding control SmartGit fallback"
-        cat /tmp/work-coding-control-smartgit-fallback-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-coding-control-smartgit-fallback-smoke.out
         set failed 1
     end
 
     set -l coding_control_smartgit_failed_move_fallback_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_control_fallback_args ""
         set -g __work_smoke_control_moves
@@ -3350,17 +3381,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         and string match -q "*--y 654*" -- "$__work_smoke_control_bounds"
         or exit 7
     '
-    fish -lc "$coding_control_smartgit_failed_move_fallback_smoke" >/tmp/work-coding-control-smartgit-failed-move-fallback-smoke.out 2>&1
+    fish -lc "$coding_control_smartgit_failed_move_fallback_smoke" >$SPACEWRIGHT_STATE_ROOT/work-coding-control-smartgit-failed-move-fallback-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      coding control SmartGit failed-move fallback"
     else
         echo "FAIL    coding control SmartGit failed-move fallback"
-        cat /tmp/work-coding-control-smartgit-failed-move-fallback-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-coding-control-smartgit-failed-move-fallback-smoke.out
         set failed 1
     end
 
     set -l meeting_zoom_settle_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_zoom_any_calls 0
         set -g __work_smoke_zoom_late_visible 0
@@ -3461,17 +3492,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         contains -- "42 --grid 1:1:0:0:1:1" $__work_smoke_zoom_grids
         or exit 4
     '
-    fish -lc "$meeting_zoom_settle_smoke" >/tmp/work-meeting-zoom-settle-smoke.out 2>&1
+    fish -lc "$meeting_zoom_settle_smoke" >$SPACEWRIGHT_STATE_ROOT/work-meeting-zoom-settle-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      meeting Zoom-only settle full-screen"
     else
         echo "FAIL    meeting Zoom-only settle full-screen"
-        cat /tmp/work-meeting-zoom-settle-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-meeting-zoom-settle-smoke.out
         set failed 1
     end
 
     set -l meeting_zoom_alias_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_zoom_alias_moves
         set -g __work_smoke_zoom_alias_grids
@@ -3538,17 +3569,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         contains -- "41 --grid 1:1:0:0:1:1" $__work_smoke_zoom_alias_grids
         or exit 3
     '
-    fish -lc "$meeting_zoom_alias_smoke" >/tmp/work-meeting-zoom-alias-smoke.out 2>&1
+    fish -lc "$meeting_zoom_alias_smoke" >$SPACEWRIGHT_STATE_ROOT/work-meeting-zoom-alias-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      meeting Zoom alias-only full-screen"
     else
         echo "FAIL    meeting Zoom alias-only full-screen"
-        cat /tmp/work-meeting-zoom-alias-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-meeting-zoom-alias-smoke.out
         set failed 1
     end
 
     set -l meeting_teams_settle_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_teams_any_calls 0
         set -g __work_smoke_teams_late_visible 0
@@ -3648,17 +3679,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         contains -- "52 --grid 1:1:0:0:1:1" $__work_smoke_teams_grids
         or exit 4
     '
-    fish -lc "$meeting_teams_settle_smoke" >/tmp/work-meeting-teams-settle-smoke.out 2>&1
+    fish -lc "$meeting_teams_settle_smoke" >$SPACEWRIGHT_STATE_ROOT/work-meeting-teams-settle-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      meeting Teams-only settle full-screen"
     else
         echo "FAIL    meeting Teams-only settle full-screen"
-        cat /tmp/work-meeting-teams-settle-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-meeting-teams-settle-smoke.out
         set failed 1
     end
 
     set -l meeting_zoom_teams_split_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_meeting_split_moves
         set -g __work_smoke_meeting_split_grids
@@ -3721,17 +3752,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         contains -- "51 --grid 1:2:1:0:1:1" $__work_smoke_meeting_split_grids
         or exit 4
     '
-    fish -lc "$meeting_zoom_teams_split_smoke" >/tmp/work-meeting-zoom-teams-split-smoke.out 2>&1
+    fish -lc "$meeting_zoom_teams_split_smoke" >$SPACEWRIGHT_STATE_ROOT/work-meeting-zoom-teams-split-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      meeting Zoom/Teams split layout"
     else
         echo "FAIL    meeting Zoom/Teams split layout"
-        cat /tmp/work-meeting-zoom-teams-split-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-meeting-zoom-teams-split-smoke.out
         set failed 1
     end
 
     set -l meeting_teams_companion_fallback_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_teams_companion_fallback_args ""
         set -g __work_smoke_teams_companion_eviction_args ""
@@ -3825,17 +3856,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         string match -q "*--app-key teams*--all-windows*" -- "$__work_smoke_teams_companion_bounds"
         or exit 4
     '
-    fish -lc "$meeting_teams_companion_fallback_smoke" >/tmp/work-meeting-teams-companion-fallback-smoke.out 2>&1
+    fish -lc "$meeting_teams_companion_fallback_smoke" >$SPACEWRIGHT_STATE_ROOT/work-meeting-teams-companion-fallback-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      meeting Teams non-AX companion fallback"
     else
         echo "FAIL    meeting Teams non-AX companion fallback"
-        cat /tmp/work-meeting-teams-companion-fallback-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-meeting-teams-companion-fallback-smoke.out
         set failed 1
     end
 
     set -l meeting_hidden_zoom_fallback_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         set -g __work_smoke_zoom_fallback_called 0
         set -g __work_smoke_meeting_moves
@@ -3932,17 +3963,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
 
         exit 0
     '
-    fish -lc "$meeting_hidden_zoom_fallback_smoke" >/tmp/work-meeting-hidden-zoom-fallback-smoke.out 2>&1
+    fish -lc "$meeting_hidden_zoom_fallback_smoke" >$SPACEWRIGHT_STATE_ROOT/work-meeting-hidden-zoom-fallback-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      meeting hidden Zoom bounds fallback"
     else
         echo "FAIL    meeting hidden Zoom bounds fallback"
-        cat /tmp/work-meeting-hidden-zoom-fallback-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-meeting-hidden-zoom-fallback-smoke.out
         set failed 1
     end
 
     set -l yabai_doctor_usage_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
         yabai_doctor --unknown >/tmp/yabai-doctor-usage.out 2>&1
         test $status -eq 2
         or exit 1
@@ -3959,7 +3990,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     end
 
     set -l yabai_doctor_dispatch_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
         set -g __yabai_doctor_check_calls 0
         set -g __yabai_doctor_repair_calls 0
 
@@ -3996,7 +4027,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     end
 
     set -l yabai_doctor_readonly_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
         set -g __yabai_doctor_mutations
 
         function __yabai_doctor_binary_path
@@ -4039,6 +4070,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
             set -ga __yabai_doctor_mutations install_sudoers
         end
 
+        set -gx WORKSPACE_DISABLE_YABAI_AUTO_RESTART 0
         function ws_restart_yabai
             set -ga __yabai_doctor_mutations restart
         end
@@ -4061,17 +4093,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         string match -q "*LaunchAgent running*" -- $output
         or exit 6
     '
-    fish -lc "$yabai_doctor_readonly_smoke" >/tmp/work-yabai-doctor-readonly-smoke.out 2>&1
+    fish -lc "$yabai_doctor_readonly_smoke" >$SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-readonly-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      yabai doctor default is read-only"
     else
         echo "FAIL    yabai doctor default is read-only"
-        cat /tmp/work-yabai-doctor-readonly-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-readonly-smoke.out
         set failed 1
     end
 
     set -l yabai_doctor_stale_sudoers_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         function __yabai_doctor_binary_path
             echo /opt/homebrew/bin/yabai
@@ -4114,17 +4146,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         string match -q "FAIL    sudoers hash does not match" -- $output
         or exit 2
     '
-    fish -lc "$yabai_doctor_stale_sudoers_smoke" >/tmp/work-yabai-doctor-stale-sudoers-smoke.out 2>&1
+    fish -lc "$yabai_doctor_stale_sudoers_smoke" >$SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-stale-sudoers-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      yabai doctor detects stale sudoers hash"
     else
         echo "FAIL    yabai doctor detects stale sudoers hash"
-        cat /tmp/work-yabai-doctor-stale-sudoers-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-stale-sudoers-smoke.out
         set failed 1
     end
 
     set -l yabai_doctor_sudoers_rule_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
 
         function sudo
             test "$argv[1]" = -n
@@ -4138,17 +4170,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
             /opt/homebrew/bin/yabai \
             abc123
     '
-    fish -lc "$yabai_doctor_sudoers_rule_smoke" >/tmp/work-yabai-doctor-sudoers-rule-smoke.out 2>&1
+    fish -lc "$yabai_doctor_sudoers_rule_smoke" >$SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-sudoers-rule-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      yabai doctor parses sudoers rule"
     else
         echo "FAIL    yabai doctor parses sudoers rule"
-        cat /tmp/work-yabai-doctor-sudoers-rule-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-sudoers-rule-smoke.out
         set failed 1
     end
 
     set -l yabai_doctor_repair_order_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
         set -g __yabai_doctor_repair_order
 
         function __yabai_doctor_ensure_head
@@ -4163,6 +4195,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
             set -ga __yabai_doctor_repair_order load_sa
         end
 
+        set -gx WORKSPACE_DISABLE_YABAI_AUTO_RESTART 0
         function ws_restart_yabai
             set -ga __yabai_doctor_repair_order restart
         end
@@ -4192,17 +4225,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test (string join " " -- $__yabai_doctor_repair_order) = \
             "ensure_head install_sudoers load_sa restart query space_probe work_doctor final_check"
     '
-    fish -lc "$yabai_doctor_repair_order_smoke" >/tmp/work-yabai-doctor-repair-order-smoke.out 2>&1
+    fish -lc "$yabai_doctor_repair_order_smoke" >$SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-repair-order-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      yabai doctor repair dependency order"
     else
         echo "FAIL    yabai doctor repair dependency order"
-        cat /tmp/work-yabai-doctor-repair-order-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-repair-order-smoke.out
         set failed 1
     end
 
     set -l yabai_doctor_accessibility_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
         set -g __yabai_doctor_accessibility_opened 0
         set -g __yabai_doctor_space_probe_calls 0
 
@@ -4215,6 +4248,7 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         function __yabai_doctor_load_sa
         end
 
+        set -gx WORKSPACE_DISABLE_YABAI_AUTO_RESTART 0
         function ws_restart_yabai
         end
 
@@ -4248,17 +4282,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test "$__yabai_doctor_space_probe_calls" -eq 0
         or exit 3
     '
-    fish -lc "$yabai_doctor_accessibility_smoke" >/tmp/work-yabai-doctor-accessibility-smoke.out 2>&1
+    fish -lc "$yabai_doctor_accessibility_smoke" >$SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-accessibility-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      yabai doctor hands off Accessibility"
     else
         echo "FAIL    yabai doctor hands off Accessibility"
-        cat /tmp/work-yabai-doctor-accessibility-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-accessibility-smoke.out
         set failed 1
     end
 
     set -l yabai_doctor_head_install_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
         set -g __yabai_doctor_head_phase stable
         set -g __yabai_doctor_brew_calls
 
@@ -4294,17 +4328,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         contains -- "install --HEAD asmvik/formulae/yabai" $__yabai_doctor_brew_calls
         or exit 4
     '
-    fish -lc "$yabai_doctor_head_install_smoke" >/tmp/work-yabai-doctor-head-install-smoke.out 2>&1
+    fish -lc "$yabai_doctor_head_install_smoke" >$SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-head-install-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      yabai doctor activates Homebrew HEAD"
     else
         echo "FAIL    yabai doctor activates Homebrew HEAD"
-        cat /tmp/work-yabai-doctor-head-install-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-head-install-smoke.out
         set failed 1
     end
 
     set -l yabai_doctor_visudo_guard_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
         set -g __yabai_doctor_install_calls 0
         set -g __yabai_doctor_validated_path
 
@@ -4339,17 +4373,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test ! -e "$__yabai_doctor_validated_path"
         or exit 4
     '
-    fish -lc "$yabai_doctor_visudo_guard_smoke" >/tmp/work-yabai-doctor-visudo-guard-smoke.out 2>&1
+    fish -lc "$yabai_doctor_visudo_guard_smoke" >$SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-visudo-guard-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      yabai doctor blocks invalid sudoers"
     else
         echo "FAIL    yabai doctor blocks invalid sudoers"
-        cat /tmp/work-yabai-doctor-visudo-guard-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-visudo-guard-smoke.out
         set failed 1
     end
 
     set -l yabai_doctor_sudoers_content_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
         set -g __yabai_doctor_sudoers_content
         set -g __yabai_doctor_installed_path
 
@@ -4383,17 +4417,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test ! -e "$__yabai_doctor_installed_path"
         or exit 3
     '
-    fish -lc "$yabai_doctor_sudoers_content_smoke" >/tmp/work-yabai-doctor-sudoers-content-smoke.out 2>&1
+    fish -lc "$yabai_doctor_sudoers_content_smoke" >$SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-sudoers-content-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      yabai doctor writes hash-bound sudoers"
     else
         echo "FAIL    yabai doctor writes hash-bound sudoers"
-        cat /tmp/work-yabai-doctor-sudoers-content-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-sudoers-content-smoke.out
         set failed 1
     end
 
     set -l yabai_doctor_load_sa_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
         set -g __yabai_doctor_sudo_calls
 
         function __yabai_doctor_binary_path
@@ -4410,17 +4444,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test "$__yabai_doctor_sudo_calls" = \
             "-n /opt/homebrew/bin/yabai --load-sa"
     '
-    fish -lc "$yabai_doctor_load_sa_smoke" >/tmp/work-yabai-doctor-load-sa-smoke.out 2>&1
+    fish -lc "$yabai_doctor_load_sa_smoke" >$SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-load-sa-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      yabai doctor loads scripting addition"
     else
         echo "FAIL    yabai doctor loads scripting addition"
-        cat /tmp/work-yabai-doctor-load-sa-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-load-sa-smoke.out
         set failed 1
     end
 
     set -l yabai_doctor_space_probe_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
         set -g __yabai_doctor_space_calls
 
         function sleep
@@ -4455,17 +4489,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test (count $__yabai_doctor_space_calls) -eq 2
         or exit 4
     '
-    fish -lc "$yabai_doctor_space_probe_smoke" >/tmp/work-yabai-doctor-space-probe-smoke.out 2>&1
+    fish -lc "$yabai_doctor_space_probe_smoke" >$SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-space-probe-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      yabai doctor destroys only new Space"
     else
         echo "FAIL    yabai doctor destroys only new Space"
-        cat /tmp/work-yabai-doctor-space-probe-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-space-probe-smoke.out
         set failed 1
     end
 
     set -l yabai_doctor_space_missing_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
         set -g __yabai_doctor_destroy_calls 0
 
         function sleep
@@ -4489,17 +4523,17 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test "$__yabai_doctor_destroy_calls" -eq 0
         or exit 2
     '
-    fish -lc "$yabai_doctor_space_missing_smoke" >/tmp/work-yabai-doctor-space-missing-smoke.out 2>&1
+    fish -lc "$yabai_doctor_space_missing_smoke" >$SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-space-missing-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      yabai doctor preserves Spaces when creation is unobserved"
     else
         echo "FAIL    yabai doctor preserves Spaces when creation is unobserved"
-        cat /tmp/work-yabai-doctor-space-missing-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-space-missing-smoke.out
         set failed 1
     end
 
     set -l yabai_doctor_space_ambiguous_smoke '
-        work_reload >/dev/null
+        work_reload >/dev/null; function workspace_execution_owned; return 0; end
         set -g __yabai_doctor_destroy_calls 0
 
         function sleep
@@ -4527,19 +4561,19 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         test "$__yabai_doctor_destroy_calls" -eq 0
         or exit 2
     '
-    fish -lc "$yabai_doctor_space_ambiguous_smoke" >/tmp/work-yabai-doctor-space-ambiguous-smoke.out 2>&1
+    fish -lc "$yabai_doctor_space_ambiguous_smoke" >$SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-space-ambiguous-smoke.out 2>&1
     if test $status -eq 0
         echo "OK      yabai doctor preserves ambiguous Spaces"
     else
         echo "FAIL    yabai doctor preserves ambiguous Spaces"
-        cat /tmp/work-yabai-doctor-space-ambiguous-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-yabai-doctor-space-ambiguous-smoke.out
         set failed 1
     end
 
     set -l dry_run_commands (workspace_dry_run_commands)
 
     for dry_run_command in $dry_run_commands
-        fish -lc "work_reload >/dev/null; $dry_run_command >/dev/null"
+        fish -lc "work_reload >/dev/null; function workspace_execution_owned; return 0; end; $dry_run_command >/dev/null"
         if test $status -eq 0
             printf "OK      dry-run %s\n" "$dry_run_command"
         else

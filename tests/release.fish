@@ -9,9 +9,9 @@ function cleanup_release_test --on-event fish_exit --inherit-variable test_root
 end
 
 set -l release_version (string trim < "$package_root/VERSION")
-fish "$package_root/scripts/package-release.fish" --tag "v$release_version" --output "$test_root/dist" >/dev/null
+fish --no-config "$package_root/scripts/package-release.fish" --tag "v$release_version" --output "$test_root/dist" >/dev/null
 or exit 1
-fish "$package_root/scripts/package-release.fish" --tag "v$release_version" --output "$test_root/dist-repeat" >/dev/null
+fish --no-config "$package_root/scripts/package-release.fish" --tag "v$release_version" --output "$test_root/dist-repeat" >/dev/null
 or exit 2
 
 set -l archive "$test_root/dist/spacewright-$release_version.tar.gz"
@@ -84,7 +84,7 @@ wait "$server_pid"
 set -l digest (string split ' ' < "$checksums")[1]
 set -l formula "$test_root/Formula/spacewright.rb"
 set -l url "https://github.com/tulip-lab/spacewright/releases/download/v$release_version/spacewright-$release_version.tar.gz"
-fish "$package_root/scripts/render-homebrew-formula.fish" \
+fish --no-config "$package_root/scripts/render-homebrew-formula.fish" \
     --version "$release_version" \
     --sha256 "$digest" \
     --url "$url" \

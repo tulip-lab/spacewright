@@ -34,7 +34,7 @@ function gtd_apps --description "Show all current GTD-related application window
     set -l apps_json (workspace_app_names_json \
         thunderbird calendar reminders outlook zoom teams wechat keybase dingtalk messages whatsapp facetime chatgpt obsidian notes preview finder dia); or return 1
     set -l bad_window_ids_json '[]'
-    set -l bad_window_dir /tmp/workspace-ws-window-bad
+    set -l bad_window_dir $SPACEWRIGHT_STATE_ROOT/cache/bad-windows
 
     if test -d "$bad_window_dir"
         set -l bad_window_files (find "$bad_window_dir" -type f 2>/dev/null)
@@ -44,7 +44,10 @@ function gtd_apps --description "Show all current GTD-related application window
             set -l window_id (basename "$file")
 
             if string match -qr '^[0-9]+$' -- "$window_id"
-                set -a bad_window_ids "$window_id"
+                set -l current (printf '%s\n' "$windows_json" | jq -c --argjson id "$window_id" 'first(.[] | select(.id == $id))')
+                if ws_window_cache_active "$current"
+                    set -a bad_window_ids "$window_id"
+                end
             end
         end
 

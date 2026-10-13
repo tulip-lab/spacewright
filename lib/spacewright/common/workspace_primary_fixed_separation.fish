@@ -53,6 +53,16 @@ function workspace_verify_primary_fixed_separation --description "Verify distinc
 end
 
 function workspace_reconcile_primary_fixed_spaces --description "Verify and reconcile GTD chat and coding control separation once"
+    if contains -- --dry-run $argv
+        printf 'dry_run=workspace_reconcile_primary_fixed_spaces\n'
+        return 0
+    end
+    if test -n "$SPACEWRIGHT_PACKAGE_ROOT"; and not contains -- --dry-run $argv
+        if not workspace_execution_owned 2>/dev/null
+            command node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/execution-cli.mjs" exec fish --no-config -c 'source "$SPACEWRIGHT_PACKAGE_ROOT/conf.d/spacewright.fish"; $argv' -- workspace_reconcile_primary_fixed_spaces $argv
+            return $status
+        end
+    end
     if workspace_verify_primary_fixed_separation
         return 0
     end

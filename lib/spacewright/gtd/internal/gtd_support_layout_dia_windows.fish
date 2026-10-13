@@ -15,13 +15,19 @@ function gtd_support_layout_dia_windows --description "Apply GTD support Dia lay
         case solo
             if test "$dia_count" -eq 1
                 ws_window $dia_windows[1] --grid 1:1:0:0:1:1
+                or return 1
             else if test "$dia_count" -eq 2
                 ws_window $dia_windows[1] --grid 2:1:0:0:1:1
+                or return 1
                 ws_window $dia_windows[2] --grid 2:1:0:1:1:1
+                or return 1
             else if test "$dia_count" -eq 3
                 ws_window $dia_windows[1] --grid 2:2:0:0:1:1
+                or return 1
                 ws_window $dia_windows[2] --grid 2:2:1:0:1:1
+                or return 1
                 ws_window $dia_windows[3] --grid 2:1:0:1:1:1
+                or return 1
             else
                 set -l rows (math "ceil($dia_count / 2)")
                 set -l i 1
@@ -32,6 +38,7 @@ function gtd_support_layout_dia_windows --description "Apply GTD support Dia lay
                     set -l row (math "floor($zero_index / 2)")
 
                     ws_window $wid --grid $rows:2:$col:$row:1:1
+                    or return 1
                     set i (math "$i + 1")
                 end
             end
@@ -42,6 +49,7 @@ function gtd_support_layout_dia_windows --description "Apply GTD support Dia lay
 
             while test "$i" -le "$left_count"
                 ws_window $dia_windows[$i] --grid $left_count:2:0:(math "$i - 1"):1:1
+                or return 1
                 set i (math "$i + 1")
             end
 
@@ -50,6 +58,7 @@ function gtd_support_layout_dia_windows --description "Apply GTD support Dia lay
                 set -l window_index (math "$left_count + $i")
 
                 ws_window $dia_windows[$window_index] --grid $right_count:2:1:(math "$i - 1"):1:1
+                or return 1
                 set i (math "$i + 1")
             end
         case tall
@@ -77,18 +86,28 @@ function gtd_support_layout_dia_windows --description "Apply GTD support Dia lay
             end
             if test "$dia_count" -eq 1
                 ws_window $dia_windows[1] --grid $bottom_full_grid
+                or return 1
             else if test "$dia_count" -eq 2
                 ws_window $dia_windows[1] --grid $top_full_grid
+                or return 1
                 ws_window $dia_windows[2] --grid $bottom_full_grid
+                or return 1
             else if test "$dia_count" -eq 3
                 ws_window $dia_windows[1] --grid $top_left_grid
+                or return 1
                 ws_window $dia_windows[2] --grid $top_right_grid
+                or return 1
                 ws_window $dia_windows[3] --grid $bottom_full_grid
+                or return 1
             else if test "$dia_count" -eq 4
                 ws_window $dia_windows[1] --grid $top_left_grid
+                or return 1
                 ws_window $dia_windows[2] --grid $top_right_grid
+                or return 1
                 ws_window $dia_windows[3] --grid $bottom_left_grid
+                or return 1
                 ws_window $dia_windows[4] --grid $bottom_right_grid
+                or return 1
             else
                 set -l rows (math "ceil($dia_count / 2)")
                 set -l i 1
@@ -99,6 +118,7 @@ function gtd_support_layout_dia_windows --description "Apply GTD support Dia lay
                     set -l row (math "floor($zero_index / 2)")
 
                     ws_window $wid --grid $rows:2:$col:$row:1:1
+                    or return 1
                     set i (math "$i + 1")
                 end
             end

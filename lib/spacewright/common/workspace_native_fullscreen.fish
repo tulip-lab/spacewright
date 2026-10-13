@@ -45,8 +45,9 @@ function workspace_normalize_native_fullscreen_windows --description "Exit nativ
 
     workspace_debug_step "$caller" native-fullscreen-exit count=(count $fullscreen_ids)
     for wid in $fullscreen_ids
-        rm -f /tmp/workspace-ws-window-bad/$wid 2>/dev/null
+        rm -f $SPACEWRIGHT_STATE_ROOT/cache/bad-windows/$wid 2>/dev/null
         ws_window $wid --toggle native-fullscreen
+        or return 1
     end
 
     set -l fullscreen_ids_json (printf '%s\n' $fullscreen_ids | ws_jq -R 'tonumber' | ws_jq -s .)

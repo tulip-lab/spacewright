@@ -33,6 +33,10 @@ function ws_move_windows_to_space --description "Move multiple windows to a targ
         return 0
     end
 
+    if test "$move_failed" -eq 1
+        echo "[WARN] one or more window move commands failed for Space $target_space" >&2
+        return 1
+    end
     for attempt in (seq 1 4)
         sleep 0.2
         set -l windows_json (ws_query_windows ws_move_windows_to_space confirm_$attempt)

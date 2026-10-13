@@ -67,7 +67,7 @@ function __gtd_calendar_body --description "Collect Calendar and Reminders onto 
         set -l calendar_initial_parts (string split \t -- "$calendar_initial_info")
         if test "$calendar_initial_parts[4]" = true
             set calendar $calendar_initial_parts[1]
-            rm -f /tmp/workspace-ws-window-bad/$calendar 2>/dev/null
+            rm -f $SPACEWRIGHT_STATE_ROOT/cache/bad-windows/$calendar 2>/dev/null
         else
             set calendar_status 2
             set calendar_fallback_window $calendar_initial_parts[1]
@@ -225,11 +225,13 @@ function __gtd_calendar_body --description "Collect Calendar and Reminders onto 
                 --caller $label
         else
             ws_window $calendar --grid 1:2:0:0:1:1
+            or return 1
         end
     end
 
     if test -n "$reminders"
         ws_window $reminders --grid 1:2:1:0:1:1
+        or return 1
     end
 
     # -------------------------------------------------------------------------

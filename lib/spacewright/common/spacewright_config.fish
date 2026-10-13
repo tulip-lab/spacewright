@@ -52,27 +52,28 @@ function spacewright_config_effective --description "Merge package defaults with
         return 1
     end
 
+    if set -q SPACEWRIGHT_EXECUTION_CONFIG; and test -n "$SPACEWRIGHT_EXECUTION_CONFIG"
+        command node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/execution-cli.mjs" verify
+        or return 1
+        jq . "$SPACEWRIGHT_EXECUTION_CONFIG"
+        return $status
+    end
+    if test -e "$SPACEWRIGHT_CONFIG_ROOT/.configuration-write"
+        echo '[WARN] configuration save is incomplete or in progress' >&2
+        return 1
+    end
     if test -r "$v3_file"
-        if test -r "$runtime_file"
-            set -l source_hash (__spacewright_config_sha256 "$v3_file")
-            set -l compiled_hash (jq -r 'select(.generated.format_version == 1 and .generated.compiler_version == 4 and .generated.source_version == 3) | .generated.source_sha256 // empty' "$runtime_file" 2>/dev/null)
-            if test -n "$source_hash"; and test "$source_hash" = "$compiled_hash"
-                jq 'del(.generated)' "$runtime_file"
-                return $status
-            end
-        end
-        if command -q node
-            command node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/cli.mjs" compile "$v3_file" "--state-root=$SPACEWRIGHT_STATE_ROOT"
-        else
-            echo "[WARN] SpaceWright v3 configuration is not compiled or is stale" >&2
-            echo "[INFO] Run 'spacewright setup activate' after installing Node.js, or save it with 'spacewright configure'" >&2
-            return 1
-        end
+        # A source-only cache cannot certify hardware, topology or machine bindings.
+        # Resolve against live, read-only discovery before exposing a runtime.
+        command node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/cli.mjs" effective "$v3_file" "--state-root=$SPACEWRIGHT_STATE_ROOT"
+        return $status
     else if test -r "$v2_file"
         if test -r "$runtime_file"
             set -l source_hash (__spacewright_config_sha256 "$v2_file")
-            set -l compiled_hash (jq -r 'select(.generated.format_version == 1 and .generated.compiler_version == 4 and .generated.source_version == 2) | .generated.source_sha256 // empty' "$runtime_file" 2>/dev/null)
-            if test -n "$source_hash"; and test "$source_hash" = "$compiled_hash"
+            set -l compiled_hash (jq -r 'select(.generated.format_version == 2 and .generated.compiler_version == 5 and .generated.source_version == 2) | .generated.source_sha256 // empty' "$runtime_file" 2>/dev/null)
+            set -l actual_hash (jq -cj 'del(.generated)' "$runtime_file" | command shasum -a 256 | string split ' ')[1]
+            set -l runtime_hash (jq -r '.generated.runtime_sha256 // empty' "$runtime_file")
+            if test -n "$source_hash"; and test "$source_hash" = "$compiled_hash"; and test "$actual_hash" = "$runtime_hash"
                 jq 'del(.generated)' "$runtime_file"
                 return $status
             end
@@ -110,8 +111,14 @@ function spacewright_config_status --description "Report configuration source an
     set -l compiler_version (jq -r '.generated.compiler_version // empty' "$runtime_file" 2>/dev/null)
     set -l generation_id (jq -r '.generated.generation_id // empty' "$runtime_file" 2>/dev/null)
     set -l current false
-    if test -n "$source_hash"; and test "$source_hash" = "$compiled_hash"; and test "$format_version" = 1; and test "$compiler_version" = 4
+    if test -n "$source_hash"; and test "$source_hash" = "$compiled_hash"; and test "$format_version" = 2; and test "$compiler_version" = 5
         set current true
+    end
+    if test "$source_version" = 3
+        set -l candidate (command node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/cli.mjs" compile "$source_file" "--state-root=$SPACEWRIGHT_STATE_ROOT")
+        if test $status -ne 0; or test (printf '%s\n' "$candidate" | jq -r '.generated.generation_id // empty') != "$generation_id"
+            set current false
+        end
     end
     jq -n \
         --arg source "$source_file" \

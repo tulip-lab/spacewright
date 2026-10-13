@@ -11,7 +11,7 @@ set -l installed_release_root "$install_root/releases/"(string trim < "$package_
 set -l unrelated_prefix "$test_root/unrelated-prefix"
 command mkdir -p "$unrelated_prefix"
 printf '%s\n' preserve-me > "$unrelated_prefix/personal.txt"
-fish "$package_root/scripts/install.fish" \
+fish --no-config "$package_root/scripts/install.fish" \
     --source-root "$package_root" \
     --prefix "$unrelated_prefix" \
     --fish-config-root "$fish_root" \
@@ -22,7 +22,7 @@ or exit 33
 not test -e "$unrelated_prefix/.spacewright-install-root"
 or exit 34
 
-fish "$package_root/scripts/install.fish" \
+fish --no-config "$package_root/scripts/install.fish" \
     --source-root "$package_root" \
     --prefix "$install_root" \
     --fish-config-root "$fish_root" \
@@ -138,7 +138,7 @@ if test "$smoke_status" -ne 0
     exit 8
 end
 
-fish "$package_root/scripts/install.fish" \
+fish --no-config "$package_root/scripts/install.fish" \
     --source-root "$package_root" \
     --prefix "$install_root" \
     --fish-config-root "$fish_root" \
@@ -146,7 +146,7 @@ fish "$package_root/scripts/install.fish" \
 or exit 9
 
 set -l development_version 0.0.0-dev.install-test
-fish "$package_root/scripts/install.fish" \
+fish --no-config "$package_root/scripts/install.fish" \
     --source-root "$package_root" \
     --prefix "$install_root" \
     --fish-config-root "$fish_root" \
@@ -162,7 +162,7 @@ set -l user_config_root "$test_root/user-config/spacewright"
 mkdir -p "$user_config_root"
 printf '%s\n' '{"version":1}' > "$user_config_root/config.json"
 
-fish "$package_root/scripts/uninstall.fish" \
+fish --no-config "$package_root/scripts/uninstall.fish" \
     --prefix "$install_root" \
     --fish-config-root "$fish_root" \
     --bin-root "$bin_root" >/dev/null

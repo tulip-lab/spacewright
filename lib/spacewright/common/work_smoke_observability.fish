@@ -187,13 +187,13 @@ function work_smoke_observability --description "Run focused workspace observabi
         or exit 15
     '
 
-    fish -lc "$smoke_script" >/tmp/work-observability-recovery-smoke.out 2>&1
+    fish -lc "$smoke_script" >$SPACEWRIGHT_STATE_ROOT/work-observability-recovery-smoke.out 2>&1
     set -l smoke_status $status
     if test "$smoke_status" -eq 0
         echo "OK      workspace observability recovery"
     else
         echo "FAIL    workspace observability recovery"
-        cat /tmp/work-observability-recovery-smoke.out
+        cat $SPACEWRIGHT_STATE_ROOT/work-observability-recovery-smoke.out
     end
 
     return $smoke_status

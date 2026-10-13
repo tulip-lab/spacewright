@@ -26,7 +26,7 @@ function gtd_find_meeting_windows --description "Find all movable GTD meeting he
         end
     end
 
-    set -l bad_window_dir /tmp/workspace-ws-window-bad
+    set -l bad_window_dir $SPACEWRIGHT_STATE_ROOT/cache/bad-windows
     set -l apps_json (workspace_app_names_json $app_key)
     or return 1
     set -l app_name (workspace_app_name $app_key)

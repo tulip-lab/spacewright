@@ -16,6 +16,7 @@ import {
   topologyKey,
   validateV3
 } from './lib/config-v3.mjs';
+import { generationDocument, withConfigurationWrite, stableRead } from './lib/config-store.mjs';
 import { detectMacHardware } from './lib/hardware-detection.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -104,15 +105,7 @@ function print(value) { process.stdout.write(`${JSON.stringify(value, null, 2)}\
 
 async function compileActive(config, machine, hardware, snapshot) {
   const source = await readFile(configFile, 'utf8');
-  const sourceSha256 = createHash('sha256').update(source).digest('hex');
-  const runtime = compileV3(config, { machine, hardware, snapshot });
-  runtime.generated = {
-    format_version: 1,
-    compiler_version: CONFIG_COMPILER_VERSION,
-    source_version: 3,
-    generation_id: sourceSha256.slice(0, 16),
-    source_sha256: sourceSha256
-  };
+  const runtime = generationDocument(config, { machine, hardware, snapshot }, source);
   await atomicWrite(runtimeFile, runtime);
   return runtime;
 }
@@ -157,8 +150,12 @@ try {
       topologySelections: { ...(value.machine.topologySelections || {}), [value.topologyKey]: setupId },
       activeSetup: setupId
     };
-    await atomicWrite(machineFile, next);
-    const runtime = await compileActive(value.config, next, value.hardware, value.snapshot);
+    const runtime = await withConfigurationWrite(dirname(configFile), async () => {
+      const currentSource = JSON.parse(await readFile(configFile, 'utf8'));
+      if (JSON.stringify(currentSource) !== JSON.stringify(value.config)) throw new Error('configuration changed during setup activation');
+      await atomicWrite(machineFile, next);
+      return compileActive(value.config, next, value.hardware, value.snapshot);
+    });
     print({ confirmed: true, path: machineFile, runtimePath: runtimeFile, hardwareProfile: hardwareProfileId, setup: setupId, compatibilityMode: runtime.modes[`work_${value.config.hardwareProfiles[hardwareProfileId].setups[setupId].compatibilityMode}`].display_mode, topologyKey: value.topologyKey, displayBindings });
   } else if (command === 'activate') {
     const hardwareProfileId = value.machine.hardwareProfile;
@@ -168,8 +165,12 @@ try {
     const bindingStatus = setupBindingStatus(value.config, hardwareProfileId, setupId, value.snapshot, value.machine);
     if (!bindingStatus.ready) throw new Error(`current display roles require confirmation: ${bindingStatus.missingRoles.join(', ')}`);
     const next = { ...value.machine, activeSetup: setupId };
-    await atomicWrite(machineFile, next);
-    const runtime = await compileActive(value.config, next, value.hardware, value.snapshot);
+    const runtime = await withConfigurationWrite(dirname(configFile), async () => {
+      const currentSource = JSON.parse(await readFile(configFile, 'utf8'));
+      if (JSON.stringify(currentSource) !== JSON.stringify(value.config)) throw new Error('configuration changed during setup activation');
+      await atomicWrite(machineFile, next);
+      return compileActive(value.config, next, value.hardware, value.snapshot);
+    });
     print({ activated: true, hardwareProfile: hardwareProfileId, setup: setupId, compatibilityMode: value.config.hardwareProfiles[hardwareProfileId].setups[setupId].compatibilityMode, runtimePath: runtimeFile, sourceVersion: runtime.source_version });
   } else {
     throw new Error('usage: setup-cli.mjs <detect|status|confirm|activate> [hardware-profile] [setup] [--config=path] [--snapshot=path] [--model=id]');

@@ -1,6 +1,6 @@
 function __gtd_support_clear_bad_dia_windows --description "Clear bad-window cache entries for movable Dia windows"
     for wid in $argv
-        rm -f /tmp/workspace-ws-window-bad/$wid 2>/dev/null
+        rm -f $SPACEWRIGHT_STATE_ROOT/cache/bad-windows/$wid 2>/dev/null
     end
 end
 

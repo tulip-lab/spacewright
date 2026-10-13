@@ -162,6 +162,16 @@ function workspace_cleanup_empty_spaces --description "Destroy policy-approved e
 end
 
 function workspace_finalize_mode --description "Collect Sandbox, clean, order, verify, and restore focus"
+    if contains -- --dry-run $argv
+        printf 'dry_run=workspace_finalize_mode\n'
+        return 0
+    end
+    if test -n "$SPACEWRIGHT_PACKAGE_ROOT"; and not contains -- --dry-run $argv
+        if not workspace_execution_owned 2>/dev/null
+            command node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/execution-cli.mjs" exec fish --no-config -c 'source "$SPACEWRIGHT_PACKAGE_ROOT/conf.d/spacewright.fish"; $argv' -- workspace_finalize_mode $argv
+            return $status
+        end
+    end
     set -l mode $argv[1]
     if test "$mode" = auto
         set mode (workspace_detect_display_mode)
@@ -234,6 +244,12 @@ function workspace_finalize_mode --description "Collect Sandbox, clean, order, v
 end
 
 function workspace_run_finalized_entry --description "Run an entry and finalize only at the outermost scope"
+    if test -n "$SPACEWRIGHT_PACKAGE_ROOT"; and not contains -- --dry-run $argv
+        if not workspace_execution_owned 2>/dev/null
+            command node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/execution-cli.mjs" exec fish --no-config -c 'source "$SPACEWRIGHT_PACKAGE_ROOT/conf.d/spacewright.fish"; $argv' -- workspace_run_finalized_entry $argv
+            return $status
+        end
+    end
     argparse 'mode=' 'command=' -- $argv
     or return 1
 
@@ -318,13 +334,13 @@ function workspace_run_public_workspace_entry --description "Route a legacy publ
     end
 
     if test "$SPACEWRIGHT_CONFIG_DISABLE" != 1
-        and not set -q SPACEWRIGHT_TRANSITION_RUN_ID
-        and test "$SPACEWRIGHT_PUBLIC_ENTRY_DIRECT" != 1
-        and command -q spacewright
-        command spacewright workspace $_flag_workspace $_flag_mode $argv
+        and not set -q SPACEWRIGHT_EXECUTION_ENVELOPE
+        and test -x "$SPACEWRIGHT_PACKAGE_ROOT/bin/spacewright"
+        command "$SPACEWRIGHT_PACKAGE_ROOT/bin/spacewright" workspace $_flag_workspace $_flag_mode $argv
         return $status
     end
 
+    set -lx WORKSPACE_SKIP_FINALIZATION 1
     workspace_run_finalized_entry --mode $_flag_mode --command $_flag_command -- $argv
 end
 
@@ -342,10 +358,9 @@ function workspace_run_public_mode_entry --description "Route a legacy public mo
     end
 
     if test "$SPACEWRIGHT_CONFIG_DISABLE" != 1
-        and not set -q SPACEWRIGHT_TRANSITION_RUN_ID
-        and test "$SPACEWRIGHT_PUBLIC_ENTRY_DIRECT" != 1
-        and command -q spacewright
-        command spacewright mode $_flag_mode $argv
+        and not set -q SPACEWRIGHT_EXECUTION_ENVELOPE
+        and test -x "$SPACEWRIGHT_PACKAGE_ROOT/bin/spacewright"
+        command "$SPACEWRIGHT_PACKAGE_ROOT/bin/spacewright" mode $_flag_mode $argv
         return $status
     end
 

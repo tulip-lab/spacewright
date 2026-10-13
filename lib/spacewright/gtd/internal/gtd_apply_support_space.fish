@@ -57,7 +57,7 @@ function gtd_apply_support_space --description "Apply a GTD support workspace fo
     set -l dia_all_windows (printf '%s\n' "$windows_json_final" | ws_find_windows (workspace_app_name dia) --movable --not-native-fullscreen)
     if test (count $dia_all_windows) -gt 0
         for wid in $dia_all_windows
-            rm -f /tmp/workspace-ws-window-bad/$wid 2>/dev/null
+            rm -f $SPACEWRIGHT_STATE_ROOT/cache/bad-windows/$wid 2>/dev/null
         end
 
         ws_move_windows_to_space $target_space $dia_all_windows

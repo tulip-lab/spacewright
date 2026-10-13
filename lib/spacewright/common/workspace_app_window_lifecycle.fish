@@ -94,7 +94,7 @@ function workspace_find_app_window --description "Find a movable app window, act
         set wait_seconds $_flag_wait
     end
 
-    set -l bad_window_dir /tmp/workspace-ws-window-bad
+    set -l bad_window_dir $SPACEWRIGHT_STATE_ROOT/cache/bad-windows
     set -l selector_args --app "$_flag_app" --movable
     set -l app_key (string replace -ra '[^A-Za-z0-9]+' '_' -- "$_flag_app")
 
