@@ -20,9 +20,9 @@ command node "$package_root/configurator/cli.mjs" compile-to "$test_root/config.
 or exit 18
 test (jq -r '.generated.source_sha256 | length' "$test_root/generated/runtime.json") -eq 64
 or exit 19
-jq -e '.generated.format_version == 1 and .generated.compiler_version == 4 and .generated.source_version == 2 and (.generated.generation_id | length) == 16' "$test_root/generated/runtime.json" >/dev/null
+jq -e '.generated.format_version == 2 and .generated.compiler_version == 5 and .generated.source_version == 2 and (.generated.generation_id | length) == 24' "$test_root/generated/runtime.json" >/dev/null
 or exit 24
-spacewright_config_status | jq -e '.version == 2 and .current == true and (.generation_id | length) == 16' >/dev/null
+spacewright_config_status | jq -e '.version == 2 and .current == true and (.generation_id | length) == 24' >/dev/null
 or exit 25
 mv "$test_root/generated/runtime.json" "$test_root/generated/runtime.hold"
 spacewright_config_status | jq -e '.version == 2 and .current == false and .generation_id == ""' >/dev/null
@@ -43,7 +43,7 @@ set -gx PATH $original_path
 
 set -l selector_plan '{"windows":[{"app_names":["Code"],"selector":{"movable":true,"visible":true,"non_empty_title":true,"title_include":"Project","title_exclude":"Ignore"}}]}'
 set -l selector_windows '[{"id":10,"app":"Code","title":"Ignore Project","is-minimized":false,"is-visible":true,"can-move":true},{"id":11,"app":"Code","title":"Project Alpha","is-minimized":false,"is-visible":true,"can-move":true},{"id":12,"app":"Code","title":"Project Beta","is-minimized":false,"is-visible":true,"can-move":true}]'
-test (__workspace_config_select_window "$selector_windows" "$selector_plan" 0) = 11
+test -z (__workspace_config_select_window "$selector_windows" "$selector_plan" 0)
 or exit 21
 test (__workspace_config_select_window "$selector_windows" "$selector_plan" 0 11) = 12
 or exit 22
@@ -122,6 +122,7 @@ end
 test (workspace_resolve_display_role task__wide) = 2
 or exit 16
 
+function workspace_execution_owned; return 0; end
 set -g __generic_query_count 0
 function workspace_config_plan
     printf '%s\n' '{"kind":"workspace","id":"spacewright_demo_wide","runner":"generic_layout","label":"demo_wide","display_role":"task__wide","space_layout":"float","windows":[{"role":"primary","app_key":"code","required":true,"app_names":["Code"],"selector":{"movable":true}}],"layout":[{"role":"primary","grid":"1:1:0:0:1:1"}],"runner_options":{},"cleanup":null,"mutates":false}'
@@ -179,6 +180,7 @@ and exit 31
 test -z "$__generic_fullscreen_toggle"
 or exit 32
 
+function workspace_execution_owned; return 0; end
 set -g __generic_query_count 0
 function ws_query_windows
     set -g __generic_query_count (math $__generic_query_count + 1)
@@ -196,6 +198,7 @@ or exit 35
 function workspace_config_plan
     printf '%s\n' '{"kind":"workspace","id":"spacewright_demo_wide","runner":"generic_layout","label":"demo_wide","display_role":"task__wide","space_layout":"float","windows":[{"role":"primary","app_key":"code","required":true,"app_names":["Code"],"selector":{"movable":true}}],"layout":[{"role":"primary","grid":"1:1:0:0:1:1"}],"runner_options":{},"cleanup":null,"mutates":false}'
 end
+function workspace_execution_owned; return 0; end
 set -g __generic_query_count 0
 function ws_query_windows
     set -g __generic_query_count (math $__generic_query_count + 1)

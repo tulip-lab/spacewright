@@ -38,6 +38,7 @@ printf '==> fake workspace step\\n'
 sleep "$FAKE_DURATION" &
 wait $!
 printf 'completed %s\\n' "$2" >> "$FAKE_LOG"
+printf 'SPACEWRIGHT_VERIFIED\\n'
 `);
   await chmod(fakeFish, 0o755);
   return { root, stateRoot, fakeFish, log };
@@ -90,11 +91,11 @@ test('an immediately completed child cannot outrun exit observation', async () =
   const stateRoot = join(root, 'state');
   const env = { ...process.env, SPACEWRIGHT_BANNER_DISABLE: '1', SPACEWRIGHT_TRANSITION_FISH: '/usr/bin/true' };
   try {
-    await execFileAsync(process.execPath, args(stateRoot, 'wide'), { env, timeout: 2_000 });
+    await assert.rejects(execFileAsync(process.execPath, args(stateRoot, 'wide'), { env, timeout: 2_000 }));
     const status = JSON.parse(await readFile(join(stateRoot, 'mode-transition', 'status.json'), 'utf8'));
-    assert.equal(status.status, 'completed');
+    assert.equal(status.status, 'failed');
     const [history] = await readTransitionHistory(stateRoot);
-    assert.equal(history.status, 'completed');
+    assert.equal(history.status, 'failed');
     assert.equal(history.scope, 'mode');
     assert.equal(history.targetLabel, 'Wide');
     assert.ok(history.durationMs >= 0);
@@ -156,7 +157,7 @@ test('state reconciliation cannot overlap an active mode transition', async () =
       `--config-root=${join(root, 'config')}`,
       `--state-root=${stateRoot}`,
     ], { env }), (error) => {
-      assert.match(error.stderr, /another SpaceWright mutation is active/);
+      assert.match(error.stderr, /another SpaceWright mutation|unrecognized live owner/);
       return true;
     });
   } finally {
@@ -183,7 +184,7 @@ test('a mode transition does not replace an active state reconciliation run', as
   try {
     await waitFor(async () => (await readFile(join(stateRoot, 'execution.lock', 'owner.json'), 'utf8').catch(() => '')).includes('state-run'));
     await assert.rejects(execFileAsync(process.execPath, args(stateRoot, 'solo'), { env }), (error) => {
-      assert.match(error.stderr, /another SpaceWright mutation is active/);
+      assert.match(error.stderr, /another SpaceWright mutation|unrecognized live owner/);
       return true;
     });
     assert.equal(await readFile(log, 'utf8').catch(() => ''), '');
@@ -199,14 +200,14 @@ test('a newer different mode replaces the active transition', async () => {
   const common = { ...process.env, SPACEWRIGHT_BANNER_DISABLE: '1', SPACEWRIGHT_TRANSITION_FISH: fakeFish, FAKE_LOG: log };
   const first = spawn(process.execPath, args(stateRoot, 'wide'), { env: { ...common, FAKE_DURATION: '10' }, stdio: ['ignore', 'pipe', 'pipe'] });
   try {
-    await waitFor(async () => (await readFile(log, 'utf8').catch(() => '')).includes('work_wide'));
+    await waitFor(async () => (await readFile(log, 'utf8').catch(() => '')).includes('apply wide'));
     await execFileAsync(process.execPath, args(stateRoot, 'solo'), { env: { ...common, FAKE_DURATION: '0.1' } });
     await waitForChild(first);
     const lines = await readFile(log, 'utf8');
-    assert.match(lines, /started .*work_wide/);
-    assert.match(lines, /started .*work_solo/);
-    assert.doesNotMatch(lines, /completed .*work_wide/);
-    assert.match(lines, /completed .*work_solo/);
+    assert.match(lines, /started .*apply wide/);
+    assert.match(lines, /started .*apply solo/);
+    assert.doesNotMatch(lines, /completed .*apply wide/);
+    assert.match(lines, /completed .*apply solo/);
     const status = JSON.parse(await readFile(join(stateRoot, 'mode-transition', 'status.json'), 'utf8'));
     assert.equal(status.mode, 'solo');
     assert.equal(status.status, 'completed');
@@ -225,8 +226,8 @@ test('a different workspace in the same mode replaces the active scoped transiti
     await execFileAsync(process.execPath, workspaceArgs(stateRoot, 'research', 'solo'), { env: { ...common, FAKE_DURATION: '0.1' } });
     await waitForChild(first);
     const lines = await readFile(log, 'utf8');
-    assert.match(lines, /started .*SPACEWRIGHT_TRANSITION_PACKAGE_ROOT.*WORKSPACE_SKIP_FINALIZATION 1.*SPACEWRIGHT_TRANSITION_PACKAGE_ROOT\/bin\/spacewright.*run gtd_ai solo/);
-    assert.match(lines, /started .*SPACEWRIGHT_TRANSITION_PACKAGE_ROOT.*WORKSPACE_SKIP_FINALIZATION 1.*SPACEWRIGHT_TRANSITION_PACKAGE_ROOT\/bin\/spacewright.*run research solo/);
+    assert.match(lines, /started .*SPACEWRIGHT_TRANSITION_PACKAGE_ROOT.*SPACEWRIGHT_TRANSITION_PACKAGE_ROOT\/bin\/spacewright.*apply gtd_ai solo/);
+    assert.match(lines, /started .*SPACEWRIGHT_TRANSITION_PACKAGE_ROOT.*SPACEWRIGHT_TRANSITION_PACKAGE_ROOT\/bin\/spacewright.*apply research solo/);
     assert.doesNotMatch(lines, /completed .*gtd_ai solo/);
     assert.match(lines, /completed .*research solo/);
     const status = JSON.parse(await readFile(join(stateRoot, 'mode-transition', 'status.json'), 'utf8'));

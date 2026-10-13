@@ -92,7 +92,7 @@ function __gtd_chat_body --description "Fast GTD chat workspace layout on worksp
         set -l dingtalk_initial_parts (string split \t -- "$dingtalk_initial_info")
         if test "$dingtalk_initial_parts[4]" = true
             set dingtalk $dingtalk_initial_parts[1]
-            rm -f /tmp/workspace-ws-window-bad/$dingtalk 2>/dev/null
+            rm -f $SPACEWRIGHT_STATE_ROOT/cache/bad-windows/$dingtalk 2>/dev/null
         else
             set dingtalk_status 2
             set dingtalk_fallback_window $dingtalk_initial_parts[1]
@@ -212,6 +212,7 @@ function __gtd_chat_body --description "Fast GTD chat workspace layout on worksp
     # 4b. move WhatsApp separately; tolerate move failures
     if test -n "$whatsapp"
         ws_window $whatsapp --space $target_space >/dev/null 2>&1
+        or return 1
     end
 
     # 5. final capture on target space
@@ -314,10 +315,12 @@ function __gtd_chat_body --description "Fast GTD chat workspace layout on worksp
     # 7. final layout
     if test -n "$keybase"
         ws_window $keybase --grid 2:2:0:0:1:1
+        or return 1
     end
 
     if test -n "$wechat"
         ws_window $wechat --grid 2:2:0:1:1:1
+        or return 1
     end
 
     if test -n "$dingtalk"
@@ -329,21 +332,27 @@ function __gtd_chat_body --description "Fast GTD chat workspace layout on worksp
                 --caller $label
         else
             ws_window $dingtalk --grid 2:2:1:0:1:1
+            or return 1
         end
     end
 
     if test -n "$messages"
         ws_window $messages --grid 2:2:1:1:1:1
+        or return 1
     end
 
     if test -n "$whatsapp"
         ws_window $whatsapp --move abs:458:190
+        or return 1
         ws_window $whatsapp --resize abs:885:560
+        or return 1
     end
 
     if test -n "$facetime"
         ws_window $facetime --move abs:458:190
+        or return 1
         ws_window $facetime --resize abs:885:560
+        or return 1
     end
 
     ws_focus_space $target_space

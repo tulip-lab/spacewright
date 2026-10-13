@@ -388,6 +388,7 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
                 --caller $caller
         else
             ws_window $helper_window --grid $_flag_helper_grid
+            or return 1
         end
     end
 
@@ -405,6 +406,7 @@ function workspace_apply_primary_helper_space --description "Apply a labeled wor
                 --caller $caller
         else
             ws_window $primary_window --grid $primary_grid
+            or return 1
         end
     end
 

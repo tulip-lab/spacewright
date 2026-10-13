@@ -14,7 +14,7 @@ Discover -> Compare -> Plan -> Apply -> Verify
 `spacewright inspect [--json]` queries displays, Spaces, and windows once and
 normalizes the result into a versioned snapshot. Physical display UUIDs are
 resolved to portable roles through the machine-state file. Query failure
-produces an unavailable snapshot; it is never interpreted as a solo topology.
+produces a `partial` or `unavailable` snapshot with missing query ranges; it is never interpreted as a solo topology.
 
 Window titles are available to the matching engine but the normal human
 overview prints application names only. JSON output is intended for local
@@ -53,7 +53,7 @@ workspaces migrated from the Office adapters declare
 workspace does not require an empty Space. Other variants default to always
 active. Window roles default to `cardinality: "one"`; adaptive roles such as
 GTD Support's Dia role use `"many"`, select every eligible window, and verify
-Space membership without inventing a singular geometry comparison.
+Space membership and the same per-object adapter geometry used for execution.
 
 `contextualApps` is the closed exception for a single shared assistant window.
 The reconciler maps the pre-transition focused Space label back to a workspace
@@ -76,14 +76,14 @@ conservative and leaves normal creation/recovery to the bounded runner.
 `spacewright apply --dry-run` follows the same discovery and planning path but
 performs no mutation. Without that flag, `spacewright apply` acquires the
 execution lock, computes an immutable plan, and performs a second preflight
-discovery. If the snapshot, configuration digest, or plan changed, the run is
+discovery. If target-relevant preconditions, configuration digest, or plan changed, the run is
 journaled as `stale` and no mutation is attempted. The lock serializes CLI,
 Web, and automation mutations. Lock recovery is conservative: a newly created
-ownerless lock receives a grace period, live owners are checked against the
-SpaceWright state CLI, and stale locks are quarantined atomically before they
+ownerless lock receives a grace period, live owners are checked by process lifetime and lease ancestry, and stale locks are quarantined atomically before they
 are removed.
 
-Only workspaces with change drift are invoked. Any mutating workspace batch or
+Only workspaces with change drift are invoked. Single-workspace execution never
+collects Sandbox, globally orders or finalizes other workspaces. An aggregate-mode workspace batch or
 detected empty-Space/order drift ends with one closed mode finalization step;
 that step collects unmanaged windows, removes safe empty Spaces, verifies
 ordering, and restores focus. Closed postprocessors retain their configured
@@ -111,7 +111,10 @@ background root surfaces left by apps such as media players.
 `spacewright recover RUN_ID --dry-run` lists the still-present candidate
 windows without changing them. Recovery without that flag is explicit and
 best-effort. It restores the
-original Space and absolute frame only for windows matched by that run. It does
+original Space and absolute frame only for objects with issued window operations
+recorded by that run. Each operation checks application, PID, available process
+lifetime and bundle identity; original Space UUIDs are resolved to current
+indices. Rediscovery verifies both membership and frame after restoration. It does
 not undo application launches, recreate deleted Spaces, reverse displayplacer
 changes, or restore windows that no longer exist. Recovery itself receives a
 journal before discovery begins. SIGINT and SIGTERM stop further preflight or
@@ -161,3 +164,28 @@ spacewright event wake
 ```
 
 Only enabled matching rules run, and only when event automation is enabled.
+
+## Preconditions and terminal outcomes
+
+The full snapshot remains diagnostic. The plan digest includes relevant
+configuration, ownership/eligible candidates, selected-window identity and
+frame, target Space identity and display geometry. Unrelated title or frame
+changes do not invalidate a workspace preview. Optional ambiguous roles are
+skipped instead of selecting an arbitrary candidate. Minimized/native fullscreen
+windows are excluded; required roles needing recovery block the plan.
+
+All established journals finish as completed, failed, stale, cancelled or
+timed out. A completed apply requires fresh convergence and unchanged selected
+identities. Interactive and Web controllers require this verification result,
+not merely a zero exit code. One total deadline covers discovery, backend
+commands and a single optional reconciliation. Service recovery is disabled
+inside pinned apply; retained adapters have one shared service-recovery allowance
+per lease. Read-only confirmation polling remains bounded by that deadline.
+
+Recovery results distinguish completed, partial, skipped, failed and cancelled.
+Space creation/destruction, display profile changes and other non-window effects
+are reported as nonrecoverable. Command records describe issued/attempted
+operations, including uncertain failures, rather than promising that every
+command took effect or that the entire desktop can be rolled back. If the state
+directory becomes unwritable, the controller reports terminal status on stderr;
+it cannot guarantee an on-disk terminal journal while storage is unavailable.

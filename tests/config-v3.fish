@@ -18,6 +18,15 @@ command node "$package_root/configurator/setup-cli.mjs" confirm mac_mini single_
     --model=Macmini9,1 >/dev/null
 or exit 2
 
+set -l fake_bin "$test_root/bin"
+mkdir -p "$fake_bin"
+printf '%s\n' '#!/bin/sh' 'printf "%s\n" "Macmini9,1"' > "$fake_bin/sysctl"
+printf '%s\n' '#!/bin/sh' 'case "$3" in' \
+    '  --displays) printf "%s\n" '\''[{"index":1,"uuid":"DISPLAY-TALL-1234","frame":{"x":0,"y":0,"w":1200,"h":1920},"is-built-in":false}]'\'' ;;' \
+    '  *) exit 2 ;;' \
+    'esac' > "$fake_bin/yabai"
+chmod +x "$fake_bin/sysctl" "$fake_bin/yabai"
+set -gx PATH "$fake_bin" $PATH
 set -gx SPACEWRIGHT_CONFIG_ROOT "$config_root"
 set -gx SPACEWRIGHT_STATE_ROOT "$state_root"
 source "$package_root/conf.d/spacewright.fish"
@@ -39,14 +48,6 @@ or exit 6
 workspace_config_plan spacewright_coding_tall | jq -e '.label == "coding_tall" and .display_role == "tall__tall"' >/dev/null
 or exit 7
 
-set -l fake_bin "$test_root/bin"
-mkdir -p "$fake_bin"
-printf '%s\n' '#!/bin/sh' 'printf "%s\n" "Macmini9,1"' > "$fake_bin/sysctl"
-printf '%s\n' '#!/bin/sh' 'case "$3" in' \
-    '  --displays) printf "%s\n" '\''[{"index":1,"uuid":"DISPLAY-TALL-1234","frame":{"x":0,"y":0,"w":1200,"h":1920},"is-built-in":false}]'\'' ;;' \
-    '  *) exit 2 ;;' \
-    'esac' > "$fake_bin/yabai"
-chmod +x "$fake_bin/sysctl" "$fake_bin/yabai"
 command cp "$state_root/machine.json" "$test_root/machine.before.json"
 command cp "$config_root/generated/runtime.json" "$test_root/runtime.before.json"
 env PATH="$fake_bin:$PATH" "$package_root/bin/spacewright" workspace coding --dry-run | string match -q '*mode=tall*'

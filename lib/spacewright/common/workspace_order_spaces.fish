@@ -163,6 +163,12 @@ function workspace_external_order_labels --description "Print external workspace
 end
 
 function workspace_order_mode_spaces --description "Order existing primary and external workspace Spaces"
+    if test -n "$SPACEWRIGHT_PACKAGE_ROOT"; and not contains -- --dry-run $argv
+        if not workspace_execution_owned 2>/dev/null
+            command node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/execution-cli.mjs" exec fish --no-config -c 'source "$SPACEWRIGHT_PACKAGE_ROOT/conf.d/spacewright.fish"; $argv' -- workspace_order_mode_spaces $argv
+            return $status
+        end
+    end
     argparse dry-run -- $argv
     or return 1
 

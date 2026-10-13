@@ -1,15 +1,19 @@
 #!/usr/bin/env node
 
-import { execFile, spawn } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState, normalizeSnapshot, summarizeComparison } from './lib/state-engine.mjs';
 import { compileV2, validateV2 } from './lib/config-v2.mjs';
 import { resolveV3, validateV3 } from './lib/config-v3.mjs';
+import { restoreWindow, sameWindowIdentity } from './lib/recovery.mjs';
+import { stableRead } from './lib/config-store.mjs';
+import { discoverState } from './lib/discovery.mjs';
+import { acquireExecution, runBounded } from './lib/execution-coordinator.mjs';
 import { detectMacHardware } from './lib/hardware-detection.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -39,37 +43,23 @@ async function atomicWrite(path, value) {
   await rename(temporary, path);
 }
 
-async function query(kind, maxBuffer = 4_000_000) {
-  const { stdout } = await execFileAsync('yabai', ['-m', 'query', `--${kind}`], { timeout: 5000, maxBuffer });
-  return JSON.parse(stdout);
-}
-
 export async function discover(machineOverride = null) {
-  const capturedAt = new Date().toISOString();
-  const machine = machineOverride || await readJson(machineFile, { version: 1, displayBindings: {} });
-  try {
-    const [displays, spaces, windows] = await Promise.all([
-      query('displays', 1_000_000), query('spaces', 2_000_000), query('windows')
-    ]);
-    return normalizeSnapshot({ capturedAt, displays, spaces, windows }, machine);
-  } catch (error) {
-    return normalizeSnapshot({ capturedAt, unavailable: true, message: `live yabai discovery failed: ${error.message}`, displays: [], spaces: [], windows: [] }, machine);
-  }
+  return discoverState(machineOverride || await readJson(machineFile, { version: 1, displayBindings: {} }), { deadline: executionDeadline, signal: cancellation.signal });
 }
 
 async function context() {
   const configFile = existsSync(v3ConfigFile) ? v3ConfigFile : v2ConfigFile;
   if (!existsSync(configFile)) throw new Error(`portable configuration not found under ${configRoot}; run “spacewright configure” first`);
-  const [portableConfig, machine] = await Promise.all([readJson(configFile, null), readJson(machineFile, { version: 1, displayBindings: {} })]);
+  const { config: portableConfig, machine, source } = await stableRead(configFile, machineFile);
   const snapshot = await discover(machine);
   const validation = portableConfig.version === 3 ? validateV3(portableConfig) : validateV2(portableConfig);
   if (!validation.valid) throw new Error(`configuration is invalid:\n${validation.errors.join('\n')}`);
   if (portableConfig.version === 3) {
-    const hardware = await detectMacHardware();
+    const hardware = await detectMacHardware({deadline:executionDeadline,signal:cancellation.signal});
     const resolution = resolveV3(portableConfig, { machine, hardware, snapshot });
-    return { config: resolution.v2, portableConfig, configFile, machine, snapshot, resolution, runtime: compileV2(resolution.v2) };
+    return { config: resolution.v2, portableConfig, configFile, source, machine, snapshot, resolution, runtime: compileV2(resolution.v2) };
   }
-  return { config: portableConfig, portableConfig, configFile, machine, snapshot, resolution: null, runtime: compileV2(portableConfig) };
+  return { config: portableConfig, portableConfig, configFile, source, machine, snapshot, resolution: null, runtime: compileV2(portableConfig) };
 }
 
 function parseTarget(values = positional) {
@@ -81,8 +71,8 @@ function parseTarget(values = positional) {
   return { kind: 'workspace', id, mode };
 }
 
-async function livePlan(target = parseTarget()) {
-  const value = await context();
+async function livePlan(target = parseTarget(), frozen = null) {
+  const value = frozen ? { ...frozen, snapshot: await discover(frozen.machine) } : await context();
   const normalizedTarget = value.resolution && target.kind === 'workspace' && !target.mode
     ? { ...target, mode: value.config.modes[value.portableConfig.hardwareProfiles[value.resolution.hardwareProfileId].setups[value.resolution.setupId].compatibilityMode] ? value.portableConfig.hardwareProfiles[value.resolution.hardwareProfileId].setups[value.resolution.setupId].compatibilityMode : null }
     : target;
@@ -131,82 +121,37 @@ function printPlan(plan, comparison) {
   for (const step of plan.executionSteps || []) console.log(`RUN     spacewright ${step.command.join(' ')}`);
 }
 
+let executionLease = null;
 async function acquireLock(runId) {
-  const lockRoot = join(stateRoot, 'execution.lock');
-  try {
-    await mkdir(lockRoot, { recursive: false, mode: 0o700 });
-  } catch (error) {
-    if (error.code !== 'EEXIST') throw error;
-    const owner = await readJson(join(lockRoot, 'owner.json'), {});
-    let live = false;
-    if (Number.isInteger(owner.pid)) {
-      try {
-        process.kill(owner.pid, 0);
-        const { stdout } = await execFileAsync('ps', ['-p', String(owner.pid), '-o', 'command='], { timeout: 2000 });
-        live = stdout.includes('configurator/state-cli.mjs') || stdout.includes('configurator/mode-transition.mjs');
-      } catch {}
-    } else {
-      const age = Date.now() - (await stat(lockRoot)).mtimeMs;
-      if (age < 30_000) throw new Error('another SpaceWright mutation is acquiring the execution lock; retry shortly');
-    }
-    if (live) throw new Error(`another SpaceWright mutation is active (run ${owner.runId || 'unknown'}, pid ${owner.pid}); wait for it to finish or cancel it`);
-    const staleRoot = `${lockRoot}.stale-${runId}`;
-    try { await rename(lockRoot, staleRoot); }
-    catch (renameError) {
-      if (renameError.code === 'ENOENT') return acquireLock(runId);
-      throw renameError;
-    }
-    await rm(staleRoot, { recursive: true, force: true });
-    try { await mkdir(lockRoot, { recursive: false, mode: 0o700 }); }
-    catch (mkdirError) {
-      if (mkdirError.code === 'EEXIST') throw new Error('another SpaceWright mutation acquired the execution lock; retry shortly');
-      throw mkdirError;
-    }
-  }
-  await atomicWrite(join(lockRoot, 'owner.json'), { runId, pid: process.pid, controller: 'state-cli', acquiredAt: new Date().toISOString() });
-  return async () => {
-    const owner = await readJson(join(lockRoot, 'owner.json'), {});
-    if (owner.runId !== runId || owner.pid !== process.pid) return;
-    const releasedRoot = `${lockRoot}.released-${runId}`;
-    try { await rename(lockRoot, releasedRoot); }
-    catch (error) {
-      if (error.code === 'ENOENT') return;
-      throw error;
-    }
-    await rm(releasedRoot, { recursive: true, force: true });
-  };
+  executionLease = await acquireExecution(stateRoot, { runId, controller: 'state-cli', deadlineAt: new Date(executionDeadline).toISOString() });
+  return executionLease.release;
 }
-
 async function runCommand(args, journal, journalFile, plannedStep, attempt = 0) {
+  assertNotCancelled();
   const step = { ...plannedStep, attempt, status: 'running', command: ['spacewright', ...args], startedAt: new Date().toISOString() };
   journal.steps.push(step);
+  if (plannedStep.action === 'display_profile') journal.effects.push({type:'display_profile',profile:args[1],attempted:true,reversible:false});
   await atomicWrite(journalFile, journal);
-  const child = spawn(executable, args, { env: { ...process.env, SPACEWRIGHT_CONFIG_ROOT: configRoot, SPACEWRIGHT_STATE_ROOT: stateRoot }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
-  activeChild = child;
-  journal.childPid = child.pid;
-  const completion = new Promise((resolveRun) => {
-    let settled = false;
-    const finish = (exitCode) => {
-      if (settled) return;
-      settled = true; activeChild = null; delete journal.childPid;
-      step.status = exitCode === 0 ? 'completed' : 'failed'; step.exitCode = exitCode; step.finishedAt = new Date().toISOString();
-      resolveRun(exitCode);
-    };
-    const append = (stream) => (chunk) => {
-      for (const line of String(chunk).split('\n').filter(Boolean)) journal.logs.push({ timestamp: new Date().toISOString(), stream, line });
-    };
-    child.stdout.on('data', append('stdout'));
-    child.stderr.on('data', append('stderr'));
-    child.once('error', (error) => {
-      journal.logs.push({ timestamp: new Date().toISOString(), stream: 'system', line: error.message });
-      finish(1);
+  const outputBuffers = {stdout:'',stderr:''};
+  try {
+    const result = await runBounded(executable, args, { deadline: executionDeadline, signal: cancellation.signal,
+      env: { ...process.env, ...executionLease.env, SPACEWRIGHT_CONFIG_ROOT: configRoot, SPACEWRIGHT_STATE_ROOT: stateRoot,
+        SPACEWRIGHT_EXECUTION_CONFIG: journal.effectiveConfigFile, SPACEWRIGHT_EXECUTION_ENVELOPE: journal.envelopeFile,
+        SPACEWRIGHT_RUNTIME_GENERATION: journal.plan?.configDigest, WORKSPACE_DISABLE_YABAI_AUTO_RESTART: '1', WORKSPACE_SKIP_FINALIZATION: '1' },
+      onChild: async (child) => { activeChild = child; await executionLease.trackChild(child); },
+      onOutput: (stream, value) => {
+        for (const line of value.split('\n').filter(Boolean)) journal.logs.push({ timestamp: new Date().toISOString(), stream, line });
+        {
+          outputBuffers[stream] += value;
+          const lines = outputBuffers[stream].split('\n'); outputBuffers[stream] = lines.pop();
+          for (const line of lines.filter((l) => l.startsWith('[MUTATION] '))) try { journal.effects.push(JSON.parse(line.slice(11))); } catch {}
+        }
+      }
     });
-    child.once('exit', (code, signal) => {
-      finish(code ?? (signal ? 130 : 1));
-    });
-  });
-  await atomicWrite(journalFile, journal);
-  return await completion;
+    step.status = result.code === 0 ? 'completed' : 'failed'; step.exitCode = result.code;
+    return result.code;
+  } catch (error) { step.status = error.code === 'SPACEWRIGHT_CANCELLED' ? 'cancelled' : error.code === 'SPACEWRIGHT_TIMEOUT' ? 'timed_out' : 'failed'; step.error = error.message; throw error; }
+  finally { step.finishedAt = new Date().toISOString(); }
 }
 
 async function waitForDesktopStateToSettle(executionSteps) {
@@ -217,32 +162,52 @@ async function waitForDesktopStateToSettle(executionSteps) {
 
 let activeChild = null;
 let cancellationSignal = null;
-
-function cancellationError() {
-  const error = new Error(`operation cancelled by ${cancellationSignal || 'signal'}`);
-  error.code = 'SPACEWRIGHT_CANCELLED';
-  return error;
-}
-
+const cancellation = new AbortController();
+let executionDeadline = Number(process.env.SPACEWRIGHT_EXECUTION_DEADLINE_MS) || Date.now() + Number(flags['timeout-seconds'] || 120) * 1000;
+function cancellationError() { return Object.assign(new Error(`operation cancelled by ${cancellationSignal || 'signal'}`), { code: 'SPACEWRIGHT_CANCELLED' }); }
 function assertNotCancelled() {
   if (cancellationSignal) throw cancellationError();
+  if (Date.now() >= executionDeadline) throw Object.assign(new Error('execution deadline exceeded'), { code: 'SPACEWRIGHT_TIMEOUT' });
 }
-
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
   cancellationSignal ||= signal;
-  if (activeChild?.pid) try { process.kill(-activeChild.pid, 'SIGTERM'); } catch {}
+  cancellation.abort(cancellationError());
 });
+
+async function assertExecutionContext(initial,effects = []) {
+  assertNotCancelled();
+  const currentConfig = await stableRead(initial.configFile, machineFile);
+  if (currentConfig.source !== initial.source) throw new Error('configuration changed during execution; replan required');
+  const roles = new Set(initial.desired.workspaces.map((w) => w.displayRole));
+  for (const role of roles) if (currentConfig.machine.displayBindings?.[role] !== initial.machine.displayBindings?.[role]) throw new Error('machine display bindings changed; replan required');
+  const snapshot = await discover(initial.machine);
+  if (snapshot.completeness !== 'complete') throw new Error(snapshot.message);
+  const comparison = compareState(snapshot, initial.desired, initial.machine);
+  const currentPlan = buildExecutionPlan(snapshot, initial.desired, comparison);
+  if (JSON.stringify(currentPlan.selectedWindows) !== JSON.stringify(initial.plan.selectedWindows)) throw new Error('planned windows or ownership changed; replan required');
+  for (const original of initial.plan.workspaces) {
+    if (!original.targetSpace && snapshot.spaces.some((s)=>s.label===original.label) && !effects.some((e)=>e.type==='ensure_space' && e.workspaceId===original.workspaceId)) throw new Error('target Space appeared after planning; replan required');
+    if (original.targetSpace?.uuid) {
+      const currentSpace = snapshot.spaces.find((s) => s.uuid === original.targetSpace.uuid);
+      if (!currentSpace || ![original.targetSpace.label,original.label].includes(currentSpace.label)) throw new Error('planned Space disappeared or its label changed; replan required');
+    }
+    const beforeDisplay = initial.snapshot.displays.find((d) => d.role === original.displayRole);
+    if (beforeDisplay && !snapshot.displays.some((d) => d.uuid === beforeDisplay.uuid && JSON.stringify(d.frame) === JSON.stringify(beforeDisplay.frame))) throw new Error('relevant display changed; replan required');
+  }
+}
 
 async function applyPlan(target) {
   const runId = `${Date.now()}-${randomBytes(4).toString('hex')}`;
   const releaseLock = await acquireLock(runId);
-  let journalFile = null;
-  let journal = null;
+  const journalFile = join(stateRoot,'runs',`${runId}.json`);
+  let journal = {formatVersion:2,runId,status:'preflight',createdAt:new Date().toISOString(),target,steps:[],logs:[],effects:[],exitCode:0};
   try {
+    await executionLease.trackJournal(journalFile);
+    await atomicWrite(journalFile,journal);
     assertNotCancelled();
     const initial = await livePlan(target);
     assertNotCancelled();
-    if (initial.snapshot.unavailable) throw new Error(initial.snapshot.message);
+    if (initial.snapshot.completeness !== 'complete') throw new Error(initial.snapshot.message);
     const expected = {
       planId: flags['expected-plan-id'],
       configDigest: flags['expected-config-digest'],
@@ -250,12 +215,17 @@ async function applyPlan(target) {
     };
     if ((expected.planId && expected.planId !== initial.plan.planId)
       || (expected.configDigest && expected.configDigest !== initial.plan.configDigest)
-      || (expected.snapshotId && expected.snapshotId !== initial.snapshot.snapshotId)) {
+      || (!expected.planId && expected.snapshotId && expected.snapshotId !== initial.snapshot.snapshotId)) {
+      journal.status='stale';journal.exitCode=75;journal.finishedAt=new Date().toISOString();journal.plan=initial.plan;
+      await atomicWrite(journalFile,journal);
       return { stale: true, status: 'stale', exitCode: 75, expected, actual: { planId: initial.plan.planId, configDigest: initial.plan.configDigest, snapshotId: initial.snapshot.snapshotId }, plan: initial.plan, comparison: initial.comparison };
     }
     if (!initial.plan.executable) throw new Error(`plan ${initial.plan.planId} is blocked: ${initial.plan.blockers.map((item) => item.code).join(', ')}`);
-    if (!initial.plan.actions.length) return { noop: true, plan: initial.plan, comparison: initial.comparison };
-    journalFile = join(stateRoot, 'runs', `${runId}.json`);
+    if (!initial.plan.actions.length) {
+      journal.status='completed';journal.finishedAt=new Date().toISOString();journal.plan=initial.plan;journal.verification=initial.comparison;
+      await atomicWrite(journalFile,journal);
+      return { noop: true, plan: initial.plan, comparison: initial.comparison };
+    }
     journal = {
       formatVersion: 2,
       runId,
@@ -266,12 +236,18 @@ async function applyPlan(target) {
       before: initial.snapshot,
       steps: [],
       logs: [],
-      exitCode: 0
+      exitCode: 0,
+      effects: [],
+      effectiveConfigFile: join(stateRoot, 'execution-context', `${runId}.runtime.json`),
+      envelopeFile: join(stateRoot, 'execution-context', `${runId}.envelope.json`)
     };
+    await atomicWrite(journal.effectiveConfigFile, initial.runtime);
+    await atomicWrite(journal.envelopeFile, { plan: initial.plan, desired: initial.desired, machine: initial.machine });
+    await executionLease.trackJournal(journalFile);
     await atomicWrite(journalFile, journal);
     const preflight = await livePlan(target);
     assertNotCancelled();
-    if (preflight.plan.configDigest !== initial.plan.configDigest || preflight.snapshot.snapshotId !== initial.snapshot.snapshotId || preflight.plan.planId !== initial.plan.planId) {
+    if (preflight.plan.configDigest !== initial.plan.configDigest || preflight.plan.preconditionDigest !== initial.plan.preconditionDigest || preflight.plan.planId !== initial.plan.planId) {
       journal.status = 'stale'; journal.exitCode = 75; journal.finishedAt = new Date().toISOString();
       journal.preflight = { snapshotId: preflight.snapshot.snapshotId, planId: preflight.plan.planId, configDigest: preflight.plan.configDigest };
       journal.logs.push({ timestamp: journal.finishedAt, stream: 'system', line: 'preflight state changed after planning; no mutation was attempted' });
@@ -282,6 +258,7 @@ async function applyPlan(target) {
     await atomicWrite(journalFile, journal);
     for (const step of initial.plan.executionSteps) {
       assertNotCancelled();
+      await assertExecutionContext(initial,journal.effects);
       journal.exitCode = await runCommand(step.command, journal, journalFile, step, 0);
       await atomicWrite(journalFile, journal);
       assertNotCancelled();
@@ -289,42 +266,57 @@ async function applyPlan(target) {
     }
     if (journal.exitCode === 0) await waitForDesktopStateToSettle(initial.plan.executionSteps);
     assertNotCancelled();
-    let verification = await livePlan(target);
+    let verification = await livePlan(target, initial);
     assertNotCancelled();
     journal.after = verification.snapshot;
     journal.verification = verification.comparison;
-    if (journal.exitCode === 0 && !verification.comparison.converged && verification.plan.executable && verification.plan.actions.length && initial.plan.recovery.automaticAttempts > 0 && !flags['no-reconcile']) {
+    if (journal.exitCode === 0 && JSON.stringify(verification.plan.selectedWindows) === JSON.stringify(initial.plan.selectedWindows) && !verification.comparison.converged && verification.plan.executable && verification.plan.actions.length && initial.plan.recovery.automaticAttempts > 0 && !flags['no-reconcile']) {
       journal.steps.push({ type: 'reconciliation', status: 'started', startedAt: new Date().toISOString(), remaining: verification.comparison.counts, planId: verification.plan.planId });
       await atomicWrite(journalFile, journal);
+      await atomicWrite(journal.envelopeFile, { plan: verification.plan, desired: initial.desired, machine: initial.machine });
       for (const step of verification.plan.executionSteps) {
         assertNotCancelled();
+        await assertExecutionContext(initial,journal.effects);
         journal.exitCode = await runCommand(step.command, journal, journalFile, step, 1);
         await atomicWrite(journalFile, journal);
         assertNotCancelled();
         if (journal.exitCode !== 0) break;
       }
       if (journal.exitCode === 0) await waitForDesktopStateToSettle(verification.plan.executionSteps);
-      verification = await livePlan(target);
+      verification = await livePlan(target, initial);
       journal.after = verification.snapshot;
       journal.verification = verification.comparison;
     }
-    journal.status = journal.exitCode === 0 && journal.verification.converged ? 'completed' : 'failed';
+    journal.status = journal.exitCode === 0 && journal.verification.converged && JSON.stringify(verification.plan.selectedWindows) === JSON.stringify(initial.plan.selectedWindows) ? 'completed' : 'failed';
+    if (journal.status === 'failed' && journal.exitCode === 0) journal.exitCode = 1;
     journal.finishedAt = new Date().toISOString();
     await atomicWrite(journalFile, journal);
     return { runId, status: journal.status, exitCode: journal.exitCode, plan: initial.plan, verification: journal.verification, journal: journalFile };
   } catch (error) {
-    if (error.code !== 'SPACEWRIGHT_CANCELLED') throw error;
+    const status = error.code === 'SPACEWRIGHT_CANCELLED' ? 'cancelled' : error.code === 'SPACEWRIGHT_TIMEOUT' ? 'timed_out' : 'failed';
+    const exitCode = status === 'cancelled' ? 130 : status === 'timed_out' ? 124 : 1;
     if (journal && journalFile) {
-      const interruptedStep = [...journal.steps].reverse().find((step) => step.status === 'running' || step.exitCode === 130);
-      if (interruptedStep) interruptedStep.status = 'cancelled';
-      journal.status = 'cancelled'; journal.exitCode = 130; journal.finishedAt = new Date().toISOString();
+      const interruptedStep = [...journal.steps].reverse().find((step) => step.status === 'running');
+      if (interruptedStep) interruptedStep.status = status;
+      journal.status = status; journal.exitCode = exitCode; journal.finishedAt = new Date().toISOString(); journal.error = error.message;
       journal.logs.push({ timestamp: journal.finishedAt, stream: 'system', line: error.message });
-      await atomicWrite(journalFile, journal);
+      try { await atomicWrite(journalFile, journal); }
+      catch (writeError) { process.stderr.write(`terminal journal write failed: ${writeError.message}; run=${runId} status=${status}\n`); }
     }
-    return { runId, status: 'cancelled', exitCode: 130, journal: journalFile };
+    if (status === 'failed' && !journal) throw error;
+    return { runId, status, exitCode, error: error.message, journal: journalFile };
+
   } finally {
     await releaseLock();
+    if (journal?.effectiveConfigFile) await rm(journal.effectiveConfigFile,{force:true});
+    if (journal?.envelopeFile) await rm(journal.envelopeFile,{force:true});
   }
+}
+
+async function recoveryCommand(exe, args) {
+  assertNotCancelled();
+  const result = await runBounded(exe, args, { deadline: Math.min(executionDeadline, Date.now() + 3000), signal: cancellation.signal });
+  if (result.code) throw new Error(result.stderr || `recovery command failed (${result.code})`);
 }
 
 async function restoreRun(runId) {
@@ -332,20 +324,21 @@ async function restoreRun(runId) {
   const journalFile = join(stateRoot, 'runs', `${runId}.json`);
   const journal = await readJson(journalFile, null);
   if (!journal?.before) throw new Error(`run ${runId} has no recovery snapshot`);
-  const recoverableWindowIds = new Set(journal.plan?.recovery?.windowIds || []);
+  const recoverableWindowIds = new Set((journal.effects || []).filter((e) => e.windowId).map((e) => e.windowId));
   if (flags['dry-run']) {
     const current = await discover();
     if (current.unavailable) throw new Error(current.message);
-    const currentIds = new Set(current.windows.map((window) => window.id));
+    const currentIds = new Set(journal.before.windows.filter((w) => recoverableWindowIds.has(w.id) && sameWindowIdentity(w,current.windows.find((c) => c.id === w.id))).map((w) => w.id));
     return { dryRun: true, mutates: false, runId, snapshotId: current.snapshotId, windowIds: [...recoverableWindowIds].filter((id) => currentIds.has(id)), missingWindowIds: [...recoverableWindowIds].filter((id) => !currentIds.has(id)) };
   }
   const recoveryId = `${Date.now()}-${randomBytes(4).toString('hex')}`;
   const releaseLock = await acquireLock(recoveryId);
   const recoveryFile = join(stateRoot, 'runs', `${recoveryId}.json`);
-  const result = { runId, recoveryId, status: 'running', restored: [], skipped: [], failed: [] };
+  const result = { runId, recoveryId, status: 'running', restored: [], skipped: [], failed: [], nonrecoverable: (journal.effects || []).filter((e) => !e.windowId) };
   const recoveryJournal = { formatVersion: 2, runId: recoveryId, kind: 'recovery', sourceRunId: runId, status: 'running', createdAt: new Date().toISOString(), steps: [], result };
   try {
     assertNotCancelled();
+    await executionLease.trackJournal(recoveryFile);
     await atomicWrite(recoveryFile, recoveryJournal);
     const current = await discover();
     assertNotCancelled();
@@ -359,36 +352,39 @@ async function restoreRun(runId) {
       recoveryJournal.steps.push(step);
       await atomicWrite(recoveryFile, recoveryJournal);
       if (!currentWindows.has(window.id)) { step.status = 'skipped'; step.reason = 'window no longer exists'; result.skipped.push({ windowId: window.id, reason: step.reason }); await atomicWrite(recoveryFile, recoveryJournal); continue; }
+      const liveWindow = currentWindows.get(window.id);
+      if (!sameWindowIdentity(window,liveWindow)) {
+        step.status = 'skipped'; step.reason = 'window identity changed'; result.skipped.push({ windowId: window.id, reason: step.reason }); continue;
+      }
       const beforeSpace = beforeSpacesByIndex.get(window.space);
       const targetSpace = beforeSpace ? currentSpacesByUuid.get(beforeSpace.uuid) : null;
       if (!targetSpace) { step.status = 'skipped'; step.reason = 'original Space no longer exists'; result.skipped.push({ windowId: window.id, reason: step.reason }); await atomicWrite(recoveryFile, recoveryJournal); continue; }
       try {
-        await execFileAsync('yabai', ['-m', 'window', String(window.id), '--space', String(targetSpace.index)], { timeout: 3000 });
-        assertNotCancelled();
-        if (window.movable) await execFileAsync('yabai', ['-m', 'window', String(window.id), '--move', `abs:${Math.round(window.frame.x)}:${Math.round(window.frame.y)}`], { timeout: 3000 });
-        assertNotCancelled();
-        if (window.resizable) await execFileAsync('yabai', ['-m', 'window', String(window.id), '--resize', `abs:${Math.round(window.frame.w)}:${Math.round(window.frame.h)}`], { timeout: 3000 });
+        const restored = await restoreWindow(window, beforeSpace.uuid, { discover, run: recoveryCommand,
+          beforeCommand: async (args) => { step.commands ||= []; step.commands.push({args,status:'attempted'}); await atomicWrite(recoveryFile,recoveryJournal); } });
+        step.attempted = restored.attempted;
         step.status = 'completed'; result.restored.push(window.id);
       } catch (error) {
-        if (error.code === 'SPACEWRIGHT_CANCELLED') throw error;
+        if (['SPACEWRIGHT_CANCELLED','SPACEWRIGHT_TIMEOUT'].includes(error.code)) throw error;
+        if (error.code === 'SPACEWRIGHT_RECOVERY_SKIP') { step.status = 'skipped'; step.reason = error.message; result.skipped.push({windowId:window.id,reason:error.message}); continue; }
         step.status = 'failed'; step.error = error.message; result.failed.push({ windowId: window.id, error: error.message });
       }
       step.finishedAt = new Date().toISOString();
       await atomicWrite(recoveryFile, recoveryJournal);
     }
-    result.status = result.failed.length ? 'partial' : 'completed';
+    result.status = result.failed.length || result.skipped.length ? (result.restored.length ? 'partial' : result.failed.length ? 'failed' : 'skipped') : 'completed';
     recoveryJournal.status = result.status; recoveryJournal.finishedAt = new Date().toISOString();
     await atomicWrite(recoveryFile, recoveryJournal);
     return result;
   } catch (error) {
-    recoveryJournal.status = error.code === 'SPACEWRIGHT_CANCELLED' ? 'cancelled' : 'failed';
+    recoveryJournal.status = error.code === 'SPACEWRIGHT_CANCELLED' ? 'cancelled' : error.code === 'SPACEWRIGHT_TIMEOUT' ? 'timed_out' : 'failed';
     recoveryJournal.finishedAt = new Date().toISOString();
     recoveryJournal.error = error.message;
     const interruptedStep = [...recoveryJournal.steps].reverse().find((step) => step.status === 'running');
     if (interruptedStep) { interruptedStep.status = recoveryJournal.status; interruptedStep.finishedAt = recoveryJournal.finishedAt; }
     result.status = recoveryJournal.status;
     await atomicWrite(recoveryFile, recoveryJournal);
-    if (error.code === 'SPACEWRIGHT_CANCELLED') return result;
+    if (['SPACEWRIGHT_CANCELLED','SPACEWRIGHT_TIMEOUT'].includes(error.code)) return result;
     throw error;
   } finally { await releaseLock(); }
 }
@@ -439,15 +435,17 @@ async function main() {
     const result = await applyPlan(target);
     const label = result.status === 'completed' ? 'OK' : result.status === 'stale' ? 'STALE' : 'FAIL';
     flags.json ? print(result) : console.log(result.noop ? 'OK      target is already converged' : `${label}    run=${result.runId} journal=${result.journal}`);
+    if (flags['verified-marker'] && (result.noop || result.status === 'completed')) console.log('SPACEWRIGHT_VERIFIED');
     if (!result.noop && result.status !== 'completed') process.exitCode = result.exitCode || 1;
     return;
   }
   if (command === 'recover') {
     const result = await restoreRun(positional[0]);
-    const label = result.status === 'cancelled' ? 'CANCELLED' : result.failed.length ? 'PARTIAL' : 'OK';
+    const label = result.status === 'completed' ? 'OK' : String(result.status || 'DRY RUN').toUpperCase();
     flags.json ? print(result) : console.log(result.dryRun ? `DRY RUN window candidates=${result.windowIds.length} missing=${result.missingWindowIds.length}` : `${label}    restored=${result.restored.length} skipped=${result.skipped.length} failed=${result.failed.length}`);
     if (!result.dryRun && result.status === 'cancelled') process.exitCode = 130;
-    else if (!result.dryRun && result.failed.length) process.exitCode = 1;
+    else if (!result.dryRun && result.status === 'timed_out') process.exitCode = 124;
+    else if (!result.dryRun && result.status !== 'completed') process.exitCode = 1;
     return;
   }
   console.log([

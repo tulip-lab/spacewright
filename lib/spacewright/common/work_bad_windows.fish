@@ -7,11 +7,11 @@ function work_bad_windows --description "Show cached bad yabai window IDs"
         return 0
     end
 
-    set -l bad_window_dir /tmp/workspace-ws-window-bad
+    set -l bad_window_dir "$SPACEWRIGHT_STATE_ROOT/cache/bad-windows"
     set -l bad_window_ttl "$WORKSPACE_BAD_WINDOW_TTL_SECONDS"
 
     if test -z "$bad_window_ttl"
-        set bad_window_ttl 600
+        set bad_window_ttl 60
     end
 
     echo "===== BAD WINDOW CACHE ====="
@@ -44,7 +44,7 @@ function work_bad_windows --description "Show cached bad yabai window IDs"
 
     for file in $bad_files
         set -l window_id (basename "$file")
-        set -l bad_at (cat "$file" 2>/dev/null)
+        set -l bad_at (jq -r .at "$file" 2>/dev/null)
 
         if not string match -qr '^[0-9]+$' -- "$window_id"
             continue

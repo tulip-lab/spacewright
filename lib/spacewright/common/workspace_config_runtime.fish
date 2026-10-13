@@ -1,3 +1,5 @@
+set -l workspace_config_package_root (path resolve (path dirname (status filename))/../../..)
+
 function __workspace_config_plan_grid --description "Return the grid for one configured window role"
     set -l plan $argv[1]
     set -l role $argv[2]
@@ -15,7 +17,7 @@ function __workspace_config_cleanup_specs --description "Return family:mode clea
     printf "%s\n" "$plan" | jq -r '.cleanup as $cleanup | if $cleanup then $cleanup.opposite_modes[] | $cleanup.family + ":" + . else empty end'
 end
 
-function __workspace_config_select_window --description "Select one configured window from a shared snapshot"
+function __workspace_config_select_window --inherit-variable workspace_config_package_root --description "Select one configured window from a shared snapshot"
     set -l windows_json $argv[1]
     set -l plan $argv[2]
     set -l index $argv[3]
@@ -24,26 +26,11 @@ function __workspace_config_select_window --description "Select one configured w
     if test (count $argv) -gt 0
         set used_json (printf '%s\n' $argv | jq -R 'tonumber' | jq -s .)
     end
-    set -l app_names (printf "%s\n" "$plan" | jq -c --argjson i $index '.windows[$i].app_names')
-    set -l selector (printf "%s\n" "$plan" | jq -c --argjson i $index '.windows[$i].selector // {}')
-    printf "%s\n" "$windows_json" | jq -r \
-        --argjson apps "$app_names" \
-        --argjson selector "$selector" \
-        --argjson used "$used_json" '
-        first(
-            .[]
-            | select(.app as $app | $apps | index($app))
-            | select(.["is-minimized"] == false)
-            | select(($selector.movable // false) == false or .["can-move"] == true)
-            | select(($selector.visible // false) == false or .["is-visible"] == true)
-            | select(($selector.non_empty_title // false) == false or ((.title // "") | length) > 0)
-            | select(($selector.title_include // "") == "" or ((.title // "") | contains($selector.title_include)))
-            | select(($selector.title_exclude // "") == "" or (((.title // "") | contains($selector.title_exclude)) | not))
-            | select(($selector.role // "") == "" or ((.role // "") == $selector.role))
-            | select(($selector.subrole // "") == "" or ((.subrole // "") == $selector.subrole))
-            | select(.id as $id | ($used | index($id)) == null)
-            | .id
-        ) // empty'
+    set -l package_root "$workspace_config_package_root"
+    jq -cn --argjson windows "$windows_json" --argjson plan "$plan" --argjson index "$index" --argjson used "$used_json" \
+        '{windows:$windows,plan:$plan,index:$index,used:$used}' \
+        | command node "$package_root/configurator/execution-cli.mjs" select
+
 end
 
 function __workspace_run_configured_primary_helper --description "Run a configured required-primary and optional-helper workspace"
@@ -253,7 +240,7 @@ function __workspace_run_configured_generic_layout --description "Run a declarat
     set -l required_indices (printf "%s\n" "$plan" | jq -r '.windows | to_entries[] | select(.value.required == true) | .key')
     set -l required_ids
     for index in $required_indices
-        set -l relaxed_plan (printf "%s\n" "$plan" | jq -c --argjson i $index '.windows[$i].selector.movable = false')
+        set -l relaxed_plan (printf "%s\n" "$plan" | jq -c --argjson i $index '.windows[$i].selector.movable = false | .preparation = true')
         set -l required_id (__workspace_config_select_window "$windows_json" "$relaxed_plan" $index $required_ids)
         if test -z "$required_id"
             set -l required_role (printf "%s\n" "$plan" | jq -r --argjson i $index '.windows[$i].role')
@@ -295,11 +282,14 @@ function __workspace_run_configured_generic_layout --description "Run a declarat
             echo "[WARN] $workspace_id required role is unavailable: $role" >&2
             return 1
         end
-        set -a roles "$role"
-        if test -n "$window_id"
-            set -a window_ids "$window_id"
-            set -a selected_ids "$window_id"
+        if test (count $window_id) -gt 0
+            for wid in $window_id
+                set -a roles "$role"
+                set -a window_ids "$wid"
+                set -a selected_ids "$wid"
+            end
         else
+            set -a roles "$role"
             set -a window_ids __missing__
         end
     end
@@ -320,7 +310,10 @@ function __workspace_run_configured_generic_layout --description "Run a declarat
         set -l window_id $window_ids[$index]
         test "$window_id" != __missing__; or continue
         set -l grid (__workspace_config_plan_grid "$plan" $roles[$index])
-        test -n "$grid"; and ws_window "$window_id" --grid "$grid"
+        if test -n "$grid"
+            ws_window "$window_id" --grid "$grid"
+            or return 1
+        end
     end
 
     set -l selected_json '[]'
@@ -349,12 +342,22 @@ function __workspace_run_configured_generic_layout --description "Run a declarat
 end
 
 function workspace_run_configured --description "Run one validated configured workspace through a closed runner adapter"
+    if test -n "$SPACEWRIGHT_PACKAGE_ROOT"; and not contains -- --dry-run $argv
+        if not workspace_execution_owned 2>/dev/null
+            command node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/execution-cli.mjs" exec fish --no-config -c 'source "$SPACEWRIGHT_PACKAGE_ROOT/conf.d/spacewright.fish"; $argv' -- workspace_run_configured $argv
+            return $status
+        end
+    end
     argparse dry-run -- $argv
     or return 1
     set -l workspace_id $argv[1]
     if test -z "$workspace_id"
         echo "usage: workspace_run_configured <workspace> [--dry-run]" >&2
         return 2
+    end
+    if set -q SPACEWRIGHT_EXECUTION_ENVELOPE; and not set -q _flag_dry_run
+        workspace_execute_pinned "$workspace_id"
+        return $status
     end
     set -l plan (workspace_config_plan "$workspace_id" | string collect)
     or return 1
@@ -419,6 +422,12 @@ function workspace_run_configured --description "Run one validated configured wo
 end
 
 function workspace_run_configured_mode --description "Run one configured ordered aggregate mode"
+    if test -n "$SPACEWRIGHT_PACKAGE_ROOT"; and not contains -- --dry-run $argv
+        if not workspace_execution_owned 2>/dev/null
+            command node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/execution-cli.mjs" exec fish --no-config -c 'source "$SPACEWRIGHT_PACKAGE_ROOT/conf.d/spacewright.fish"; $argv' -- workspace_run_configured_mode $argv
+            return $status
+        end
+    end
     argparse dry-run -- $argv
     or return 1
     set -l mode_id $argv[1]

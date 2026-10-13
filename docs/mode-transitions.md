@@ -8,7 +8,9 @@ chaining `display_apply_*; work_*` directly.
 interactive entry point for one workspace. It uses the same lock, cancellation,
 deadline, status, and progress banner, but deliberately skips mode-wide Sandbox
 collection, Space ordering, and finalization. It only runs the selected
-workspace and its bounded opposite-variant cleanup.
+workspace through the same immutable apply plan used by the CLI and Web.
+Single-workspace pinned execution retains opposite variants; it does not run
+family-wide opposite-mode cleanup.
 
 ## Interaction model
 
@@ -30,8 +32,7 @@ workspace and its bounded opposite-variant cleanup.
   signals, failure details, and a bounded output tail.
 
 The controller owns both the display profile and the aggregate workspace run,
-so they cannot overlap with another controller-managed mode switch. Existing
-The historical `work_solo`, `work_wide`, and `work_tall` functions and the
+so they cannot overlap with another controller-managed mode switch. The historical `work_solo`, `work_wide`, and `work_tall` functions and the
 individual workspace functions remain available as compatibility names. When
 called directly with normal configuration enabled, they now route through the
 same guarded CLI. Internal aggregate execution and the explicit legacy bypass
@@ -69,3 +70,15 @@ fn + shift - 9 : fish -lc 'spacewright workspace gtd_ai solo'
 acquiring a lock, displaying a banner, or changing the desktop.
 `spacewright workspace ID MODE --dry-run` reports the target-scoped policy and
 likewise makes no desktop changes.
+
+## Verification and cancellation
+
+Interactive requests run the shared apply engine after any explicit mode display
+profile step. Success requires its verified-convergence marker. Ordinary errors,
+verification failure and timeout are terminal failures; diagnostic history
+retains the last step and output. The inherited total deadline also bounds child
+commands. Cancellation and replacement stop all registered process groups,
+escalate an unresponsive child, and only then release the execution lease.
+Direct `run`, `display`, `focus`, `order`, `finalize` and `postprocess` use the
+same lease. CLI scripts start Fish without personal startup configuration;
+consumer configuration is loaded through the documented configuration roots.

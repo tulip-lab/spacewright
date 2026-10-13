@@ -16,13 +16,15 @@ or exit 1
 
 node --test configurator/test/*.test.mjs
 or exit 1
-fish tests/config-v2.fish
+fish --no-config tests/config-v2.fish
 or exit 1
-fish tests/config.fish
+fish --no-config tests/config-v3.fish
 or exit 1
-fish tests/install.fish
+fish --no-config tests/config.fish
 or exit 1
-fish tests/release.fish
+fish --no-config tests/install.fish
+or exit 1
+fish --no-config tests/release.fish
 or exit 1
 
 set -l smoke_config_root (mktemp -d /private/tmp/spacewright-smoke-config.XXXXXX)

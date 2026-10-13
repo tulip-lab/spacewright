@@ -1,4 +1,4 @@
-#!/usr/bin/env fish
+#!/usr/bin/env -S fish --no-config
 
 set -l executable_file (path resolve (status filename))
 set -l package_root (path dirname (path dirname $executable_file))
@@ -10,6 +10,15 @@ if test -n "$command_name"
     set -e argv[1]
 else
     set command_name help
+end
+
+# Public direct mutations share the same coordinator as apply and interactive requests.
+if contains -- "$command_name" run display focus order finalize postprocess
+    and not contains -- --dry-run $argv
+    if not workspace_execution_owned 2>/dev/null
+        command node "$package_root/configurator/execution-cli.mjs" exec "$executable_file" "$command_name" $argv
+        exit $status
+    end
 end
 
 switch "$command_name"
@@ -41,7 +50,7 @@ switch "$command_name"
             set config_file "$SPACEWRIGHT_CONFIG_ROOT/config.v3.json"
         end
         set -l runtime_file "$SPACEWRIGHT_CONFIG_ROOT/generated/runtime.json"
-        command node "$package_root/configurator/cli.mjs" compile-to "$config_file" "$runtime_file" "--state-root=$SPACEWRIGHT_STATE_ROOT"
+        command node "$package_root/configurator/cli.mjs" compile-to "$config_file" "$runtime_file" "--state-root=$SPACEWRIGHT_STATE_ROOT" $argv
         and printf 'compiled=%s\n' "$runtime_file"
     case config-status
         spacewright_config_status
@@ -259,14 +268,24 @@ switch "$command_name"
             printf 'dry_run=focus_space\nlabel=%s\n' "$label"
             exit 0
         end
-        command yabai -m space --focus "$label"
+        ws_focus_space "$label"; or exit 1
+        set -l focused (ws_query_current_space spacewright_focus verify); or exit 1
+        printf '%s\n' "$focused" | jq -e --arg label "$label" '.label == $label' >/dev/null
+        or begin
+            echo '[WARN] workspace focus did not reach the requested Space' >&2
+            exit 1
+        end
     case order
         set -l mode $argv[1]
         if not contains -- "$mode" solo wide tall
             echo 'usage: spacewright order <solo|wide|tall> [--dry-run]' >&2
             exit 2
         end
-        workspace_order_mode_spaces $argv
+        if contains -- --dry-run $argv
+            workspace_order_mode_spaces $argv
+        else
+            workspace_order_and_verify_mode_spaces "$mode"
+        end
     case finalize
         set -l mode $argv[1]
         if not contains -- "$mode" solo wide tall
@@ -320,6 +339,24 @@ switch "$command_name"
         end
         command node "$package_root/configurator/server.mjs" "--package-root=$package_root" "--config-root=$SPACEWRIGHT_CONFIG_ROOT" "--state-root=$SPACEWRIGHT_STATE_ROOT" $argv
     case run
+        if not set -q SPACEWRIGHT_EXECUTION_ENVELOPE
+            and test "$SPACEWRIGHT_CONFIG_DISABLE" != 1
+            and begin; test -r "$SPACEWRIGHT_CONFIG_ROOT/config.v2.json"; or test -r "$SPACEWRIGHT_CONFIG_ROOT/config.v3.json"; end
+            if string match -q 'work_*' -- "$argv[1]"
+                set -l mode (string replace work_ '' -- "$argv[1]")
+                command node "$package_root/configurator/state-cli.mjs" apply "$mode" "--package-root=$package_root" "--config-root=$SPACEWRIGHT_CONFIG_ROOT" "--state-root=$SPACEWRIGHT_STATE_ROOT" $argv[2..-1]
+            else
+                set -l effective (spacewright_config_effective); or exit 1
+                set -l workspace "$argv[1]"
+                set -l mode "$argv[2]"
+                if not contains -- "$mode" solo wide tall
+                    set workspace (printf '%s\n' "$effective" | jq -r --arg id "$argv[1]" '.workspaces[$id].ui.workspace_id // empty')
+                    set mode (printf '%s\n' "$effective" | jq -r --arg id "$argv[1]" '.workspaces[$id].ui.mode // empty')
+                end
+                command node "$package_root/configurator/state-cli.mjs" apply "$workspace" "$mode" "--package-root=$package_root" "--config-root=$SPACEWRIGHT_CONFIG_ROOT" "--state-root=$SPACEWRIGHT_STATE_ROOT" $argv[3..-1]
+            end
+            exit $status
+        end
         if string match -q 'work_*' -- "$argv[1]"
             workspace_run_configured_mode $argv
         else if contains -- "$argv[2]" solo wide tall

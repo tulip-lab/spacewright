@@ -82,7 +82,7 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
     set -l finder_windows (echo $windows_json | workspace_app_key_windows --app-key finder --movable)
     or return 1
 
-    set -l bad_window_dir /tmp/workspace-ws-window-bad
+    set -l bad_window_dir $SPACEWRIGHT_STATE_ROOT/cache/bad-windows
     set -l preview
     set -l preview_movable_windows (echo $windows_json | workspace_app_key_windows --app-key preview --movable)
     or return 1
@@ -185,7 +185,7 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
     set -l notes_fallback_display
 
     for notes_window in $notes_movable_windows
-        rm -f /tmp/workspace-ws-window-bad/$notes_window 2>/dev/null
+        rm -f $SPACEWRIGHT_STATE_ROOT/cache/bad-windows/$notes_window 2>/dev/null
     end
 
     if test (count $notes_movable_windows) -gt 0
@@ -532,6 +532,7 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
     if test -n "$_flag_finder_grid"
         for finder in $finder_windows
             ws_window $finder --grid $_flag_finder_grid
+            or return 1
         end
     end
 
@@ -576,16 +577,19 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
         else
             for preview_window in $preview_movable_windows
                 ws_window $preview_window --grid $_flag_preview_grid
+                or return 1
             end
         end
     end
 
     if test -n "$assistant" -a -n "$assistant_grid"
         ws_window $assistant --grid $assistant_grid
+        or return 1
     end
 
     if test -n "$obsidian" -a -n "$_flag_obsidian_grid"
         ws_window $obsidian --grid $_flag_obsidian_grid
+        or return 1
     end
 
     if test (count $notes_target_windows) -gt 0 -a -n "$_flag_notes_grid"
@@ -599,6 +603,7 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
         else
             for notes_window in $notes_target_windows
                 ws_window $notes_window --grid $_flag_notes_grid
+                or return 1
             end
         end
     end

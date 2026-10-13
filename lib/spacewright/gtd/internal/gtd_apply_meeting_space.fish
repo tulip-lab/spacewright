@@ -443,6 +443,7 @@ function gtd_apply_meeting_space --description "Apply a GTD meeting workspace fo
         else
             for zoom_window in $zoom_windows
                 ws_window $zoom_window --grid $effective_zoom_grid
+                or return 1
             end
         end
     end
@@ -459,6 +460,7 @@ function gtd_apply_meeting_space --description "Apply a GTD meeting workspace fo
         else
             for teams_window in $teams_windows
                 ws_window $teams_window --grid $effective_teams_grid
+                or return 1
             end
         end
     end

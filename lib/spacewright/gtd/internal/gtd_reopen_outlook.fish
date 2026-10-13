@@ -1,6 +1,6 @@
 function gtd_reopen_outlook --description "Lightly reopen Outlook and clear Outlook entries from the workspace bad-window cache"
     set -l outlook_app (workspace_app_name outlook)
-    set -l bad_window_dir /tmp/workspace-ws-window-bad
+    set -l bad_window_dir $SPACEWRIGHT_STATE_ROOT/cache/bad-windows
     set -l windows_json (ws_query_windows gtd_reopen_outlook before); or return 1
     set -l outlook_ids (echo $windows_json | ws_jq -r --arg app "$outlook_app" '
         .[]

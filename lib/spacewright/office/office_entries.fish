@@ -265,6 +265,7 @@ function office_apply_document_space --description "Apply an Office workspace fo
         set -l helper_grid (__office_helper_grid $_flag_mode (count $primary_windows) "$configured_helper_grid")
         if test -n "$helper_grid"
             ws_window $helper --grid $helper_grid
+            or return 1
         end
     end
 
@@ -278,6 +279,7 @@ function office_apply_document_space --description "Apply an Office workspace fo
             "$configured_primary_grid")
         if test -n "$primary_grid"
             ws_window $primary_windows[$index] --grid $primary_grid
+            or return 1
         end
     end
 

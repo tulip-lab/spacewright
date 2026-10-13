@@ -103,6 +103,16 @@ function gtd_ai_detect_display_mode --description "Detect the current GTD AI dis
 end
 
 function gtd_ai_expand_hermes_when_alone --description "Expand Hermes when it is the only effective GTD AI window"
+    if contains -- --dry-run $argv
+        printf 'dry_run=gtd_ai_expand_hermes_when_alone\n'
+        return 0
+    end
+    if test -n "$SPACEWRIGHT_PACKAGE_ROOT"; and not contains -- --dry-run $argv
+        if not workspace_execution_owned 2>/dev/null
+            command node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/execution-cli.mjs" exec fish --no-config -c 'source "$SPACEWRIGHT_PACKAGE_ROOT/conf.d/spacewright.fish"; $argv' -- gtd_ai_expand_hermes_when_alone $argv
+            return $status
+        end
+    end
     set -l spaces_json (ws_query_spaces gtd_ai_expand_hermes_when_alone spaces)
     or return 1
     set -l windows_json (ws_query_windows gtd_ai_expand_hermes_when_alone windows)
@@ -137,6 +147,7 @@ function gtd_ai_expand_hermes_when_alone --description "Expand Hermes when it is
 
     if test -n "$hermes_id"
         ws_window $hermes_id --grid 1:1:0:0:1:1
+        or return 1
     end
 end
 
@@ -310,19 +321,23 @@ function gtd_apply_ai_space --description "Apply a GTD AI workspace for Hermes, 
                 --caller $_flag_label
         else
             ws_window $hermes --grid $_flag_hermes_grid
+            or return 1
         end
     end
 
     if test -n "$chatgpt" -a -n "$_flag_chatgpt_grid"
         ws_window $chatgpt --grid $_flag_chatgpt_grid
+        or return 1
     end
 
     if test -n "$obsidian" -a -n "$_flag_obsidian_grid"
         ws_window $obsidian --grid $_flag_obsidian_grid
+        or return 1
     end
 
     if test -n "$notes" -a -n "$_flag_notes_grid"
         ws_window $notes --grid $_flag_notes_grid
+        or return 1
     end
 
     ws_focus_space $target_space

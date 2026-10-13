@@ -121,9 +121,8 @@ function cleanup_labeled_empty_spaces --description "Destroy empty spaces whose 
         | select(.label | test($pattern))
         | . as $space
         | select([
-            ($space.windows // [])[] as $window_id
-            | $windows[]
-            | select(.id == $window_id)
+            $windows[]
+            | select(.space == $space.index)
             | select((.["is-sticky"] // false) != true)
           ] | length == 0)
         | .index]
@@ -134,7 +133,9 @@ function cleanup_labeled_empty_spaces --description "Destroy empty spaces whose 
 
     for s in $candidates
         echo "Destroying empty $display_name space: $s"
-        ws_yabai -m space $s --destroy >/dev/null 2>&1
+        set -l uuid (printf '%s\n' "$spaces_json" | jq -r --argjson index "$s" 'first(.[] | select(.index == $index) | .uuid) // empty')
+        workspace_destroy_empty_space_uuid "$uuid"
+        or return 1
     end
 end
 
@@ -189,7 +190,9 @@ function cleanup_unlabeled_empty_spaces --description "Remove unlabeled empty sp
 
     for s in $cleanup_spaces
         if test -n "$s"
-            ws_yabai -m space $s --destroy >/dev/null 2>&1
+            set -l uuid (printf '%s\n' "$spaces_json" | jq -r --argjson index "$s" 'first(.[] | select(.index == $index) | .uuid) // empty')
+            workspace_destroy_empty_space_uuid "$uuid"
+            or return 1
             or echo "[WARN] could not destroy empty unlabeled Space $s" >&2
             sleep 0.05
         end
@@ -248,4 +251,21 @@ function work_recover_light --description "Run conservative workspace recovery w
     echo
     echo "===== AFTER RECOVERY ====="
     work_diagnostics
+end
+
+function workspace_destroy_empty_space_uuid --description "Recheck a stable Space identity and complete occupancy before destruction"
+    set -l uuid $argv[1]
+    test -n "$uuid"; or return 1
+    set -l spaces (workspace_cleanup_query_spaces); or return 1
+    set -l windows (workspace_cleanup_query_windows); or return 1
+    set -l target (printf '%s\n' "$spaces" | jq -c --arg uuid "$uuid" 'first(.[] | select(.uuid == $uuid)) // empty')
+    test -n "$target"; or return 0
+    set -l index (printf '%s\n' "$target" | jq -r '.index')
+    set -l display (printf '%s\n' "$target" | jq -r '.display')
+    printf '%s\n' "$windows" | jq -e --argjson index "$index" 'any(.[]; .space == $index and .["is-sticky"] != true)' >/dev/null
+    and return 0
+    if test (printf '%s\n' "$spaces" | jq --argjson display "$display" '[.[] | select(.display == $display)] | length') -le 1
+        return 0
+    end
+    ws_yabai -m space "$index" --destroy
 end

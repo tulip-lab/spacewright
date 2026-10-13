@@ -160,3 +160,85 @@ staged:
 
 This keeps deterministic runtime mechanics separate from personal workflow
 design and makes each architectural change independently reversible.
+
+## Execution contract (compiler 5)
+
+The policy engine selects objects once. `window-policy.mjs` owns selector,
+cardinality and ambiguity semantics; `layout-policy.mjs` computes per-window
+Office, Dia and declarative geometry; `plan-backend.mjs` composes the closed
+backend commands. The Fish backend consumes the immutable execution envelope
+and never substitutes another window. Every selected window carries its ID,
+application, PID, available process lifetime identity and bundle identifier.
+Every existing target Space carries its UUID, resolved again before use.
+
+The shared `execution-coordinator.mjs` owns leases and process groups for CLI,
+Web tasks, interactive requests and direct public mutations. A lease requires
+both a random token and verified process ancestry; an environment variable is
+not sufficient. Unknown live owners are preserved. Nested children register
+under the same lease. Cancellation escalates TERM to KILL after 750 ms and
+ownership is retained if a registered group remains alive.
+
+State has three lifetimes:
+
+| Lifetime | Location | Contract |
+| --- | --- | --- |
+| Machine state | `machine.json` | Confirmed hardware, display bindings and setup choices |
+| Execution state | `runs/`, `execution-context/`, `execution.lock/`, transition history | Immutable input, selected objects, commands, effects and terminal results |
+| Short cache | `cache/bad-windows/` | 60-second default TTL; app/PID/bundle and runtime generation must still match |
+
+`config-store.mjs` owns atomic output, generation metadata and the configuration
+write guard. Generation format 2 binds the source bytes, compiler version,
+resolved runtime, hardware identity, display topology and machine state. v3
+Fish loading resolves live topology before exposing runtime; a source-only
+cache hit cannot authorize execution. A save guard remains after an incomplete
+write, so readers fail closed rather than combine generations. An explicit
+`spacewright config-compile --repair-incomplete-save` may rebuild a generation
+only after its prior writer has stopped. It does not discard a live writer.
+
+The server delegates discovery, configuration generation/storage, task
+lifecycle and automation policy to focused modules. Its HTTP authorization,
+route handling and event monitor remain in `server.mjs`.
+
+### Recovery adapters
+
+Legacy Office/GTD app reopen, activation and native-fullscreen adapters remain
+explicit Fish code. Their inputs are configured app/role/layout and the shared
+execution deadline; output is a status plus diagnostics; side effects include
+activation, app restart or fullscreen changes. Issued window commands propagate
+failure. A pinned plan does not invoke an adapter to replace a missing or
+fullscreen window: recovery must finish, rediscover and produce a new plan.
+This conservative boundary intentionally blocks a required window needing app
+recovery rather than changing its identity silently. Declarative existing-window
+placement, Office multi-document geometry and Dia multi-window geometry use the
+pinned backend. Automatic app recovery inside a pinned execution is not yet
+supported; legacy adapter recovery still needs a separate explicit invocation.
+
+## Remaining hardening boundaries
+
+The existing-window pinned path and shared lease are implemented and covered by
+isolated tests. This is not a complete migration of every legacy adapter:
+
+- Aggregate Sandbox collection and anchored postprocessors still calculate
+  some actions inside Fish. `ws_window` refuses a window absent from the
+  immutable envelope, so these flows can fail closed until their complete
+  object lists and geometry are added to the planner. Space creation, ordering
+  and cleanup effects remain explicitly nonrecoverable.
+- Single-workspace pinned execution preserves opposite variants. Add a planner
+  action for the exact workspace's opposite-variant Space UUIDs, together with
+  fresh completeness and occupancy gates, before enabling local destruction.
+- Fixed adapters (coding control, GTD chat/calendar) retain their explicit
+  recovery bodies on the legacy path. Their custom geometry, reopen effects
+  and verification need dedicated planner contracts; the pinned path only uses
+  declared existing-window layouts and cannot promise full adapter equivalence.
+- Cancellation and total deadlines cover the shared child process machinery.
+  Individual legacy recovery adapters still have their own bounded confirmation
+  loops; consolidate those into a lease-wide retry budget before removing the
+  legacy path. Recovery attempts currently record issued operations, not a
+  durable per-command acknowledgment that survives an abrupt controller kill.
+- The HTTP event monitor remains in the server, although discovery, storage,
+  task coordination and pure automation policy have separate modules. Splitting
+  monitor lifecycle and all remaining persistence routes requires further work.
+
+True macOS app recovery, native fullscreen transitions, yabai label/Space
+reordering races and real display-profile application require an explicitly
+approved desktop test. Fixture convergence is not evidence of those behaviours.

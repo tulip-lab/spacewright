@@ -30,13 +30,14 @@ or exit 5
 test "$configured_dry_run" = "$legacy_dry_run"
 or exit 6
 
-set -l routed_bin "$test_root/routed-bin"
+set -l routed_bin "$test_root/bin"
 set -l routed_log "$test_root/routed.log"
 mkdir -p "$routed_bin"
 printf '%s\n' '#!/bin/sh' 'printf "%s\\n" "$*" >> "$SPACEWRIGHT_ROUTING_LOG"' > "$routed_bin/spacewright"
 chmod +x "$routed_bin/spacewright"
 set -lx PATH "$routed_bin" $PATH
 set -lx SPACEWRIGHT_ROUTING_LOG "$routed_log"
+set -gx SPACEWRIGHT_PACKAGE_ROOT "$test_root"
 gtd_ai_solo --dry-run
 or exit 37
 work_wide --dry-run
@@ -46,6 +47,7 @@ or exit 39
 string match -q 'mode wide --dry-run' (sed -n '2p' "$routed_log")
 or exit 40
 set -e PATH[1]
+set -gx SPACEWRIGHT_PACKAGE_ROOT "$package_root"
 
 set -l expected_workspaces \
     coding_control coding_editor_solo coding_editor_tall coding_editor_wide \
@@ -172,6 +174,7 @@ or exit 35
 string match -q '*ChatGPT*' -- "$suppressed_review_dry_run"
 and exit 36
 
+function workspace_execution_owned; return 0; end
 set -g __spacewright_config_apply_calls 0
 function workspace_find_app_key_window
     echo 42
