@@ -29,6 +29,10 @@ pixel geometry with the fresh snapshot. Grid verification uses the usable macOS
 display frame plus yabai padding and edge gaps, with a two-pixel rounding
 tolerance. `settings.tallTopPercent` is applied to the same grids in planning,
 execution and verification; 50/50 cannot satisfy a configured 49/51 split.
+Native window frames are read from WindowServer by unique ID and owner PID,
+because yabai's AX event cache can retain old coordinates after a display
+change even when a geometry command has actually succeeded. Missing or reused
+native objects stop verification rather than falling back to cached frames.
 
 Drift is classified as:
 

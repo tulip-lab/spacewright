@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.0-alpha.12-dev.20261014.6 — 2026-10-14
+
+- Pass the confirmed machine primary-display UUID to consumer display profiles,
+  overriding an inherited legacy Fish UUID for that invocation.
+
+## 0.2.0-alpha.12-dev.20261014.5 — 2026-10-14
+
+- Verify actual WindowServer bounds by unique window ID and owner PID instead of
+  stale yabai AX frame caches after display changes. Missing or mismatched native
+  geometry blocks layout instead of silently accepting cached coordinates.
+
+## 0.2.0-alpha.12-dev.20261014.4 — 2026-10-14
+
+- Match yabai's edge clamping when verifying overflowing adapter grids, including
+  the GTD chat DingTalk layout, so valid tall plans are not incorrectly blocked.
+
 ## 0.2.0-alpha.12-dev.20261014.3 — 2026-10-14
 
 - Plan mode Sandbox objects, Space cleanup and ordering by immutable window and

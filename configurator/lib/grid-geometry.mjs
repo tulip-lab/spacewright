@@ -4,8 +4,13 @@
 export function gridFrame(display, value) {
   const p = String(value || '').split(':').map(Number);
   if(p.length!==6 || !p.every(Number.isFinite))return null;
-  const [rows,cols,x,y,w,h]=p;
-  if(rows<=0 || cols<=0 || w<=0 || h<=0 || x<0 || y<0 || x+w>cols || y+h>rows)return null;
+  const [rows,cols,requestedX,requestedY,requestedW,requestedH]=p;
+  if(!p.every(Number.isInteger) || rows<=0 || cols<=0 || requestedX<0 || requestedY<0 || requestedW<0 || requestedH<0)return null;
+  // yabai clamps coordinates and spans before applying padding/gaps. Existing
+  // adapter grids intentionally extend beyond an edge, so compare the clamped
+  // result rather than rejecting a valid backend command.
+  const x=Math.min(requestedX,cols-1),y=Math.min(requestedY,rows-1);
+  const w=Math.min(Math.max(requestedW,1),cols-x),h=Math.min(Math.max(requestedH,1),rows-y);
   const g=display?.gridGeometry;
   const f=g?.frame || display?.frame;
   if(!f?.w || !f?.h)return null;
