@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.0-alpha.12-dev.20261014.3 — 2026-10-14
+
+- Plan mode Sandbox objects, Space cleanup and ordering by immutable window and
+  Space identity; constrain workspace shortcuts to their local opposite variants.
+- Honor `settings.tallTopPercent` throughout planning and execution. Compare grid
+  geometry within two pixels using the usable display frame, padding and gaps,
+  so a 50/50 layout cannot satisfy a configured 49/51 split.
+- Add explicit adapter preparation and rediscovery, shared execution budgets,
+  durable operation acknowledgments, bounded cancellation and verified recovery.
+- Serialize configuration saves and automation shutdown. Protect all regression,
+  installation and smoke subprocesses with isolated state and a desktop-command
+  sandbox, including commands invoked by absolute path.
+- Install the read-only screen geometry helper and test controllers with the
+  package. Persistently non-movable app-owned Space/AX fallback remains a
+  documented migration boundary; it fails closed in immutable execution.
+
 All notable changes follow semantic versioning. This project is pre-release;
 configuration and installation contracts may still change before 1.0.
 

@@ -1,6 +1,7 @@
 export function selectorResult(window, desired) {
   const selector = desired.selector || {};
   const reasons = [];
+  if (desired.windowId != null && window.id !== desired.windowId) reasons.push('fixed_window');
   if (desired.appNames.length && !desired.appNames.includes(window.app)) reasons.push('app_name');
   // Standard yabai snapshots do not expose a bundle identifier. Treat bundle IDs
   // as a stronger match only when discovery supplied one, while retaining the

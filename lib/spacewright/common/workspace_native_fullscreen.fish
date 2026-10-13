@@ -53,6 +53,9 @@ function workspace_normalize_native_fullscreen_windows --description "Exit nativ
     set -l fullscreen_ids_json (printf '%s\n' $fullscreen_ids | ws_jq -R 'tonumber' | ws_jq -s .)
     or return 1
     for attempt in (seq 1 12)
+        if test "$attempt" -gt 1; and set -q SPACEWRIGHT_EXECUTION_RUN_ID
+            ws_execution_budget confirmation; or return 1
+        end
         sleep 0.25
         set windows_json (ws_query_windows "$caller" native_fullscreen_$attempt)
         or continue

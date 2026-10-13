@@ -236,7 +236,7 @@ export function validateV3(config) {
   if (!object(config) || config.version !== 3) return { valid: false, errors: [...errors, 'version must be 3'], warnings };
   if (errors.length) return { valid: false, errors, warnings };
   rejectUnknown(config, new Set(['version', 'metadata', 'apps', 'aiProviders', 'aiRouting', 'displayRoles', 'workspaces', 'hardwareProfiles', 'shortcuts', 'settings']), 'config', errors);
-  rejectUnknown(config.settings, new Set(['eventAutomationEnabled', 'cleanupEmptySpaces', 'tallTopPercent', 'topologyStableSamples', 'topologyCooldownSeconds']), 'settings', errors);
+  rejectUnknown(config.settings, new Set(['executionBudgets', 'eventAutomationEnabled', 'cleanupEmptySpaces', 'tallTopPercent', 'topologyStableSamples', 'topologyCooldownSeconds']), 'settings', errors);
   for (const key of ['apps', 'displayRoles', 'workspaces', 'hardwareProfiles']) if (!object(config[key]) || !Object.keys(config[key]).length) errors.push(`${key} must be a non-empty object`);
   for (const [profileId, profile] of Object.entries(config.hardwareProfiles || {})) {
     const path = `hardwareProfiles.${profileId}`;

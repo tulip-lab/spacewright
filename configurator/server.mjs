@@ -6,18 +6,20 @@ import { existsSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createHash } from 'node:crypto';
-import { execFile, spawn } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
-import { CONFIG_COMPILER_VERSION, compileSkhd, compileV2, migrateV1, starterConfig, validateV2 } from './lib/config-v2.mjs';
+import { compileSkhd, compileV2, migrateV1, starterConfig, validateV2 } from './lib/config-v2.mjs';
 import { compileV3, describeDisplays, matchingSetups, migrateV2ToV3, resolveV3, selectHardwareProfile, setupBindingStatus, starterV3, topologyKey, validateV3 } from './lib/config-v3.mjs';
 import { detectMacHardware } from './lib/hardware-detection.mjs';
-import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState, normalizeSnapshot } from './lib/state-engine.mjs';
-import { generationDocument, withConfigurationWrite } from './lib/config-store.mjs';
+import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState } from './lib/state-engine.mjs';
+import { generationDocument, withConfigurationWrite, stableRead,atomicText } from './lib/config-store.mjs';
 import { discoverState } from './lib/discovery.mjs';
-import { matchingRules, ruleContext } from './lib/automation-policy.mjs';
+import { classifyTopology, matchingRules, ruleContext } from './lib/automation-policy.mjs';
 import { runWebTask, cancelWebTask } from './lib/task-coordinator.mjs';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { createAutomationMonitor } from './lib/automation-monitor.mjs';
 import { clearTransitionHistory, readTransitionHistory } from './lib/transition-history.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -41,10 +43,17 @@ const MAX_TASKS = 100;
 const MAX_TASK_LOG_LINES = 2000;
 const unsavedStarterConfig = starterConfig();
 let taskQueue = Promise.resolve();
+let closing=false;
 let configWriteQueue = Promise.resolve();
+const configurationScope = new AsyncLocalStorage();
 
 function serializeConfigWrite(operation) {
-  const guarded = () => withConfigurationWrite(configRoot, operation);
+  const guarded = async () => {
+    const scope={responses:[]};
+    const result=await withConfigurationWrite(configRoot,()=>configurationScope.run(scope,operation));
+    for(const respond of scope.responses)respond();
+    return result;
+  };
   const queued = configWriteQueue.then(guarded, guarded);
   configWriteQueue = queued.catch(() => {});
   return queued;
@@ -52,11 +61,11 @@ function serializeConfigWrite(operation) {
 
 async function readConfig() {
   if (!existsSync(configFile)) return structuredClone(unsavedStarterConfig);
-  return JSON.parse(await readFile(configFile, 'utf8'));
+  return (await stableRead(configFile, machineFile, {ownedWrite:Boolean(configurationScope.getStore())})).config;
 }
 
 async function readOperationalConfig() {
-  if (existsSync(configV3File)) return JSON.parse(await readFile(configV3File, 'utf8'));
+  if (existsSync(configV3File)) return (await stableRead(configV3File, machineFile, {ownedWrite:Boolean(configurationScope.getStore())})).config;
   return readConfig();
 }
 
@@ -75,14 +84,16 @@ async function readLegacyConfig() {
 }
 
 async function readMachine() {
-  if (!existsSync(machineFile)) return { version: 1, displayBindings: {} };
-  const value = JSON.parse(await readFile(machineFile, 'utf8'));
+  const selected=existsSync(configV3File)?configV3File:configFile;
+  const {machine:value}=await stableRead(selected,machineFile,{ownedWrite:Boolean(configurationScope.getStore()),allowMissingConfig:true});
   return { ...value, version: value.version || 1, displayBindings: value.displayBindings || {} };
 }
 
 function json(response, status, body) {
-  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY' });
-  response.end(JSON.stringify(body));
+  const serialized=JSON.stringify(body);
+  const emit=()=>{response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY' });response.end(serialized);};
+  const scope=configurationScope.getStore();
+  if(scope)scope.responses.push(emit);else emit();
 }
 
 async function body(request) {
@@ -97,9 +108,7 @@ async function body(request) {
 async function atomicWrite(path, value) {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   if (existsSync(path)) await copyFile(path, `${path}.backup`);
-  const temporary = `${path}.tmp-${process.pid}`;
-  await writeFile(temporary, value, { mode: 0o600 });
-  await rename(temporary, path);
+  await atomicText(path,value);
 }
 
 async function activity(level, event, details = {}) {
@@ -133,20 +142,6 @@ function configDiff(before, after, path = '$', changes = []) {
   }
   for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) configDiff(before[key], after[key], `${path}.${key}`, changes);
   return changes;
-}
-
-function classifyTopology(displays) {
-  const active = displays.filter((display) => display['is-visible'] !== false);
-  if (!active.length) return 'unknown';
-  const builtIn = active.find((display) => display['is-built-in'] || /built.?in/i.test(display.label || ''));
-  const external = active.filter((display) => display !== builtIn);
-  if (!builtIn && external.length) return external.length > 1 ? 'dual_external' : 'clamshell';
-  if (!external.length) return 'solo';
-  if (external.length > 1) return 'dual_external';
-  const item = external[0]; const frame = item.frame || {};
-  const orientation = Number(frame.h || item.height || 0) > Number(frame.w || item.width || 0) ? 'tall' : 'wide';
-  const side = Number(frame.x || 0) < Number(builtIn?.frame?.x || 0) ? 'left' : 'right';
-  return `${orientation}_${side}`;
 }
 
 async function queryDisplays() {
@@ -223,7 +218,8 @@ function targetFromPayload(payload) {
 async function livePlan(config, payload) {
   const validation = config.version === 3 ? validateV3(config) : validateV2(config);
   if (!validation.valid) return { validation };
-  const [snapshot, machine] = await Promise.all([querySnapshot(), readMachine()]);
+  const machine=await readMachine();
+  const snapshot=await discoverState(machine);
   let effectiveConfig = config;
   let resolution = null;
   let target = targetFromPayload(payload);
@@ -314,6 +310,7 @@ function appendTaskLog(task, line) {
 }
 
 function rememberTask(task) {
+  if(closing)return false;
   const removable = [...tasks.values()].filter((item) => !['queued', 'running'].includes(item.status)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   while (tasks.size >= MAX_TASKS && removable.length) tasks.delete(removable.shift().id);
   if (tasks.size >= MAX_TASKS) return false;
@@ -384,7 +381,7 @@ async function currentEditorDocument() {
     const document = await currentConfigDocument();
     return { ...document, path: configFile, source: existsSync(configFile) ? 'v2' : 'starter', legacyAvailable: true };
   }
-  const portableConfig = JSON.parse(await readFile(configV3File, 'utf8'));
+  const portableConfig = (await stableRead(configV3File, machineFile, {ownedWrite:Boolean(configurationScope.getStore())})).config;
   const revision = configRevision(portableConfig);
   const setupState = await v3SetupState(portableConfig);
   if (!setupState.ready) {
@@ -409,7 +406,7 @@ function compiledDocument(config) {
 async function api(request, response, url) {
   if (request.headers['x-spacewright-token'] !== token) return json(response, 403, { error: 'invalid session token' });
   if (url.pathname === '/api/v3/config' && request.method === 'GET') {
-    const config = existsSync(configV3File) ? JSON.parse(await readFile(configV3File, 'utf8')) : existsSync(configFile) ? migrateV2ToV3(await readConfig()) : starterV3();
+    const config = existsSync(configV3File) ? (await stableRead(configV3File, machineFile, {ownedWrite:Boolean(configurationScope.getStore())})).config : existsSync(configFile) ? migrateV2ToV3(await readConfig()) : starterV3();
     return json(response, 200, { config, revision: configRevision(config), path: configV3File, source: existsSync(configV3File) ? 'v3' : existsSync(configFile) ? 'v2-migration-preview' : 'v3-starter' });
   }
   if (url.pathname === '/api/v3/validate' && request.method === 'POST') {
@@ -417,14 +414,14 @@ async function api(request, response, url) {
     return json(response, validation.valid ? 200 : 422, { ...validation, mutates: false });
   }
   if (url.pathname === '/api/v3/setup' && request.method === 'GET') {
-    const config = existsSync(configV3File) ? JSON.parse(await readFile(configV3File, 'utf8')) : existsSync(configFile) ? migrateV2ToV3(await readConfig()) : starterV3();
+    const config = existsSync(configV3File) ? (await stableRead(configV3File, machineFile, {ownedWrite:Boolean(configurationScope.getStore())})).config : existsSync(configFile) ? migrateV2ToV3(await readConfig()) : starterV3();
     const validation = validateV3(config);
     if (!validation.valid) return json(response, 422, validation);
     return json(response, 200, await v3SetupState(config));
   }
   if (url.pathname === '/api/v3/setup/confirm' && request.method === 'POST') {
     const payload = await body(request);
-    const config = payload.config || (existsSync(configV3File) ? JSON.parse(await readFile(configV3File, 'utf8')) : existsSync(configFile) ? migrateV2ToV3(await readConfig()) : starterV3());
+    const config = payload.config || (existsSync(configV3File) ? (await stableRead(configV3File, machineFile, {ownedWrite:Boolean(configurationScope.getStore())})).config : existsSync(configFile) ? migrateV2ToV3(await readConfig()) : starterV3());
     const validation = validateV3(config); if (!validation.valid) return json(response, 422, validation);
     const hardwareProfileId = payload.hardwareProfile; const setupId = payload.setup;
     if (!config.hardwareProfiles?.[hardwareProfileId]?.setups?.[setupId]) return json(response, 422, { error: 'valid hardwareProfile and setup are required' });
@@ -451,9 +448,14 @@ async function api(request, response, url) {
     };
     let runtime = null;
     await serializeConfigWrite(async () => {
+      const liveMachine=await readMachine();
+      if(JSON.stringify(liveMachine)!==JSON.stringify(currentMachine))throw new Error('machine configuration changed during setup confirmation');
+      if(existsSync(configV3File)) {
+        const saved=(await stableRead(configV3File,machineFile,{ownedWrite:true})).config;
+        if(serializedConfig(saved)===serializedConfig(config))runtime=compiledV3Document(saved,{machine,hardware,snapshot});
+      }
       await atomicWrite(machineFile, `${JSON.stringify(machine, null, 2)}\n`);
-      if (existsSync(configV3File)) {
-        runtime = compiledV3Document(config, {machine,hardware,snapshot});
+      if (runtime) {
         await atomicWrite(runtimeFile, `${JSON.stringify(runtime, null, 2)}\n`);
       }
     });
@@ -462,21 +464,22 @@ async function api(request, response, url) {
   }
   if (url.pathname === '/api/v3/setup/activate' && request.method === 'POST') {
     if (!existsSync(configV3File)) return json(response, 409, { error: 'save the v3 configuration before activation' });
-    const config = JSON.parse(await readFile(configV3File, 'utf8')); const state = await v3SetupState(config);
-    if (!state.ready) return json(response, 422, { error: 'the current topology has not been confirmed', ...state });
-    const machine = { ...state.machine, activeSetup: state.confirmedSetup };
-    await serializeConfigWrite(async () => {
-    await atomicWrite(machineFile, `${JSON.stringify(machine, null, 2)}\n`);
-    const runtime = compiledV3Document(config, { machine, hardware: state.hardware, snapshot: state.snapshot });
-    await atomicWrite(runtimeFile, `${JSON.stringify(runtime, null, 2)}\n`);
+    return serializeConfigWrite(async()=>{
+      const config=(await stableRead(configV3File,machineFile,{ownedWrite:true})).config;
+      const state=await v3SetupState(config);
+      if(!state.ready)return json(response,422,{error:'the current topology has not been confirmed',...state});
+      const machine={...state.machine,activeSetup:state.confirmedSetup};
+      const runtime=compiledV3Document(config,{machine,hardware:state.hardware,snapshot:state.snapshot});
+      await atomicWrite(machineFile,`${JSON.stringify(machine,null,2)}\n`);
+      await atomicWrite(runtimeFile,`${JSON.stringify(runtime,null,2)}\n`);
+      return json(response,200,{activated:true,setup:state.confirmedSetup,compatibilityMode:state.compatibilityMode,runtimePath:runtimeFile});
     });
-    return json(response, 200, { activated: true, setup: state.confirmedSetup, compatibilityMode: state.compatibilityMode, runtimePath: runtimeFile });
   }
   if (url.pathname === '/api/v3/save' && request.method === 'POST') {
     const payload = await body(request); const config = payload.config || payload; const validation = validateV3(config);
     if (!validation.valid) return json(response, 422, validation);
     return await serializeConfigWrite(async () => {
-      const current = existsSync(configV3File) ? JSON.parse(await readFile(configV3File, 'utf8')) : existsSync(configFile) ? migrateV2ToV3(await readConfig()) : starterV3();
+      const current = existsSync(configV3File) ? (await stableRead(configV3File, machineFile, {ownedWrite:Boolean(configurationScope.getStore())})).config : existsSync(configFile) ? migrateV2ToV3(await readConfig()) : starterV3();
       const revision = configRevision(current);
       if (!payload.baseRevision) return json(response, 428, { error: 'baseRevision is required', code: 'revision_required', currentRevision: revision });
       if (payload.baseRevision !== revision) return json(response, 409, { error: 'configuration changed on disk', code: 'configuration_conflict', currentRevision: revision });
@@ -487,7 +490,7 @@ async function api(request, response, url) {
       if (existsSync(configV3File)) await copyFile(configV3File, `${configV3File}.backup`);
       await atomicWrite(runtimeFile, `${JSON.stringify(runtime, null, 2)}\n`);
       await atomicWrite(configV3File, source);
-      const readBack = JSON.parse(await readFile(configV3File, 'utf8'));
+      const readBack = (await stableRead(configV3File, machineFile, {ownedWrite:Boolean(configurationScope.getStore())})).config;
       if (serializedConfig(readBack) !== source) return json(response, 500, { error: 'read-back verification failed' });
       await activity('info', 'v3_configuration_saved', { hardwareProfile: setupState.hardwareSelection.id, setup: setupState.confirmedSetup });
       return json(response, 200, { saved: true, verified: true, revision: configRevision(readBack), path: configV3File, runtimePath: runtimeFile });
@@ -725,8 +728,19 @@ async function api(request, response, url) {
     }
     const uuids = Object.values(payload.displayBindings);
     if (new Set(uuids).size !== uuids.length) return json(response, 422, { error: 'one display UUID cannot be bound to multiple roles' });
-    const machine = { version: 1, displayBindings: payload.displayBindings };
-    await atomicWrite(machineFile, `${JSON.stringify(machine, null, 2)}\n`);
+    let machine;
+    await serializeConfigWrite(async () => {
+      machine = {...await readMachine(),displayBindings:payload.displayBindings};
+      let runtime;
+      if(existsSync(configV3File)) {
+        const portable=(await stableRead(configV3File,machineFile,{ownedWrite:true})).config;
+        const setup=await v3SetupState(portable,machine);
+        if(!setup.ready)throw new Error('display bindings require confirmed topology before activation');
+        runtime=compiledV3Document(portable,{machine,hardware:setup.hardware,snapshot:setup.snapshot});
+      } else if(existsSync(configFile))runtime=compiledDocument(await readConfig());
+      await atomicWrite(machineFile,`${JSON.stringify(machine,null,2)}\n`);
+      if(runtime)await atomicWrite(runtimeFile,`${JSON.stringify(runtime,null,2)}\n`);
+    });
     return json(response, 200, { saved: true, machine, path: machineFile });
   }
   if (url.pathname === '/api/displays' && request.method === 'GET') {
@@ -757,6 +771,7 @@ function trustedLoopbackRequest(request) {
 }
 const server = http.createServer(async (request, response) => {
   try {
+    if(closing)return json(response,503,{error:'configurator is stopping'});
     if (!trustedLoopbackRequest(request)) return json(response, 403, { error: 'untrusted local request origin' });
     const url = new URL(request.url, 'http://127.0.0.1');
     if (url.pathname.startsWith('/api/')) return await api(request, response, url);
@@ -786,75 +801,37 @@ server.listen(listenPort, '127.0.0.1', async () => {
   if (!process.argv.includes('--no-open')) execFile('open', [url], () => {});
 });
 
-let lastTopology;
-let candidateTopology;
-let candidateSamples = 0;
-let lastAutomationAt = 0;
-let lastTopologyErrorAt = 0;
-
-async function triggerRuleEvent(event) {
-  const config = await readConfig();
-  if (config.settings?.eventAutomationEnabled !== true) { await activity('info', 'event_ignored', { event, reason: 'automation_disabled' }); return; }
-  const snapshot = await querySnapshot();
-  if (snapshot.completeness !== 'complete') { await activity('error', 'event_query_unavailable', { event, message: snapshot.message }); return; }
-  const topology = classifyTopology(snapshot.displays.map((display) => ({ ...display, 'is-built-in': display.builtIn, 'is-visible': display.visible })));
-  const matches = matchingRules(config, ruleContext(config, event, snapshot, topology));
-  await activity('info', 'event_evaluated', { event, topology, matches: matches.map((rule) => rule.id) });
-  for (const rule of matches) await executeRule(config, rule);
-}
-
-process.on('SIGUSR1', () => { void triggerRuleEvent('wake').catch((error) => activity('error', 'wake_event_failed', { message: error.message })); });
-for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, async () => {
-  for (const task of tasks.values()) if (['queued','running'].includes(task.status)) cancelWebTask(task);
-  await taskQueue.catch(() => {});
-  server.close(async () => {
-    try { const session = JSON.parse(await readFile(sessionFile, 'utf8')); if (session.pid === process.pid) await unlink(sessionFile); } catch {}
+const monitor = createAutomationMonitor({readConfig,querySnapshot,activity,executeRule,
+  activateSetup: async (topology, stopped) => {
+    if(!existsSync(configV3File))return false;
+    await serializeConfigWrite(async () => {
+      if(stopped())return;
+      const portableConfig=(await stableRead(configV3File,machineFile,{ownedWrite:true})).config;
+      const setupState=await v3SetupState(portableConfig);
+      if(stopped())return;
+      if(!setupState.ready) {
+        await activity('info','v3_topology_confirmation_required',{topologyKey:setupState.topologyKey,candidates:setupState.setupCandidates});return;
+      }
+      const machine={...setupState.machine,activeSetup:setupState.confirmedSetup};
+      const runtime=compiledV3Document(portableConfig,{machine,hardware:setupState.hardware,snapshot:setupState.snapshot});
+      await atomicWrite(machineFile,`${JSON.stringify(machine,null,2)}\n`);
+      await atomicWrite(runtimeFile,`${JSON.stringify(runtime,null,2)}\n`);
+      await activity('info','v3_setup_activated',{hardwareProfile:setupState.hardwareSelection.id,setup:setupState.confirmedSetup,topologyKey:setupState.topologyKey});
+    });
+    return true;
+  }
+});
+monitor.start();
+process.on('SIGUSR1', () => { void monitor.trigger('wake').catch(error => {process.stderr.write(`wake event failed: ${error.message}\n`);}); });
+for (const signal of ['SIGINT','SIGTERM'])process.on(signal,async()=>{
+  if(closing)return;closing=true;
+  const monitorStopped=monitor.stop();
+  for(const task of tasks.values())if(['queued','running'].includes(task.status))cancelWebTask(task);
+  await monitorStopped;
+  await taskQueue.catch(()=>{});
+  await configWriteQueue.catch(()=>{});
+  server.close(async()=>{
+    try{const session=JSON.parse(await readFile(sessionFile,'utf8'));if(session.pid===process.pid)await unlink(sessionFile);}catch{}
     process.exit(0);
   });
 });
-
-setInterval(async () => {
-  try {
-    const snapshot = await querySnapshot();
-    if (snapshot.completeness !== 'complete') {
-      if (Date.now() - lastTopologyErrorAt >= 60_000) { lastTopologyErrorAt = Date.now(); await activity('error', 'topology_query_unavailable', { message: snapshot.message }); }
-      return;
-    }
-    lastTopologyErrorAt = 0;
-    const topology = classifyTopology(snapshot.displays.map((display) => ({ ...display, 'is-built-in': display.builtIn, 'is-visible': display.visible })));
-    if (topology === 'unknown') return;
-    if (lastTopology == null) { lastTopology = topology; return; }
-    if (topology === lastTopology) { candidateTopology = null; candidateSamples = 0; return; }
-    if (candidateTopology !== topology) { candidateTopology = topology; candidateSamples = 1; return; }
-    candidateSamples++;
-    const currentConfig = await readConfig();
-    const stableSamples = currentConfig.settings?.topologyStableSamples || 3;
-    if (candidateSamples < stableSamples) return;
-    const previous = lastTopology; lastTopology = topology; const config = currentConfig;
-    candidateTopology = null; candidateSamples = 0;
-    await activity('info', 'topology_changed', { previous, topology });
-    if (existsSync(configV3File)) {
-      const portableConfig = JSON.parse(await readFile(configV3File, 'utf8'));
-      const setupState = await v3SetupState(portableConfig);
-      if (!setupState.ready) {
-        await activity('info', 'v3_topology_confirmation_required', { topologyKey: setupState.topologyKey, candidates: setupState.setupCandidates });
-        return;
-      }
-      const machine = { ...setupState.machine, activeSetup: setupState.confirmedSetup };
-      await serializeConfigWrite(async () => {
-      await atomicWrite(machineFile, `${JSON.stringify(machine, null, 2)}\n`);
-      const runtime = compiledV3Document(portableConfig, { machine, hardware: setupState.hardware, snapshot: setupState.snapshot });
-      await atomicWrite(runtimeFile, `${JSON.stringify(runtime, null, 2)}\n`);
-      });
-      await activity('info', 'v3_setup_activated', { hardwareProfile: setupState.hardwareSelection.id, setup: setupState.confirmedSetup, topologyKey: setupState.topologyKey });
-      return;
-    }
-    if (config.settings?.eventAutomationEnabled !== true) return;
-    const cooldownMs = (config.settings?.topologyCooldownSeconds ?? 30) * 1000;
-    if (Date.now() - lastAutomationAt < cooldownMs) { await activity('info', 'topology_automation_suppressed', { previous, topology, reason: 'cooldown' }); return; }
-    const event = topology === 'solo' || topology === 'clamshell' ? 'display_disconnected' : previous === 'solo' || previous === 'clamshell' ? 'display_connected' : 'topology_changed';
-    const context = ruleContext(config, event, snapshot, topology);
-    lastAutomationAt = Date.now();
-    for (const rule of matchingRules(config, context)) await executeRule(config, rule);
-  } catch (error) { await activity('error', 'topology_monitor_failed', { message: error.message }); }
-}, 5000).unref();

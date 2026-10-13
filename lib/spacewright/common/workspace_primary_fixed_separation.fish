@@ -66,6 +66,7 @@ function workspace_reconcile_primary_fixed_spaces --description "Verify and reco
     if workspace_verify_primary_fixed_separation
         return 0
     end
+    ws_execution_budget reconciliation; or return 1
 
     echo "[WARN] primary fixed Spaces are mixed; reconciling coding_control then gtd_chat" >&2
     set -l failed 0

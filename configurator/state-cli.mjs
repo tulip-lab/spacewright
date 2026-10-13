@@ -3,17 +3,19 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState, normalizeSnapshot, summarizeComparison } from './lib/state-engine.mjs';
+import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState, summarizeComparison } from './lib/state-engine.mjs';
 import { compileV2, validateV2 } from './lib/config-v2.mjs';
 import { resolveV3, validateV3 } from './lib/config-v3.mjs';
-import { restoreWindow, sameWindowIdentity } from './lib/recovery.mjs';
+import { restoreWindow, sameWindowIdentity,recoveryCandidates } from './lib/recovery.mjs';
 import { stableRead } from './lib/config-store.mjs';
 import { discoverState } from './lib/discovery.mjs';
 import { acquireExecution, runBounded } from './lib/execution-coordinator.mjs';
+import { durableJson, operationRecords } from './lib/operation-journal.mjs';
+import { consumeBudget } from './lib/execution-budget.mjs';
 import { detectMacHardware } from './lib/hardware-detection.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -37,10 +39,7 @@ async function readJson(path, fallback) {
 }
 
 async function atomicWrite(path, value) {
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const temporary = `${path}.tmp-${process.pid}`;
-  await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-  await rename(temporary, path);
+  await durableJson(path,value);
 }
 
 export async function discover(machineOverride = null) {
@@ -123,7 +122,10 @@ function printPlan(plan, comparison) {
 
 let executionLease = null;
 async function acquireLock(runId) {
-  executionLease = await acquireExecution(stateRoot, { runId, controller: 'state-cli', deadlineAt: new Date(executionDeadline).toISOString() });
+  const portableFile=existsSync(v3ConfigFile)?v3ConfigFile:v2ConfigFile;
+  const budgets=existsSync(portableFile)?(await stableRead(portableFile,machineFile)).config.settings?.executionBudgets:undefined;
+  executionLease = await acquireExecution(stateRoot, { runId, controller: 'state-cli', budgets, deadlineAt: new Date(executionDeadline).toISOString() });
+  executionDeadline=Math.min(executionDeadline,new Date(executionLease.owner.deadlineAt).getTime());
   return executionLease.release;
 }
 async function runCommand(args, journal, journalFile, plannedStep, attempt = 0) {
@@ -137,6 +139,7 @@ async function runCommand(args, journal, journalFile, plannedStep, attempt = 0) 
     const result = await runBounded(executable, args, { deadline: executionDeadline, signal: cancellation.signal,
       env: { ...process.env, ...executionLease.env, SPACEWRIGHT_CONFIG_ROOT: configRoot, SPACEWRIGHT_STATE_ROOT: stateRoot,
         SPACEWRIGHT_EXECUTION_CONFIG: journal.effectiveConfigFile, SPACEWRIGHT_EXECUTION_ENVELOPE: journal.envelopeFile,
+        SPACEWRIGHT_OPERATION_RUN_ID:journal.runId,
         SPACEWRIGHT_RUNTIME_GENERATION: journal.plan?.configDigest, WORKSPACE_DISABLE_YABAI_AUTO_RESTART: '1', WORKSPACE_SKIP_FINALIZATION: '1' },
       onChild: async (child) => { activeChild = child; await executionLease.trackChild(child); },
       onOutput: (stream, value) => {
@@ -151,7 +154,13 @@ async function runCommand(args, journal, journalFile, plannedStep, attempt = 0) 
     step.status = result.code === 0 ? 'completed' : 'failed'; step.exitCode = result.code;
     return result.code;
   } catch (error) { step.status = error.code === 'SPACEWRIGHT_CANCELLED' ? 'cancelled' : error.code === 'SPACEWRIGHT_TIMEOUT' ? 'timed_out' : 'failed'; step.error = error.message; throw error; }
-  finally { step.finishedAt = new Date().toISOString(); }
+  finally {
+    step.finishedAt = new Date().toISOString();
+    journal.operations=await operationRecords(stateRoot,journal.runId);
+    const operations=journal.operations.filter(r=>r.id);
+    journal.effects=[...journal.effects.filter(e=>!operations.some(r=>r.windowId===e.windowId && r.type===e.type)),...operations];
+    await atomicWrite(journalFile,journal);
+  }
 }
 
 async function waitForDesktopStateToSettle(executionSteps) {
@@ -172,17 +181,21 @@ function assertNotCancelled() {
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
   cancellationSignal ||= signal;
   cancellation.abort(cancellationError());
+  if(executionLease)void executionLease.cancel().catch(error=>process.stderr.write(`cancellation state write failed: ${error.message}\n`));
 });
 
 async function assertExecutionContext(initial,effects = []) {
   assertNotCancelled();
   const currentConfig = await stableRead(initial.configFile, machineFile);
   if (currentConfig.source !== initial.source) throw new Error('configuration changed during execution; replan required');
+  if(JSON.stringify(currentConfig.machine)!==JSON.stringify(initial.machine))throw new Error('machine generation changed during execution; replan required');
   const roles = new Set(initial.desired.workspaces.map((w) => w.displayRole));
   for (const role of roles) if (currentConfig.machine.displayBindings?.[role] !== initial.machine.displayBindings?.[role]) throw new Error('machine display bindings changed; replan required');
   const snapshot = await discover(initial.machine);
   if (snapshot.completeness !== 'complete') throw new Error(snapshot.message);
+  if(initial.plan.scope==='mode' && JSON.stringify(snapshot.windows.map(w=>w.id))!==JSON.stringify(initial.snapshot.windows.map(w=>w.id)))throw new Error('global object census changed; replan required');
   const comparison = compareState(snapshot, initial.desired, initial.machine);
+  if(comparison.counts.blocker)throw new Error(`execution preconditions changed: ${comparison.drifts.filter(d=>d.severity==='blocker').map(d=>d.code).join(', ')}; replan required`);
   const currentPlan = buildExecutionPlan(snapshot, initial.desired, comparison);
   if (JSON.stringify(currentPlan.selectedWindows) !== JSON.stringify(initial.plan.selectedWindows)) throw new Error('planned windows or ownership changed; replan required');
   for (const original of initial.plan.workspaces) {
@@ -205,7 +218,7 @@ async function applyPlan(target) {
     await executionLease.trackJournal(journalFile);
     await atomicWrite(journalFile,journal);
     assertNotCancelled();
-    const initial = await livePlan(target);
+    let initial = await livePlan(target);
     assertNotCancelled();
     if (initial.snapshot.completeness !== 'complete') throw new Error(initial.snapshot.message);
     const expected = {
@@ -256,6 +269,20 @@ async function applyPlan(target) {
     }
     journal.status = 'running';
     await atomicWrite(journalFile, journal);
+    if(initial.plan.preparations.length) {
+      journal.preparationPlan=initial.plan;
+      journal.exitCode=await runCommand(['prepare-adapters'],journal,journalFile,{type:'preparation',action:'prepare_adapters',planId:initial.plan.planId});
+      assertNotCancelled();
+      if(journal.exitCode!==0)throw new Error('explicit adapter preparation failed; layout was not attempted');
+      const saved=await stableRead(initial.configFile,machineFile);
+      if(saved.source!==initial.source || JSON.stringify(saved.machine)!==JSON.stringify(initial.machine))throw new Error('configuration changed during preparation; replan required');
+      const next=await livePlan(target,initial);
+      if(!next.plan.executable || next.plan.preparations.length)throw new Error('adapter preparation did not satisfy layout prerequisites');
+      journal.planRelations=[{phase:'preparation',fromPlanId:initial.plan.planId,toPlanId:next.plan.planId,before:initial.plan.selectedWindows,after:next.plan.selectedWindows}];
+      initial=next;journal.plan=next.plan;journal.layoutBefore=next.snapshot;
+      await atomicWrite(journal.envelopeFile,{plan:next.plan,desired:next.desired,machine:next.machine});
+      await atomicWrite(journalFile,journal);
+    }
     for (const step of initial.plan.executionSteps) {
       assertNotCancelled();
       await assertExecutionContext(initial,journal.effects);
@@ -271,6 +298,7 @@ async function applyPlan(target) {
     journal.after = verification.snapshot;
     journal.verification = verification.comparison;
     if (journal.exitCode === 0 && JSON.stringify(verification.plan.selectedWindows) === JSON.stringify(initial.plan.selectedWindows) && !verification.comparison.converged && verification.plan.executable && verification.plan.actions.length && initial.plan.recovery.automaticAttempts > 0 && !flags['no-reconcile']) {
+      await consumeBudget(stateRoot,'reconciliation',{env:executionLease.env});
       journal.steps.push({ type: 'reconciliation', status: 'started', startedAt: new Date().toISOString(), remaining: verification.comparison.counts, planId: verification.plan.planId });
       await atomicWrite(journalFile, journal);
       await atomicWrite(journal.envelopeFile, { plan: verification.plan, desired: initial.desired, machine: initial.machine });
@@ -324,11 +352,12 @@ async function restoreRun(runId) {
   const journalFile = join(stateRoot, 'runs', `${runId}.json`);
   const journal = await readJson(journalFile, null);
   if (!journal?.before) throw new Error(`run ${runId} has no recovery snapshot`);
-  const recoverableWindowIds = new Set((journal.effects || []).filter((e) => e.windowId).map((e) => e.windowId));
+  const candidates=recoveryCandidates(journal);
+  const recoverableWindowIds = new Set(candidates.map(c=>c.window.id));
   if (flags['dry-run']) {
     const current = await discover();
     if (current.unavailable) throw new Error(current.message);
-    const currentIds = new Set(journal.before.windows.filter((w) => recoverableWindowIds.has(w.id) && sameWindowIdentity(w,current.windows.find((c) => c.id === w.id))).map((w) => w.id));
+    const currentIds = new Set(candidates.filter(({window:w})=>sameWindowIdentity(w,current.windows.find(c=>c.id===w.id))).map(c=>c.window.id));
     return { dryRun: true, mutates: false, runId, snapshotId: current.snapshotId, windowIds: [...recoverableWindowIds].filter((id) => currentIds.has(id)), missingWindowIds: [...recoverableWindowIds].filter((id) => !currentIds.has(id)) };
   }
   const recoveryId = `${Date.now()}-${randomBytes(4).toString('hex')}`;
@@ -344,9 +373,8 @@ async function restoreRun(runId) {
     assertNotCancelled();
     if (current.unavailable) throw new Error(current.message);
     const currentSpacesByUuid = new Map(current.spaces.map((space) => [space.uuid, space]));
-    const beforeSpacesByIndex = new Map(journal.before.spaces.map((space) => [space.index, space]));
     const currentWindows = new Map(current.windows.map((window) => [window.id, window]));
-    for (const window of journal.before.windows.filter((item) => recoverableWindowIds.has(item.id))) {
+    for (const {window,spaceUuid} of candidates) {
       assertNotCancelled();
       const step = { windowId: window.id, status: 'running', startedAt: new Date().toISOString() };
       recoveryJournal.steps.push(step);
@@ -356,12 +384,13 @@ async function restoreRun(runId) {
       if (!sameWindowIdentity(window,liveWindow)) {
         step.status = 'skipped'; step.reason = 'window identity changed'; result.skipped.push({ windowId: window.id, reason: step.reason }); continue;
       }
-      const beforeSpace = beforeSpacesByIndex.get(window.space);
+      const beforeSpace = {uuid:spaceUuid};
       const targetSpace = beforeSpace ? currentSpacesByUuid.get(beforeSpace.uuid) : null;
       if (!targetSpace) { step.status = 'skipped'; step.reason = 'original Space no longer exists'; result.skipped.push({ windowId: window.id, reason: step.reason }); await atomicWrite(recoveryFile, recoveryJournal); continue; }
       try {
         const restored = await restoreWindow(window, beforeSpace.uuid, { discover, run: recoveryCommand,
-          beforeCommand: async (args) => { step.commands ||= []; step.commands.push({args,status:'attempted'}); await atomicWrite(recoveryFile,recoveryJournal); } });
+          beforeCommand: async (args) => { step.commands ||= []; step.commands.push({args,status:'attempted_unknown',identity:window,spaceUuid:beforeSpace.uuid}); await atomicWrite(recoveryFile,recoveryJournal); },
+          afterCommand:async(args,verified)=>{const command=step.commands.at(-1);command.exitCode=0;command.status=verified?'verified_success':'failed';await atomicWrite(recoveryFile,recoveryJournal);} });
         step.attempted = restored.attempted;
         step.status = 'completed'; result.restored.push(window.id);
       } catch (error) {
@@ -383,7 +412,8 @@ async function restoreRun(runId) {
     const interruptedStep = [...recoveryJournal.steps].reverse().find((step) => step.status === 'running');
     if (interruptedStep) { interruptedStep.status = recoveryJournal.status; interruptedStep.finishedAt = recoveryJournal.finishedAt; }
     result.status = recoveryJournal.status;
-    await atomicWrite(recoveryFile, recoveryJournal);
+    try{await atomicWrite(recoveryFile,recoveryJournal);}
+    catch(writeError){process.stderr.write(`terminal recovery journal unavailable: ${writeError.message}; run=${recoveryId} status=${result.status} lastWindow=${interruptedStep?.windowId || 'none'}\n`);}
     if (['SPACEWRIGHT_CANCELLED','SPACEWRIGHT_TIMEOUT'].includes(error.code)) return result;
     throw error;
   } finally { await releaseLock(); }

@@ -131,7 +131,8 @@ function gtd_find_meeting_windows --description "Find all movable GTD meeting he
     end
 
     workspace_debug_step $caller "$debug_name-refresh"
-    perl -e 'alarm shift; exec @ARGV' 2 open -a "$app_name" >/dev/null 2>&1
+    ws_execution_budget appRecovery; or return 1
+    ws_bounded_external open -a "$app_name" >/dev/null 2>&1
     sleep 0.6
 
     workspace_debug_step $caller "$debug_name-after-refresh-query"

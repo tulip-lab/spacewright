@@ -67,13 +67,17 @@ function __gtd_ai_capture_app --description "Capture or open one GTD AI app wind
     end
 
     workspace_debug_step $caller open-$app_label
-    perl -e 'alarm shift; exec @ARGV' 2 open -a "$app_label" >/dev/null 2>&1
+    ws_execution_budget appRecovery; or return 1
+    ws_bounded_external open -a "$app_label" >/dev/null 2>&1
     if test $status -ne 0
         echo "[WARN] $caller could not open $app_label; skipping $app_label" >&2
         return 0
     end
 
     for attempt in (seq 1 4)
+        if test "$attempt" -gt 1; and set -q SPACEWRIGHT_EXECUTION_RUN_ID
+            ws_execution_budget confirmation; or return 1
+        end
         sleep 0.5
 
         set window_id (workspace_capture_app_window $capture_args)

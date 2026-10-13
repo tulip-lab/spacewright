@@ -22,6 +22,19 @@ if contains -- "$command_name" run display focus order finalize postprocess
 end
 
 switch "$command_name"
+    case pinned-workspace pinned-cleanup
+        if contains -- --dry-run $argv
+            printf 'dry_run=%s\n' "$command_name"
+            exit 0
+        end
+        command node "$package_root/configurator/execution-cli.mjs" "$command_name" $argv
+    case prepare-adapters
+        if contains -- --dry-run $argv
+            printf 'dry_run=prepare_adapters\n'
+            exit 0
+        end
+        source "$SPACEWRIGHT_ROOT/common/workspace_prepare_adapters.fish"
+        workspace_prepare_adapters
     case version --version -v
         command cat "$package_root/VERSION"
     case config-check
@@ -296,7 +309,11 @@ switch "$command_name"
             printf 'dry_run=workspace_finalize_mode\nmode=%s\nsteps=sandbox cleanup order_verify restore_focus\n' "$mode"
             exit 0
         end
-        workspace_finalize_mode $mode
+        if set -q SPACEWRIGHT_EXECUTION_ENVELOPE
+            command node "$package_root/configurator/execution-cli.mjs" pinned-finalize
+        else
+            workspace_finalize_mode $mode
+        end
     case postprocess
         set -l hook $argv[1]
         if not contains -- "$hook" gtd_ai_expand_hermes_when_alone workspace_reconcile_primary_fixed_spaces
@@ -307,7 +324,11 @@ switch "$command_name"
             printf 'dry_run=postprocess\nhook=%s\n' "$hook"
             exit 0
         end
-        $hook
+        if set -q SPACEWRIGHT_EXECUTION_ENVELOPE
+            command node "$package_root/configurator/execution-cli.mjs" pinned-postprocess "$hook"
+        else
+            $hook
+        end
     case config-migrate-v1
         set -l config_file $argv[1]
         test -n "$config_file"; or set config_file (spacewright_config_user_file)
@@ -339,6 +360,10 @@ switch "$command_name"
         end
         command node "$package_root/configurator/server.mjs" "--package-root=$package_root" "--config-root=$SPACEWRIGHT_CONFIG_ROOT" "--state-root=$SPACEWRIGHT_STATE_ROOT" $argv
     case run
+        if set -q SPACEWRIGHT_EXECUTION_ENVELOPE; and contains -- "$argv[2]" solo wide tall; and not contains -- --dry-run $argv
+            command node "$package_root/configurator/execution-cli.mjs" pinned-workspace "$argv[1]"
+            exit $status
+        end
         if not set -q SPACEWRIGHT_EXECUTION_ENVELOPE
             and test "$SPACEWRIGHT_CONFIG_DISABLE" != 1
             and begin; test -r "$SPACEWRIGHT_CONFIG_ROOT/config.v2.json"; or test -r "$SPACEWRIGHT_CONFIG_ROOT/config.v3.json"; end

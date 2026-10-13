@@ -14,8 +14,13 @@ function gtd_reopen_outlook --description "Lightly reopen Outlook and clear Outl
         end
     end
 
-    osascript -e "tell application \"$outlook_app\" to activate" -e "tell application \"$outlook_app\" to reopen" >/dev/null 2>&1
-    or open -a "$outlook_app" >/dev/null 2>&1
+    ws_execution_budget appRecovery; or return 1
+    ws_bounded_external osascript -e "tell application \"$outlook_app\" to activate" -e "tell application \"$outlook_app\" to reopen" >/dev/null 2>&1
+    or begin
+        ws_execution_budget commandRetry; or return 1
+        ws_bounded_external open -a "$outlook_app" >/dev/null 2>&1
+        or return 1
+    end
 
     sleep 1
 

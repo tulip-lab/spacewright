@@ -38,6 +38,9 @@ function ws_move_windows_to_space --description "Move multiple windows to a targ
         return 1
     end
     for attempt in (seq 1 4)
+        if test "$attempt" -gt 1; and set -q SPACEWRIGHT_EXECUTION_RUN_ID
+            ws_execution_budget confirmation; or return 1
+        end
         sleep 0.2
         set -l windows_json (ws_query_windows ws_move_windows_to_space confirm_$attempt)
         if test $status -eq 0 -a -n "$windows_json"
@@ -59,4 +62,14 @@ function ws_move_windows_to_space --description "Move multiple windows to a targ
         echo "[WARN] windows did not settle on Space $target_space: "(string join , -- $requested_ids) >&2
     end
     return 1
+end
+
+function __ws_retry_move_windows_to_space --description "Reserve the shared allowance for each repeated window move"
+    test (count $argv) -ge 1; or return 1
+    for window_id in $argv[2..-1]
+        if test -n "$window_id"; and test "$window_id" != null
+            ws_execution_budget commandRetry; or return 1
+        end
+    end
+    ws_move_windows_to_space $argv
 end

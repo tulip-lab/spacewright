@@ -131,6 +131,9 @@ function find_or_create_labeled_space --description "Find an existing labeled sp
 
     set -l new_space_uuid ""
     for attempt in (seq 1 16)
+        if test "$attempt" -gt 1; and set -q SPACEWRIGHT_EXECUTION_RUN_ID
+            ws_execution_budget confirmation; or return 1
+        end
         sleep 0.25
         set spaces_json (ws_query_spaces find_or_create_labeled_space after_create_$attempt)
         if test $status -ne 0 -o -z "$spaces_json"

@@ -1,4 +1,23 @@
+function ws_bounded_external --description "Run a recovery command within the verified shared deadline and process group"
+    if set -q SPACEWRIGHT_EXECUTION_RUN_ID
+        command env SPACEWRIGHT_SUBSTEP_TIMEOUT_MS=3000 node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/execution-cli.mjs" exec $argv
+        return $status
+    end
+    perl -MTime::HiRes=alarm -e 'alarm shift; exec @ARGV' 3 $argv
+end
+
+function ws_execution_budget --description "Consume a shared run budget before a retry or recovery"
+    if not set -q SPACEWRIGHT_EXECUTION_RUN_ID
+        return 0
+    end
+    command node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/execution-cli.mjs" budget $argv
+end
+
 function ws_yabai --description "Run a yabai command with a bounded timeout"
+    if set -q SPACEWRIGHT_EXECUTION_RUN_ID
+        command node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/execution-cli.mjs" verify
+        or return $status
+    end
     set -l timeout_seconds "$WORKSPACE_YABAI_COMMAND_TIMEOUT_SECONDS"
 
     if test -z "$timeout_seconds"
@@ -75,10 +94,11 @@ function ws_restart_yabai --description "Restart the yabai service through the b
         set caller workspace
     end
 
+    ws_execution_budget serviceRecovery; or return 1
     set -l status_code 1
     set -l legacy_service "gui/"(id -u)"/com.asmvik.yabai"
     if command -q launchctl; and launchctl print "$legacy_service" >/dev/null 2>&1
-        launchctl kickstart -k "$legacy_service" >/dev/null 2>&1
+        ws_bounded_external launchctl kickstart -k "$legacy_service" >/dev/null 2>&1
         set status_code $status
     else
         if not command -q yabai
@@ -145,13 +165,6 @@ function ws_recover_yabai_once --description "Restart yabai at most once within 
 
     ws_yabai_auto_restart_allowed "$caller"
     or return 1
-    if set -q SPACEWRIGHT_EXECUTION_RUN_ID
-        # The directory belongs to the verified execution lease, shared by all child steps.
-        workspace_execution_owned; or return 1
-        mkdir "$SPACEWRIGHT_STATE_ROOT/execution.lock/recovery-used" 2>/dev/null
-        or return 1
-    end
-
     set -l cooldown_seconds "$WORKSPACE_YABAI_RESTART_COOLDOWN_SECONDS"
     if test -z "$cooldown_seconds"
         set cooldown_seconds 10
@@ -211,6 +224,9 @@ function ws_query_windows --description "Query yabai windows with timeout and fa
     set -l failure_reason
 
     for recovery_attempt in 1 2
+        if test "$recovery_attempt" -gt 1; and set -q SPACEWRIGHT_EXECUTION_RUN_ID
+            ws_execution_budget commandRetry; or return 1
+        end
         set -l windows_json (ws_yabai -m query --windows 2>/dev/null)
         if test $status -ne 0 -o -z "$windows_json"
             set windows_json (__ws_query_windows_by_space)
@@ -260,7 +276,13 @@ function ws_query_displays --description "Query yabai displays with one retry an
     end
 
     for recovery_attempt in 1 2
+        if test "$recovery_attempt" -gt 1; and set -q SPACEWRIGHT_EXECUTION_RUN_ID
+            ws_execution_budget commandRetry; or return 1
+        end
         for attempt in 1 2
+            if test "$attempt" -gt 1; and set -q SPACEWRIGHT_EXECUTION_RUN_ID
+                ws_execution_budget confirmation; or return 1
+            end
             set -l displays_json (ws_yabai -m query --displays 2>/dev/null)
             if test $status -eq 0 -a -n "$displays_json"
                 echo $displays_json | ws_jq -e 'type == "array"' >/dev/null 2>&1
@@ -300,7 +322,13 @@ function ws_query_spaces --description "Query yabai spaces with one retry and JS
     end
 
     for recovery_attempt in 1 2
+        if test "$recovery_attempt" -gt 1; and set -q SPACEWRIGHT_EXECUTION_RUN_ID
+            ws_execution_budget commandRetry; or return 1
+        end
         for attempt in 1 2
+            if test "$attempt" -gt 1; and set -q SPACEWRIGHT_EXECUTION_RUN_ID
+                ws_execution_budget confirmation; or return 1
+            end
             set -l spaces_json (ws_yabai -m query --spaces 2>/dev/null)
             if test $status -eq 0 -a -n "$spaces_json"
                 echo $spaces_json | ws_jq -e 'type == "array"' >/dev/null 2>&1
@@ -340,7 +368,13 @@ function ws_query_current_display --description "Query current yabai display wit
     end
 
     for recovery_attempt in 1 2
+        if test "$recovery_attempt" -gt 1; and set -q SPACEWRIGHT_EXECUTION_RUN_ID
+            ws_execution_budget commandRetry; or return 1
+        end
         for attempt in 1 2
+            if test "$attempt" -gt 1; and set -q SPACEWRIGHT_EXECUTION_RUN_ID
+                ws_execution_budget confirmation; or return 1
+            end
             set -l display_json (ws_yabai -m query --displays --display 2>/dev/null)
             if test $status -eq 0 -a -n "$display_json"
                 echo $display_json | ws_jq -e 'type == "object"' >/dev/null 2>&1
@@ -380,7 +414,13 @@ function ws_query_current_space --description "Query current yabai space with on
     end
 
     for recovery_attempt in 1 2
+        if test "$recovery_attempt" -gt 1; and set -q SPACEWRIGHT_EXECUTION_RUN_ID
+            ws_execution_budget commandRetry; or return 1
+        end
         for attempt in 1 2
+            if test "$attempt" -gt 1; and set -q SPACEWRIGHT_EXECUTION_RUN_ID
+                ws_execution_budget confirmation; or return 1
+            end
             set -l space_json (ws_yabai -m query --spaces --space 2>/dev/null)
             if test $status -eq 0 -a -n "$space_json"
                 echo $space_json | ws_jq -e 'type == "object"' >/dev/null 2>&1

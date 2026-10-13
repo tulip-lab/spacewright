@@ -311,7 +311,10 @@ test('aggregate comparison reports actual Space order drift', () => {
   const comparison = compareState(snapshot, desiredState, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
   assert.ok(comparison.drifts.some((item) => item.code === 'space_order_mismatch'));
   assert.deepEqual(buildExecutionPlan(snapshot, desiredState, comparison).actions, [
-    { type: 'order_spaces', mode: 'wide' },
+    { type: 'order_spaces', mode: 'wide',spaces:[
+      {workspaceId:'a',label:'a_wide',spaceUuid:'SPACE-A',displayUuid:'DISPLAY-PRIMARY'},
+      {workspaceId:'b',label:'b_wide',spaceUuid:'SPACE-B',displayUuid:'DISPLAY-PRIMARY'}
+    ] },
     { type: 'finalize_mode', mode: 'wide' },
     { type: 'verify', target: { kind: 'mode', id: 'wide', mode: 'wide' } }
   ]);

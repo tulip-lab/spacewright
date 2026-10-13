@@ -5,6 +5,11 @@ set -l package_root (path dirname (path dirname $script_file))
 cd "$package_root"
 or exit 1
 
+if test "$SPACEWRIGHT_TEST_ISOLATED" != 1
+    command node scripts/isolated-check.mjs
+    exit $status
+end
+
 for fish_file in (find bin conf.d lib scripts tests -type f -name '*.fish' -o -path 'bin/spacewright')
     fish -n "$fish_file"
     or exit 1

@@ -9,8 +9,10 @@ interactive entry point for one workspace. It uses the same lock, cancellation,
 deadline, status, and progress banner, but deliberately skips mode-wide Sandbox
 collection, Space ordering, and finalization. It only runs the selected
 workspace through the same immutable apply plan used by the CLI and Web.
-Single-workspace pinned execution retains opposite variants; it does not run
-family-wide opposite-mode cleanup.
+Single-workspace execution explicitly plans only that workspace's empty opposite
+variant UUIDs. It rechecks complete discovery, labels, display and occupancy
+before deletion; other workspaces and user Spaces are outside its scope. A global
+post-shortcut cleanup hook is not appended after the verified local plan.
 
 ## Interaction model
 
@@ -82,3 +84,17 @@ escalate an unresponsive child, and only then release the execution lease.
 Direct `run`, `display`, `focus`, `order`, `finalize` and `postprocess` use the
 same lease. CLI scripts start Fish without personal startup configuration;
 consumer configuration is loaded through the documented configuration roots.
+
+## Preparation and interruption
+
+Native fullscreen exit or observed complex-app refresh appears in the apply
+preview as a preparation phase, with possible replacement/window-creation side
+effects. The controller persists its relationship to the rediscovered layout
+plan. It does not silently substitute an ID during layout. Existing optional
+windows failing placement still fail the transition.
+
+The transition lease owns the total deadline and configured retry/recovery
+counters; child processes cannot extend them. Cancellation marks the shared run
+before stopping children, and a pipe gate prevents a child from executing until
+its process-group identity has been registered. Recovery journals distinguish
+unknown attempts and verified results, and exclude unoperated selections.

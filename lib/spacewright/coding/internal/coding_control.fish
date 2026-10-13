@@ -260,7 +260,7 @@ function __coding_control_body --description "Collect Warp, SmartGit, KeePassXC,
         end
 
         if test -n "$warp"
-            ws_move_windows_to_space $target_space $warp
+            __ws_retry_move_windows_to_space $target_space $warp
             set warp (workspace_find_app_key_window --app-key warp --caller $label --space $target_space --no-refresh --target-only)
         end
     end
@@ -273,7 +273,7 @@ function __coding_control_body --description "Collect Warp, SmartGit, KeePassXC,
         end
 
         if test -n "$smartgit"
-            ws_move_windows_to_space $target_space $smartgit
+            __ws_retry_move_windows_to_space $target_space $smartgit
             set smartgit (workspace_find_app_key_window --app-key smartgit --caller $label --space $target_space --no-refresh --target-only)
         end
 
@@ -315,7 +315,7 @@ function __coding_control_body --description "Collect Warp, SmartGit, KeePassXC,
             or return 1
 
             set smartgit_space_fallback_used 1
-            ws_move_windows_to_space \
+            __ws_retry_move_windows_to_space \
                 $target_space \
                 $warp_initial \
                 $keepassx_initial \
@@ -346,7 +346,7 @@ function __coding_control_body --description "Collect Warp, SmartGit, KeePassXC,
         end
 
         if test -n "$keepassx"
-            ws_move_windows_to_space $target_space $keepassx
+            __ws_retry_move_windows_to_space $target_space $keepassx
             set keepassx (workspace_find_app_key_window --app-key keepassx --caller $label --space $target_space --no-refresh --target-only)
         end
     end
@@ -359,7 +359,7 @@ function __coding_control_body --description "Collect Warp, SmartGit, KeePassXC,
         end
 
         if test -n "$portfolio_performance"
-            ws_move_windows_to_space $target_space $portfolio_performance
+            __ws_retry_move_windows_to_space $target_space $portfolio_performance
             set portfolio_performance (workspace_find_app_key_window --app-key portfolio_performance --caller $label --space $target_space --no-refresh --target-only)
         end
     end

@@ -195,7 +195,7 @@ function __gtd_calendar_body --description "Collect Calendar and Reminders onto 
         end
 
         if test -n "$calendar"
-            ws_move_windows_to_space $target_space $calendar
+            __ws_retry_move_windows_to_space $target_space $calendar
             set calendar (workspace_find_app_key_window --app-key calendar --caller $label --space $target_space --no-refresh --target-only)
         end
     end
@@ -208,7 +208,7 @@ function __gtd_calendar_body --description "Collect Calendar and Reminders onto 
         end
 
         if test -n "$reminders"
-            ws_move_windows_to_space $target_space $reminders
+            __ws_retry_move_windows_to_space $target_space $reminders
             set reminders (workspace_find_app_key_window --app-key reminders --caller $label --space $target_space --no-refresh --target-only)
         end
     end

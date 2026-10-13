@@ -9,6 +9,50 @@ function fish(script) {
   return execFileSync('fish', ['--no-config', '-c', script], { cwd: root, encoding: 'utf8' }).trim();
 }
 
+test('display detection follows the resolved v3 setup and fails closed when resolution fails', () => {
+  const output = fish(`
+    source lib/spacewright/common/workspace_display_roles.fish
+    set -gx SPACEWRIGHT_CONFIG_ROOT (mktemp -d)
+    touch "$SPACEWRIGHT_CONFIG_ROOT/config.v3.json"
+    function ws_jq; command jq $argv; end
+    function ws_query_displays; echo UNEXPECTED_QUERY; return 1; end
+    function spacewright_config_effective
+      printf '{"modes":{"work_%s":{"steps":[{}]}}}\\n' $resolved_mode
+    end
+    for mode in tall wide solo
+      set -g resolved_mode $mode
+      workspace_detect_display_mode; or exit 1
+    end
+    functions -e spacewright_config_effective
+    function spacewright_config_effective; return 1; end
+    workspace_detect_display_mode; echo failed=$status
+    functions -e spacewright_config_effective
+    function spacewright_config_effective; echo '{"modes":{}}'; end
+    workspace_detect_display_mode; echo empty=$status
+    rm -rf "$SPACEWRIGHT_CONFIG_ROOT"
+  `);
+  assert.equal(output, 'tall\nwide\nsolo\nfailed=1\nempty=1');
+});
+
+test('legacy display detection preserves solo and dual-screen orientations but rejects empty discovery', () => {
+  const output = fish(`
+    source lib/spacewright/common/workspace_display_roles.fish
+    set -gx SPACEWRIGHT_CONFIG_ROOT /nonexistent-spacewright-test
+    function ws_jq; command jq $argv; end
+    function get_workspace_primary_display_uuid; echo PRIMARY; end
+    function ws_query_displays; echo $displays; end
+    set displays '[{"uuid":"PRIMARY","frame":{"w":1200,"h":1920}}]'
+    workspace_detect_display_mode; or exit 1
+    for frame in '{"w":1200,"h":1920}' '{"w":1920,"h":1200}'
+      set displays '[{"uuid":"PRIMARY"},{"uuid":"EXTERNAL","frame":'$frame'}]'
+      workspace_detect_display_mode; or exit 1
+    end
+    set displays '[]'
+    workspace_detect_display_mode; echo empty=$status
+  `);
+  assert.equal(output, 'solo\ntall\nwide\nempty=1');
+});
+
 test('window moves retry until every requested window is confirmed', () => {
   const output = fish(`
     source lib/spacewright/common/ws_move_windows_to_space.fish

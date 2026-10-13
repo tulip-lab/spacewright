@@ -109,7 +109,7 @@ else
     command mkdir -p "$staging_root"
     or exit 1
 
-    for item in lib config schemas conf.d bin configurator helpers package.json package-lock.json VERSION LICENSE README.md CHANGELOG.md SECURITY.md
+    for item in lib config schemas conf.d bin configurator helpers scripts package.json package-lock.json VERSION LICENSE README.md CHANGELOG.md SECURITY.md
         if test -e "$source_root/$item"
             command cp -R "$source_root/$item" "$staging_root/"
             or begin
@@ -151,6 +151,14 @@ else
         end
     else
         echo 'spacewright install: warning: swiftc not found; transition banner will be unavailable' >&2
+    end
+    if command -q swiftc
+        command swiftc -O "$staging_root/helpers/spacewright-screen-geometry.swift" -o "$staging_root/bin/spacewright-screen-geometry"
+        or begin
+            echo 'spacewright install: failed to compile read-only screen geometry helper' >&2
+            command rm -rf "$staging_root"
+            exit 1
+        end
     end
     printf '%s\n' "$package_version" > "$staging_root/.spacewright-release"
     command mv "$staging_root" "$release_root"

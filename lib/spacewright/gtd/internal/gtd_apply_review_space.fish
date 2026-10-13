@@ -336,6 +336,9 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
     set -l windows_json_final (ws_query_windows $_flag_label final); or return 1
 
     for attempt in (seq 1 3)
+        if test "$attempt" -gt 1; and set -q SPACEWRIGHT_EXECUTION_RUN_ID
+            ws_execution_budget confirmation; or return 1
+        end
         set -l finder_retry_windows (echo $windows_json_final | workspace_app_key_windows --app-key finder --movable --not-space $target_space)
         or return 1
         set -l preview_retry_windows (echo $windows_json_final | workspace_app_key_windows --app-key preview --movable --not-space $target_space)
@@ -366,7 +369,7 @@ function gtd_apply_review_space --description "Apply a GTD review workspace for 
             break
         end
 
-        ws_move_windows_to_space $target_space $finder_retry_windows $preview_retry_windows $notes_retry_windows $obsidian_retry_windows
+        __ws_retry_move_windows_to_space $target_space $finder_retry_windows $preview_retry_windows $notes_retry_windows $obsidian_retry_windows
 
         set -l reconcile_phase final_review_reconcile
         if test "$attempt" -gt 1

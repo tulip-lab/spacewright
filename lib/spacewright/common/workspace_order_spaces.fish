@@ -81,6 +81,9 @@ function __workspace_wait_for_space_index --description "Wait briefly for a Spac
     end
 
     for attempt in (seq 1 20)
+        if test "$attempt" -gt 1; and set -q SPACEWRIGHT_EXECUTION_RUN_ID
+            ws_execution_budget confirmation; or return 1
+        end
         set -l spaces_json (ws_query_spaces workspace_order_spaces "confirm-$uuid-$attempt")
         or return 1
         set -l actual_index (echo $spaces_json | ws_jq -r --arg uuid "$uuid" \
@@ -311,6 +314,9 @@ function workspace_order_and_verify_mode_spaces --description "Order and verify 
     end
 
     for attempt in 1 2
+        if test "$attempt" -gt 1; and set -q SPACEWRIGHT_EXECUTION_RUN_ID
+            ws_execution_budget commandRetry; or return 1
+        end
         workspace_order_mode_spaces $mode
         or return 1
         workspace_verify_mode_space_order $mode

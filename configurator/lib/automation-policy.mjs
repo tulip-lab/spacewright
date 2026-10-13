@@ -13,3 +13,17 @@ export function ruleContext(config, event, snapshot, topology) {
   const display = snapshot.displays.find((item) => item.focused)?.role || null;
   return { event, topology, orientation: topology.startsWith('tall') ? 'tall' : topology.startsWith('wide') ? 'wide' : null, apps, workspace, display, layout: focusedSpace?.layout || null };
 }
+
+export function classifyTopology(displays) {
+  const active = displays.filter((display) => display['is-visible'] !== false);
+  if (!active.length) return 'unknown';
+  const builtIn = active.find((display) => display['is-built-in'] || /built.?in/i.test(display.label || ''));
+  const external = active.filter((display) => display !== builtIn);
+  if (!builtIn && external.length) return external.length > 1 ? 'dual_external' : 'clamshell';
+  if (!external.length) return 'solo';
+  if (external.length > 1) return 'dual_external';
+  const item = external[0]; const frame = item.frame || {};
+  const orientation = Number(frame.h || item.height || 0) > Number(frame.w || item.width || 0) ? 'tall' : 'wide';
+  const side = Number(frame.x || 0) < Number(builtIn?.frame?.x || 0) ? 'left' : 'right';
+  return `${orientation}_${side}`;
+}
