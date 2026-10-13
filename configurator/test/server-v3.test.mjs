@@ -61,10 +61,12 @@ esac
   const { child, token, url } = await startServer(configRoot, stateRoot, fakeBin);
   context.after(async () => { child.kill('SIGTERM'); await rm(root, { recursive: true, force: true }); });
 
-  const document = await json(url, '/api/v3/config');
+  const unauthenticated = await json(url, '/api/v3/config');
+  assert.equal(unauthenticated.status, 403);
+  const document = await json(url, '/api/v3/config', token);
   assert.equal(document.status, 200);
   assert.equal(document.body.source, 'v3');
-  const detected = await json(url, '/api/v3/setup');
+  const detected = await json(url, '/api/v3/setup', token);
   assert.equal(detected.status, 200);
   assert.equal(detected.body.hardwareSelection.id, 'mac_mini', JSON.stringify(detected.body));
   assert.deepEqual(detected.body.setupCandidates, ['single_tall'], JSON.stringify(detected.body));
@@ -117,6 +119,7 @@ esac
   } catch (error) {
     throw new Error(`${error.message}\npage=${(await page.content()).slice(0, 2000)}\npageErrors=${pageErrors.join('; ')}`);
   }
+  assert.equal(new URL(page.url()).searchParams.has('token'), false);
   assert.match(await page.locator('.v3-detection').innerText(), /Macmini9,1 · mac_mini[\s\S]*confirmed as single_tall/);
   assert.equal(await page.locator('[data-v3-setup="single_tall"]').getAttribute('class'), 'active');
   assert.equal(await page.locator('[data-v3-assignment="coding"]').inputValue(), 'tall');

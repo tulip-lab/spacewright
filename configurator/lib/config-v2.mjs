@@ -5,7 +5,7 @@ const MODES = ['solo', 'wide', 'tall'];
 const DIRECTIONS = new Set(['rows', 'columns']);
 const POSTPROCESSORS = new Set(['gtd_ai_expand_hermes_when_alone', 'workspace_reconcile_primary_fixed_spaces']);
 const ROOT_KEYS = new Set(['version', 'metadata', 'apps', 'aiProviders', 'aiRouting', 'displayRoles', 'workspaces', 'modes', 'shortcuts', 'profiles', 'rules', 'settings']);
-export const CONFIG_COMPILER_VERSION = 3;
+export const CONFIG_COMPILER_VERSION = 4;
 const V2_SCHEMA = JSON.parse(readFileSync(new URL('../../schemas/spacewright-v2.schema.json', import.meta.url), 'utf8'));
 
 function schemaTypeMatches(value, type) {
@@ -206,7 +206,7 @@ export function validateV2(config) {
   if (config.profiles != null && !object(config.profiles)) errors.push('profiles must be an object');
   if (config.rules != null && !Array.isArray(config.rules)) errors.push('rules must be an array');
   if (config.settings != null && !object(config.settings)) errors.push('settings must be an object');
-  rejectUnknown(config.settings, new Set(['eventAutomationEnabled', 'topologyStableSamples', 'topologyCooldownSeconds']), 'settings', errors);
+  rejectUnknown(config.settings, new Set(['eventAutomationEnabled', 'cleanupEmptySpaces', 'tallTopPercent', 'topologyStableSamples', 'topologyCooldownSeconds']), 'settings', errors);
 
   if (config.aiProviders != null && !object(config.aiProviders)) errors.push('aiProviders must be an object');
   if (config.aiRouting != null && !object(config.aiRouting)) errors.push('aiRouting must be an object');
@@ -460,6 +460,26 @@ export function compileLayout(node, rect = { x: 0, y: 0, w: 120, h: 120 }, actio
   return actions;
 }
 
+export function remapTallGrid(grid, topPercent = 50) {
+  if (!Number.isInteger(topPercent) || topPercent < 35 || topPercent > 65 || topPercent === 50) return grid;
+  const [rows, columns, x, y, width, height] = String(grid).split(':').map(Number);
+  if (![rows, columns, x, y, width, height].every(Number.isFinite) || rows <= 0 || height <= 0 || y < 0 || y + height > rows || height === rows) return grid;
+  const midpoint = rows / 2;
+  const end = y + height;
+  let mappedStart;
+  let mappedEnd;
+  if (end <= midpoint) {
+    mappedStart = Math.round((y / midpoint) * topPercent);
+    mappedEnd = Math.round((end / midpoint) * topPercent);
+  } else if (y >= midpoint) {
+    mappedStart = Math.round(topPercent + ((y - midpoint) / midpoint) * (100 - topPercent));
+    mappedEnd = Math.round(topPercent + ((end - midpoint) / midpoint) * (100 - topPercent));
+  } else {
+    return grid;
+  }
+  return `100:${columns}:${x}:${mappedStart}:${width}:${Math.max(1, mappedEnd - mappedStart)}`;
+}
+
 export function resolvedAIProvider(config, workspaceId, mode) {
   const assignment = config.aiRouting?.assignments?.[workspaceId];
   return assignment ? (assignment.overrides?.[mode] || assignment.provider) : null;
@@ -538,7 +558,11 @@ export function compileV2(config) {
         const workspace = config.workspaces[workspaceId];
         const variant = workspace.variants[mode];
         const runtimeId = variant.command || `spacewright_${workspaceId}_${mode}`;
-        runtime.layouts[runtimeId] = compileLayout(variant.layout);
+        runtime.layouts[runtimeId] = compileLayout(variant.layout).map((action) => (
+          mode === 'tall' && action.grid
+            ? { ...action, grid: remapTallGrid(action.grid, config.settings?.tallTopPercent ?? 50) }
+            : action
+        ));
         runtime.workspaces[runtimeId] = {
           runner: variant.runtime?.runner || 'generic_layout',
           ...(variant.runtime?.runnerOptions ? { runner_options: variant.runtime.runnerOptions } : {}),

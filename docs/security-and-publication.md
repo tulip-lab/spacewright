@@ -60,11 +60,13 @@ The Homebrew distribution work performed the following non-mutating checks:
 - inventoried historical paths for credentials, sessions, logs, databases,
   caches, private keys, and generated state;
 - confirmed the distributable allowlist excludes Git metadata, tests,
-  `AGENTS.md`, `node_modules`, caches, and machine state;
-- confirmed the only direct npm package is the Playwright test dependency and
-  neither it nor its transitive packages are bundled in the release artifact;
-- confirmed the repository declares MIT and the release contains no compiled
-  third-party artifact.
+  `AGENTS.md`, caches, and machine state;
+- reviewed the direct npm dependencies: Playwright is an Apache-2.0 development
+  dependency and is excluded from releases; YAML is an ISC production
+  dependency and its production files are bundled so the installed
+  Configurator works without a network install;
+- confirmed the repository declares MIT and the only compiled release helper
+  is SpaceWright's own Swift banner source, built locally by Homebrew.
 
 No secret or machine-specific identifier was found. The Git history does expose
 the maintainer name and the addresses `gangli@duck.com` and

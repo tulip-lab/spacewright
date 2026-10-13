@@ -10,7 +10,8 @@ for fish_file in (find bin conf.d lib scripts tests -type f -name '*.fish' -o -p
     or exit 1
 end
 
-jq empty config/defaults.json examples/config.json examples/config-v2.json schemas/spacewright.schema.json schemas/spacewright-v2.schema.json
+jq empty config/defaults.json examples/config.json examples/config-v2.json examples/config-v3.json \
+    schemas/spacewright.schema.json schemas/spacewright-v2.schema.json schemas/spacewright-v3.schema.json
 or exit 1
 
 node --test configurator/test/*.test.mjs

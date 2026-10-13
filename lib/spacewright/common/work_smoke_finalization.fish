@@ -222,7 +222,7 @@ function __work_smoke_finalization_cleanup
     test (string join ' ' -- $occupant_ids) = '21 60 90'
     or return 9
 
-    workspace_cleanup_empty_spaces --home-uuid HOME --focus-uuid FOCUSED
+    workspace_cleanup_empty_spaces --home-uuid HOME --focus-uuid FOCUSED --policy all
     or return 1
     test (string join ' ' -- $__work_smoke_cleanup_destroyed) = '12 8 5 4 3'
     or return 2
@@ -236,14 +236,14 @@ function __work_smoke_finalization_cleanup
     set -g __work_smoke_cleanup_scenario settled
     set -g __work_smoke_cleanup_destroyed
     set -g __work_smoke_cleanup_window_queries 0
-    workspace_cleanup_empty_spaces --home-uuid HOME --focus-uuid FOCUSED
+    workspace_cleanup_empty_spaces --home-uuid HOME --focus-uuid FOCUSED --policy all
     or return 10
     not contains -- 3 $__work_smoke_cleanup_destroyed
     or return 11
 
     set -g __work_smoke_cleanup_scenario failure
     set -g __work_smoke_cleanup_destroyed
-    workspace_cleanup_empty_spaces --home-uuid HOME --focus-uuid FOCUSED >/dev/null 2>&1
+    workspace_cleanup_empty_spaces --home-uuid HOME --focus-uuid FOCUSED --policy all >/dev/null 2>&1
     test $status -ne 0; or return 6
     test (count $__work_smoke_cleanup_destroyed) -eq 0
 end

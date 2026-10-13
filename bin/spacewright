@@ -313,6 +313,11 @@ switch "$command_name"
             echo 'spacewright configure requires Node.js 20 or newer' >&2
             exit 1
         end
+        command node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 20 ? 0 : 1)'
+        or begin
+            echo 'spacewright configure requires Node.js 20 or newer' >&2
+            exit 1
+        end
         command node "$package_root/configurator/server.mjs" "--package-root=$package_root" "--config-root=$SPACEWRIGHT_CONFIG_ROOT" "--state-root=$SPACEWRIGHT_STATE_ROOT" $argv
     case run
         if string match -q 'work_*' -- "$argv[1]"

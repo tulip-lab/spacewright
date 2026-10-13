@@ -130,6 +130,18 @@ two inactive display modes before and after its ordered steps.
 Configuration does not accept shell commands, jq expressions, loops,
 conditionals, retries, or service-control actions.
 
+Both portable schemas accept `settings.cleanupEmptySpaces`. Its default
+`managed` policy removes only safe empty `sandbox_solo`, `sandbox_wide`, and
+`sandbox_tall` Spaces during mode/profile reconciliation. `all` additionally
+allows safe empty unlabeled Spaces to be removed, while `none` disables the
+step. Workspace-only runs never perform global cleanup.
+
+`settings.tallTopPercent` (35–65, default 50) provides one adjustment point
+for vertically divided tall layouts. During compilation, regions wholly above
+or below the original midpoint are proportionally remapped to the requested
+boundary. Full-screen regions and regions crossing the centre remain unchanged,
+so changing this value does not disturb floating control windows.
+
 ## Version 2 Contract
 
 The JSON Schema is the structural contract. Runtime validation adds semantic

@@ -10,6 +10,7 @@ import {
   migrateV2ToV3,
   projectSetupToV2,
   resolveV3,
+  setupBindingStatus,
   starterV3,
   topologyKey,
   validateV3
@@ -65,6 +66,19 @@ test('Mac mini single tall resolves only after confirmation', () => {
   assert.equal(runtime.source_version, 3);
   assert.equal(runtime.active_hardware_profile, 'mac_mini');
   assert.equal(runtime.active_setup, 'single_tall');
+});
+
+test('confirmed setup is not ready when its display role binding is stale', () => {
+  const config = starterV3();
+  const displays = snapshot([{ index: 1, uuid: 'NEW-TALL', frame: { w: 1200, h: 1920 }, builtIn: false }]);
+  const local = machine('mac_mini', { tall: 'OLD-TALL' }, {
+    topologySelections: { 'external:tall': 'single_tall' }
+  });
+  assert.deepEqual(setupBindingStatus(config, 'mac_mini', 'single_tall', displays, local), {
+    ready: false,
+    missingRoles: ['tall']
+  });
+  assert.throws(() => resolveV3(config, { machine: local, snapshot: displays }), /renewed role binding: tall/);
 });
 
 test('Mac mini wide plus tall and external plus Sidecar are distinct topologies', () => {
@@ -138,6 +152,18 @@ test('setup projection selects workspace configuration explicitly', () => {
   assert.ok(projected.workspaces.coding.variants.wide);
   assert.equal(projected.workspaces.coding.variants.wide.spaceLabel, 'coding_wide');
   assert.deepEqual(projected.modes.wide.displays[0].workspaceOrder, ['coding']);
+});
+
+test('setup projection merges shared selectors into explicit runtime windows', () => {
+  const config = starterV3();
+  const configurationId = config.hardwareProfiles.mac_mini.setups.single_wide.workspaceConfigurations.coding;
+  config.workspaces.coding.windows.editor.selector = { movable: true, title_exclude: 'Write:' };
+  config.workspaces.coding.configurations[configurationId].runtime = {
+    windows: [{ role: 'editor', app_key: 'code', required: true, selector: { visible: true } }]
+  };
+  const projected = projectSetupToV2(config, 'mac_mini', 'single_wide');
+  const editor = projected.workspaces.coding.variants.wide.runtime.windows.find(({ role }) => role === 'editor');
+  assert.deepEqual(editor.selector, { movable: true, title_exclude: 'Write:', visible: true });
 });
 
 test('v3 shortcuts keep workspace selection hardware-aware', () => {

@@ -5,6 +5,12 @@ configuration and installation contracts may still change before 1.0.
 
 ## Unreleased
 
+- Add one configurable tall-layout top percentage, propagate it through GTD
+  Support and Office adaptive layouts, and reapply final Zoom bounds after
+  meeting-window fallback, making splits such as 49/51 easy to tune.
+- Harden release packaging, installation ownership, local Configurator
+  authentication, cancellation journals, display-binding readiness, dependency
+  diagnostics, and empty-Space cleanup policy after a full repository audit.
 - Persist the latest 100 guarded workspace and mode transitions with duration,
   outcome, warnings, skipped-app signals, failure details, and bounded log
   tails; expose them in the CLI, Configurator History, and Diagnostics views.

@@ -42,12 +42,15 @@ for item in \
         configurator \
         docs \
         examples \
+        helpers \
         lib \
         packaging \
         schemas \
         scripts \
         CHANGELOG.md \
         LICENSE \
+        package.json \
+        package-lock.json \
         README.md \
         SECURITY.md \
         VERSION
@@ -58,6 +61,13 @@ for item in \
     command cp -R "$package_root/$item" "$package_dir/"
     or exit 1
 end
+
+if not command -q npm
+    echo 'spacewright package: npm is required to assemble production dependencies' >&2
+    exit 1
+end
+command npm ci --omit=dev --ignore-scripts --prefix "$package_dir"
+or exit 1
 
 set -l archive "$output_root/$archive_root.tar.gz"
 set -l checksums "$output_root/SHA256SUMS"

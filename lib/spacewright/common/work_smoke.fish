@@ -2496,6 +2496,40 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         set failed 1
     end
 
+    set -l support_tall_ratio_smoke '
+        work_reload >/dev/null
+
+        set -g __work_smoke_support_grids
+        function ws_window
+            set -a __work_smoke_support_grids "$argv[1]=$argv[3]"
+        end
+
+        gtd_support_layout_dia_windows tall --tall-bottom-grid 100:1:0:49:1:51 31 32
+        or exit 1
+        test (string join , -- $__work_smoke_support_grids) = "31=100:1:0:0:1:49,32=100:1:0:49:1:51"
+        or exit 2
+
+        set -g __work_smoke_support_grids
+        gtd_support_layout_dia_windows tall --tall-bottom-grid 100:1:0:49:1:51 31 32 33
+        or exit 3
+        test (string join , -- $__work_smoke_support_grids) = "31=100:2:0:0:1:49,32=100:2:1:0:1:49,33=100:1:0:49:1:51"
+        or exit 4
+
+        set -g __work_smoke_support_grids
+        gtd_support_layout_dia_windows tall --tall-bottom-grid 100:1:0:49:1:51 31 32 33 34
+        or exit 5
+        test (string join , -- $__work_smoke_support_grids) = "31=100:2:0:0:1:49,32=100:2:1:0:1:49,33=100:2:0:49:1:51,34=100:2:1:49:1:51"
+        or exit 6
+    '
+    fish -lc "$support_tall_ratio_smoke" >/tmp/work-support-tall-ratio-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      support tall ratio follows compiled grid"
+    else
+        echo "FAIL    support tall ratio follows compiled grid"
+        cat /tmp/work-support-tall-ratio-smoke.out
+        set failed 1
+    end
+
     set -l support_retarget_smoke '
         work_reload >/dev/null
 
@@ -2703,6 +2737,35 @@ function work_smoke --description "Run read-only workspace smoke checks for help
     else
         echo "FAIL    support Dia yabai restart recovery"
         cat /tmp/work-support-dia-restart-smoke.out
+        set failed 1
+    end
+
+    set -l office_tall_ratio_smoke '
+        work_reload >/dev/null
+
+        test (__office_helper_grid tall 1 100:1:0:0:1:49) = 100:1:0:0:1:49
+        or exit 1
+        test (__office_primary_grid tall 1 1 1 100:1:0:0:1:49 100:1:0:49:1:51) = 100:1:0:49:1:51
+        or exit 2
+        test (__office_primary_grid tall 1 2 0 100:1:0:0:1:49 100:1:0:49:1:51) = 100:1:0:0:1:49
+        or exit 3
+        test (__office_primary_grid tall 2 2 0 100:1:0:0:1:49 100:1:0:49:1:51) = 100:1:0:49:1:51
+        or exit 4
+        test (__office_helper_grid tall 3 100:1:0:0:1:49) = 100:2:0:0:1:49
+        or exit 5
+        test (__office_primary_grid tall 1 3 1 100:1:0:0:1:49 100:1:0:49:1:51) = 100:2:1:0:1:49
+        or exit 6
+        test (__office_primary_grid tall 2 3 1 100:1:0:0:1:49 100:1:0:49:1:51) = 100:2:0:49:1:51
+        or exit 7
+        test (__office_primary_grid tall 3 3 1 100:1:0:0:1:49 100:1:0:49:1:51) = 100:2:1:49:1:51
+        or exit 8
+    '
+    fish -lc "$office_tall_ratio_smoke" >/tmp/work-office-tall-ratio-smoke.out 2>&1
+    if test $status -eq 0
+        echo "OK      office tall ratio follows compiled grids"
+    else
+        echo "FAIL    office tall ratio follows compiled grids"
+        cat /tmp/work-office-tall-ratio-smoke.out
         set failed 1
     end
 
@@ -3863,6 +3926,9 @@ function work_smoke --description "Run read-only workspace smoke checks for help
 
         string match -q "*--app-key zoom*--system-events-first*" -- "$__work_smoke_zoom_bounds_calls"
         or exit 4
+
+        test (count $__work_smoke_zoom_bounds_calls) -eq 2
+        or exit 5
 
         exit 0
     '

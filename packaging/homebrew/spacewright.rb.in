@@ -12,8 +12,10 @@ class Spacewright < Formula
   depends_on :macos
 
   def install
-    libexec.install "bin", "conf.d", "config", "configurator", "examples", "lib", "schemas",
-                    "CHANGELOG.md", "LICENSE", "README.md", "SECURITY.md", "VERSION"
+    libexec.install "bin", "conf.d", "config", "configurator", "examples", "helpers", "lib",
+                    "node_modules", "schemas", "CHANGELOG.md", "LICENSE", "package.json",
+                    "package-lock.json", "README.md", "SECURITY.md", "VERSION"
+    system "swiftc", libexec/"helpers/spacewright-banner.swift", "-o", libexec/"bin/spacewright-banner"
     bin.install_symlink libexec/"bin/spacewright"
     (share/"fish/vendor_conf.d").install_symlink libexec/"conf.d/spacewright.fish"
   end
