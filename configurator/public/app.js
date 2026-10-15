@@ -309,7 +309,7 @@ async function hardwareView(epoch = renderEpoch) {
   if (!workspace.configurations[state.v3Configuration]) state.v3Configuration = Object.keys(workspace.configurations)[0];
   const placed = setup.lanes.flatMap((lane) => lane.workspaceOrder);
   const ready = setupState.ready && setupState.hardwareSelection.id === state.v3Hardware && setupState.confirmedSetup === state.v3Setup;
-  const sourceBanner = state.v3Source === 'v3' ? 'Active v3 configuration' : state.v3Source === 'v2-migration-preview' ? 'Unsaved migration preview from v2' : 'Unsaved v3 starter';
+  const sourceBanner = state.v3Source === 'v3' ? 'Active v3 configuration' : state.v3Source === 'import-preview' ? 'Imported v3 preview · unsaved' : state.v3Source === 'v2-migration-preview' ? 'Unsaved migration preview from v2' : 'Unsaved v3 starter';
   const hardwareTabs = Object.entries(config.hardwareProfiles).map(([id, item]) => `<button data-v3-hardware="${id}" class="${id === state.v3Hardware ? 'active' : ''}"><span>${escapeHtml(item.name)}</span><small>${escapeHtml(item.match.family)}</small></button>`).join('');
   const setupTabs = Object.entries(hardware.setups).map(([id, item]) => `<button data-v3-setup="${id}" class="${id === state.v3Setup ? 'active' : ''}"><span>${escapeHtml(item.name)}</span><small>${item.match.displays.map((display) => `${display.kind || 'display'}${display.orientation ? ` · ${display.orientation}` : ''}`).join(' + ')}</small></button>`).join('');
   const displayCards = (setupState.displays || []).map((display) => `<article class="v3-display"><div><strong>Display ${display.index}</strong><small>${display.orientation} · ${escapeHtml(display.uuid)}</small></div><select aria-label="Display ${display.index} kind" data-v3-display-kind="${escapeHtml(display.uuid)}"><option value="built_in" ${state.v3DisplayKinds[display.uuid] === 'built_in' ? 'selected' : ''}>Built-in</option><option value="external" ${state.v3DisplayKinds[display.uuid] === 'external' ? 'selected' : ''}>External</option><option value="sidecar" ${state.v3DisplayKinds[display.uuid] === 'sidecar' ? 'selected' : ''}>Sidecar</option></select></article>`).join('');
@@ -340,7 +340,25 @@ async function hardwareView(epoch = renderEpoch) {
   root.querySelector('#v3-add-setup').onclick = async () => { const id=await promptValue('New display setup ID',`${state.v3Setup}_copy`,'Duplicate the selected setup, then adjust its display match.');if(!id||!validId(id)||hardware.setups[id])return toast('Choose a unique lowercase ID.',true);hardware.setups[id]=structuredClone(setup);hardware.setups[id].name=`${setup.name} Copy`;state.v3Setup=id;render(); };
   root.querySelector('#v3-refresh').onclick = async () => { state.v3SetupState=await request('/api/v3/setup');state.v3DisplayKinds=Object.fromEntries(state.v3SetupState.displays.map((display)=>[display.uuid,display.kind]));render(); };
   root.querySelector('#v3-confirm').onclick = async () => { try { const result=await request('/api/v3/setup/confirm',{method:'POST',body:JSON.stringify({config,hardwareProfile:state.v3Hardware,setup:state.v3Setup,displayKinds:state.v3DisplayKinds,displayBindings:state.v3Bindings})});state.machine=result.machine;state.v3SetupState=result.setupState||await request('/api/v3/setup');toast(`Confirmed ${result.hardwareProfile} · ${result.setup}`);render(); } catch(error){toast(error.message,true);} };
-  root.querySelector('#v3-save').onclick = async () => { try { const validation=await request('/api/v3/validate',{method:'POST',body:JSON.stringify(config)});if(validation.warnings?.length&&!await confirmAction(`Save with ${validation.warnings.length} warning(s)?`,{title:'Save v3 configuration',confirmLabel:'Save'}))return;const result=await request('/api/v3/save',{method:'POST',body:JSON.stringify({config,baseRevision:state.v3Revision})});state.v3SavedConfig=structuredClone(config);state.v3Revision=result.revision;state.v3Source='v3';toast(`Saved and verified: ${result.path}`);render(); } catch(error){toast(error.message,true);} };
+  root.querySelector('#v3-save').onclick = async () => {
+    try {
+      const validation = await request('/api/v3/validate', { method:'POST', body:JSON.stringify(config) });
+      if (validation.warnings?.length && !await confirmAction(`Save with ${validation.warnings.length} warning(s)?`, { title:'Save v3 configuration', confirmLabel:'Save' })) return;
+      const result = await request('/api/v3/save', { method:'POST', body:JSON.stringify({ config, baseRevision:state.v3Revision }) });
+      state.v3SavedConfig = structuredClone(config);
+      state.v3Revision = result.revision;
+      state.v3Source = 'v3';
+      const document = await request('/api/config');
+      state.config = document.config;
+      state.savedConfig = structuredClone(document.config);
+      state.serverRevision = document.revision;
+      state.requiresInitialSave = false;
+      state.legacyEditorReadOnly = true;
+      markClean('Hardware-aware · saved');
+      toast(`Saved and verified: ${result.path}`);
+      render();
+    } catch (error) { toast(error.message, true); }
+  };
 }
 
 function mapView() {
@@ -1121,11 +1139,39 @@ document.querySelector('#export-config').onclick = async () => {
   } catch (error) { toast(error.message, true); }
 };
 document.querySelector('#import-config').onclick = () => document.querySelector('#import-file').click();
-document.querySelector('#import-file').onchange = async (event) => { try { const result = await request('/api/import', { method: 'POST', body: JSON.stringify({ text: await event.target.files[0].text() }) }); const imported = result.config; state.importChanges = changedSections(state.savedConfig, imported); state.config = imported; state.source = 'import-preview'; state.selectedWorkspace = null; markDirty(); state.view = 'review'; render(); toast(`Imported validated preview with ${state.importChanges.length} changed section(s).`); } catch (error) { toast(error.message, true); } finally { event.target.value = ''; } };
+document.querySelector('#import-file').onchange = async (event) => {
+  try {
+    const result = await request('/api/import', { method: 'POST', body: JSON.stringify({ text: await event.target.files[0].text() }) });
+    const imported = result.config;
+    if (imported.version === 3) {
+      await ensureV3();
+      state.v3Config = imported;
+      state.v3Source = 'import-preview';
+      state.legacyEditorReadOnly = true;
+      state.v3Hardware = imported.hardwareProfiles[state.v3Hardware] ? state.v3Hardware : ids(imported.hardwareProfiles)[0];
+      const hardware = imported.hardwareProfiles[state.v3Hardware];
+      state.v3Setup = hardware.setups[state.v3Setup] ? state.v3Setup : ids(hardware.setups)[0];
+      state.v3Workspace = ids(imported.workspaces)[0];
+      state.v3Configuration = hardware.setups[state.v3Setup].workspaceConfigurations[state.v3Workspace] || imported.workspaces[state.v3Workspace].defaultConfiguration;
+      state.view = 'hardware';
+      render();
+      toast('Imported validated v3 preview. Review and save in Hardware & Setups.');
+      return;
+    }
+    state.importChanges = changedSections(state.savedConfig, imported);
+    state.config = imported;
+    state.source = 'import-preview';
+    state.legacyEditorReadOnly = false;
+    state.selectedWorkspace = null;
+    markDirty(); state.view = 'review'; render();
+    toast(`Imported validated preview with ${state.importChanges.length} changed section(s).`);
+  } catch (error) { toast(error.message, true); }
+  finally { event.target.value = ''; }
+};
 document.querySelector('#revert-changes').onclick = async () => { if (!state.dirty || await confirmAction('Discard all unsaved changes?', { confirmLabel: 'Discard Draft', danger: true })) { state.config = structuredClone(state.savedConfig); state.autoImportedShortcuts = 0; state.selectedWorkspace = null; markClean(); render(); } };
 document.querySelector('#reset-defaults').onclick = async () => { if (!await confirmAction('Replace the editor contents with SpaceWright defaults? This remains unsaved until you save it.', { confirmLabel: 'Load Defaults', danger: true })) return; const result = await request('/api/defaults'); state.config = result.config; state.selectedWorkspace = null; markDirty(); render(); };
 document.querySelector('#restore-backup').onclick = async () => { if (!await confirmAction('Restore the previous valid configuration and replace the current file?', { confirmLabel: 'Restore Backup', danger: true })) return; try { const result = await request('/api/restore-backup', { method: 'POST' }); state.config = result.config; state.savedConfig = structuredClone(result.config); state.serverRevision = result.revision; state.source = 'v2'; state.requiresInitialSave = false; state.selectedWorkspace = null; markClean('Local · restored'); render(); toast('Restored the previous valid configuration'); } catch (error) { toast(error.message, true); } };
-addEventListener('beforeunload', (event) => { if (!state.dirty) return; event.preventDefault(); event.returnValue = ''; });
+addEventListener('beforeunload', (event) => { if (!state.dirty && !v3Dirty()) return; event.preventDefault(); event.returnValue = ''; });
 
 async function initialize() {
   if (location.protocol === 'file:') {

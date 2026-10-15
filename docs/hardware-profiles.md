@@ -38,6 +38,14 @@ topology signature, display-role bindings, and selected setup, then compiles a
 digest-bound runtime. A new or ambiguous topology must be confirmed before any
 mutation; unavailable display discovery also fails closed.
 
+Use `spacewright setup confirm mac_mini single_tall --dry-run` or
+`spacewright setup activate --dry-run` to validate and preview the selected
+setup without writing machine state, generated runtime, backups or a write
+guard. The JSON preview includes `dryRun: true`, `mutates: false`, the setup,
+hardware profile and display bindings. Unknown options are rejected. Test and
+diagnostic overrides use `--snapshot=path`, `--model=id`, `--config=path`,
+`--runtime=path`, `--config-root=path` and `--state-root=path`.
+
 After confirmation, normal commands resolve the setup automatically:
 
 ```fish

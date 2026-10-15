@@ -374,11 +374,13 @@ switch "$command_name"
                 set -l effective (spacewright_config_effective); or exit 1
                 set -l workspace "$argv[1]"
                 set -l mode "$argv[2]"
+                set -l option_start 3
                 if not contains -- "$mode" solo wide tall
+                    set option_start 2
                     set workspace (printf '%s\n' "$effective" | jq -r --arg id "$argv[1]" '.workspaces[$id].ui.workspace_id // empty')
                     set mode (printf '%s\n' "$effective" | jq -r --arg id "$argv[1]" '.workspaces[$id].ui.mode // empty')
                 end
-                command node "$package_root/configurator/state-cli.mjs" apply "$workspace" "$mode" "--package-root=$package_root" "--config-root=$SPACEWRIGHT_CONFIG_ROOT" "--state-root=$SPACEWRIGHT_STATE_ROOT" $argv[3..-1]
+                command node "$package_root/configurator/state-cli.mjs" apply "$workspace" "$mode" "--package-root=$package_root" "--config-root=$SPACEWRIGHT_CONFIG_ROOT" "--state-root=$SPACEWRIGHT_STATE_ROOT" $argv[$option_start..-1]
             end
             exit $status
         end

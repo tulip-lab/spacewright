@@ -7,6 +7,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { chromium } from 'playwright';
 import { starterV3 } from '../lib/config-v3.mjs';
+import { starterConfig } from '../lib/config-v2.mjs';
+import YAML from 'yaml';
 
 const packageRoot = new URL('../..', import.meta.url).pathname;
 const systemChrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -40,6 +42,71 @@ async function json(url, path, token, options = {}) {
   const response = await fetch(new URL(path.slice(1), url), { ...options, headers: { 'content-type': 'application/json', ...(token ? { 'x-spacewright-token': token } : {}), ...(options.headers || {}) } });
   return { status: response.status, body: await response.json() };
 }
+
+for (const scenario of ['v2-only', 'v3-only', 'both']) test(`R5 portable import/export round trip: ${scenario}`, async context => {
+  const root = await mkdtemp(join(tmpdir(), 'spacewright-portable-'));
+  const configRoot = join(root, 'config'), stateRoot = join(root, 'state'), fakeBin = join(root, 'bin');
+  await Promise.all([mkdir(configRoot), mkdir(stateRoot), mkdir(fakeBin)]);
+  const v2 = starterConfig(), v3 = starterV3();
+  v2.metadata.name = 'Distinct v2'; v3.metadata.name = 'Distinct v3';
+  v2.workspaces.coding.name = 'Portable Coding v2'; v3.workspaces.coding.name = 'Portable Coding v3';
+  if (scenario !== 'v3-only') await writeFile(join(configRoot, 'config.v2.json'), JSON.stringify(v2));
+  if (scenario !== 'v2-only') await writeFile(join(configRoot, 'config.v3.json'), JSON.stringify(v3));
+  await writeFile(join(stateRoot, 'machine.json'), JSON.stringify({ version: 2, hardwareProfile: 'mac_mini', hardwareProfileConfirmed: true, displayBindings: { tall: 'DISPLAY-TALL-1234' }, topologySelections: { 'external:tall': 'single_tall' }, activeSetup: 'single_tall' }));
+  await writeFile(join(fakeBin, 'sysctl'), '#!/bin/sh\necho Macmini9,1\n', { mode: 0o755 });
+  await writeFile(join(fakeBin, 'yabai'), `#!/bin/sh
+case "$3" in
+ --displays) echo '[{"index":1,"uuid":"DISPLAY-TALL-1234","frame":{"x":0,"y":0,"w":1200,"h":1920},"is-built-in":false}]';;
+ *) echo '[]';;
+esac
+`, { mode: 0o755 });
+  const { child, token, url } = await startServer(configRoot, stateRoot, fakeBin);
+  context.after(async () => { child.kill('SIGTERM'); await new Promise(resolve => child.once('exit', resolve)); await rm(root, { recursive: true, force: true }); });
+  const expected = scenario === 'v2-only' ? v2 : v3;
+  const exported = await fetch(new URL('/api/export', url), { headers: { 'x-spacewright-token': token } });
+  assert.equal(exported.status, 200);
+  const text = await exported.text();
+  assert.deepEqual(YAML.parse(text), expected);
+  assert.equal(text.includes('DISPLAY-TALL-1234'), false);
+  const file = join(configRoot, `config.v${expected.version}.json`);
+  const before = await readFile(file, 'utf8'), machineBefore = await readFile(join(stateRoot, 'machine.json'), 'utf8');
+  const preview = await json(url, '/api/import', token, { method: 'POST', body: JSON.stringify({ text }) });
+  assert.equal(preview.status, 200, JSON.stringify(preview.body)); assert.deepEqual(preview.body.config, expected);
+  assert.equal(await readFile(file, 'utf8'), before);
+  assert.equal(await readFile(join(stateRoot, 'machine.json'), 'utf8'), machineBefore);
+  assert.equal(existsSync(join(configRoot, 'generated')), false);
+  const endpoint = expected.version === 3 ? '/api/v3' : '/api';
+  const document = await json(url, `${endpoint}/config`, token);
+  const saved = await json(url, `${endpoint}/save`, token, { method: 'POST', body: JSON.stringify({ config: preview.body.config, baseRevision: document.body.revision }) });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  assert.deepEqual((await json(url, `${endpoint}/config`, token)).body.config, expected);
+  for (const invalid of [{ version: 4 }, { ...expected, workspaces: null }, null]) {
+    const rejected = await json(url, '/api/import', token, { method: 'POST', body: JSON.stringify({ text: JSON.stringify(invalid) }) });
+    assert.equal(rejected.status, 422); assert.equal(rejected.body.valid, false);
+  }
+  {
+    const browser = await chromium.launch({ headless: true, ...(existsSync(systemChrome) ? { executablePath: systemChrome } : {}) });
+    context.after(() => browser.close());
+    const page = await browser.newPage(); const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(`${url}?token=${token}&view=${expected.version === 3 ? 'hardware' : 'review'}`);
+    await page.locator(expected.version === 3 ? '#v3-save' : '#save').waitFor();
+    const candidate = structuredClone(expected); candidate.workspaces.coding.name = `Imported v${expected.version} workspace`;
+    await page.locator('#import-file').setInputFiles({ name: 'portable.yaml', mimeType: 'application/yaml', buffer: Buffer.from(YAML.stringify(candidate)) });
+    if (expected.version === 3) await page.getByText(candidate.workspaces.coding.name, { exact: true }).first().waitFor();
+    else await page.getByText(/Imported validated preview/).waitFor();
+    assert.equal(await readFile(file, 'utf8'), JSON.stringify(expected, null, 2) + '\n');
+    const saveResponse = page.waitForResponse(response => response.url().endsWith(`${endpoint}/save`));
+    await page.locator(expected.version === 3 ? '#v3-save' : '#save').click();
+    if (expected.version === 2) await page.locator('dialog.modal-dialog').getByRole('button', { name:'Save Changes' }).click();
+    assert.equal((await saveResponse).status(), 200);
+    assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), candidate);
+    assert.deepEqual(errors, []);
+  }
+  await writeFile(file, JSON.stringify({ version: 4 }));
+  const invalidExport = await fetch(new URL('/api/export', url), { headers: { 'x-spacewright-token': token } });
+  assert.equal(invalidExport.status, 422);
+});
 
 test('v3 server confirms a Mac mini display setup and saves a digest-bound runtime', async (context) => {
   const root = await mkdtemp(join(tmpdir(), 'spacewright-server-v3-'));
@@ -96,6 +163,26 @@ esac
   assert.equal(activated.status, 200);
   assert.equal(activated.body.compatibilityMode, 'tall');
 
+  const machineBefore = await readFile(join(stateRoot, 'machine.json'), 'utf8');
+  const runtimeBefore = await readFile(join(configRoot, 'generated', 'runtime.json'), 'utf8');
+  const rejectedBindings = await json(url, '/api/display-bindings', token, {
+    method: 'POST', body: JSON.stringify({ displayBindings: { primary: 'DISPLAY-TALL-1234' } })
+  });
+  assert.equal(rejectedBindings.status, 422, JSON.stringify(rejectedBindings.body));
+  const rejectedTopology = await json(url, '/api/display-bindings', token, {
+    method: 'POST', body: JSON.stringify({ displayBindings: { wide: 'DISPLAY-TALL-1234' } })
+  });
+  assert.equal(rejectedTopology.status, 422, JSON.stringify(rejectedTopology.body));
+  assert.match(rejectedTopology.body.error, /confirmed topology/);
+  assert.equal(await readFile(join(stateRoot, 'machine.json'), 'utf8'), machineBefore);
+  assert.equal(await readFile(join(configRoot, 'generated', 'runtime.json'), 'utf8'), runtimeBefore);
+  assert.equal(existsSync(join(configRoot, '.configuration-write')), false);
+  assert.equal((await json(url, '/api/v3/config', token)).status, 200);
+  const validBindings = await json(url, '/api/display-bindings', token, {
+    method: 'POST', body: JSON.stringify({ displayBindings: { tall: 'DISPLAY-TALL-1234' } })
+  });
+  assert.equal(validBindings.status, 200, JSON.stringify(validBindings.body));
+
   const preview = await json(url, '/api/preview', token, {
     method: 'POST',
     body: JSON.stringify({ kind: 'workspace', target: 'coding' })
@@ -151,4 +238,16 @@ esac
     body: JSON.stringify({ config: candidate, baseRevision: saved.body.revision })
   });
   assert.equal(candidateSave.status, 200, JSON.stringify(candidateSave.body));
+
+  // Inject a second-file publish failure after machine state has been saved.
+  const partialMachine = JSON.parse(await readFile(join(stateRoot, 'machine.json')));
+  partialMachine.activeSetup = null;
+  await writeFile(join(stateRoot, 'machine.json'), JSON.stringify(partialMachine));
+  await rm(join(configRoot, 'generated/runtime.json'));
+  await mkdir(join(configRoot, 'generated/runtime.json'));
+  const interrupted = await json(url, '/api/v3/setup/activate', token, { method:'POST', body:'{}' });
+  assert.equal(interrupted.status, 500);
+  assert.equal(JSON.parse(await readFile(join(stateRoot, 'machine.json'))).activeSetup, 'single_tall_custom');
+  assert.equal(existsSync(join(configRoot, '.configuration-write')), true);
+  assert.equal((await json(url, '/api/v3/config', token)).status, 500);
 });

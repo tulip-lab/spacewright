@@ -194,10 +194,12 @@ the local activity log under the SpaceWright state directory.
 Diagnostics also reports the health and compact summary of recent guarded
 shortcut and CLI transitions, with a direct route to the full History view.
 
-Import accepts JSON or YAML, validates it before replacing the editor model,
-and keeps it unsaved until Apply. Export produces `spacewright.yaml`. JSON
-remains fully supported and existing v2 files do not require the new optional
-sections.
+Import accepts JSON or YAML and validates the declared version before opening
+an unsaved preview. V2 uses the legacy editor and Save Configuration; v3 opens
+Hardware & Setups and uses Save v3 Configuration after setup confirmation.
+Export produces `spacewright.yaml` from the active portable document, preferring
+v3 when both versions exist. Machine UUID bindings, hardware confirmations and
+execution state remain local and are not included in that download.
 
 ## Configuration data flow
 

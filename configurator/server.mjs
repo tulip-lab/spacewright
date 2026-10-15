@@ -51,7 +51,7 @@ const configurationScope = new AsyncLocalStorage();
 function serializeConfigWrite(operation) {
   const guarded = async () => {
     const scope={responses:[]};
-    const result=await withConfigurationWrite(configRoot,()=>configurationScope.run(scope,operation));
+    const result=await withConfigurationWrite(configRoot,transaction=>configurationScope.run({...scope,transaction},operation),{trackWrites:true});
     for(const respond of scope.responses)respond();
     return result;
   };
@@ -107,12 +107,14 @@ async function body(request) {
 }
 
 async function atomicWrite(path, value) {
+  configurationScope.getStore()?.transaction.beginWrite();
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   if (existsSync(path)) await copyFile(path, `${path}.backup`);
   await atomicText(path,value);
 }
 
 async function activity(level, event, details = {}) {
+  configurationScope.getStore()?.transaction.beginWrite();
   await mkdir(dirname(activityFile), { recursive: true, mode: 0o700 });
   if (existsSync(activityFile) && (await stat(activityFile)).size > 1_000_000) await rename(activityFile, `${activityFile}.1`);
   await writeFile(activityFile, `${JSON.stringify({ timestamp: new Date().toISOString(), level, event, details })}\n`, { flag: 'a', mode: 0o600 });
@@ -129,6 +131,7 @@ async function history() {
 }
 
 async function createSnapshot(config, reason = 'apply', name) {
+  configurationScope.getStore()?.transaction.beginWrite();
   await mkdir(historyRoot, { recursive: true, mode: 0o700 });
   const id = `${Date.now()}-${randomBytes(4).toString('hex')}`;
   const document = { name: name || new Date().toLocaleString('en-AU'), createdAt: new Date().toISOString(), reason, config };
@@ -358,6 +361,7 @@ async function executeRule(config, rule) {
 
 async function archiveConfig() {
   if (!existsSync(configFile)) return;
+  configurationScope.getStore()?.transaction.beginWrite();
   const backupRoot = join(configRoot, 'backups');
   await mkdir(backupRoot, { recursive: true, mode: 0o700 });
   await copyFile(configFile, join(backupRoot, `config.v2.${Date.now()}.json`));
@@ -489,7 +493,10 @@ async function api(request, response, url) {
       if (!setupState.ready) return json(response, 422, { error: 'confirm the detected hardware and display setup before saving v3', setup: setupState });
       const source = serializedConfig(config);
       const runtime = compiledV3Document(config, { machine: setupState.machine, hardware: setupState.hardware, snapshot: setupState.snapshot }, source);
-      if (existsSync(configV3File)) await copyFile(configV3File, `${configV3File}.backup`);
+      if (existsSync(configV3File)) {
+        configurationScope.getStore().transaction.beginWrite();
+        await copyFile(configV3File, `${configV3File}.backup`);
+      }
       await atomicWrite(runtimeFile, `${JSON.stringify(runtime, null, 2)}\n`);
       await atomicWrite(configV3File, source);
       const readBack = (await stableRead(configV3File, machineFile, {ownedWrite:Boolean(configurationScope.getStore())})).config;
@@ -695,8 +702,23 @@ async function api(request, response, url) {
     return json(response, valid ? 200 : 422, { valid, errors: [...validation.errors, ...(resolutionError ? [resolutionError] : [])], compiled: Boolean(compiled), mutates: false });
   }
   if (url.pathname === '/api/activity' && request.method === 'GET') { const lines = existsSync(activityFile) ? (await readFile(activityFile, 'utf8')).trim().split('\n').filter(Boolean).slice(-200).reverse().map(JSON.parse) : []; return json(response, 200, { entries: lines }); }
-  if (url.pathname === '/api/import' && request.method === 'POST') { const payload = await body(request); let config; try { config = YAML.parse(payload.text); } catch (error) { return json(response, 422, { error: `YAML parse failed: ${error.message}` }); } const validation = validateV2(config); return json(response, validation.valid ? 200 : 422, { ...validation, config }); }
-  if (url.pathname === '/api/export' && request.method === 'GET') { response.writeHead(200, { 'content-type': 'application/yaml; charset=utf-8', 'content-disposition': 'attachment; filename="spacewright.yaml"', 'cache-control': 'no-store' }); return response.end(YAML.stringify(await readConfig())); }
+  if (url.pathname === '/api/import' && request.method === 'POST') {
+    const payload = await body(request);
+    let config;
+    try { config = YAML.parse(payload.text); }
+    catch (error) { return json(response, 422, { valid: false, error: `YAML parse failed: ${error.message}` }); }
+    const validation = config?.version === 3 ? validateV3(config) : config?.version === 2 ? validateV2(config)
+      : { valid: false, errors: ['unsupported portable configuration version; expected 2 or 3'], warnings: [] };
+    return json(response, validation.valid ? 200 : 422, { ...validation, config, mutates: false });
+  }
+  if (url.pathname === '/api/export' && request.method === 'GET') {
+    const config = await readOperationalConfig();
+    const validation = config?.version === 3 ? validateV3(config) : config?.version === 2 ? validateV2(config)
+      : { valid: false, errors: ['unsupported portable configuration version'] };
+    if (!validation.valid) return json(response, 422, { error: 'active portable configuration is invalid', ...validation });
+    response.writeHead(200, { 'content-type': 'application/yaml; charset=utf-8', 'content-disposition': 'attachment; filename="spacewright.yaml"', 'cache-control': 'no-store' });
+    return response.end(YAML.stringify(config));
+  }
   if (url.pathname === '/api/restore-backup' && request.method === 'POST') {
     const backup = `${configFile}.backup`;
     if (!existsSync(backup)) return json(response, 404, { error: 'no configuration backup exists' });
@@ -719,32 +741,31 @@ async function api(request, response, url) {
   }
   if (url.pathname === '/api/display-bindings' && request.method === 'POST') {
     const payload = await body(request);
-    const config = payload.config || await readConfig();
-    if (payload.config) {
-      const validation = validateV2(config);
-      if (!validation.valid) return json(response, 422, { error: 'candidate configuration is invalid', ...validation });
-    }
-    if (!payload.displayBindings || typeof payload.displayBindings !== 'object' || Array.isArray(payload.displayBindings)) return json(response, 422, { error: 'displayBindings must be an object' });
-    for (const [role, uuid] of Object.entries(payload.displayBindings)) {
-      if (!config.displayRoles[role]) return json(response, 422, { error: `unknown display role: ${role}` });
-      if (typeof uuid !== 'string' || !/^[A-Za-z0-9-]{8,}$/.test(uuid)) return json(response, 422, { error: `invalid display UUID for ${role}` });
-    }
-    const uuids = Object.values(payload.displayBindings);
-    if (new Set(uuids).size !== uuids.length) return json(response, 422, { error: 'one display UUID cannot be bound to multiple roles' });
-    let machine;
-    await serializeConfigWrite(async () => {
-      machine = {...await readMachine(),displayBindings:payload.displayBindings};
+    return serializeConfigWrite(async () => {
+      const config = payload.config || await readOperationalConfig();
+      if (payload.config) {
+        const validation = config.version === 3 ? validateV3(config) : validateV2(config);
+        if (!validation.valid) return json(response, 422, { error: 'candidate configuration is invalid', ...validation });
+      }
+      if (!payload.displayBindings || typeof payload.displayBindings !== 'object' || Array.isArray(payload.displayBindings)) return json(response, 422, { error: 'displayBindings must be an object' });
+      for (const [role, uuid] of Object.entries(payload.displayBindings)) {
+        if (!config.displayRoles[role]) return json(response, 422, { error: `unknown display role: ${role}` });
+        if (typeof uuid !== 'string' || !/^[A-Za-z0-9-]{8,}$/.test(uuid)) return json(response, 422, { error: `invalid display UUID for ${role}` });
+      }
+      const uuids = Object.values(payload.displayBindings);
+      if (new Set(uuids).size !== uuids.length) return json(response, 422, { error: 'one display UUID cannot be bound to multiple roles' });
+      const machine = {...await readMachine(),displayBindings:payload.displayBindings};
       let runtime;
       if(existsSync(configV3File)) {
         const portable=(await stableRead(configV3File,machineFile,{ownedWrite:true})).config;
         const setup=await v3SetupState(portable,machine);
-        if(!setup.ready)throw new Error('display bindings require confirmed topology before activation');
+        if(!setup.ready)throw Object.assign(new Error('display bindings require confirmed topology before activation'),{statusCode:422});
         runtime=compiledV3Document(portable,{machine,hardware:setup.hardware,snapshot:setup.snapshot});
       } else if(existsSync(configFile))runtime=compiledDocument(await readConfig());
       await atomicWrite(machineFile,`${JSON.stringify(machine,null,2)}\n`);
       if(runtime)await atomicWrite(runtimeFile,`${JSON.stringify(runtime,null,2)}\n`);
+      return json(response, 200, { saved: true, machine, path: machineFile });
     });
-    return json(response, 200, { saved: true, machine, path: machineFile });
   }
   if (url.pathname === '/api/displays' && request.method === 'GET') {
     return json(response, 200, { ...(await queryDisplays()), mutates: false });
@@ -792,7 +813,7 @@ const server = http.createServer(async (request, response) => {
     response.end(content);
   } catch (error) {
     if (error.code === 'ENOENT') return json(response, 404, { error: 'not found' });
-    json(response, 500, { error: error.message });
+    json(response, error.statusCode || 500, { error: error.message });
   }
 });
 

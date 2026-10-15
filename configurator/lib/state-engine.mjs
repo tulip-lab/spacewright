@@ -460,7 +460,8 @@ export function compareState(snapshot, desired, machine = {}, options = {}) {
 }
 
 export function buildExecutionPlan(snapshot, desired, comparison, options = {}) {
-  const orchestration = desired.orchestration || { displayProfile: null, focusWorkspace: null, reconcile: true };
+  const orchestration = { ...(desired.orchestration || { displayProfile: null, focusWorkspace: null, reconcile: true }),
+    ...(options.displayPrepared ? { displayProfile: null } : {}) };
   const actions = [];
   if (orchestration.displayProfile) actions.push({ type: 'apply_display_profile', profile: orchestration.displayProfile });
   for (const workspace of desired.workspaces) {
