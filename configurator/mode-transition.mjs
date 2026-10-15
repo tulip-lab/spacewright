@@ -272,7 +272,7 @@ export async function runTransition({
       if (requestedRunId === runId) requestStop('cancelled');
     } catch {}
   }, 150);
-  const timeout = setTimeout(() => requestStop('timed_out'), timeoutMs);
+  const timeout = setTimeout(() => requestStop('timed_out'), Math.max(0, now + timeoutMs - Date.now()));
 
   try {
     await rm(cancelFile, { force: true });
@@ -305,10 +305,10 @@ export async function runTransition({
   } catch (error) {
     rememberDiagnostic(diagnostics.errors, error.message);
     const finishedAt = new Date().toISOString();
-    const status = requestedReason || 'failed';
+    const status = requestedReason || (error.code === 'SPACEWRIGHT_TIMEOUT' ? 'timed_out' : error.code === 'SPACEWRIGHT_CANCELLED' ? 'cancelled' : 'failed');
     try { await updateState({ status, phase: status === 'timed_out' ? `Stopped after ${Math.ceil(timeoutMs / 1000)} seconds` : `Transition stopped: ${error.message}`, finishedAt, durationMs: Math.max(0, new Date(finishedAt).getTime() - now) }); }
     catch (writeError) { process.stderr.write(`terminal status write failed: ${writeError.message}; run=${runId} status=${status}\n`); }
-    if (requestedReason) return { status, runId, mode, exitCode: status === 'timed_out' ? 124 : 130 };
+    if (status !== 'failed') return { status, runId, mode, exitCode: status === 'timed_out' ? 124 : 130 };
     throw error;
   } finally {
     clearInterval(cancelPoll);

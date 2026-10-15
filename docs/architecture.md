@@ -291,6 +291,22 @@ still needs that same fixed identity migration. Deleted/created Spaces, app acti
 changes and display-profile effects are reported as nonrecoverable. There is no
 promise of complete desktop rollback.
 
+Missing yabai AX references are a distinct observation phase: visit each
+affected Space by UUID, restore focus, and replan only after the same native
+window/process objects acquire AX references. Optional app roles do not bypass
+this phase. Persistent failures stop the run without automatic service restart.
+Observation can precede one bounded app-recovery phase; layout waits for the
+resulting fixed plan. Recovery uses its verified pre-layout snapshot.
+Only tiny, unselected, non-resizable AXDialog helpers (verified native bounds
+up to 100×40 points) may be recreated without invalidating the layout census;
+ordinary dialogs and full discovered occupancy still guard execution and
+Space destruction. Indexed collection fallback verifies a stable last-object
+endpoint and every intervening UUID rather than treating query failure as
+end-of-list. Both v2 and v3 enforce the schema's numeric execution limits.
+
 Real macOS app recovery, usable-screen grid geometry, native fullscreen, yabai
 Space reordering and display profiles require explicitly authorized desktop
-observation. No live desktop test was used for this implementation.
+observation. An authorized Mac mini single-tall run on 2026-10-15 converged with
+zero remaining layout changes, including the configured 49/51 split, after one
+manual yabai restart repaired its AX registry. Other hardware setups and
+persistent AX recovery remain outside that live validation.

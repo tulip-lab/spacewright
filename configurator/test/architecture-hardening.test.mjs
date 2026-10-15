@@ -56,6 +56,10 @@ if(kind==='window') {
 if(kind==='space' && command==='--label')data.spaces.find(s=>s.index===Number(args[2])).label=args[4];
 if(kind==='space' && args[2]==='--create')data.spaces.push({index:Math.max(...data.spaces.map(s=>s.index))+1,uuid:'CREATED-'+data.spaces.length,display:Number(args[3]),label:'',type:'bsp'});
 if(kind==='space' && command==='--layout')data.spaces.find(s=>s.index===Number(args[2])).type=args[4];
+if(kind==='space' && args[2]==='--focus') {
+ const index=Number(args[3]);data.spaces.forEach(s=>s['has-focus']=s.index===index);
+ if(data.axObservation)for(const w of data.windows.filter(w=>w.space===index))Object.assign(w,{'has-ax-reference':true,'can-move':!data.axNeedsRefresh,'can-resize':true,role:'AXWindow',subrole:'AXStandardWindow',title:'Observed'});
+}
 if(kind==='space' && command==='--destroy') {
  const removed=data.spaces.find(s=>s.index===Number(args[2]));data.spaces=data.spaces.filter(s=>s!==removed);
  const indexes=new Map(data.spaces.map((s,i)=>[s.index,i+1]));data.windows.forEach(w=>w.space=indexes.get(w.space));data.spaces.forEach(s=>s.index=indexes.get(s.index));
@@ -71,15 +75,63 @@ fs.writeFileSync(process.env.MOCK_DATA,JSON.stringify(data));
 const fs=require('fs'),d=JSON.parse(fs.readFileSync(process.env.MOCK_DATA,'utf8'));
 fs.appendFileSync(process.env.MOCK_LOG,JSON.stringify(['open',...process.argv.slice(2)])+'\\n');
 if(d.recoveryMode==='fail')process.exit(7);
+if(d.recoveryMode==='timeout')process.exit(124);
 if(d.recoveryMode!=='ineffective') { d.windows[0]['can-move']=true;if(d.recoveryMode==='replace')d.windows[0].id=20;if(d.recoveryMode==='reuse')d.windows[0].pid++; }
 fs.writeFileSync(process.env.MOCK_DATA,JSON.stringify(d));
 `,{mode:0o755});
   const env = {...process.env, HOME:directory,XDG_CONFIG_HOME:configRoot,XDG_CACHE_HOME:join(directory,'cache'),PATH:`${fakeBin}:${process.env.PATH}`,SPACEWRIGHT_CONFIG_ROOT:configRoot,SPACEWRIGHT_STATE_ROOT:stateRoot,MOCK_DATA:dataFile,MOCK_LOG:logFile};
-  const cli = (args) => exec(join(root,'bin/spacewright'), args, {env, timeout:15000, maxBuffer:4000000});
+  // The harness must outlive the backend deadline plus process-group cleanup;
+  // otherwise durable multi-operation fixtures are killed as if they had hung.
+  const cli = (args) => exec(join(root,'bin/spacewright'), args, {env, timeout:130000, maxBuffer:4000000});
   const setData = async (change) => {const data=JSON.parse(await readFile(dataFile,'utf8'));change(data);await writeFile(dataFile,JSON.stringify(data));};
   const commands = async () => (await readFile(logFile,'utf8').catch(()=>'' )).trim().split('\n').filter(Boolean).map(JSON.parse);
   return {directory,configRoot,stateRoot,dataFile,env,cli,setData,commands,close:()=>rm(directory,{recursive:true,force:true})};
 }
+
+test('Space AX observation restores focus and replans optional windows before fixed layout',async()=>{
+  const config=starterConfig();
+  config.workspaces.coding.variants.solo.layout={type:'canvas',regions:[{role:'editor',grid:'1:2:0:0:1:1'},{role:'assistant',grid:'1:2:1:0:1:1'}]};
+  const f=await fixture(config);
+  try {
+    await f.setData(data=>{
+      data.axObservation=true;data.spaces[0]['has-focus']=true;
+      data.spaces.push({index:2,uuid:'AX-SPACE',display:1,label:'',type:'float'});
+      Object.assign(data.windows[0],{space:2,title:'',role:'','has-ax-reference':false,'can-move':false,'can-resize':false});
+      data.windows.push({...data.windows[0],id:11,app:'ChatGPT'});
+    });
+    const {stdout}=await exec(join(root,'bin/spacewright'),['apply','coding','solo','--json'],{env:f.env,timeout:30000,maxBuffer:4000000});
+    const result=JSON.parse(stdout);assert.equal(result.status,'completed');
+    const journal=JSON.parse(await readFile(result.journal,'utf8'));
+    assert.equal(journal.preparationPlan.preparations[0].type,'observe_space');
+    assert.equal(journal.planRelations.length,1);
+    assert.deepEqual(journal.plan.selectedWindows.map(w=>w.id),[10,11]);
+    assert.equal(journal.after.spaces.find(s=>s.focused).uuid,'S');
+    const commands=await f.commands();
+    assert.deepEqual(commands.slice(0,2),[['-m','space','--focus','2'],['-m','space','--focus','1']]);
+    assert.ok(commands.slice(2).some(a=>a[1]==='window' && a[2]==='11' && a[3]==='--grid'));
+    assert.ok(!commands.some(a=>a[0]==='open' || a.includes('--restart-service')));
+  }finally{await f.close();}
+});
+for(const recovery of ['refresh','fullscreen'])test(`AX observation can precede a separate ${recovery} preparation without layout in between`,async()=>{
+  const config=starterConfig();config.workspaces.coding.variants.solo.runtime={runner:'primary_helper'};
+  const f=await fixture(config);
+  try {
+    await f.setData(data=>{
+      data.axObservation=true;data.axNeedsRefresh=recovery==='refresh';
+      data.spaces[0]['has-focus']=true;
+      data.spaces.push({index:2,uuid:'AX-SPACE',display:1,label:'',type:'float'});
+      Object.assign(data.windows[0],{space:2,title:'',role:'','has-ax-reference':false,'can-move':false,'is-native-fullscreen':recovery==='fullscreen'});
+    });
+    const {stdout}=await exec(join(root,'bin/spacewright'),['apply','coding','solo','--json'],{env:f.env,timeout:30000,maxBuffer:4000000});
+    const result=JSON.parse(stdout);assert.equal(result.status,'completed');
+    const journal=JSON.parse(await readFile(result.journal,'utf8'));
+    assert.equal(journal.planRelations.length,2);
+    assert.deepEqual(journal.preparationPlans.map(p=>p.preparations[0].type),['observe_space',recovery==='refresh'?'refresh_app':'native_fullscreen']);
+    assert.equal(journal.operations.filter(o=>o.type==='adapter_preparation').length,2);
+    const commands=await f.commands(),recoveryIndex=commands.findIndex(a=>a[0]==='open' || a[3]==='--toggle');
+    assert.ok(recoveryIndex>=2);assert.ok(!commands.slice(0,recoveryIndex).some(a=>a[1]==='window' && a[3]!=='--toggle'));
+  }finally{await f.close();}
+});
 
 test('per-Space partial discovery fails closed and prevents empty Space destruction', () => {
   const output=fish(`
@@ -283,7 +335,7 @@ test('recovery reports partial failure and records nonrecoverable effects',async
  }finally{await f.close();}
 });
 
-for(const scenario of ['replace','reuse','fail','ineffective'])test(`explicit app preparation records ${scenario} and replans before layout`,async()=>{
+for(const scenario of ['replace','reuse','fail','ineffective','timeout'])test(`explicit app preparation records ${scenario} and replans before layout`,async()=>{
  const config=starterConfig();config.workspaces.coding.variants.solo.runtime={runner:'office_document'};
  const f=await fixture(config);try{
   await f.setData(d=>{d.windows[0]['can-move']=false;d.recoveryMode=scenario;});
@@ -298,7 +350,11 @@ for(const scenario of ['replace','reuse','fail','ineffective'])test(`explicit ap
    assert.equal(operation.postcondition.after[0].id,expected);
    if(scenario==='reuse')assert.equal(operation.postcondition.after[0].pid,101);
    const count=(await f.commands()).length;const again=JSON.parse((await f.cli(['apply','coding','solo','--json'])).stdout);assert.equal(again.noop,true);assert.equal((await f.commands()).length,count);
-  } else {assert.equal(applied.status,'failed');assert.ok(!(await f.commands()).some(a=>a[1]==='window'));}
+  } else {
+   if(scenario==='ineffective')assert.ok(['failed','timed_out'].includes(applied.status));
+   else assert.equal(applied.status,scenario==='timeout'?'timed_out':'failed');
+   assert.ok(!(await f.commands()).some(a=>a[1]==='window'));
+  }
  }finally{await f.close();}
 });
 test('native fullscreen preparation is acknowledged before an immutable replacement plan',async()=>{
@@ -327,5 +383,19 @@ test('workspace execution cleans only its empty opposite UUID and has no global 
   const commands=await f.commands();assert.equal(commands.filter(a=>a[3]==='--destroy').length,1);assert.ok(!commands.some(a=>a[3]==='--move' || a[2]==='--create'));
   const data=JSON.parse(await readFile(f.dataFile,'utf8'));assert.deepEqual(data.spaces.map(s=>s.uuid),['S','OTHER','USER']);
   const count=commands.length;const again=JSON.parse((await f.cli(['apply','coding','solo','--json'])).stdout);assert.equal(again.noop,true);assert.equal((await f.commands()).length,count);
+ }finally{await f.close();}
+});
+test('completed label history keeps fixed candidate preference during unlabeled-Space execution',async()=>{
+ const f=await fixture();try{
+  await f.setData(d=>{d.spaces[0].label='';d.spaces.push({index:2,uuid:'OTHER',display:1,label:'',type:'float'});d.windows.push({...d.windows[0],id:20,pid:101,space:2});});
+  await mkdir(join(f.stateRoot,'runs'),{recursive:true});
+  await writeFile(join(f.stateRoot,'runs','100-aaaaaaaa.json'),JSON.stringify({status:'completed',after:{spaces:[{index:1,uuid:'S',label:'coding_solo'},{index:2,uuid:'OTHER',label:''}]}}));
+  const applied=JSON.parse((await f.cli(['apply','coding','solo','--json'])).stdout);
+  assert.equal(applied.status,'completed');assert.deepEqual(applied.plan.selectedWindows.map(w=>w.id),[10]);
+  assert.ok(!(await f.commands()).some(a=>a[1]==='window' && a[2]==='20'));
+  const again=JSON.parse((await f.cli(['apply','coding','solo','--json'])).stdout);
+  assert.equal(again.noop,true);const noopFiles=(await readdir(join(f.stateRoot,'runs'))).filter(n=>n.endsWith('.json')).sort();
+  const journal=JSON.parse(await readFile(join(f.stateRoot,'runs',noopFiles.at(-1)),'utf8'));
+  assert.equal(journal.after.spaces.find(s=>s.uuid==='S').label,'coding_solo');
  }finally{await f.close();}
 });

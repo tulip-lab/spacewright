@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { starterConfig, compileV2 } from '../lib/config-v2.mjs';
+import { starterConfig, compileV2, validateV2 } from '../lib/config-v2.mjs';
+import { starterV3,validateV3 } from '../lib/config-v3.mjs';
 import { normalizeSnapshot, buildDesiredState, compareState, buildExecutionPlan,geometryMatches } from '../lib/state-engine.mjs';
 import { gridFrame } from '../lib/grid-geometry.mjs';
-import { discoverGridGeometry,applyNativeWindowFrames } from '../lib/discovery.mjs';
-import { executePinnedWorkspace,executePinnedCleanup,executePinnedOrder } from '../lib/pinned-executor.mjs';
+import { discoverGridGeometry,applyNativeWindowFrames,discoverState } from '../lib/discovery.mjs';
+import { executePinnedWorkspace,executePinnedCleanup,executePinnedOrder,validatePlanObjects } from '../lib/pinned-executor.mjs';
 import { journalMutation,operationRecords } from '../lib/operation-journal.mjs';
 import { acquireExecution } from '../lib/execution-coordinator.mjs';
 import { consumeBudget } from '../lib/execution-budget.mjs';
@@ -17,8 +18,22 @@ import { createAutomationMonitor } from '../lib/automation-monitor.mjs';
 import { executePreparation } from '../lib/adapter-preparation.mjs';
 import { withConfigurationWrite,stableRead,atomicText,generationDocument } from '../lib/config-store.mjs';
 import { spawn } from 'node:child_process';
+import { readSpaceLabelHints } from '../lib/space-label-history.mjs';
+import { recoveryCandidates } from '../lib/recovery.mjs';
 const machine = {displayBindings:{primary:'D'}};
 const raw = () => ({displays:[{index:1,uuid:'D',frame:{x:0,y:0,w:1000,h:800}}], spaces:[{index:1,uuid:'S',display:1,label:'coding_solo'},{index:2,uuid:'O',display:1,label:'custom_wide'},{index:3,uuid:'USER',display:1,label:'personal'}],windows:[{id:10,pid:100,app:'Code',display:1,space:1,frame:{x:0,y:0,w:1000,h:800},'can-move':true,'can-resize':true}]});
+test('v2 and v3 enforce schema upper bounds for tall geometry and whole-run budgets',()=>{
+  for(const [starter,validate] of [[starterConfig,validateV2],[starterV3,validateV3]]) {
+    for(const [key,maximum] of [['tallTopPercent',65],['topologyStableSamples',12],['topologyCooldownSeconds',600]]) {
+      const config=starter();config.settings={[key]:maximum};assert.equal(validate(config).valid,true);
+      config.settings[key]++;assert.equal(validate(config).valid,false,`${config.version}:${key}`);
+    }
+    for(const [key,maximum] of [['confirmation',4096],['commandRetry',16],['appRecovery',64],['serviceRecovery',4],['reconciliation',1]]) {
+      const config=starter();config.settings={executionBudgets:{[key]:maximum}};assert.equal(validate(config).valid,true);
+      config.settings.executionBudgets[key]++;assert.equal(validate(config).valid,false,`${config.version}:${key}`);
+    }
+  }
+});
 test('display profiles receive the confirmed machine UUID instead of an inherited legacy UUID',async()=>{
   const directory=await mkdtemp(join(tmpdir(),'spacewright-primary-contract-'));
   try {
@@ -110,6 +125,50 @@ test('native grid discovery resolves the exact UUID and active Space and rejects
   assert.ok(calls.filter(([,a])=>a.includes('--space')).every(([,a])=>a[3]==='4'));
   await assert.rejects(discoverGridGeometry(displays,spaces,{executable:'fixture-yabai',deadline:Date.now()+5000,run:async(exe,args)=>args.at(-1)==='window_gap'?{code:1,stderr:'query unavailable'}:run(exe,args)}),/grid configuration query failed/);
   await assert.rejects(discoverGridGeometry(displays,spaces,{deadline:Date.now()+5000,run:async()=>({code:0,stdout:'[]'})}),/native display geometry is invalid/);
+});
+test('truncated yabai collections fall back to bounded single-object sampling',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'spacewright-collection-fallback-'));
+  try {
+    const executable=join(directory,'yabai');
+    await writeFile(executable,`#!${process.execPath}\nconst args=process.argv.slice(2),plural=args[2],selector=args[3],index=args[4]==='last'?1:Number(args[4]);\nif((plural==='--displays'||plural==='--spaces')&&!selector){process.stdout.write('[');process.exit(0);}\nif(plural==='--displays'&&selector==='--display'){if(index!==1)process.exit(1);process.stdout.write(JSON.stringify({index:1,uuid:'D',frame:{x:0,y:0,w:1000,h:800}}));process.exit(0);}\nif(plural==='--spaces'&&selector==='--space'){if(index!==1)process.exit(1);process.stdout.write(JSON.stringify({index:1,uuid:'S',display:1,label:'',type:'float'}));process.exit(0);}\nprocess.stdout.write('[]');\n`,{mode:0o755});
+    const snapshot=await discoverState({displayBindings:{primary:'D'}},{executable,deadline:Date.now()+5000});
+    assert.equal(snapshot.completeness,'complete');assert.equal(snapshot.displays.length,1);assert.equal(snapshot.spaces.length,1);
+  }finally{await rm(directory,{recursive:true,force:true});}
+});
+test('indexed collection fallback rejects missing samples, invalid identities and changing endpoints',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'spacewright-collection-integrity-'));
+  try {
+    const executable=join(directory,'yabai');
+    for(const fault of ['transport','malformed','wrong-index','duplicate','changed-end','no-end','over-limit']) {
+      await writeFile(executable,`#!${process.execPath}
+const fs=require('node:fs'),args=process.argv.slice(2),selector=args[4],fault=${JSON.stringify(fault)};
+if(args[2]==='--displays'){console.log(JSON.stringify([{index:1,uuid:'D',frame:{x:0,y:0,w:1000,h:800}}]));process.exit(0);}
+if(args[2]==='--windows'){console.log('[]');process.exit(0);}
+if(!args[3]){process.stdout.write('[');process.exit(0);}
+let index=selector==='last'?3:Number(selector),uuid='S'+index;
+if(selector==='last'){
+ if(fault==='no-end')process.exit(7);
+ if(fault==='over-limit')index=65;
+ const path=${JSON.stringify(join(directory,'last-count'))},n=Number(fs.existsSync(path)?fs.readFileSync(path,'utf8'):0);fs.writeFileSync(path,String(n+1));
+ if(fault==='changed-end' && n>0)uuid='REPLACED';
+}
+if(index===2){
+ if(fault==='transport'){process.stderr.write('socket unavailable');process.exit(7);}
+ if(fault==='malformed'){process.stdout.write('{');process.exit(0);}
+ if(fault==='wrong-index')index=1;
+ if(fault==='duplicate')uuid='S1';
+}
+if(index>3 && fault!=='over-limit')process.exit(1);
+console.log(JSON.stringify({index,uuid,display:1,label:'',type:'float'}));
+`,{mode:0o755});
+      await rm(join(directory,'last-count'),{force:true});
+      const snapshot=await discoverState(machine,{executable,deadline:Date.now()+10000});
+      assert.notEqual(snapshot.completeness,'complete',fault);
+      assert.ok(snapshot.missingQueries.includes('spaces'),fault);
+      const config=starterConfig(),desired=buildDesiredState(config,compileV2(config),{kind:'mode',id:'solo',mode:'solo'},snapshot);
+      assert.equal(buildExecutionPlan(snapshot,desired,compareState(snapshot,desired,machine)).executable,false,fault);
+    }
+  }finally{await rm(directory,{recursive:true,force:true});}
 });
 test('workspace cleanup names only its configured opposite UUID, including shared runtime ids',()=>{
   const config=starterConfig();config.workspaces.coding.variants.solo.command='shared';config.workspaces.coding.variants.wide.command='shared';
@@ -204,6 +263,15 @@ test('intent precedes mutation, zero exits require postconditions and unavailabl
     await assert.rejects(journalMutation({stateRoot:blocked,runId:'test',intent:{windowId:20},run:async()=>{issued++;},verify:async()=>true}));assert.equal(issued,1);
   }finally{await rm(dir,{recursive:true,force:true});}
 });
+test('operation acknowledgments preserve timeout and cancellation terminal states',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'spacewright-operation-terminal-'));
+  try {
+    for(const [code,status] of [[124,'timed_out'],[130,'cancelled']]) {
+      await assert.rejects(journalMutation({stateRoot:dir,runId:status,intent:{type:'adapter_preparation'},run:async()=>({code}),verify:async()=>{throw new Error('must not verify failed command');}}),error=>error.code===(code===124?'SPACEWRIGHT_TIMEOUT':'SPACEWRIGHT_CANCELLED'));
+      assert.equal((await operationRecords(dir,status))[0].status,status);
+    }
+  }finally{await rm(dir,{recursive:true,force:true});}
+});
 test('concurrent child budget consumers share atomic limits and cannot extend the run deadline',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'spacewright-budget-'));
   const lease=await acquireExecution(dir,{budgets:{commandRetry:2},deadlineAt:new Date(Date.now()+10000).toISOString()},{inherit:false});
@@ -281,6 +349,151 @@ test('adapter verification rejects ambiguity, failed commands, ineffective succe
       poll:async()=>{polls++;},delay:async()=>{},check:()=>{if(fault==='timeout')throw Object.assign(new Error('deadline'),{code:'SPACEWRIGHT_TIMEOUT'});}}));
     if(['ambiguous','ineffective'].includes(fault))assert.equal(polls,11);
   }
+});
+test('optional stale adapter surfaces stay warnings and transient partial rediscovery is retried',async()=>{
+  const optionalConfig=starterConfig();optionalConfig.workspaces.coding.variants.solo.runtime={runner:'office_document'};
+  const optional=raw();optional.windows.push({...optional.windows[0],id:11,pid:101,app:'ChatGPT','can-move':false});
+  const optionalResult=make(optional,optionalConfig);
+  assert.ok(optionalResult.comparison.drifts.some(d=>d.code==='optional_window_missing' && d.role==='assistant'));
+  assert.ok(!optionalResult.plan.preparations.some(p=>p.role==='assistant'));
+  assert.equal(optionalResult.plan.executable,true);
+
+  const requiredConfig=starterConfig();requiredConfig.workspaces.coding.variants.solo.runtime={runner:'office_document'};
+  const live=raw();live.windows[0]['can-move']=false;
+  const preparation=make(live,requiredConfig).plan.preparations[0];let discoveries=0,polls=0;
+  const result=await executePreparation(preparation,{
+    discover:async()=>normalizeSnapshot({...live,completeness:++discoveries===2?'partial':'complete'},machine),
+    command:async()=>{live.windows[0]['can-move']=true;},poll:async()=>{polls++;},delay:async()=>{}
+  });
+  assert.deepEqual(result.after.map(w=>w.id),[10]);assert.equal(polls,1);
+});
+test('AX-less optional windows require Space observation before they can be declared missing',async()=>{
+  const value=raw(),config=starterConfig();
+  config.workspaces.coding.variants.solo.layout={type:'canvas',regions:[{role:'editor',grid:'1:2:0:0:1:1'},{role:'assistant',grid:'1:2:1:0:1:1'}]};
+  value.spaces[0]['has-focus']=true;
+  value.windows.push({...value.windows[0],id:11,pid:101,app:'ChatGPT','has-ax-reference':false,'can-move':false,'can-resize':false});
+  const {plan,comparison}=make(value,config);
+  const preparation=plan.preparations[0];
+  assert.equal(plan.executable,true);assert.equal(preparation.type,'observe_space');
+  assert.ok(comparison.drifts.some(d=>d.code==='window_ax_reference_missing'));
+  assert.equal(preparation.spaceUuid,'S');assert.equal(preparation.returnSpaceUuid,'S');
+  assert.deepEqual(preparation.windows.map(w=>w.id),[11]);
+  assert.ok(plan.actions.some(a=>a.type==='prepare_adapter'));
+  let command;
+  const result=await executePreparation(preparation,{
+    discover:async()=>normalizeSnapshot(value,machine),
+    command:async(...args)=>{command=args;Object.assign(value.windows[1],{'has-ax-reference':true,'can-move':true,'can-resize':true});},
+    poll:async()=>{},delay:async()=>{}
+  });
+  assert.deepEqual(command,['yabai',['-m','space','--focus','1']]);
+  assert.deepEqual(result.after.map(w=>w.id),[11]);
+  const next=make(value,config);
+  assert.equal(next.plan.preparations.length,0);
+  assert.ok(next.plan.selectedWindows.some(w=>w.id===11));
+  assert.ok(next.plan.actions.some(a=>a.type==='resize_window' && a.windowId===11));
+});
+test('Space observation batches shared app roles and refuses changed identities or ineffective focus',async()=>{
+  const value=raw(),config=starterConfig();
+  for(const w of value.windows)Object.assign(w,{'has-ax-reference':false,'can-move':false,'can-resize':false});
+  config.workspaces.coding.windows.editor.selector={movable:true,role:'AXWindow',non_empty_title:true};
+  value.windows.push({...value.windows[0],id:11,app:'ChatGPT'});
+  const preparation=make(value,config).plan.preparations[0];
+  assert.deepEqual(preparation.windows.map(w=>w.id),[10,11]);
+  assert.equal(make(value,config).plan.executable,true);
+  let issued=0;
+  const reused=structuredClone(value);reused.windows[0].pid++;
+  await assert.rejects(executePreparation(preparation,{discover:async()=>normalizeSnapshot(reused,machine),command:async()=>{issued++;}}),/observation window changed/);
+  assert.equal(issued,0);
+  await assert.rejects(executePreparation(preparation,{discover:async()=>normalizeSnapshot(value,machine),command:async()=>{issued++;},poll:async()=>{},delay:async()=>{}}),/did not restore window AX references/);
+  assert.equal(issued,1);
+});
+test('AX observation and already-known required app recovery share one executable preview',()=>{
+  const config=starterConfig(),value=raw();
+  config.workspaces.coding.variants.solo.runtime={runner:'primary_helper'};
+  config.workspaces.coding.variants.solo.layout=structuredClone(config.workspaces.coding.variants.wide.layout);
+  config.workspaces.coding.windows.assistant.required=true;
+  Object.assign(value.windows[0],{'has-ax-reference':false,'can-move':false});
+  value.windows.push({...value.windows[0],id:11,pid:101,app:'ChatGPT','has-ax-reference':true,'can-move':false});
+  const {plan}=make(value,config);
+  assert.equal(plan.executable,true);
+  assert.deepEqual(plan.preparations.map(p=>p.type),['observe_space','refresh_app']);
+});
+test('grid plans reject non-resizable optional windows before mutation or Sandbox collection',()=>{
+  const config=starterConfig();config.workspaces.coding.variants.solo.runtime={runner:'gtd_meeting'};
+  config.workspaces.coding.variants.solo.layout=structuredClone(config.workspaces.coding.variants.tall.layout);
+  config.modes.solo.displays[0].workspaceOrder=['coding'];
+  const value=raw();value.spaces[0].label='';value.windows.push({...value.windows[0],id:11,pid:101,app:'ChatGPT','can-resize':false});
+  const {plan,comparison}=make(value,config,{kind:'mode',id:'solo',mode:'solo'});
+  assert.ok(comparison.drifts.some(d=>d.code==='optional_window_missing' && d.role==='assistant'));
+  assert.ok(comparison.matches.some(m=>m.role==='assistant' && m.rejected.some(r=>r.windowId===11 && r.reasons.includes('not_resizable'))));
+  assert.ok(!plan.selectedWindows.some(w=>w.id===11));
+  assert.ok(!plan.workspaces.some(w=>w.workspaceId==='__sandbox' && w.windows.some(role=>role.windowId===11)));
+});
+test('unlayoutable occupants recover a unique unlabeled Space while headless roots do not compete',()=>{
+  const config=starterConfig(),value=raw();value.spaces[0].label='';value.windows[0]['can-resize']=false;
+  value.windows.push({...value.windows[0],id:11,space:3,title:'',role:'',subrole:'',frameVerified:false,'can-move':false,'can-resize':false,'is-visible':false,'has-ax-reference':false});
+  const {comparison}=make(value,config);
+  assert.ok(comparison.drifts.some(d=>d.code==='space_label_missing' && d.spaceUuid==='S'));
+  assert.ok(comparison.drifts.some(d=>d.code==='required_window_missing' && d.role==='editor'));
+});
+test('an AX-less window with native bounds keeps its Space occupied',()=>{
+  const value=raw(),config=starterConfig();
+  config.workspaces.coding.variants.solo.activation={type:'windowPresent',role:'editor'};
+  Object.assign(value.windows[0],{title:'',role:'',subrole:'','has-ax-reference':false,'can-move':false,'can-resize':false,'is-visible':false,frameVerified:true});
+  const {plan}=make(value,config);
+  assert.ok(!plan.actions.some(a=>a.type==='remove_empty_space' && a.spaceUuid==='S'));
+  assert.ok(plan.preparations.some(p=>p.type==='observe_space' && p.spaceUuid==='S'));
+});
+test('known background-app aliases cannot hide a native AX-less document from Space cleanup',()=>{
+  const value=raw(),config=starterConfig();config.apps.word={name:'Word',match:{appNames:['Code']}};
+  config.workspaces.coding.variants.solo.activation={type:'windowPresent',role:'editor'};
+  Object.assign(value.windows[0],{title:'',role:'',subrole:'','has-ax-reference':false,'can-move':false,'can-resize':false,'is-visible':false,frameVerified:true});
+  assert.ok(!make(value,config).plan.actions.some(a=>a.type==='remove_empty_space' && a.spaceUuid==='S'));
+});
+test('recovery after AX preparation uses verified pre-layout capabilities and bounds',()=>{
+  const before=normalizeSnapshot(raw(),machine);
+  before.windows[0].movable=false;before.windows[0].resizable=false;
+  const layoutBefore=structuredClone(before);Object.assign(layoutBefore.windows[0],{movable:true,resizable:true,frame:{x:20,y:30,w:600,h:500}});
+  const journal={before,layoutBefore,effects:[{windowId:10,type:'move_window',recoveryCandidate:layoutBefore.windows[0],recoverySpaceUuid:'S'}]};
+  assert.deepEqual(recoveryCandidates(journal),[{window:layoutBefore.windows[0],spaceUuid:'S'}]);
+});
+test('recreated non-resizable helper dialogs do not invalidate layout, while new real windows still do',async()=>{
+  const value=raw(),config=starterConfig();config.modes.solo.displays[0].workspaceOrder=['coding'];
+  value.windows[0].frame.w=500;
+  value.windows.push({...value.windows[0],id:90,app:'Code',subrole:'AXDialog','can-resize':false,frame:{x:10,y:10,w:66,h:20}});
+  const target={kind:'mode',id:'solo',mode:'solo'},before=make(value,config,target);
+  value.windows[1].id=91;
+  assert.equal(make(value,config,target).plan.planId,before.plan.planId);
+  await executePinnedWorkspace(before.plan,'coding',{
+    discover:async()=>normalizeSnapshot(value,machine),
+    mutate:async(args,intent,verify)=>{value.windows[1].id++;value.windows[0].frame=gridFrame(value.displays[0],args[4]);assert.ok(verify(normalizeSnapshot(value,machine)));}
+  });
+  assert.doesNotThrow(()=>validatePlanObjects(before.plan,normalizeSnapshot(value,machine)));
+  value.windows.push({...value.windows[0],id:99,app:'Other'});
+  assert.throws(()=>validatePlanObjects(before.plan,normalizeSnapshot(value,machine)),/census/);
+  value.windows.pop();value.windows[1]['can-resize']=true;
+  assert.throws(()=>validatePlanObjects(before.plan,normalizeSnapshot(value,machine)),/census/);
+  value.windows[1]['can-resize']=false;
+  value.windows[1].frame={x:10,y:10,w:600,h:400};
+  assert.throws(()=>validatePlanObjects(before.plan,normalizeSnapshot(value,machine)),/census/);
+  value.windows[1].frame={x:10,y:10,w:66,h:20};
+  const selectedDialog=structuredClone(before.plan);selectedDialog.selectedWindows.push({id:90});
+  assert.throws(()=>validatePlanObjects(selectedDialog,normalizeSnapshot(value,machine)),/precondition/);
+});
+test('completed journals recover vanished yabai labels by live Space UUID',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'spacewright-label-history-'));
+  try {
+    await mkdir(join(root,'runs'));
+    await writeFile(join(root,'runs','200-bbbbbbbb.json'),JSON.stringify({status:'failed',after:{spaces:[{uuid:'NEW',label:'coding_solo'}]}}));
+    await writeFile(join(root,'runs','100-aaaaaaaa.json'),JSON.stringify({status:'completed',after:{spaces:[{uuid:'S',label:'coding_solo'},{uuid:'GONE',label:'other'}]}}));
+    const config=starterConfig(),snapshot=normalizeSnapshot({...raw(),spaces:[{index:1,uuid:'S',display:1,label:''}]},machine);
+    const desired=buildDesiredState(config,compileV2(config),{kind:'workspace',id:'coding',mode:'solo'},snapshot);
+    const hints=await readSpaceLabelHints(root,desired,snapshot);
+    assert.deepEqual(hints,{coding_solo:'S'});
+    const comparison=compareState(snapshot,desired,machine,{spaceLabelHints:hints});
+    assert.ok(comparison.drifts.some(d=>d.code==='space_label_missing' && d.spaceUuid==='S'));
+    assert.ok(!comparison.drifts.some(d=>d.code==='space_missing'));
+  } finally { await rm(root,{recursive:true,force:true}); }
 });
 test('monitor serializes sampling, resets debounce after partial discovery and drains events on stop',async()=>{
   let sampling=0,maxSampling=0,queries=0,release,activated=0;

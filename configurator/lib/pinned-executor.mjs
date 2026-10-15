@@ -1,6 +1,6 @@
 import { sameWindowIdentity } from './recovery.mjs';
 import { windowOccupiesSpace } from './finalization-policy.mjs';
-import { selectorResult } from './window-policy.mjs';
+import { selectorResult,executionCensus } from './window-policy.mjs';
 import { geometryMatches } from './state-engine.mjs';
 
 function complete(snapshot) {
@@ -13,7 +13,8 @@ export function validatePlanObjects(plan,snapshot) {
   complete(snapshot);
   if(plan.scope==='mode') {
     const before=plan.preconditions.windows;
-    if(before.length!==snapshot.windows.length || before.some(w=>!sameWindowIdentity(w,snapshot.windows.find(current=>current.id===w.id))))throw new Error('global object census changed; replan required');
+    const current=executionCensus(snapshot.windows,plan.selectedWindows);
+    if(before.length!==current.length || before.some(w=>!sameWindowIdentity(w,current.find(window=>window.id===w.id))))throw new Error('global object census changed; replan required');
   }
   for(const expected of plan.selectedWindows) {
     const current=snapshot.windows.find(w=>w.id===expected.id);

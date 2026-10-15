@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.0-alpha.12-dev.20261015.4 — 2026-10-15
+
+- Keep stale, unselectable optional app surfaces as non-blocking missing-window
+  warnings instead of running adapter recovery that can abort a whole mode.
+- Tolerate transient partial discovery samples during bounded required-app
+  preparation while still failing closed if no complete sample arrives.
+- Require resize capability before selecting a window for grid geometry, and
+  keep non-resizable optional surfaces out of fixed Sandbox layout plans.
+- Fall back to bounded indexed display/Space queries when yabai returns a
+  truncated collection, avoiding a false `none` topology without weakening the
+  complete-discovery mutation gate.
+- Recover a unique unlabeled Space from an otherwise unlayoutable real app
+  window while excluding invisible headless root surfaces from that evidence.
+- Recover labels erased by a yabai restart from the newest completed journal
+  whose Space UUID still exists, instead of creating duplicate workspaces.
+
 ## 0.2.0-alpha.12-dev.20261014.6 — 2026-10-14
 
 - Pass the confirmed machine primary-display UUID to consumer display profiles,
@@ -37,6 +53,20 @@ configuration and installation contracts may still change before 1.0.
 
 ## Unreleased
 
+- Observe Spaces containing windows without yabai AX references before planning
+  their layouts, preserve native occupants during cleanup, and fail explicitly
+  when AX information cannot be recovered instead of reporting false success.
+- Allow unselected, non-resizable AX helper dialogs to be recreated during a
+  mode transition while preserving identity checks for layout windows and full
+  occupancy checks before Space destruction.
+- Validate every indexed display/Space sample against an independently queried
+  endpoint; transport errors, corrupt samples and topology changes fail closed.
+- Support AX observation followed by one bounded app-recovery phase, retain
+  timeout/cancellation outcomes, and recover from verified pre-layout snapshots.
+- Keep planned Space-label preferences during execution, persist blocked-plan
+  evidence and no-op snapshots, and enforce v2/v3 schema upper bounds.
+- Record transition deadline expiry as a timeout even when it occurs before
+  the controller's timer callback; include preparation time in the same deadline.
 - Add one configurable tall-layout top percentage, propagate it through GTD
   Support and Office adaptive layouts, and reapply final Zoom bounds after
   meeting-window fallback, making splits such as 49/51 easy to tune.

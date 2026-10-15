@@ -9,7 +9,7 @@ import { executePinnedWorkspace, executePinnedCleanup, executePinnedOrder } from
 import { durableJson, journalMutation, operationRoot } from './lib/operation-journal.mjs';
 import { readJson } from './lib/execution-coordinator.mjs';
 import { consumeBudget } from './lib/execution-budget.mjs';
-import { preparationCommand,verifyPreparation } from './lib/adapter-preparation.mjs';
+import { preparationCommand,preparationDepartureCommand,verifyPreparation } from './lib/adapter-preparation.mjs';
 const [action, executable, ...args] = process.argv.slice(2);
 const stateRoot = process.env.SPACEWRIGHT_STATE_ROOT;
 try {
@@ -61,13 +61,26 @@ try {
       await consumeBudget(stateRoot,preparation.budget);
       const phaseDeadline=Math.min(deadline,Date.now()+preparation.phaseLimitMs);
       let relation;
-      const check=()=>{if(abort.signal.aborted)throw abort.signal.reason;if(Date.now()>=phaseDeadline)throw Object.assign(new Error('adapter deadline exceeded'),{code:'SPACEWRIGHT_TIMEOUT'});};
+      const check=()=>{if(abort.signal.aborted)throw abort.signal.reason;if(Date.now()>=phaseDeadline)throw Object.assign(new Error(preparation.type==='observe_space'?`Space observation deadline exceeded; yabai AX references unavailable for windows ${preparation.windows.map(w=>w.id).join(', ')}`:'adapter deadline exceeded'),{code:'SPACEWRIGHT_TIMEOUT'});};
       // The operation record stores the input incarnation and explicit output
       // incarnations before any new immutable layout plan can be issued.
-      const [exe,arguments_]=preparationCommand(preparation,await discover());
-      await journalMutation({stateRoot,runId:operationRunId,intent:{type:'adapter_preparation',preparation,windowId:null,identity:preparation.window,reversible:false},
-        run:()=>runBounded(exe,arguments_,{deadline:phaseDeadline,signal:abort.signal,onChild:lease.trackChild}),
-        verify:async()=>{relation=await verifyPreparation(preparation,{discover:()=>discoverState(envelope.machine,{deadline:phaseDeadline,signal:abort.signal}),check,poll:()=>consumeBudget(stateRoot,'confirmation')});return relation;}});
+      try {
+        const before=await discover();
+        const departure=preparationDepartureCommand(preparation,before);
+        if(departure)await mutate(departure[1],{type:'preparation_focus_departure',spaceUuid:preparation.departureSpaceUuid,reversible:false},after=>after.completeness==='complete' && after.spaces.some(s=>s.uuid===preparation.departureSpaceUuid && s.focused));
+        const [exe,arguments_]=preparationCommand(preparation,await discover());
+        await journalMutation({stateRoot,runId:operationRunId,intent:{type:'adapter_preparation',preparation,windowId:null,identity:preparation.window,reversible:false},
+          run:()=>runBounded(exe,arguments_,{deadline:phaseDeadline,signal:abort.signal,onChild:lease.trackChild}),
+          verify:async()=>{relation=await verifyPreparation(preparation,{discover:()=>discoverState(envelope.machine,{deadline:phaseDeadline,signal:abort.signal}),check,poll:()=>consumeBudget(stateRoot,'confirmation')});return relation;}});
+      } finally {
+        if(preparation.type==='observe_space' && preparation.returnSpaceUuid) {
+          const snapshot=await discover();
+          if(snapshot.completeness!=='complete')throw new Error('focus restoration discovery incomplete');
+          const space=snapshot.spaces.find(s=>s.uuid===preparation.returnSpaceUuid);
+          if(!space)throw new Error('original focus Space disappeared');
+          if(!space.focused)await mutate(['-m','space','--focus',String(space.index)],{type:'preparation_focus_restore',spaceUuid:space.uuid,reversible:false},after=>after.completeness==='complete' && after.spaces.some(s=>s.uuid===space.uuid && s.focused));
+        }
+      }
       process.stdout.write(`${JSON.stringify(relation)}\n`);
     } else if(action==='pinned-postprocess') {
       const hook=envelope.plan.fixedPostprocessors.find(h=>h.name===executable);
@@ -95,7 +108,7 @@ try {
     if (!expected || current.id !== expected.id || current.app !== expected.app || Number(current.pid || 0) !== expected.pid || String(current['bundle-id'] || '') !== expected.bundleId) throw new Error(`planned window ${executable} identity changed; replan required`);
     if ((await processIdentity(expected.pid) || null) !== (expected.processFingerprint || null)) throw new Error('planned application process lifetime changed; replan required');
     const s = expected.selector;
-    if (current['is-minimized'] || current['is-native-fullscreen'] || s.movable && !current['can-move'] || s.visible && current['is-visible'] === false
+    if (current['is-minimized'] || current['is-native-fullscreen'] || s.movable && !current['can-move'] || s.resizable && !current['can-resize'] || s.visible && current['is-visible'] === false
       || s.non_empty_title && !current.title || s.title_include && !String(current.title || '').includes(s.title_include)
       || s.title_exclude && String(current.title || '').includes(s.title_exclude) || s.role && current.role !== s.role || s.subrole && current.subrole !== s.subrole) throw new Error(`planned window ${executable} precondition changed; replan required`);
   } else throw new Error('unknown execution coordination action');

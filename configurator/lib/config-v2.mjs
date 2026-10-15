@@ -50,6 +50,7 @@ function validateSchemaNode(value, schema, path, errors, rootSchema = V2_SCHEMA)
     if (schema.pattern && !new RegExp(schema.pattern).test(value)) errors.push(`${path} has an invalid format`);
   }
   if (typeof value === 'number' && schema.minimum != null && value < schema.minimum) errors.push(`${path} must be at least ${schema.minimum}`);
+  if (typeof value === 'number' && schema.maximum != null && value > schema.maximum) errors.push(`${path} must be at most ${schema.maximum}`);
   if (Array.isArray(value)) {
     if (schema.minItems != null && value.length < schema.minItems) errors.push(`${path} must contain at least ${schema.minItems} item(s)`);
     if (schema.uniqueItems && new Set(value.map(schemaValueKey)).size !== value.length) errors.push(`${path} must contain unique items`);

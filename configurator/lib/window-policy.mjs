@@ -1,3 +1,12 @@
+// Tiny, unselected, non-resizable AX helper dialogs can be recreated as their parent
+// moves (for example Electron's tiny "Window" surface). Keep them in discovery
+// and occupancy checks, but not the immutable layout object census.
+export function executionCensus(windows,selected=[]) {
+  const ids=new Set(selected.map(w=>typeof w==='number'?w:w.id));
+  return windows.filter(w=>ids.has(w.id) || w.resizable || w.subrole!=='AXDialog'
+    || !w.frameVerified || !(w.frame.w>0 && w.frame.w<=100 && w.frame.h>0 && w.frame.h<=40));
+}
+
 export function selectorResult(window, desired) {
   const selector = desired.selector || {};
   const reasons = [];
@@ -10,6 +19,7 @@ export function selectorResult(window, desired) {
   if (window.minimized) reasons.push('minimized');
   if (window.nativeFullscreen && !desired.allowNativeFullscreen) reasons.push('native_fullscreen_requires_adapter');
   if (selector.movable === true && !window.movable) reasons.push('not_movable');
+  if (selector.resizable === true && !window.resizable) reasons.push('not_resizable');
   if (selector.visible === true && !window.visible) reasons.push('not_visible');
   if (selector.non_empty_title === true && !window.title) reasons.push('empty_title');
   if (selector.title_include && !window.title.includes(selector.title_include)) reasons.push('title_missing_required_text');

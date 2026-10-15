@@ -17,6 +17,8 @@ import { acquireExecution, runBounded } from './lib/execution-coordinator.mjs';
 import { durableJson, operationRecords } from './lib/operation-journal.mjs';
 import { consumeBudget } from './lib/execution-budget.mjs';
 import { detectMacHardware } from './lib/hardware-detection.mjs';
+import { readSpaceLabelHints } from './lib/space-label-history.mjs';
+import { executionCensus } from './lib/window-policy.mjs';
 
 const execFileAsync = promisify(execFile);
 const command = process.argv[2] || 'help';
@@ -76,7 +78,8 @@ async function livePlan(target = parseTarget(), frozen = null) {
     ? { ...target, mode: value.config.modes[value.portableConfig.hardwareProfiles[value.resolution.hardwareProfileId].setups[value.resolution.setupId].compatibilityMode] ? value.portableConfig.hardwareProfiles[value.resolution.hardwareProfileId].setups[value.resolution.setupId].compatibilityMode : null }
     : target;
   const desired = buildDesiredState(value.config, value.runtime, normalizedTarget, value.snapshot);
-  const comparison = compareState(value.snapshot, desired, value.machine);
+  const spaceLabelHints = await readSpaceLabelHints(stateRoot, desired, value.snapshot);
+  const comparison = compareState(value.snapshot, desired, value.machine, { spaceLabelHints });
   const plan = buildExecutionPlan(value.snapshot, desired, comparison);
   return { ...value, desired, comparison, plan };
 }
@@ -151,7 +154,7 @@ async function runCommand(args, journal, journalFile, plannedStep, attempt = 0) 
         }
       }
     });
-    step.status = result.code === 0 ? 'completed' : 'failed'; step.exitCode = result.code;
+    step.status = result.code === 0 ? 'completed' : result.code === 124 ? 'timed_out' : result.code === 130 ? 'cancelled' : 'failed'; step.exitCode = result.code;
     return result.code;
   } catch (error) { step.status = error.code === 'SPACEWRIGHT_CANCELLED' ? 'cancelled' : error.code === 'SPACEWRIGHT_TIMEOUT' ? 'timed_out' : 'failed'; step.error = error.message; throw error; }
   finally {
@@ -193,8 +196,9 @@ async function assertExecutionContext(initial,effects = []) {
   for (const role of roles) if (currentConfig.machine.displayBindings?.[role] !== initial.machine.displayBindings?.[role]) throw new Error('machine display bindings changed; replan required');
   const snapshot = await discover(initial.machine);
   if (snapshot.completeness !== 'complete') throw new Error(snapshot.message);
-  if(initial.plan.scope==='mode' && JSON.stringify(snapshot.windows.map(w=>w.id))!==JSON.stringify(initial.snapshot.windows.map(w=>w.id)))throw new Error('global object census changed; replan required');
-  const comparison = compareState(snapshot, initial.desired, initial.machine);
+  if(initial.plan.scope==='mode' && JSON.stringify(executionCensus(snapshot.windows,initial.plan.selectedWindows).map(w=>w.id))!==JSON.stringify(initial.plan.preconditions.windows.map(w=>w.id)))throw new Error('global object census changed; replan required');
+  const spaceLabelHints=Object.fromEntries(initial.plan.workspaces.filter(w=>w.targetSpace?.uuid).map(w=>[w.label,w.targetSpace.uuid]));
+  const comparison = compareState(snapshot, initial.desired, initial.machine, {spaceLabelHints});
   if(comparison.counts.blocker)throw new Error(`execution preconditions changed: ${comparison.drifts.filter(d=>d.severity==='blocker').map(d=>d.code).join(', ')}; replan required`);
   const currentPlan = buildExecutionPlan(snapshot, initial.desired, comparison);
   if (JSON.stringify(currentPlan.selectedWindows) !== JSON.stringify(initial.plan.selectedWindows)) throw new Error('planned windows or ownership changed; replan required');
@@ -220,6 +224,10 @@ async function applyPlan(target) {
     assertNotCancelled();
     let initial = await livePlan(target);
     assertNotCancelled();
+    journal.plan=initial.plan;
+    journal.before=initial.snapshot;
+    journal.comparison=initial.comparison;
+    await atomicWrite(journalFile,journal);
     if (initial.snapshot.completeness !== 'complete') throw new Error(initial.snapshot.message);
     const expected = {
       planId: flags['expected-plan-id'],
@@ -235,7 +243,7 @@ async function applyPlan(target) {
     }
     if (!initial.plan.executable) throw new Error(`plan ${initial.plan.planId} is blocked: ${initial.plan.blockers.map((item) => item.code).join(', ')}`);
     if (!initial.plan.actions.length) {
-      journal.status='completed';journal.finishedAt=new Date().toISOString();journal.plan=initial.plan;journal.verification=initial.comparison;
+      journal.status='completed';journal.finishedAt=new Date().toISOString();journal.plan=initial.plan;journal.after=initial.snapshot;journal.verification=initial.comparison;
       await atomicWrite(journalFile,journal);
       return { noop: true, plan: initial.plan, comparison: initial.comparison };
     }
@@ -269,16 +277,19 @@ async function applyPlan(target) {
     }
     journal.status = 'running';
     await atomicWrite(journalFile, journal);
-    if(initial.plan.preparations.length) {
-      journal.preparationPlan=initial.plan;
+    for(let phase=0;initial.plan.preparations.length;phase++) {
+      if(phase>=2)throw new Error('adapter preparation did not satisfy layout prerequisites');
+      journal.preparationPlan ||= initial.plan;
+      (journal.preparationPlans ||= []).push(initial.plan);
+      const observing=initial.plan.preparations.some(p=>p.type==='observe_space');
       journal.exitCode=await runCommand(['prepare-adapters'],journal,journalFile,{type:'preparation',action:'prepare_adapters',planId:initial.plan.planId});
       assertNotCancelled();
-      if(journal.exitCode!==0)throw new Error('explicit adapter preparation failed; layout was not attempted');
+      if(journal.exitCode!==0)throw Object.assign(new Error('explicit adapter preparation failed; layout was not attempted'),{code:journal.exitCode===124?'SPACEWRIGHT_TIMEOUT':journal.exitCode===130?'SPACEWRIGHT_CANCELLED':undefined});
       const saved=await stableRead(initial.configFile,machineFile);
       if(saved.source!==initial.source || JSON.stringify(saved.machine)!==JSON.stringify(initial.machine))throw new Error('configuration changed during preparation; replan required');
       const next=await livePlan(target,initial);
-      if(!next.plan.executable || next.plan.preparations.length)throw new Error('adapter preparation did not satisfy layout prerequisites');
-      journal.planRelations=[{phase:'preparation',fromPlanId:initial.plan.planId,toPlanId:next.plan.planId,before:initial.plan.selectedWindows,after:next.plan.selectedWindows}];
+      if(!next.plan.executable || next.plan.preparations.length && (!observing || next.plan.preparations.some(p=>p.type==='observe_space')))throw new Error('adapter preparation did not satisfy layout prerequisites');
+      (journal.planRelations ||= []).push({phase:'preparation',fromPlanId:initial.plan.planId,toPlanId:next.plan.planId,before:initial.plan.selectedWindows,after:next.plan.selectedWindows});
       initial=next;journal.plan=next.plan;journal.layoutBefore=next.snapshot;
       await atomicWrite(journal.envelopeFile,{plan:next.plan,desired:next.desired,machine:next.machine});
       await atomicWrite(journalFile,journal);
