@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { starterConfig } from '../lib/config-v2.mjs';
 import { starterV3 } from '../lib/config-v3.mjs';
+import { processIdentity } from '../lib/execution-coordinator.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -178,6 +179,9 @@ esac
 });
 
 test('recovery writes an independent step journal before restoring windows', async () => {
+  // Use a live identity we own; a fixed PID can belong to a real CI process.
+  const processFingerprint = await processIdentity(process.pid);
+  assert.ok(processFingerprint);
   const root = await mkdtemp(join(tmpdir(), 'spacewright-recover-'));
   const stateRoot = join(root, 'state');
   const fakeBin = join(root, 'fake-bin');
@@ -190,7 +194,7 @@ test('recovery writes an independent step journal before restoring windows', asy
     before: {
       displays: [{ index: 1, uuid: 'DISPLAY-PRIMARY', frame: { x: 0, y: 0, w: 1200, h: 900 } }],
       spaces: [{ index: 1, uuid: 'SPACE-ORIGINAL', display: 1, label: 'coding_solo' }],
-      windows: [{ id: 10, pid: 100, bundleId: '', app: 'Code', space: 1, display: 1, frame: { x: 10, y: 20, w: 800, h: 700 }, movable: true, resizable: true }]
+      windows: [{ id: 10, pid: process.pid, processFingerprint, bundleId: '', app: 'Code', space: 1, display: 1, frame: { x: 10, y: 20, w: 800, h: 700 }, movable: true, resizable: true }]
     },
     effects: [{ type: 'move_window', windowId: 10 }],
     plan: { recovery: { windowIds: [10] } }
@@ -200,7 +204,7 @@ if test "$2" = window; then printf '%s\n' "$*" >> "${mutationLog}"; touch "${mut
 case "$3" in
   --displays) printf '%s\n' '[{"index":1,"uuid":"DISPLAY-PRIMARY","frame":{"x":0,"y":0,"w":1200,"h":900},"is-built-in":true,"spaces":[1]}]' ;;
   --spaces) printf '%s\n' '[{"index":1,"uuid":"SPACE-ORIGINAL","display":1,"label":"coding_solo","type":"float"}]' ;;
-  --windows) printf '%s\n' '[{"id":10,"pid":100,"app":"Code","display":1,"space":1,"frame":{"x":10,"y":20,"w":800,"h":700},"can-move":true,"can-resize":true,"is-visible":true}]' ;;
+  --windows) printf '%s\n' '[{"id":10,"pid":${process.pid},"app":"Code","display":1,"space":1,"frame":{"x":10,"y":20,"w":800,"h":700},"can-move":true,"can-resize":true,"is-visible":true}]' ;;
 esac
 `);
   await chmod(join(fakeBin, 'yabai'), 0o755);
