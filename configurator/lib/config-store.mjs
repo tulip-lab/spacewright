@@ -48,7 +48,7 @@ export async function atomicText(path, value) {
 }
 // The guard is retained on incomplete writes. Readers fail closed, including
 // after a crash. A subsequent explicit save can repair once the dead owner is checked.
-export async function withConfigurationWrite(configRoot, operation, { repair = false } = {}) {
+export async function withConfigurationWrite(configRoot, operation, { repair = false, trackWrites = false } = {}) {
   const guard = join(configRoot, '.configuration-write');
   await mkdir(configRoot, { recursive: true, mode: 0o700 });
   if (repair) {
@@ -66,6 +66,10 @@ export async function withConfigurationWrite(configRoot, operation, { repair = f
   await mkdir(guard, { mode: 0o700 }).catch((error) => { if (error.code === 'EEXIST') throw new Error('configuration write is active or incomplete; repair the saved generation before retrying'); throw error; });
   await writeFile(join(guard, 'owner'), String(process.pid), { mode: 0o600 });
   let completed = false;
-  try { const result = await operation(); completed = true; return result; }
-  finally { if (completed) await rm(guard, { recursive: true, force: true }); }
+  // Uninstrumented callers remain conservative. Opted-in callers must mark the
+  // first persistent action (including backups) before attempting it.
+  let started = !trackWrites;
+  const transaction = { beginWrite: () => { started = true; } };
+  try { const result = await operation(transaction); completed = true; return result; }
+  finally { if (completed || !started) await rm(guard, { recursive: true, force: true }); }
 }

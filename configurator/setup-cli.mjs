@@ -79,6 +79,7 @@ async function inspect() {
   const setupCandidates = selectedHardware.id ? matchingSetups(config, selectedHardware.id, snapshot, machine) : [];
   return {
     config,
+    source: document.source,
     machine,
     hardware,
     snapshot,
@@ -92,14 +93,39 @@ async function inspect() {
 
 function print(value) { process.stdout.write(`${JSON.stringify(value, null, 2)}\n`); }
 
-async function compileActive(config, machine, hardware, snapshot) {
-  const source = await readFile(configFile, 'utf8');
-  const runtime = generationDocument(config, { machine, hardware, snapshot }, source);
-  await atomicWrite(runtimeFile, runtime);
+async function persistSetup(value, next) {
+  // Compile and validate the complete candidate before publishing either file.
+  const runtime = generationDocument(value.config, { machine: next, hardware: value.hardware, snapshot: value.snapshot }, value.source);
+  const checkCurrent = async (ownedWrite = false) => {
+    const current = await stableRead(configFile, machineFile, { ownedWrite });
+    if (current.source !== value.source || JSON.stringify(current.machine) !== JSON.stringify(value.machine)) throw new Error('configuration changed during setup activation');
+  };
+  if (flags['dry-run']) {
+    await checkCurrent();
+    return runtime;
+  }
+  await withConfigurationWrite(dirname(configFile), async transaction => {
+    await checkCurrent(true);
+    transaction.beginWrite();
+    await atomicWrite(machineFile, next);
+    await atomicWrite(runtimeFile, runtime);
+  }, { trackWrites: true });
   return runtime;
 }
 
+function validateOptions() {
+  const valued = ['config-root', 'state-root', 'config', 'runtime', 'snapshot', 'model'];
+  for (const [key, value] of Object.entries(flags)) {
+    if (key === 'dry-run' && value === true) continue;
+    if (!valued.includes(key)) throw new Error(`unknown option or invalid flag: --${key}`);
+    if (value === true || !value) throw new Error(`--${key} requires a value (--${key}=value)`);
+  }
+  const maximum = command === 'confirm' ? 2 : 0;
+  if (positional.length > maximum) throw new Error(`unexpected positional argument for ${command}`);
+}
+
 try {
+  validateOptions();
   const value = await inspect();
   if (command === 'detect' || command === 'status') {
     const confirmedSetup = value.machine.topologySelections?.[value.topologyKey] || null;
@@ -139,14 +165,8 @@ try {
       topologySelections: { ...(value.machine.topologySelections || {}), [value.topologyKey]: setupId },
       activeSetup: setupId
     };
-    const runtime = await withConfigurationWrite(dirname(configFile), async () => {
-      const currentSource = JSON.parse(await readFile(configFile, 'utf8'));
-      if (JSON.stringify(currentSource) !== JSON.stringify(value.config)) throw new Error('configuration changed during setup activation');
-      if(JSON.stringify((await stableRead(configFile,machineFile,{ownedWrite:true})).machine)!==JSON.stringify(value.machine))throw new Error('machine configuration changed during setup activation');
-      await atomicWrite(machineFile, next);
-      return compileActive(value.config, next, value.hardware, value.snapshot);
-    });
-    print({ confirmed: true, path: machineFile, runtimePath: runtimeFile, hardwareProfile: hardwareProfileId, setup: setupId, compatibilityMode: runtime.modes[`work_${value.config.hardwareProfiles[hardwareProfileId].setups[setupId].compatibilityMode}`].display_mode, topologyKey: value.topologyKey, displayBindings });
+    const runtime = await persistSetup(value, next);
+    print({ confirmed: !flags['dry-run'], dryRun: Boolean(flags['dry-run']), mutates: !flags['dry-run'], action: 'confirm', path: machineFile, runtimePath: runtimeFile, hardwareProfile: hardwareProfileId, setup: setupId, compatibilityMode: runtime.modes[`work_${value.config.hardwareProfiles[hardwareProfileId].setups[setupId].compatibilityMode}`].display_mode, topologyKey: value.topologyKey, displayBindings });
   } else if (command === 'activate') {
     const hardwareProfileId = value.machine.hardwareProfile;
     const setupId = value.machine.topologySelections?.[value.topologyKey];
@@ -155,14 +175,8 @@ try {
     const bindingStatus = setupBindingStatus(value.config, hardwareProfileId, setupId, value.snapshot, value.machine);
     if (!bindingStatus.ready) throw new Error(`current display roles require confirmation: ${bindingStatus.missingRoles.join(', ')}`);
     const next = { ...value.machine, activeSetup: setupId };
-    const runtime = await withConfigurationWrite(dirname(configFile), async () => {
-      const currentSource = JSON.parse(await readFile(configFile, 'utf8'));
-      if (JSON.stringify(currentSource) !== JSON.stringify(value.config)) throw new Error('configuration changed during setup activation');
-      if(JSON.stringify((await stableRead(configFile,machineFile,{ownedWrite:true})).machine)!==JSON.stringify(value.machine))throw new Error('machine configuration changed during setup activation');
-      await atomicWrite(machineFile, next);
-      return compileActive(value.config, next, value.hardware, value.snapshot);
-    });
-    print({ activated: true, hardwareProfile: hardwareProfileId, setup: setupId, compatibilityMode: value.config.hardwareProfiles[hardwareProfileId].setups[setupId].compatibilityMode, runtimePath: runtimeFile, sourceVersion: runtime.source_version });
+    const runtime = await persistSetup(value, next);
+    print({ activated: !flags['dry-run'], dryRun: Boolean(flags['dry-run']), mutates: !flags['dry-run'], action: 'activate', displayBindings: next.displayBindings, hardwareProfile: hardwareProfileId, setup: setupId, compatibilityMode: value.config.hardwareProfiles[hardwareProfileId].setups[setupId].compatibilityMode, runtimePath: runtimeFile, sourceVersion: runtime.source_version });
   } else {
     throw new Error('usage: setup-cli.mjs <detect|status|confirm|activate> [hardware-profile] [setup] [--config=path] [--snapshot=path] [--model=id]');
   }

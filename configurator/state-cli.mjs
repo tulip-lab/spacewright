@@ -13,7 +13,7 @@ import { resolveV3, validateV3 } from './lib/config-v3.mjs';
 import { restoreWindow, sameWindowIdentity,recoveryCandidates } from './lib/recovery.mjs';
 import { stableRead } from './lib/config-store.mjs';
 import { discoverState } from './lib/discovery.mjs';
-import { acquireExecution, runBounded } from './lib/execution-coordinator.mjs';
+import { acquireExecution, runBounded, sleep } from './lib/execution-coordinator.mjs';
 import { durableJson, operationRecords } from './lib/operation-journal.mjs';
 import { consumeBudget } from './lib/execution-budget.mjs';
 import { detectMacHardware } from './lib/hardware-detection.mjs';
@@ -44,8 +44,8 @@ async function atomicWrite(path, value) {
   await durableJson(path,value);
 }
 
-export async function discover(machineOverride = null) {
-  return discoverState(machineOverride || await readJson(machineFile, { version: 1, displayBindings: {} }), { deadline: executionDeadline, signal: cancellation.signal });
+export async function discover(machineOverride = null, { deadline = executionDeadline } = {}) {
+  return discoverState(machineOverride || await readJson(machineFile, { version: 1, displayBindings: {} }), { deadline: Math.min(deadline, executionDeadline), signal: cancellation.signal });
 }
 
 async function context() {
@@ -72,15 +72,15 @@ function parseTarget(values = positional) {
   return { kind: 'workspace', id, mode };
 }
 
-async function livePlan(target = parseTarget(), frozen = null) {
-  const value = frozen ? { ...frozen, snapshot: await discover(frozen.machine) } : await context();
+async function livePlan(target = parseTarget(), frozen = null, snapshot = null) {
+  const value = frozen ? { ...frozen, snapshot: snapshot || await discover(frozen.machine) } : await context();
   const normalizedTarget = value.resolution && target.kind === 'workspace' && !target.mode
     ? { ...target, mode: value.config.modes[value.portableConfig.hardwareProfiles[value.resolution.hardwareProfileId].setups[value.resolution.setupId].compatibilityMode] ? value.portableConfig.hardwareProfiles[value.resolution.hardwareProfileId].setups[value.resolution.setupId].compatibilityMode : null }
     : target;
   const desired = buildDesiredState(value.config, value.runtime, normalizedTarget, value.snapshot);
   const spaceLabelHints = await readSpaceLabelHints(stateRoot, desired, value.snapshot);
   const comparison = compareState(value.snapshot, desired, value.machine, { spaceLabelHints });
-  const plan = buildExecutionPlan(value.snapshot, desired, comparison);
+  const plan = buildExecutionPlan(value.snapshot, desired, comparison, { displayPrepared: value.displayPrepared });
   return { ...value, desired, comparison, plan };
 }
 
@@ -187,13 +187,18 @@ for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
   if(executionLease)void executionLease.cancel().catch(error=>process.stderr.write(`cancellation state write failed: ${error.message}\n`));
 });
 
-async function assertExecutionContext(initial,effects = []) {
+async function assertSavedConfiguration(initial) {
   assertNotCancelled();
+  if ((existsSync(v3ConfigFile) ? v3ConfigFile : v2ConfigFile) !== initial.configFile) throw new Error('active configuration changed during execution; replan required');
   const currentConfig = await stableRead(initial.configFile, machineFile);
   if (currentConfig.source !== initial.source) throw new Error('configuration changed during execution; replan required');
   if(JSON.stringify(currentConfig.machine)!==JSON.stringify(initial.machine))throw new Error('machine generation changed during execution; replan required');
   const roles = new Set(initial.desired.workspaces.map((w) => w.displayRole));
   for (const role of roles) if (currentConfig.machine.displayBindings?.[role] !== initial.machine.displayBindings?.[role]) throw new Error('machine display bindings changed; replan required');
+}
+
+async function assertExecutionContext(initial,effects = []) {
+  await assertSavedConfiguration(initial);
   const snapshot = await discover(initial.machine);
   if (snapshot.completeness !== 'complete') throw new Error(snapshot.message);
   if(initial.plan.scope==='mode' && JSON.stringify(executionCensus(snapshot.windows,initial.plan.selectedWindows).map(w=>w.id))!==JSON.stringify(initial.plan.preconditions.windows.map(w=>w.id)))throw new Error('global object census changed; replan required');
@@ -211,6 +216,62 @@ async function assertExecutionContext(initial,effects = []) {
     const beforeDisplay = initial.snapshot.displays.find((d) => d.role === original.displayRole);
     if (beforeDisplay && !snapshot.displays.some((d) => d.uuid === beforeDisplay.uuid && JSON.stringify(d.frame) === JSON.stringify(beforeDisplay.frame))) throw new Error('relevant display changed; replan required');
   }
+}
+
+// A display command may change geometry, but cannot authorize a new set of
+// physical displays, Spaces, windows, owners or workspaces.
+function assertDisplayPhaseContinuity(initial, next) {
+  if (JSON.stringify(next.plan.selectedWindows) !== JSON.stringify(initial.plan.selectedWindows)) throw new Error('planned windows or ownership changed during display preparation');
+  const physical = snapshot => snapshot.displays.map(d => ({ uuid: d.uuid, builtIn: d.builtIn })).sort((a,b) => a.uuid.localeCompare(b.uuid));
+  if (JSON.stringify(physical(initial.snapshot)) !== JSON.stringify(physical(next.snapshot))) throw new Error('physical display identities changed during display preparation');
+  const spaceIdentity = (space, snapshot) => ({ uuid: space.uuid, label: space.label, layout: space.layout,
+    displayUuid: snapshot.displays.find(d => d.index === space.display)?.uuid });
+  if (initial.plan.scope === 'mode' && JSON.stringify(initial.snapshot.spaces.map(s => s.uuid).sort()) !== JSON.stringify(next.snapshot.spaces.map(s => s.uuid).sort())) throw new Error('Space census changed during display preparation');
+  for (const original of initial.plan.preconditions.spaces) {
+    const current = next.snapshot.spaces.find(s => s.uuid === original.uuid);
+    if (!current || JSON.stringify(spaceIdentity(original, initial.snapshot)) !== JSON.stringify(spaceIdentity(current, next.snapshot))) throw new Error('planned Space disappeared or changed during display preparation');
+  }
+  for (const original of initial.plan.workspaces) {
+    const current = next.plan.workspaces.find(w => w.workspaceId === original.workspaceId);
+    if (!current || current.targetSpace?.uuid !== original.targetSpace?.uuid || current.targetDisplay?.uuid !== original.targetDisplay?.uuid) throw new Error('planned Space or target display changed during display preparation');
+  }
+  const census = value => value.plan.preconditions.windows.map(w => ({ id: w.id, app: w.app, pid: w.pid,
+    processFingerprint: w.processFingerprint, bundleId: w.bundleId, movable: w.movable, resizable: w.resizable,
+    minimized: w.minimized, nativeFullscreen: w.nativeFullscreen,
+    spaceUuid: value.snapshot.spaces.find(s => s.index === w.space)?.uuid,
+    displayUuid: value.snapshot.displays.find(d => d.index === w.display)?.uuid })).sort((a,b) => a.id-b.id);
+  if (JSON.stringify(census(initial)) !== JSON.stringify(census(next))) throw new Error('window census or ownership changed during display preparation');
+  if (JSON.stringify(initial.desired.workspaces) !== JSON.stringify(next.desired.workspaces)
+    || JSON.stringify(initial.desired.contextualApps) !== JSON.stringify(next.desired.contextualApps)
+    || next.plan.configDigest !== initial.plan.configDigest) throw new Error('execution scope changed during display preparation');
+}
+
+async function replanAfterDisplay(initial, target) {
+  const deadline = Math.min(executionDeadline, Date.now() + 5000);
+  let previous = null, stableSamples = 0;
+  while (Date.now() < deadline) {
+    await assertSavedConfiguration(initial);
+    const snapshot = await discover(initial.machine, { deadline });
+    assertNotCancelled();
+    if (snapshot.completeness !== 'complete') throw new Error(snapshot.message);
+    const signature = JSON.stringify(snapshot.displays.map(d => ({ uuid:d.uuid,index:d.index,frame:d.frame,gridGeometry:d.gridGeometry,builtIn:d.builtIn })).sort((a,b) => a.uuid.localeCompare(b.uuid)));
+    stableSamples = signature === previous ? stableSamples + 1 : 1;
+    previous = signature;
+    const next = await livePlan(target, { ...initial, displayPrepared: true }, snapshot);
+    assertDisplayPhaseContinuity(initial, next);
+    if (!next.plan.executable) throw new Error(`layout after display preparation is blocked: ${next.plan.blockers.map(b => b.code).join(', ')}`);
+    if (stableSamples >= Math.max(2, initial.config.settings?.topologyStableSamples || 3)) {
+      if (initial.resolution) {
+        const hardware = await detectMacHardware({ deadline, signal: cancellation.signal });
+        const resolution = resolveV3(initial.portableConfig, { machine: initial.machine, hardware, snapshot });
+        if (resolution.hardwareProfileId !== initial.resolution.hardwareProfileId || resolution.setupId !== initial.resolution.setupId) throw new Error('hardware setup changed during display preparation; confirmation required');
+      }
+      await assertSavedConfiguration(initial);
+      return next;
+    }
+    await sleep(Math.min(150, Math.max(0, deadline - Date.now())));
+  }
+  throw Object.assign(new Error('display state did not stabilize before the preparation deadline'), { code: 'SPACEWRIGHT_TIMEOUT' });
 }
 
 async function applyPlan(target) {
@@ -277,6 +338,19 @@ async function applyPlan(target) {
     }
     journal.status = 'running';
     await atomicWrite(journalFile, journal);
+    const displayStep = initial.plan.executionSteps.find(step => step.action === 'display_profile');
+    if (displayStep) {
+      await assertExecutionContext(initial, journal.effects);
+      journal.displayPlan = initial.plan;
+      journal.exitCode = await runCommand(displayStep.command, journal, journalFile, displayStep);
+      assertNotCancelled();
+      if (journal.exitCode !== 0) throw Object.assign(new Error(`display preparation command failed (${journal.exitCode}); layout was not attempted`), { code: journal.exitCode === 124 ? 'SPACEWRIGHT_TIMEOUT' : journal.exitCode === 130 ? 'SPACEWRIGHT_CANCELLED' : undefined });
+      const next = await replanAfterDisplay(initial, target);
+      (journal.planRelations ||= []).push({ phase:'display',fromPlanId:initial.plan.planId,toPlanId:next.plan.planId,beforeSnapshotId:initial.snapshot.snapshotId,afterSnapshotId:next.snapshot.snapshotId });
+      initial = next; journal.plan = next.plan; journal.layoutBefore = next.snapshot;
+      await atomicWrite(journal.envelopeFile, { plan:next.plan,desired:next.desired,machine:next.machine });
+      await atomicWrite(journalFile, journal);
+    }
     for(let phase=0;initial.plan.preparations.length;phase++) {
       if(phase>=2)throw new Error('adapter preparation did not satisfy layout prerequisites');
       journal.preparationPlan ||= initial.plan;
@@ -354,7 +428,8 @@ async function applyPlan(target) {
 
 async function recoveryCommand(exe, args) {
   assertNotCancelled();
-  const result = await runBounded(exe, args, { deadline: Math.min(executionDeadline, Date.now() + 3000), signal: cancellation.signal });
+  const result = await runBounded(exe, args, { deadline: Math.min(executionDeadline, Date.now() + 3000), signal: cancellation.signal,
+    onChild: async (child) => { activeChild = child; await executionLease.trackChild(child); } });
   if (result.code) throw new Error(result.stderr || `recovery command failed (${result.code})`);
 }
 

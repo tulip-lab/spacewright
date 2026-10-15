@@ -182,6 +182,19 @@ focused after display and workspace actions so later mutation cannot steal the
 final focus. A focus-only mismatch is represented as ordinary change drift and
 therefore remains visible in plans and verification.
 
+Apply executes a requested display profile once, before adapter preparation and
+layout. It then waits up to five seconds (within the same execution deadline)
+for stable display geometry and creates a new layout plan. Both plans and their
+relationship are recorded in the run journal. Reconciliation does not repeat
+the display command.
+
+This phase permits geometry and display-index changes for the same physical
+displays. It preserves the configuration, machine bindings, selected window
+identities and ownership, Space identities, and execution scope. Physical
+display replacement, changed hardware/setup selection, incomplete discovery,
+or an unstable display state stops layout and leaves the attempted display
+action in the journal. A failed display action is not automatically rolled back.
+
 Topological automation uses stable sampling and a cooldown. The optional root
 settings are `eventAutomationEnabled`, `cleanupEmptySpaces` (`managed`, `all`,
 or `none`), `tallTopPercent` (35–65), `topologyStableSamples` (1–12), and
