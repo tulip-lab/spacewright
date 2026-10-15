@@ -21,6 +21,7 @@ import { runWebTask, cancelWebTask } from './lib/task-coordinator.mjs';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createAutomationMonitor } from './lib/automation-monitor.mjs';
 import { clearTransitionHistory, readTransitionHistory } from './lib/transition-history.mjs';
+import { readSpaceLabelHints } from './lib/space-label-history.mjs';
 
 const execFileAsync = promisify(execFile);
 const args = Object.fromEntries(process.argv.slice(2).map((arg) => arg.split('=', 2)));
@@ -232,7 +233,8 @@ async function livePlan(config, payload) {
     }
   }
   const desired = buildDesiredState(effectiveConfig, compileV2(effectiveConfig), target, snapshot);
-  const comparison = compareState(snapshot, desired, machine);
+  const spaceLabelHints = await readSpaceLabelHints(stateRoot, desired, snapshot);
+  const comparison = compareState(snapshot, desired, machine, { spaceLabelHints });
   const plan = buildExecutionPlan(snapshot, desired, comparison);
   return { validation, snapshot, desired, comparison, plan, resolution: resolution ? {
     hardwareProfileId: resolution.hardwareProfileId,
@@ -647,7 +649,8 @@ async function api(request, response, url) {
     let reconciliation = null;
     if (validation.valid && !snapshot.unavailable && inferredMode && config.modes[inferredMode]) {
       const desired = buildDesiredState(config, compileV2(config), { kind: 'mode', id: inferredMode, mode: inferredMode }, snapshot);
-      reconciliation = compareState(snapshot, desired, machine);
+      const spaceLabelHints = await readSpaceLabelHints(stateRoot, desired, snapshot);
+      reconciliation = compareState(snapshot, desired, machine, { spaceLabelHints });
     }
     const runsRoot = join(stateRoot, 'runs');
     const runFiles = existsSync(runsRoot) ? (await readdir(runsRoot)).filter((name) => /^[0-9]+-[a-f0-9]{8}\.json$/.test(name)).sort().reverse().slice(0, 10) : [];

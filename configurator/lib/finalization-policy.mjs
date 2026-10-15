@@ -25,7 +25,7 @@ export function cleanupCandidates(snapshot, desired,activeIds=new Set(desired.wo
 }
 export function sandboxWorkspace(snapshot, desired, runtime, selectedIds) {
   const claimed=(window)=>Object.values(runtime.workspaces || {}).some(w=>w.label===snapshot.spaces.find(s=>s.index===window.space)?.label && (w.windows || []).some(r=>runtime.apps?.[r.app_key]?.names?.includes(window.app)));
-  const windows=snapshot.windows.filter(w=>!selectedIds.has(w.id) && !claimed(w) && w.movable && !w.sticky && !w.minimized && !w.nativeFullscreen).sort((a,b)=>a.id-b.id);
+  const windows=snapshot.windows.filter(w=>!selectedIds.has(w.id) && !claimed(w) && w.movable && w.resizable && !w.sticky && !w.minimized && !w.nativeFullscreen).sort((a,b)=>a.id-b.id);
   if (!windows.length) return null;
   const columns=Math.ceil(Math.sqrt(windows.length)), rows=Math.ceil(windows.length/columns);
   const displayRole=desired.target.mode==='solo'?'primary':desired.workspaces.find(w=>w.displayRole!=='primary')?.displayRole || desired.workspaces[0]?.displayRole;
@@ -37,13 +37,14 @@ export function sandboxWorkspace(snapshot, desired, runtime, selectedIds) {
 export function windowOccupiesSpace(window, knownGhostApps = []) {
   if (window.sticky) return false;
   const emptyNonmovableShell = !window.title && !window.role && !window.subrole && !window.movable;
-  if (emptyNonmovableShell && knownGhostApps.includes(window.app)) return false;
+  if (emptyNonmovableShell && window.frameVerified === false && knownGhostApps.includes(window.app)) return false;
   // Some applications leave an invisible root surface behind after their last
   // interactive window closes.  Requiring every negative signal keeps this
   // generic rule narrower than the reviewed per-application compatibility list.
   const headlessRootSurface = emptyNonmovableShell
     && !window.resizable
     && !window.visible
-    && !window.hasAxReference;
+    && !window.hasAxReference
+    && window.frameVerified === false;
   return !headlessRootSurface;
 }

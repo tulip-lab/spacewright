@@ -347,7 +347,7 @@ test('empty Sandbox and headless root surfaces become explicit finalization drif
     windows: [
       { id: 10, app: 'Code', title: 'Project', role: 'AXWindow', subrole: 'AXStandardWindow', display: 1, space: 1, frame: { x: 0, y: 0, w: 1200, h: 900 }, 'can-move': true, 'can-resize': true, 'is-visible': true },
       { id: 11, app: 'ChatGPT', title: 'Chat', role: 'AXWindow', subrole: 'AXStandardWindow', display: 1, space: 1, frame: { x: 600, y: 0, w: 600, h: 900 }, 'can-move': true, 'can-resize': true, 'is-visible': true },
-      { id: 12, app: 'IINA', title: '', role: '', subrole: '', display: 2, space: 3, frame: { x: -1200, y: 0, w: 540, h: 900 }, 'can-move': false, 'can-resize': false, 'is-visible': false, 'has-ax-reference': false },
+      { id: 12, app: 'IINA', title: '', role: '', subrole: '', display: 2, space: 3, frame: { x: -1200, y: 0, w: 540, h: 900 }, frameVerified: false, 'can-move': false, 'can-resize': false, 'is-visible': false, 'has-ax-reference': false },
       { id: 13, app: 'Other', title: 'Visible', role: 'AXWindow', subrole: 'AXStandardWindow', display: 2, space: 4, frame: { x: -600, y: 0, w: 600, h: 900 }, 'can-move': true, 'can-resize': true, 'is-visible': true }
     ]
   }, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
@@ -388,7 +388,7 @@ test('comparison recovers a uniquely identifiable unlabeled Space', () => {
   const snapshot = normalizeSnapshot({
     displays: [{ index: 1, uuid: 'DISPLAY-PRIMARY', frame: { x: 0, y: 0, w: 1200, h: 900 }, spaces: [1] }],
     spaces: [{ index: 1, uuid: 'SPACE-UNLABELED', display: 1, label: '', type: 'float' }],
-    windows: [{ id: 10, app: 'Code', display: 1, space: 1, frame: { x: 0, y: 0, w: 1200, h: 900 }, 'can-move': true }]
+    windows: [{ id: 10, app: 'Code', display: 1, space: 1, frame: { x: 0, y: 0, w: 1200, h: 900 }, 'can-move': true, 'can-resize': true }]
   });
   const { desired: state } = desired();
   const comparison = compareState(snapshot, state, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });

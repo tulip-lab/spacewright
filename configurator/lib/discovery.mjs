@@ -56,14 +56,41 @@ export function applyNativeWindowFrames(windows,frames) {
 }
 export async function discoverState(machine = {}, { deadline = Date.now() + 15000, signal, executable = 'yabai' } = {}) {
   const capturedAt = new Date().toISOString();
-  const query = async (...args) => {
+  const queryValue = async (...args) => {
     const result = await runBounded(executable, ['-m', 'query', ...args], { deadline: Math.min(deadline, Date.now() + 5000), signal });
     if (result.code) throw new Error(result.stderr || `query ${args.join(' ')} failed (${result.code})`);
-    const value = JSON.parse(result.stdout);
+    return JSON.parse(result.stdout);
+  };
+  const query = async (...args) => {
+    const value = await queryValue(...args);
     if (!Array.isArray(value)) throw new Error(`invalid query ${args.join(' ')}`);
     return value;
   };
-  const results = await Promise.allSettled([query('--displays'), query('--spaces'), query('--windows')]);
+  const queryCollection = async (plural, singular, limit) => {
+    try {return await query(`--${plural}`);} catch {}
+    // Establish the endpoint independently. A failed indexed query must never
+    // mean end-of-list: timeouts and malformed replies are incomplete discovery.
+    const last=await queryValue(`--${plural}`,`--${singular}`,'last');
+    if(!last || Array.isArray(last) || !Number.isInteger(last.index) || last.index<1 || last.index>limit || typeof last.uuid!=='string' || !last.uuid)throw new Error(`invalid ${plural} fallback endpoint`);
+    const values=[];
+    const uuids=new Set();
+    for(let index=1;index<=last.index;index++) {
+      const value=await queryValue(`--${plural}`,`--${singular}`,String(index));
+      if(!value || Array.isArray(value) || value.index!==index || typeof value.uuid!=='string' || !value.uuid || uuids.has(value.uuid))throw new Error(`invalid ${singular} ${index}`);
+      uuids.add(value.uuid);values.push(value);
+    }
+    const confirmed=await queryValue(`--${plural}`,`--${singular}`,'last');
+    if(confirmed?.index!==last.index || confirmed?.uuid!==last.uuid || values.at(-1).uuid!==last.uuid)throw new Error(`${plural} changed during indexed discovery`);
+    return values;
+  };
+  // Keep the authoritative collections independently settled. Displays and
+  // Spaces have a bounded single-object fallback because some yabai builds can
+  // return a truncated collection while indexed queries remain healthy.
+  const results=[];
+  for(const operation of [()=>queryCollection('displays','display',16),()=>queryCollection('spaces','space',64),()=>query('--windows')]) {
+    try {results.push({status:'fulfilled',value:await operation()});}
+    catch(reason) {results.push({status:'rejected',reason});}
+  }
   let displays = results[0].status === 'fulfilled' ? results[0].value : [];
   const spaces = results[1].status === 'fulfilled' ? results[1].value : [];
   let windows = results[2].status === 'fulfilled' ? results[2].value : [];

@@ -33,7 +33,7 @@ export async function journalMutation({stateRoot,runId,intent,run,verify}) {
     record.status=result.code===0?'attempted_unknown':'failed';
     // A zero exit is only an acknowledgment of the command, not its effect.
     await durableJson(path,record);
-    if(result.code!==0) throw new Error(result.stderr || `mutation exited ${result.code}`);
+    if(result.code!==0) throw Object.assign(new Error(result.stderr || `mutation exited ${result.code}`),{code:result.code===124?'SPACEWRIGHT_TIMEOUT':result.code===130?'SPACEWRIGHT_CANCELLED':undefined});
     record.postcondition=await verify();
     if (!record.postcondition) throw new Error('mutation postcondition failed');
     record.status='verified_success';record.finishedAt=new Date().toISOString();

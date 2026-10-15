@@ -7,10 +7,11 @@ export function recoveryCandidates(journal) {
   const candidates=new Map();
   for(const operation of journal.effects || []) {
     if(!operation.windowId || operation.status==='not_attempted' || operation.reversible===false)continue;
-    const original=journal.before?.windows.find(w=>w.id===operation.windowId), observed=operation.recoveryCandidate;
+    const baseline=journal.layoutBefore || journal.before;
+    const original=baseline?.windows.find(w=>w.id===operation.windowId), observed=operation.recoveryCandidate;
     const window=original && (!observed || sameWindowIdentity(original,observed))?original:observed;
     if(!window || candidates.has(window.id))continue;
-    const spaceUuid=window===original?journal.before.spaces.find(s=>s.index===window.space)?.uuid:operation.recoverySpaceUuid;
+    const spaceUuid=window===original?baseline.spaces.find(s=>s.index===window.space)?.uuid:operation.recoverySpaceUuid;
     candidates.set(window.id,{window,spaceUuid});
   }
   return [...candidates.values()];

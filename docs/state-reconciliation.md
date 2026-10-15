@@ -15,10 +15,26 @@ Discover -> Compare -> Plan -> Apply -> Verify
 normalizes the result into a versioned snapshot. Physical display UUIDs are
 resolved to portable roles through the machine-state file. Query failure
 produces a `partial` or `unavailable` snapshot with missing query ranges; it is never interpreted as a solo topology.
+If a display or Space collection is truncated, indexed fallback first queries
+the last object, reads every index through that endpoint, and confirms the
+endpoint again. Missing samples, duplicate identities, invalid indices and a
+changed endpoint leave discovery incomplete.
 
 Window titles are available to the matching engine but the normal human
 overview prints application names only. JSON output is intended for local
 diagnosis and may include titles returned by yabai.
+
+A window without a yabai AX reference has unknown capabilities, title and AX
+role; it is not evidence that its optional app is absent. Apply plans a bounded
+visit to each affected Space, restores the original focus, then rediscovers and
+replans before layout. Space UUIDs and window/process identities are checked
+before and after the visit. If AX references remain unavailable, apply fails
+instead of declaring completion. This phase never restarts yabai. A real native
+window with missing AX information still occupies its Space for cleanup.
+Observation may be followed by one app-recovery phase when the newly available
+metadata requires it. Each phase records its predecessor and successor plan;
+layout starts only after both phases finish. The same lease, total deadline
+and execution budgets apply throughout.
 
 ## Desired state and comparison
 
@@ -103,6 +119,12 @@ written to:
 $SPACEWRIGHT_STATE_ROOT/runs/<run-id>.json
 ```
 
+Tiny unselected, non-resizable `AXDialog` helpers with verified native bounds
+(at most 100×40 points) are retained in discovery and fresh Space-occupancy
+checks but excluded from the layout object census. Recreating one while moving
+its parent does not invalidate the plan. Ordinary dialogs, selected objects and
+new layout windows still require unchanged identities or a new plan.
+
 After execution, SpaceWright discovers state again. If executable drift remains
 and reconciliation is enabled, it performs one retry and verifies once more.
 It never loops indefinitely.
@@ -124,7 +146,9 @@ recorded by that run. Each operation checks application, PID, available process
 lifetime and bundle identity; original Space UUIDs are resolved to current
 indices. Rediscovery verifies both membership and frame after restoration. It does
 not undo application launches, recreate deleted Spaces, reverse displayplacer
-changes, or restore windows that no longer exist. Recovery itself receives a
+changes, or restore windows that no longer exist. When preparation occurred, the recovery
+baseline uses the verified snapshot immediately before layout, including the
+recovered window capabilities. Recovery itself receives a
 journal before discovery begins. SIGINT and SIGTERM stop further preflight or
 recovery work, terminate the active child process group, and persist a
 cancelled journal with an interrupted step when one had started.
