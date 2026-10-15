@@ -23,6 +23,8 @@ mkdir -p "$fake_bin"
 printf '%s\n' '#!/bin/sh' 'printf "%s\n" "Macmini9,1"' > "$fake_bin/sysctl"
 printf '%s\n' '#!/bin/sh' 'case "$3" in' \
     '  --displays) printf "%s\n" '\''[{"index":1,"uuid":"DISPLAY-TALL-1234","frame":{"x":0,"y":0,"w":1200,"h":1920},"is-built-in":false}]'\'' ;;' \
+    '  --spaces) printf "%s\n" '\''[{"index":1,"uuid":"SPACE-TALL-1234","display":1,"label":"","windows":[],"has-focus":true}]'\'' ;;' \
+    '  --windows) printf "%s\n" '\''[]'\'' ;;' \
     '  *) exit 2 ;;' \
     'esac' > "$fake_bin/yabai"
 chmod +x "$fake_bin/sysctl" "$fake_bin/yabai"
@@ -56,5 +58,11 @@ command cmp -s "$test_root/machine.before.json" "$state_root/machine.json"
 or exit 9
 command cmp -s "$test_root/runtime.before.json" "$config_root/generated/runtime.json"
 or exit 10
+
+set -l doctor_output (work_doctor 2>&1)
+string match -q '*OK      SpaceWright configuration v3 and compiled runtime*' -- $doctor_output
+or exit 11
+not string match -q '*compiled runtime is missing or stale*' -- $doctor_output
+or exit 12
 
 echo "OK      v3 hardware setup, compiled runtime freshness, and Fish planning"

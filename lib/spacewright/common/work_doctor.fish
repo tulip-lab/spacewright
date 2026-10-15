@@ -52,16 +52,13 @@ function work_doctor --description "Run read-only workspace system checks"
     echo "===== CONFIG CHECK ====="
     if workspace_config_check
         if test -r (spacewright_config_v3_file); or test -r (spacewright_config_v2_file)
-            set -l runtime_file (spacewright_config_runtime_file)
-            set -l source_file (spacewright_config_v2_file)
             set -l source_version 2
             if test -r (spacewright_config_v3_file)
-                set source_file (spacewright_config_v3_file)
                 set source_version 3
             end
-            set -l source_hash (__spacewright_config_sha256 "$source_file")
-            set -l compiled_hash (jq -r --argjson version "$source_version" 'select(.generated.format_version == 1 and .generated.compiler_version == 4 and .generated.source_version == $version) | .generated.source_sha256 // empty' "$runtime_file" 2>/dev/null)
-            if test -n "$source_hash"; and test "$source_hash" = "$compiled_hash"
+            spacewright_config_status >/dev/null 2>&1
+            set -l runtime_status_code $status
+            if test "$runtime_status_code" -eq 0
                 __work_doctor_ok "SpaceWright configuration v$source_version and compiled runtime"
             else if command -q node
                 __work_doctor_warn "SpaceWright configuration v$source_version is valid but compiled runtime is missing or stale"

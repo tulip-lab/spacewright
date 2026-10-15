@@ -38,6 +38,13 @@ or exit 4
 if command -q swiftc
     test -x "$installed_release_root/bin/spacewright-screen-geometry"
     or exit 45
+    set -l geometry_self_test "$test_root/spacewright-screen-geometry-self-test"
+    command swiftc -D SPACEWRIGHT_GEOMETRY_SELF_TEST \
+        "$package_root/helpers/spacewright-screen-geometry.swift" \
+        -o "$geometry_self_test"
+    or exit 46
+    "$geometry_self_test" | string match -q 'OK      screen geometry rejects non-finite frames'
+    or exit 47
 end
 test ("$bin_root/spacewright" version) = (string trim < "$package_root/VERSION")
 or exit 5
