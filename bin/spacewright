@@ -148,8 +148,8 @@ switch "$command_name"
             "--config-root=$SPACEWRIGHT_CONFIG_ROOT" \
             "--state-root=$SPACEWRIGHT_STATE_ROOT" \
             $argv
-    case recover
-        command node "$package_root/configurator/state-cli.mjs" recover \
+    case recover repair-yabai
+        command node "$package_root/configurator/state-cli.mjs" "$command_name" \
             "--package-root=$package_root" \
             "--config-root=$SPACEWRIGHT_CONFIG_ROOT" \
             "--state-root=$SPACEWRIGHT_STATE_ROOT" \
@@ -433,6 +433,7 @@ switch "$command_name"
             '  event wake [--dry-run]   deliver a wake event to the running configurator' \
             '  apply TARGET [MODE]      execute a live plan; --dry-run only previews' \
             '  recover RUN_ID           restore matched windows; --dry-run only previews' \
+            '  repair-yabai [--dry-run] safely restart yabai; --resume=ID restores a checkpoint' \
             '  mode MODE                switch display and workspace with progress feedback' \
             '  workspace ID [MODE]      arrange one workspace; v3 resolves configuration automatically' \
             '  setup COMMAND            detect, confirm, activate, or report the current display setup' \

@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
-import { selectorResult, selectRole,executionCensus } from './window-policy.mjs';
+import { selectorResult, selectRole,executionCensus,isObservationOverlay } from './window-policy.mjs';
 import { executionStepsFor } from './plan-backend.mjs';
 import { roleGrid } from './layout-policy.mjs';
-import { compileLayout,remapTallGrid,configuredWindows as windowsForVariant } from './config-v2.mjs';
+import { compileLayout,remapTallLayout,configuredWindows as windowsForVariant } from './config-v2.mjs';
 import { cleanupCandidates, sandboxWorkspace, variantLabels,windowOccupiesSpace } from './finalization-policy.mjs';
 import { preparationsFor } from './adapter-preparation.mjs';
 import { gridFrame } from './grid-geometry.mjs';
@@ -140,7 +140,8 @@ export function buildDesiredState(config, runtime, target = {}, snapshot = null)
     const runtimeId = variant.command || `spacewright_${workspaceId}_${resolved.mode}`;
     const configuredWindows = windowsForVariant(config,workspaceId,resolved.mode);
     const runner = variant.runtime?.runner || 'generic_layout';
-    const compiledLayout = compileLayout(variant.layout).map(layout=>resolved.mode==='tall' && layout.grid?{...layout,grid:remapTallGrid(layout.grid,config.settings?.tallTopPercent ?? 50)}:layout);
+    const layout = compileLayout(variant.layout);
+    const compiledLayout = resolved.mode === 'tall' ? remapTallLayout(layout,config.settings?.tallTopPercent ?? 50) : layout;
     return {
       runtimeId,
       runner,
@@ -612,7 +613,7 @@ export function targetPreconditions(snapshot, desired, comparison) {
   for (const claim of desired.oppositeVariants || []) labels.add(claim.label);
   const selected = new Set(comparison.matches.flatMap((m) => m.selectedWindowIds || []));
   const destructive = desired.target.kind !== 'workspace';
-  const windows=destructive?executionCensus(snapshot.windows,[...selected]):snapshot.windows;
+  const windows=destructive?executionCensus(snapshot.windows,[...selected]):snapshot.windows.filter(w=>selected.has(w.id) || !isObservationOverlay(w));
   const censusIds=new Set(windows.map(w=>w.id));
   return {
     configDigest: desired.configDigest,

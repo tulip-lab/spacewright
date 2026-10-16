@@ -28,9 +28,29 @@ A window without a yabai AX reference has unknown capabilities, title and AX
 role; it is not evidence that its optional app is absent. Apply plans a bounded
 visit to each affected Space, restores the original focus, then rediscovers and
 replans before layout. Space UUIDs and window/process identities are checked
-before and after the visit. If AX references remain unavailable, apply fails
-instead of declaring completion. This phase never restarts yabai. A real native
-window with missing AX information still occupies its Space for cleanup.
+before and after the visit. If AX references remain unavailable, diagnostics
+name the affected apps and window IDs. The preview declares a fallback that
+allows one yabai restart before layout, sharing the lease's `serviceRecovery`
+budget and total deadline. A zero service-recovery budget disables it. This
+fallback requires complete discovery, exclusively float Spaces and no native
+fullscreen windows; it refuses ambiguous labels or changed identities.
+
+Before restarting, it durably saves display/Space/window identities, Space
+labels, per-Space padding and gaps, external-bar settings and focus under
+`service-recovery/RUN_ID.json` in the state root. Restart reloads the user's
+`yabairc`, including its rules and signals. Labels and settings are restored by
+fresh UUID lookup, never cached Space indexes. A new immutable plan is required
+before any window layout. Persistent AX failure stops without a second restart.
+Other errors, cancellation and total-deadline expiry never trigger recovery.
+A real native window with missing AX information still occupies its Space for cleanup.
+
+`spacewright repair-yabai --dry-run` previews the same guarded recovery without
+changing the desktop. `spacewright repair-yabai` explicitly runs it. If restart
+or restoration is interrupted, the error reports the saved checkpoint and
+`spacewright repair-yabai --resume=RUN_ID` restores it without another restart.
+Unfinished restoration blocks subsequent apply runs until it is resolved;
+changing Space ownership, window identity or display topology stops restoration.
+Recovery is not a guarantee against external application or yabai defects.
 Observation may be followed by one app-recovery phase when the newly available
 metadata requires it. Each phase records its predecessor and successor plan;
 layout starts only after both phases finish. The same lease, total deadline
@@ -45,6 +65,12 @@ pixel geometry with the fresh snapshot. Grid verification uses the usable macOS
 display frame plus yabai padding and edge gaps, with a two-pixel rounding
 tolerance. `settings.tallTopPercent` is applied to the same grids in planning,
 execution and verification; 50/50 cannot satisfy a configured 49/51 split.
+Adjoining Tall rows share transformed boundaries, including a middle row that
+crosses the midpoint. This permits a three-row canvas without gaps or overlap
+when the split percentage changes. Detached centered overlays keep their
+historical geometry. A layout region must still be large enough for its app's
+minimum window size; for example, three rows can accommodate a taller assistant
+where a bottom-quarter region cannot.
 Native window frames are read from WindowServer by unique ID and owner PID,
 because yabai's AX event cache can retain old coordinates after a display
 change even when a geometry command has actually succeeded. Missing or reused
@@ -227,10 +253,15 @@ timed out. A completed apply requires fresh convergence and unchanged selected
 identities. Interactive and Web controllers require this verification result,
 not merely a zero exit code. One total deadline covers discovery, backend
 commands and a single optional reconciliation. Service recovery is disabled
-inside pinned apply; retained adapters have one shared service-recovery allowance
-per lease. Read-only confirmation polling, retries and app/service recovery consume atomic
+inside pinned window execution; the pre-layout AX recovery and retained adapters
+share the service-recovery allowance per lease. Read-only confirmation polling, retries and app/service recovery consume atomic
 lease-wide counters in `settings.executionBudgets`; the owner deadline never
 resets for a subprocess.
+
+A geometry failure reports the app/window ID and expected versus actual frame
+in the CLI, journal and interactive error banner. Applications may enforce a
+minimum window size larger than a configured region. Such a layout must be
+adjusted; service restart or relaxed verification cannot make it converge.
 
 Recovery results distinguish completed, partial, skipped, failed and cancelled.
 Space creation/destruction, display profile changes and other non-window effects

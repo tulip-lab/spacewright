@@ -93,6 +93,22 @@ effects. The controller persists its relationship to the rediscovered layout
 plan. It does not silently substitute an ID during layout. Existing optional
 windows failing placement still fail the transition.
 
+After a bounded Space visit fails to restore yabai window references (for
+example after an app update), the declared fallback may restart yabai once,
+restore labels/settings by Space UUID and replan before layout. The progress
+banner shows the recovery phase. Interrupted recovery leaves a durable
+checkpoint with an explicit `spacewright repair-yabai --resume=RUN_ID` command;
+later applies cannot continue while restoration is unfinished. See
+[State discovery and reconciliation](state-reconciliation.md).
+
+The two known ChatGPT desktop-controller accessory windows, `Computer Use` and
+`Computer Use Controls`, may appear/disappear during testing without invalidating
+an aggregate layout. Recognition also requires their AX role, non-resizable
+capability and verified bounded native frame. They remain in full discovery and
+Space occupancy checks and are excluded from ordinary application-role selection;
+explicitly selected windows and ordinary dialogs,
+including permission prompts, retain the normal identity guards.
+
 The transition lease owns the total deadline and configured retry/recovery
 counters; child processes cannot extend them. Cancellation marks the shared run
 before stopping children, and a pipe gate prevents a child from executing until
