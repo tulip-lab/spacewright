@@ -2,6 +2,11 @@ import { selectRole } from './window-policy.mjs';
 import { sameWindowIdentity } from './recovery.mjs';
 const complexRunners=new Set(['office_document','gtd_support','primary_helper','gtd_review','gtd_meeting','gtd_ai','fixed_adapter']);
 const identity=w=>({id:w.id,app:w.app,pid:w.pid,bundleId:w.bundleId,processFingerprint:w.processFingerprint});
+export const AX_UNAVAILABLE_EXIT = 76;
+export function axReferenceError(preparation) {
+  const windows = preparation.windows.map(w => `${w.app} (${w.id})`).join(', ');
+  return Object.assign(new Error(`yabai window references unavailable after Space observation: ${windows}. A bounded service recovery is required before layout; use spacewright repair-yabai if automatic recovery cannot complete.`), { code: 'SPACEWRIGHT_AX_UNAVAILABLE' });
+}
 function spaceObservations(snapshot,desired) {
   const spaces=new Map();
   for(const workspace of desired.workspaces)for(const role of workspace.windows) {
@@ -18,7 +23,8 @@ function spaceObservations(snapshot,desired) {
           displayUuid:snapshot.displays.find(d=>d.index===space.display)?.uuid,
           departureSpaceUuid:snapshot.spaces.find(s=>s.display===space.display && s.uuid!==space.uuid)?.uuid,
           returnSpaceUuid:snapshot.spaces.find(s=>s.focused)?.uuid,
-          sideEffects:['focus_space','restore_focus'],phaseLimitMs:8000,budget:'confirmation',requiresReplan:true};
+          sideEffects:['focus_space','restore_focus'],phaseLimitMs:8000,budget:'confirmation',requiresReplan:true,
+          fallback:{type:'restart_yabai',maxAttempts:1,budget:'serviceRecovery',sideEffects:['restart_yabai','restore_space_labels_and_settings','rediscover_and_replan']}};
         spaces.set(space.uuid,preparation);
       }
       if(!preparation.windows.some(w=>w.id===window.id))preparation.windows.push(identity(window));
@@ -100,7 +106,8 @@ export async function verifyPreparation(preparation,{discover,poll,check=()=>{},
     if(!selection.ambiguous && selection.selected.length) return {before:identity(preparation.window),after:selection.selected.map(identity),requiresReplan:true};
   }
   if(!sawComplete)throw new Error(lastIncomplete?.message || 'adapter rediscovery incomplete');
-  throw new Error(preparation.type==='observe_space'?'Space observation did not restore window AX references':'adapter completed without an effective selectable window');
+  if (preparation.type === 'observe_space') throw axReferenceError(preparation);
+  throw new Error('adapter completed without an effective selectable window');
 }
 export async function executePreparation(preparation,{discover,command,...dependencies}) {
   const check=dependencies.check || (()=>{});

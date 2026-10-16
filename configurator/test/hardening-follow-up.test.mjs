@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { starterConfig, compileV2, validateV2 } from '../lib/config-v2.mjs';
+import { starterConfig, compileV2, validateV2, remapTallLayout } from '../lib/config-v2.mjs';
 import { starterV3,validateV3 } from '../lib/config-v3.mjs';
 import { normalizeSnapshot, buildDesiredState, compareState, buildExecutionPlan,geometryMatches } from '../lib/state-engine.mjs';
 import { gridFrame } from '../lib/grid-geometry.mjs';
@@ -84,6 +84,18 @@ test('precise grid geometry includes menu/Dock work area, padding, gaps and nega
   assert.equal(geometryMatches({frame:{...top,h:991}},display,{grid:'100:3:0:0:2:49'}).matches,false);
   assert.equal(geometryMatches({frame:{...bottom,h:991}},display,{grid:'100:3:0:49:2:51'}).matches,false);
   assert.equal(geometryMatches({frame:{...top,h:Math.round(top.h)}},display,{grid:'100:3:0:0:2:49'}).matches,true);
+});
+test('three tall rows map shared boundaries without overlap across the midpoint',()=>{
+  for(const topPercent of [35,40,49,50,60,65]) {
+    const rows=remapTallLayout([0,1,2].map(y=>({role:`row_${y}`,grid:`3:2:0:${y}:1:1`})),topPercent).map(action=>action.grid.split(':').map(Number));
+    assert.equal(rows[0][3],0);
+    for(let index=1;index<rows.length;index++)assert.equal(rows[index][3]/rows[index][0],(rows[index-1][3]+rows[index-1][5])/rows[index-1][0]);
+    assert.equal((rows[2][3]+rows[2][5])/rows[2][0],1);
+    const display={frame:{x:0,y:0,w:1620,h:2025},gridGeometry:{frame:{x:0,y:31,w:1620,h:1994},padding:{top:4,bottom:4,left:4,right:4},gap:4}};
+    const frames=rows.map(parts=>gridFrame(display,parts.join(':')));
+    for(let index=1;index<frames.length;index++)assert.ok(frames[index-1].y+frames[index-1].h<=frames[index].y);
+    if(topPercent===49)assert.ok(frames[2].h>=620,'current Review assistant region must fit the observed minimum height');
+  }
 });
 test('tall percentages remain consumer configuration rather than hardcoded 49/51',()=>{
   for(const percent of [40,49,60]) {
@@ -404,7 +416,7 @@ test('Space observation batches shared app roles and refuses changed identities 
   const reused=structuredClone(value);reused.windows[0].pid++;
   await assert.rejects(executePreparation(preparation,{discover:async()=>normalizeSnapshot(reused,machine),command:async()=>{issued++;}}),/observation window changed/);
   assert.equal(issued,0);
-  await assert.rejects(executePreparation(preparation,{discover:async()=>normalizeSnapshot(value,machine),command:async()=>{issued++;},poll:async()=>{},delay:async()=>{}}),/did not restore window AX references/);
+  await assert.rejects(executePreparation(preparation,{discover:async()=>normalizeSnapshot(value,machine),command:async()=>{issued++;},poll:async()=>{},delay:async()=>{}}),/yabai window references unavailable/);
   assert.equal(issued,1);
 });
 test('AX observation and already-known required app recovery share one executable preview',()=>{

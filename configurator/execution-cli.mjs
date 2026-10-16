@@ -9,7 +9,7 @@ import { executePinnedWorkspace, executePinnedCleanup, executePinnedOrder } from
 import { durableJson, journalMutation, operationRoot } from './lib/operation-journal.mjs';
 import { readJson } from './lib/execution-coordinator.mjs';
 import { consumeBudget } from './lib/execution-budget.mjs';
-import { preparationCommand,preparationDepartureCommand,verifyPreparation } from './lib/adapter-preparation.mjs';
+import { preparationCommand,preparationDepartureCommand,verifyPreparation,axReferenceError,AX_UNAVAILABLE_EXIT } from './lib/adapter-preparation.mjs';
 const [action, executable, ...args] = process.argv.slice(2);
 const stateRoot = process.env.SPACEWRIGHT_STATE_ROOT;
 try {
@@ -61,7 +61,7 @@ try {
       await consumeBudget(stateRoot,preparation.budget);
       const phaseDeadline=Math.min(deadline,Date.now()+preparation.phaseLimitMs);
       let relation;
-      const check=()=>{if(abort.signal.aborted)throw abort.signal.reason;if(Date.now()>=phaseDeadline)throw Object.assign(new Error(preparation.type==='observe_space'?`Space observation deadline exceeded; yabai AX references unavailable for windows ${preparation.windows.map(w=>w.id).join(', ')}`:'adapter deadline exceeded'),{code:'SPACEWRIGHT_TIMEOUT'});};
+      const check=()=>{if(abort.signal.aborted)throw abort.signal.reason;if(Date.now()>=deadline)throw Object.assign(new Error('execution deadline exceeded'),{code:'SPACEWRIGHT_TIMEOUT'});if(Date.now()>=phaseDeadline)throw preparation.type==='observe_space'?axReferenceError(preparation):Object.assign(new Error('adapter deadline exceeded'),{code:'SPACEWRIGHT_TIMEOUT'});};
       // The operation record stores the input incarnation and explicit output
       // incarnations before any new immutable layout plan can be issued.
       try {
@@ -112,4 +112,4 @@ try {
       || s.non_empty_title && !current.title || s.title_include && !String(current.title || '').includes(s.title_include)
       || s.title_exclude && String(current.title || '').includes(s.title_exclude) || s.role && current.role !== s.role || s.subrole && current.subrole !== s.subrole) throw new Error(`planned window ${executable} precondition changed; replan required`);
   } else throw new Error('unknown execution coordination action');
-} catch (error) { process.stderr.write(`SpaceWright: ${error.message}\n`); process.exitCode = error.code === 'SPACEWRIGHT_CANCELLED' ? 130 : error.code === 'SPACEWRIGHT_TIMEOUT' ? 124 : 1; }
+} catch (error) { process.stderr.write(`SpaceWright: ${error.message}\n`); process.exitCode = error.code === 'SPACEWRIGHT_AX_UNAVAILABLE' ? AX_UNAVAILABLE_EXIT : error.code === 'SPACEWRIGHT_CANCELLED' ? 130 : error.code === 'SPACEWRIGHT_TIMEOUT' ? 124 : 1; }

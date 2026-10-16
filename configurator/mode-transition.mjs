@@ -294,6 +294,7 @@ export async function runTransition({
     if (exitCode.error) throw exitCode.error;
     let status = 'failed';
     let message = `Transition failed${exitCode.code === null ? ` (${exitCode.signal})` : ` with status ${exitCode.code}`}`;
+    if (exitCode.code !== 0 && diagnostics.errors.length) message = diagnostics.errors.at(-1).replace(/^\[ERROR\]\s*/, '').slice(0, 240);
     if (requestedReason === 'cancelled') { status = 'cancelled'; message = 'Transition cancelled'; }
     else if (requestedReason === 'replaced') { status = 'replaced'; message = 'A newer mode request took over'; }
     else if (requestedReason === 'timed_out') { status = 'timed_out'; message = `Stopped after ${Math.ceil(timeoutMs / 1000)} seconds`; }

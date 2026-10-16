@@ -18,7 +18,7 @@ export function validatePlanObjects(plan,snapshot) {
   }
   for(const expected of plan.selectedWindows) {
     const current=snapshot.windows.find(w=>w.id===expected.id);
-    if(!sameWindowIdentity(expected,current) || !selectorResult(current,{appNames:[expected.app],selector:expected.selector}).matches)throw new Error('fixed object precondition changed; replan required');
+    if(!sameWindowIdentity(expected,current) || !selectorResult(current,{windowId:expected.id,appNames:[expected.app],selector:expected.selector}).matches)throw new Error('fixed object precondition changed; replan required');
   }
   return snapshot;
 }
@@ -74,7 +74,7 @@ export async function executePinnedWorkspace(plan,workspaceId,{discover,mutate,c
     if(creating && !actions.some(a=>a.type==='move_window'))actions.unshift({type:'move_window'});
     for(const action of actions) {
       const snapshot=complete(await discover()), current=snapshot.windows.find(w=>w.id===expected.id);
-      if(!sameWindowIdentity(expected,current) || !selectorResult(current,{appNames:[expected.app],selector:expected.selector}).matches)throw new Error('planned window identity/precondition changed; replan required');
+      if(!sameWindowIdentity(expected,current) || !selectorResult(current,{windowId:expected.id,appNames:[expected.app],selector:expected.selector}).matches)throw new Error('planned window identity/precondition changed; replan required');
       const space=spaceFor(snapshot,uuid,[workspace.label,workspace.targetSpace?.label || '']);
       const display=displayFor(snapshot,workspace.targetDisplay);
       const intent={type:action.type,windowId:expected.id,identity:expected,spaceUuid:uuid,targetDisplayUuid:display.uuid,recoveryCandidate:current,recoverySpaceUuid:snapshot.spaces.find(s=>s.index===current.space)?.uuid,reversible:true};
@@ -86,7 +86,9 @@ export async function executePinnedWorkspace(plan,workspaceId,{discover,mutate,c
           const fresh=complete(await discover());if(!sameWindowIdentity(expected,fresh.windows.find(w=>w.id===expected.id)))throw new Error('planned window identity changed');
           await mutate(['-m','window',String(expected.id),op,value],{...intent,geometry:action.grid || action.geometry},s=>{
             const live=s.windows.find(w=>w.id===expected.id);if(!sameWindowIdentity(expected,live))return false;
-            return geometryMatches(live,display,op==='--grid'?{grid:value}:op==='--move'?{move_abs:value}:{resize_abs:value}).matches;
+            const result=geometryMatches(live,display,op==='--grid'?{grid:value}:op==='--move'?{move_abs:value}:{resize_abs:value});
+            if(!result.matches)throw new Error(`window geometry postcondition failed for ${expected.app} (${expected.id}): expected ${JSON.stringify(result.expected)}, actual ${JSON.stringify(live.frame)}; check the application's minimum window size and configured layout region`);
+            return true;
           });
         }
       }

@@ -3,7 +3,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
-import { readFile, rm } from 'node:fs/promises';
+import { readFile, readdir, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -13,12 +13,14 @@ import { resolveV3, validateV3 } from './lib/config-v3.mjs';
 import { restoreWindow, sameWindowIdentity,recoveryCandidates } from './lib/recovery.mjs';
 import { stableRead } from './lib/config-store.mjs';
 import { discoverState } from './lib/discovery.mjs';
-import { acquireExecution, runBounded, sleep } from './lib/execution-coordinator.mjs';
-import { durableJson, operationRecords } from './lib/operation-journal.mjs';
+import { acquireExecution, runBounded, sleep, assertExecutionAllowed } from './lib/execution-coordinator.mjs';
+import { durableJson, operationRecords, journalMutation } from './lib/operation-journal.mjs';
 import { consumeBudget } from './lib/execution-budget.mjs';
 import { detectMacHardware } from './lib/hardware-detection.mjs';
 import { readSpaceLabelHints } from './lib/space-label-history.mjs';
 import { executionCensus } from './lib/window-policy.mjs';
+import { recoverYabai, recoveryPreview } from './lib/yabai-recovery.mjs';
+import { AX_UNAVAILABLE_EXIT } from './lib/adapter-preparation.mjs';
 
 const execFileAsync = promisify(execFile);
 const command = process.argv[2] || 'help';
@@ -274,12 +276,57 @@ async function replanAfterDisplay(initial, target) {
   throw Object.assign(new Error('display state did not stabilize before the preparation deadline'), { code: 'SPACEWRIGHT_TIMEOUT' });
 }
 
+function serviceCheckpointFile(runId) {
+  if (!/^[0-9]+-[a-f0-9]{8}$/.test(runId)) throw new Error('invalid recovery checkpoint id');
+  return join(stateRoot, 'service-recovery', `${runId}.json`);
+}
+
+async function assertNoPendingServiceRecovery() {
+  const directory = join(stateRoot,'service-recovery');
+  const names = await readdir(directory).catch(error=>{if(error.code==='ENOENT')return [];throw error;});
+  for (const name of names.filter(name=>/^[0-9]+-[a-f0-9]{8}\.json$/.test(name))) {
+    const checkpoint = await readJson(join(directory,name),null);
+    if (!checkpoint || !['saved','completed'].includes(checkpoint.status)) {
+      throw new Error(`unfinished yabai recovery; restore Space labels and settings before layout: spacewright repair-yabai --resume=${name.slice(0,-5)}`);
+    }
+  }
+}
+
+async function repairYabai(runId, machine, { resume, expectedSnapshot, beforeCommand = async () => {} } = {}) {
+  const checkpointFile = serviceCheckpointFile(resume || runId);
+  const saved = resume ? await readJson(checkpointFile, null) : null;
+  if (resume && !saved) throw new Error('yabai recovery checkpoint not found');
+  const check = async () => { assertNotCancelled(); await assertExecutionAllowed(stateRoot, executionLease.env); await beforeCommand(); };
+  const run = async args => {
+    await check();
+    return runBounded('yabai', args, { env:{...process.env,...executionLease.env}, deadline:Math.min(executionDeadline,Date.now()+5000),
+      signal:cancellation.signal, onChild:executionLease.trackChild });
+  };
+  try {
+    const result = await recoverYabai({
+      discover:() => discover(machine), check, resume:saved, expectedSnapshot,
+      query:async args => { const result = await run(args); if(result.code) throw new Error(result.stderr || 'yabai settings query failed'); return result.stdout; },
+      mutate:async (args, intent, verify) => {
+        await check();
+        return journalMutation({stateRoot,runId,intent:{...intent,arguments:args,attempted:true},run:()=>run(args),verify});
+      },
+      persist:value => atomicWrite(checkpointFile,value),
+      consume:kind => consumeBudget(stateRoot,kind,{env:executionLease.env})
+    });
+    return { status:'completed', checkpointId:resume || runId, checkpoint:checkpointFile, ...result };
+  } catch (error) {
+    if (existsSync(checkpointFile)) error.message += ` Recovery checkpoint: ${checkpointFile}; after resolving the cause, run spacewright repair-yabai --resume=${resume || runId}.`;
+    throw error;
+  }
+}
+
 async function applyPlan(target) {
   const runId = `${Date.now()}-${randomBytes(4).toString('hex')}`;
   const releaseLock = await acquireLock(runId);
   const journalFile = join(stateRoot,'runs',`${runId}.json`);
   let journal = {formatVersion:2,runId,status:'preflight',createdAt:new Date().toISOString(),target,steps:[],logs:[],effects:[],exitCode:0};
   try {
+    await assertNoPendingServiceRecovery();
     await executionLease.trackJournal(journalFile);
     await atomicWrite(journalFile,journal);
     assertNotCancelled();
@@ -351,19 +398,37 @@ async function applyPlan(target) {
       await atomicWrite(journal.envelopeFile, { plan:next.plan,desired:next.desired,machine:next.machine });
       await atomicWrite(journalFile, journal);
     }
+    let serviceRecovered = false;
     for(let phase=0;initial.plan.preparations.length;phase++) {
-      if(phase>=2)throw new Error('adapter preparation did not satisfy layout prerequisites');
+      if(phase>=4)throw new Error('adapter preparation did not satisfy layout prerequisites');
       journal.preparationPlan ||= initial.plan;
       (journal.preparationPlans ||= []).push(initial.plan);
       const observing=initial.plan.preparations.some(p=>p.type==='observe_space');
       journal.exitCode=await runCommand(['prepare-adapters'],journal,journalFile,{type:'preparation',action:'prepare_adapters',planId:initial.plan.planId});
       assertNotCancelled();
-      if(journal.exitCode!==0)throw Object.assign(new Error('explicit adapter preparation failed; layout was not attempted'),{code:journal.exitCode===124?'SPACEWRIGHT_TIMEOUT':journal.exitCode===130?'SPACEWRIGHT_CANCELLED':undefined});
+      let recovery = null;
+      if (observing && journal.exitCode === AX_UNAVAILABLE_EXIT && !serviceRecovered) {
+        await assertSavedConfiguration(initial);
+        if (!initial.plan.preparations.some(p=>p.type==='observe_space' && p.fallback?.type==='restart_yabai')) throw new Error('service recovery was not declared in the plan');
+        process.stderr.write('==> Recover yabai window references (one service restart)\n');
+        journal.serviceRecovery = {checkpointId:runId,checkpoint:serviceCheckpointFile(runId),status:'running'};
+        await atomicWrite(journalFile,journal);
+        recovery = await repairYabai(runId,initial.machine,{expectedSnapshot:initial.snapshot,beforeCommand:()=>assertSavedConfiguration(initial)});
+        serviceRecovered = true; journal.serviceRecovery.status = 'completed'; journal.exitCode = 0;
+        journal.operations = await operationRecords(stateRoot,runId);
+        journal.effects = [...journal.effects,...journal.operations.filter(r=>r.id && !journal.effects.some(e=>e.id===r.id))];
+      }
+      if(journal.exitCode!==0) {
+        const detail = journal.exitCode === AX_UNAVAILABLE_EXIT
+          ? 'yabai window references remain unavailable after bounded recovery; check Accessibility permission and the affected apps, then run spacewright repair-yabai'
+          : [...journal.logs].reverse().find(l=>l.stream==='stderr' && l.line.startsWith('SpaceWright:'))?.line || 'explicit adapter preparation failed';
+        throw Object.assign(new Error(`${detail}; layout was not attempted`),{code:journal.exitCode===124?'SPACEWRIGHT_TIMEOUT':journal.exitCode===130?'SPACEWRIGHT_CANCELLED':undefined});
+      }
       const saved=await stableRead(initial.configFile,machineFile);
       if(saved.source!==initial.source || JSON.stringify(saved.machine)!==JSON.stringify(initial.machine))throw new Error('configuration changed during preparation; replan required');
       const next=await livePlan(target,initial);
-      if(!next.plan.executable || next.plan.preparations.length && (!observing || next.plan.preparations.some(p=>p.type==='observe_space')))throw new Error('adapter preparation did not satisfy layout prerequisites');
-      (journal.planRelations ||= []).push({phase:'preparation',fromPlanId:initial.plan.planId,toPlanId:next.plan.planId,before:initial.plan.selectedWindows,after:next.plan.selectedWindows});
+      if(!next.plan.executable || !recovery && next.plan.preparations.length && (!observing || next.plan.preparations.some(p=>p.type==='observe_space')))throw new Error('adapter preparation did not satisfy layout prerequisites');
+      (journal.planRelations ||= []).push({phase:recovery?'service_recovery':'preparation',fromPlanId:initial.plan.planId,toPlanId:next.plan.planId,before:initial.plan.selectedWindows,after:next.plan.selectedWindows});
       initial=next;journal.plan=next.plan;journal.layoutBefore=next.snapshot;
       await atomicWrite(journal.envelopeFile,{plan:next.plan,desired:next.desired,machine:next.machine});
       await atomicWrite(journalFile,journal);
@@ -402,9 +467,11 @@ async function applyPlan(target) {
     }
     journal.status = journal.exitCode === 0 && journal.verification.converged && JSON.stringify(verification.plan.selectedWindows) === JSON.stringify(initial.plan.selectedWindows) ? 'completed' : 'failed';
     if (journal.status === 'failed' && journal.exitCode === 0) journal.exitCode = 1;
+    if (journal.status === 'failed') journal.error = [...journal.logs].reverse().find(l=>l.stream==='stderr' && l.line.startsWith('SpaceWright:'))?.line
+      || `layout verification did not converge: ${journal.verification.drifts.filter(d=>d.severity!=='warning').map(d=>d.code).join(', ')}`;
     journal.finishedAt = new Date().toISOString();
     await atomicWrite(journalFile, journal);
-    return { runId, status: journal.status, exitCode: journal.exitCode, plan: initial.plan, verification: journal.verification, journal: journalFile };
+    return { runId, status: journal.status, exitCode: journal.exitCode, error:journal.error, plan: initial.plan, verification: journal.verification, journal: journalFile };
   } catch (error) {
     const status = error.code === 'SPACEWRIGHT_CANCELLED' ? 'cancelled' : error.code === 'SPACEWRIGHT_TIMEOUT' ? 'timed_out' : 'failed';
     const exitCode = status === 'cancelled' ? 130 : status === 'timed_out' ? 124 : 1;
@@ -412,6 +479,7 @@ async function applyPlan(target) {
       const interruptedStep = [...journal.steps].reverse().find((step) => step.status === 'running');
       if (interruptedStep) interruptedStep.status = status;
       journal.status = status; journal.exitCode = exitCode; journal.finishedAt = new Date().toISOString(); journal.error = error.message;
+      if (journal.serviceRecovery?.status === 'running') journal.serviceRecovery.status = 'failed';
       journal.logs.push({ timestamp: journal.finishedAt, stream: 'system', line: error.message });
       try { await atomicWrite(journalFile, journal); }
       catch (writeError) { process.stderr.write(`terminal journal write failed: ${writeError.message}; run=${runId} status=${status}\n`); }
@@ -549,6 +617,7 @@ async function main() {
       return;
     }
     const result = await applyPlan(target);
+    if (result.error) process.stderr.write(`[ERROR] ${result.error}\n`);
     const label = result.status === 'completed' ? 'OK' : result.status === 'stale' ? 'STALE' : 'FAIL';
     flags.json ? print(result) : console.log(result.noop ? 'OK      target is already converged' : `${label}    run=${result.runId} journal=${result.journal}`);
     if (flags['verified-marker'] && (result.noop || result.status === 'completed')) console.log('SPACEWRIGHT_VERIFIED');
@@ -564,6 +633,23 @@ async function main() {
     else if (!result.dryRun && result.status !== 'completed') process.exitCode = 1;
     return;
   }
+  if (command === 'repair-yabai') {
+    const machine = await readJson(machineFile, {version:1,displayBindings:{}});
+    if (flags['dry-run']) {
+      if (flags.resume) {
+        const path = serviceCheckpointFile(flags.resume);
+        const checkpoint = await readJson(path,null);
+        if (!checkpoint) throw new Error('yabai recovery checkpoint not found');
+        print({dryRun:true,mutates:false,action:'restore_yabai_checkpoint',checkpoint:path,spaces:checkpoint.spaces});
+      } else print(recoveryPreview(await discover(machine)));
+      return;
+    }
+    const runId = `${Date.now()}-${randomBytes(4).toString('hex')}`;
+    const release = await acquireLock(runId);
+    try { if(!flags.resume)await assertNoPendingServiceRecovery(); print(await repairYabai(runId,machine,{resume:flags.resume})); }
+    finally { await release(); }
+    return;
+  }
   console.log([
     'usage: state-cli.mjs <command>', '',
     'commands:',
@@ -574,8 +660,9 @@ async function main() {
     '  capture [id] [mode] [--space-index=N]    print an unsaved workspace draft',
     '  event wake [--dry-run]                   deliver a wake event to the configurator',
     '  apply <target> [mode] [--dry-run]        execute, verify, and journal a plan',
-    '  recover <run-id> [--dry-run]             best-effort restore window Spaces and frames'
+    '  recover <run-id> [--dry-run]             best-effort restore window Spaces and frames',
+    '  repair-yabai [--dry-run] [--resume=ID]   recover yabai references with UUID-preserved Spaces'
   ].join('\n'));
 }
 
-main().catch((error) => { console.error(`spacewright: ${error.message}`); process.exitCode = 1; });
+main().catch((error) => { console.error(`spacewright: ${error.message}`); process.exitCode = error.code==='SPACEWRIGHT_CANCELLED'?130:error.code==='SPACEWRIGHT_TIMEOUT'?124:1; });

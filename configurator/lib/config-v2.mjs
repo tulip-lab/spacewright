@@ -5,7 +5,7 @@ const MODES = ['solo', 'wide', 'tall'];
 const DIRECTIONS = new Set(['rows', 'columns']);
 const POSTPROCESSORS = new Set(['gtd_ai_expand_hermes_when_alone', 'workspace_reconcile_primary_fixed_spaces']);
 const ROOT_KEYS = new Set(['version', 'metadata', 'apps', 'aiProviders', 'aiRouting', 'displayRoles', 'workspaces', 'modes', 'shortcuts', 'profiles', 'rules', 'settings']);
-export const CONFIG_COMPILER_VERSION = 5;
+export const CONFIG_COMPILER_VERSION = 6;
 const V2_SCHEMA = JSON.parse(readFileSync(new URL('../../schemas/spacewright-v2.schema.json', import.meta.url), 'utf8'));
 
 function schemaTypeMatches(value, type) {
@@ -461,24 +461,38 @@ export function compileLayout(node, rect = { x: 0, y: 0, w: 120, h: 120 }, actio
   return actions;
 }
 
-export function remapTallGrid(grid, topPercent = 50) {
+export function remapTallGrid(grid, topPercent = 50, mapCrossing = false) {
   if (!Number.isInteger(topPercent) || topPercent < 35 || topPercent > 65 || topPercent === 50) return grid;
   const [rows, columns, x, y, width, height] = String(grid).split(':').map(Number);
   if (![rows, columns, x, y, width, height].every(Number.isFinite) || rows <= 0 || height <= 0 || y < 0 || y + height > rows || height === rows) return grid;
   const midpoint = rows / 2;
-  const end = y + height;
-  let mappedStart;
-  let mappedEnd;
-  if (end <= midpoint) {
-    mappedStart = Math.round((y / midpoint) * topPercent);
-    mappedEnd = Math.round((end / midpoint) * topPercent);
-  } else if (y >= midpoint) {
-    mappedStart = Math.round(topPercent + ((y - midpoint) / midpoint) * (100 - topPercent));
-    mappedEnd = Math.round(topPercent + ((end - midpoint) / midpoint) * (100 - topPercent));
-  } else {
-    return grid;
-  }
+  if (y < midpoint && y + height > midpoint && !mapCrossing) return grid;
+  // Map shared boundaries identically even when a region crosses the midpoint.
+  // Leaving a middle third unchanged overlaps its remapped neighbours.
+  const mapBoundary = position => position <= midpoint
+    ? Math.round((position / midpoint) * topPercent)
+    : Math.round(topPercent + ((position - midpoint) / midpoint) * (100 - topPercent));
+  const mappedStart = mapBoundary(y);
+  const mappedEnd = mapBoundary(y + height);
   return `100:${columns}:${x}:${mappedStart}:${width}:${Math.max(1, mappedEnd - mappedStart)}`;
+}
+
+export function remapTallLayout(actions, topPercent = 50) {
+  const rectangles=actions.map(action=>{
+    if(!action.grid)return null;
+    const [rows,columns,x,y,width,height]=action.grid.split(':').map(Number);
+    return {left:x/columns,right:(x+width)/columns,top:y/rows,bottom:(y+height)/rows};
+  });
+  return actions.map((action,index)=>{
+    if(!action.grid)return action;
+    const rect=rectangles[index];
+    // Tiled neighbours share the same transformed edge. Detached centered
+    // overlays retain the historical geometry instead of being stretched.
+    const adjoining=rectangles.some((other,i)=>other && i!==index
+      && Math.min(rect.right,other.right)>Math.max(rect.left,other.left)
+      && (Math.abs(other.bottom-rect.top)<1e-9 || Math.abs(other.top-rect.bottom)<1e-9));
+    return {...action,grid:remapTallGrid(action.grid,topPercent,adjoining)};
+  });
 }
 
 export function resolvedAIProvider(config, workspaceId, mode) {
@@ -559,11 +573,8 @@ export function compileV2(config) {
         const workspace = config.workspaces[workspaceId];
         const variant = workspace.variants[mode];
         const runtimeId = variant.command || `spacewright_${workspaceId}_${mode}`;
-        runtime.layouts[runtimeId] = compileLayout(variant.layout).map((action) => (
-          mode === 'tall' && action.grid
-            ? { ...action, grid: remapTallGrid(action.grid, config.settings?.tallTopPercent ?? 50) }
-            : action
-        ));
+        const layout=compileLayout(variant.layout);
+        runtime.layouts[runtimeId] = mode === 'tall' ? remapTallLayout(layout,config.settings?.tallTopPercent ?? 50) : layout;
         runtime.workspaces[runtimeId] = {
           runner: variant.runtime?.runner || 'generic_layout',
           ...(variant.runtime?.runnerOptions ? { runner_options: variant.runtime.runnerOptions } : {}),

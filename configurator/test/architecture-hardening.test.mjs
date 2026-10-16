@@ -35,6 +35,19 @@ async function fixture(config = starterConfig()) {
 const fs = require('fs');
 const data = JSON.parse(fs.readFileSync(process.env.MOCK_DATA,'utf8'));
 const args = process.argv.slice(2); const kind=args[1]; const command=args[3];
+if(args[0]==='--restart-service') {
+ fs.appendFileSync(process.env.MOCK_LOG,JSON.stringify(args)+'\\n');
+ data.restartCount=(data.restartCount || 0)+1;data.spaces.forEach(s=>s.label='');
+ if(!data.axRecoveryIneffective)for(const w of data.windows)Object.assign(w,{'has-ax-reference':true,'can-move':true,'can-resize':true,role:'AXWindow',title:'Recovered'});
+ fs.writeFileSync(process.env.MOCK_DATA,JSON.stringify(data));process.exit(0);
+}
+if(kind==='config') {
+ const name=args[2]==='--space'?args[4]:args[2],key=args[2]==='--space'?args[3]+':'+name:name;
+ data.settings ||= {};const value=data.settings[key] || (name==='external_bar'?'off:0:0':'4');
+ const replacement=args[2]==='--space'?args[5]:args[3];
+ if(replacement!=null){data.settings[key]=replacement;fs.writeFileSync(process.env.MOCK_DATA,JSON.stringify(data));}else console.log(value);
+ process.exit(0);
+}
 if(kind==='query') {
  const key=args[2].slice(2); let result=data[key];
  if(key==='windows' && args[3]==='--window') result=data.windows.find(w=>w.id===Number(args[4]));
@@ -58,7 +71,7 @@ if(kind==='space' && args[2]==='--create')data.spaces.push({index:Math.max(...da
 if(kind==='space' && command==='--layout')data.spaces.find(s=>s.index===Number(args[2])).type=args[4];
 if(kind==='space' && args[2]==='--focus') {
  const index=Number(args[3]);data.spaces.forEach(s=>s['has-focus']=s.index===index);
- if(data.axObservation)for(const w of data.windows.filter(w=>w.space===index))Object.assign(w,{'has-ax-reference':true,'can-move':!data.axNeedsRefresh,'can-resize':true,role:'AXWindow',subrole:'AXStandardWindow',title:'Observed'});
+ if(data.axObservation && !data.axRequiresService)for(const w of data.windows.filter(w=>w.space===index))Object.assign(w,{'has-ax-reference':true,'can-move':!data.axNeedsRefresh,'can-resize':true,role:'AXWindow',subrole:'AXStandardWindow',title:'Observed'});
 }
 if(kind==='space' && command==='--destroy') {
  const removed=data.spaces.find(s=>s.index===Number(args[2]));data.spaces=data.spaces.filter(s=>s!==removed);
@@ -87,6 +100,69 @@ fs.writeFileSync(process.env.MOCK_DATA,JSON.stringify(d));
   const commands = async () => (await readFile(logFile,'utf8').catch(()=>'' )).trim().split('\n').filter(Boolean).map(JSON.parse);
   return {directory,configRoot,stateRoot,dataFile,env,cli,setData,commands,close:()=>rm(directory,{recursive:true,force:true})};
 }
+
+for(const ineffective of [false,true])test(`persistent AX loss uses at most one service recovery (${ineffective?'ineffective':'recovered'})`,async()=>{
+  const f=await fixture();
+  try {
+    await f.setData(data=>{
+      data.axObservation=true;data.axRequiresService=true;data.axRecoveryIneffective=ineffective;
+      data.spaces[0]['has-focus']=true;
+      data.spaces.push({index:2,uuid:'AX-SPACE',display:1,label:'original',type:'float'});
+      Object.assign(data.windows[0],{space:2,title:'',role:'','has-ax-reference':false,'can-move':false,'can-resize':false});
+    });
+    const preview=JSON.parse((await f.cli(['apply','coding','solo','--dry-run','--json'])).stdout);
+    assert.equal(preview.plan.preparations[0].fallback.type,'restart_yabai');
+    assert.equal((await f.commands()).length,0);
+    let output;
+    try {output=await f.cli(['apply','coding','solo','--json']);}
+    catch(error){if(!ineffective)throw error;output=error;}
+    const result=JSON.parse(output.stdout);
+    assert.equal(result.status,ineffective?'failed':'completed');
+    const commands=await f.commands();
+    assert.equal(commands.filter(a=>a[0]==='--restart-service').length,1);
+    const journal=JSON.parse(await readFile(result.journal,'utf8'));
+    assert.equal(journal.serviceRecovery.status,'completed');
+    assert.ok(journal.planRelations.some(r=>r.phase==='service_recovery'));
+    const checkpoint=JSON.parse(await readFile(journal.serviceRecovery.checkpoint,'utf8'));
+    assert.equal(checkpoint.status,'completed');
+    const data=JSON.parse(await readFile(f.dataFile,'utf8'));
+    assert.equal(data.spaces.find(s=>s.uuid==='AX-SPACE').label,'original');
+    if(ineffective) {
+      assert.match(result.error,/window references remain unavailable/);
+      assert.ok(!commands.some(a=>a[1]==='window' || a.includes('--create')));
+    }else assert.equal(journal.verification.converged,true);
+  }finally{await f.close();}
+});
+
+test('unfinished service restoration blocks apply and a fresh repair before any desktop mutation',async()=>{
+  const f=await fixture();
+  try {
+    await mkdir(join(f.stateRoot,'service-recovery'));
+    await writeFile(join(f.stateRoot,'service-recovery','123456-1234abcd.json'),JSON.stringify({status:'restoring'}));
+    for(const args of [['apply','coding','solo','--json'],['repair-yabai']]) {
+      await assert.rejects(f.cli(args),error=>{
+        assert.match(error.stderr,/repair-yabai --resume=123456-1234abcd/);return true;
+      });
+    }
+    assert.deepEqual(await f.commands(),[]);
+  }finally{await f.close();}
+});
+test('zero service recovery budget prevents the restart after failed AX observation',async()=>{
+  const config=starterConfig();config.settings={executionBudgets:{serviceRecovery:0}};
+  const f=await fixture(config);
+  try {
+    await f.setData(data=>{
+      data.axRequiresService=true;data.spaces[0]['has-focus']=true;
+      data.spaces.push({index:2,uuid:'AX-SPACE',display:1,label:'original',type:'float'});
+      Object.assign(data.windows[0],{space:2,title:'',role:'','has-ax-reference':false,'can-move':false,'can-resize':false});
+    });
+    await assert.rejects(f.cli(['apply','coding','solo','--json']),error=>{
+      assert.match(error.stderr,/serviceRecovery execution budget exhausted/);return true;
+    });
+    const commands=await f.commands();
+    assert.ok(!commands.some(a=>a[0]==='--restart-service' || a[1]==='window'));
+  }finally{await f.close();}
+});
 
 test('Space AX observation restores focus and replans optional windows before fixed layout',async()=>{
   const config=starterConfig();
