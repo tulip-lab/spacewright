@@ -69,8 +69,11 @@ Adjoining Tall rows share transformed boundaries, including a middle row that
 crosses the midpoint. This permits a three-row canvas without gaps or overlap
 when the split percentage changes. Detached centered overlays keep their
 historical geometry. A layout region must still be large enough for its app's
-minimum window size; for example, three rows can accommodate a taller assistant
-where a bottom-quarter region cannot.
+minimum window size. On a folding display, keep the configured physical panel
+boundary when adjusting regions; a minimum-size failure must not be solved by
+replacing the two panels with three equal rows. Two Sandbox windows on a
+portrait display stack vertically, and Tall mode preserves the configured
+top/bottom ratio instead of narrowing both windows into side-by-side columns.
 Native window frames are read from WindowServer by unique ID and owner PID,
 because yabai's AX event cache can retain old coordinates after a display
 change even when a geometry command has actually succeeded. Missing or reused

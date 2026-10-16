@@ -94,7 +94,6 @@ test('three tall rows map shared boundaries without overlap across the midpoint'
     const display={frame:{x:0,y:0,w:1620,h:2025},gridGeometry:{frame:{x:0,y:31,w:1620,h:1994},padding:{top:4,bottom:4,left:4,right:4},gap:4}};
     const frames=rows.map(parts=>gridFrame(display,parts.join(':')));
     for(let index=1;index<frames.length;index++)assert.ok(frames[index-1].y+frames[index-1].h<=frames[index].y);
-    if(topPercent===49)assert.ok(frames[2].h>=620,'current Review assistant region must fit the observed minimum height');
   }
 });
 test('tall percentages remain consumer configuration rather than hardcoded 49/51',()=>{
@@ -104,6 +103,17 @@ test('tall percentages remain consumer configuration rather than hardcoded 49/51
     const desired=buildDesiredState(config,compileV2(config),{kind:'workspace',id:'coding',mode:'tall'});
     assert.deepEqual(desired.workspaces[0].layout.map(l=>l.grid),[`100:1:0:0:1:${percent}`,`100:1:0:${percent}:1:${100-percent}`]);
   }
+});
+test('overlapping lower-panel regions retain the physical 49/51 boundary',()=>{
+  const actions=[{role:'preview',grid:'4:2:0:0:2:2'},{role:'finder',grid:'4:2:0:2:1:1'},{role:'assistant',grid:'4:2:0:2:1:2'}];
+  const mapped=remapTallLayout(actions,49).map(action=>action.grid);
+  assert.deepEqual(mapped,['100:2:0:0:2:49','100:2:0:49:1:26','100:2:0:49:1:51']);
+  const display={frame:{x:0,y:0,w:1620,h:2025},gridGeometry:{frame:{x:0,y:31,w:1620,h:1994},padding:{top:4,bottom:4,left:4,right:4},gap:4}};
+  const [top,finder,assistant]=mapped.map(grid=>gridFrame(display,grid));
+  // yabai includes a bottom edge gap only for the shorter region.
+  assert.ok(Math.abs(finder.y-assistant.y)<=2);
+  assert.ok(top.y+top.h<=assistant.y);
+  assert.ok(assistant.y+assistant.h<=2025);
 });
 test('overflowing adapter grids compare the same edge-clamped frame that yabai applies',()=>{
   const display={frame:{x:0,y:0,w:1620,h:2025},gridGeometry:{frame:{x:0,y:31,w:1620,h:1994},padding:{top:4,bottom:4,left:4,right:4},gap:4}};
@@ -229,6 +239,24 @@ test('mode Sandbox carries exact independent objects and geometry in the fixed p
   assert.ok(plan.selectedWindows.some(w=>w.id===99 && w.workspaceId==='__sandbox'));
   assert.ok(plan.actions.some(a=>a.type==='ensure_space' && a.workspaceId==='__sandbox'));
   assert.ok(plan.actions.some(a=>a.type==='resize_window' && a.windowId===99));
+});
+test('two portrait Sandbox windows preserve the Tall panel split through execution and verification',async()=>{
+  const config=starterConfig();config.settings={tallTopPercent:49};
+  for(const display of config.modes.tall.displays)display.role='primary';
+  const value=raw();value.displays[0].frame={x:0,y:0,w:1620,h:2025};
+  value.spaces=[{index:1,uuid:'S',display:1,label:'coding_tall',type:'float'},{index:3,uuid:'SANDBOX',display:1,label:'sandbox_tall',type:'float'}];
+  value.windows.push(...[99,100].map(id=>({...value.windows[0],id,app:`Other ${id}`,space:3})));
+  const target={kind:'mode',id:'tall',mode:'tall'};
+  const {plan,desired}=make(value,config,target);
+  assert.deepEqual(desired.workspaces.find(w=>w.workspaceId==='__sandbox').layout.map(l=>l.grid),['100:1:0:0:1:49','100:1:0:49:1:51']);
+  assert.deepEqual(plan.actions.filter(a=>a.type==='resize_window' && a.workspaceId==='__sandbox').map(a=>a.grid),['100:1:0:0:1:49','100:1:0:49:1:51']);
+  await executePinnedWorkspace(plan,'__sandbox',{discover:async()=>normalizeSnapshot(value,machine),mutate:async(args,intent,verify)=>{
+    assert.equal(args[3],'--grid');value.windows.find(w=>w.id===Number(args[2])).frame=gridFrame(value.displays[0],args[4]);assert.equal(verify(normalizeSnapshot(value,machine)),true);
+  }});
+  assert.equal(make(value,config,target).plan.actions.filter(a=>a.workspaceId==='__sandbox').length,0);
+  assert.ok(value.windows.filter(w=>w.space===3).every(w=>w.frame.w>=914));
+  value.displays[0].frame={x:0,y:0,w:2025,h:1620};
+  assert.deepEqual(make(value,config,target).desired.workspaces.find(w=>w.workspaceId==='__sandbox').layout.map(l=>l.grid),['1:2:0:0:1:1','1:2:1:0:1:1']);
 });
 test('native fullscreen and observed unmovable complex apps preview an explicit preparation and new-plan boundary',()=>{
   const native=raw();native.windows[0]['is-native-fullscreen']=true;

@@ -1,5 +1,7 @@
 // Pure scope policy. Destruction always uses the full discovered occupancy,
 // never the subset selected for layout.
+import { remapTallLayout } from './config-v2.mjs';
+
 export function variantLabels(config, ids, mode) {
   const claims = Object.entries(config.workspaces).flatMap(([id,w]) => Object.entries(w.variants).map(([variant,v]) => ({workspaceId:id,mode:variant,label:v.spaceLabel || `${w.spaceLabel}_${variant}`})));
   const opposite=claims.filter(c=>ids.includes(c.workspaceId) && c.mode!==mode && !claims.some(t=>ids.includes(t.workspaceId) && t.mode===mode && t.label===c.label))
@@ -27,11 +29,16 @@ export function sandboxWorkspace(snapshot, desired, runtime, selectedIds) {
   const claimed=(window)=>Object.values(runtime.workspaces || {}).some(w=>w.label===snapshot.spaces.find(s=>s.index===window.space)?.label && (w.windows || []).some(r=>runtime.apps?.[r.app_key]?.names?.includes(window.app)));
   const windows=snapshot.windows.filter(w=>!selectedIds.has(w.id) && !claimed(w) && w.movable && w.resizable && !w.sticky && !w.minimized && !w.nativeFullscreen).sort((a,b)=>a.id-b.id);
   if (!windows.length) return null;
-  const columns=Math.ceil(Math.sqrt(windows.length)), rows=Math.ceil(windows.length/columns);
   const displayRole=desired.target.mode==='solo'?'primary':desired.workspaces.find(w=>w.displayRole!=='primary')?.displayRole || desired.workspaces[0]?.displayRole;
+  const display=snapshot.displays.find(d=>d.role===displayRole);
+  // Two side-by-side windows on a portrait display can fall below app minimum
+  // widths. Stack them in the two physical panels, retaining the Tall split.
+  const columns=windows.length===2 && display?.frame.h>display?.frame.w ? 1 : Math.ceil(Math.sqrt(windows.length));
+  const rows=Math.ceil(windows.length/columns);
+  const layout=windows.map((w,i)=>({role:`window_${w.id}`,grid:`${rows}:${columns}:${i%columns}:${Math.floor(i/columns)}:1:1`}));
   return {workspaceId:'__sandbox',runtimeId:'__sandbox',runner:'generic_layout',mode:desired.target.mode,name:'Sandbox',label:`sandbox_${desired.target.mode}`,displayRole,activation:{type:'always'},
     windows:windows.map(w=>({role:`window_${w.id}`,appKey:`sandbox_${w.id}`,appNames:[w.app],bundleIds:w.bundleId?[w.bundleId]:[],required:true,ownership:'independent',cardinality:'one',windowId:w.id,selector:{movable:true}})),
-    layout:windows.map((w,i)=>({role:`window_${w.id}`,grid:`${rows}:${columns}:${i%columns}:${Math.floor(i/columns)}:1:1`}))};
+    layout:desired.target.mode==='tall' ? remapTallLayout(layout,runtime.settings?.tallTopPercent ?? 50) : layout};
 }
 
 export function windowOccupiesSpace(window, knownGhostApps = []) {
