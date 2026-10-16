@@ -70,12 +70,26 @@ profiles, or reload skhd. Live changes still require an explicit workspace or
 display command.
 
 The hardware-aware page validates and writes `config.v3.json` plus a
-digest-bound `generated/runtime.json`. The legacy editor continues to validate
-and write `config.v2.json`, so existing users can migrate deliberately rather
-than being rewritten automatically. Import validates external JSON as an
+digest-bound `generated/runtime.json`. The legacy editor writes `config.v2.json` only while v2 is active. Once v3 is
+active, legacy save and v2 history restoration are rejected; edit the portable
+v3 document in Hardware & Setups. Import validates external JSON as an
 unsaved preview. Export downloads the portable document. Restore Backup
 revalidates and recompiles the previous saved document before activating it.
-The service also keeps the 10 most recent prior portable documents under
+Backup preview and restore always select v3 when `config.v3.json` exists,
+otherwise v2. They never fall back to the other version's backup. Restore
+compiles and validates before writing, retains the previous current bytes in
+`.backup` for undo, and verifies both portable content and generated runtime
+before releasing the configuration guard. Partial writes retain the guard.
+
+`GET /api/config-backup` returns `version`, `baseRevision`, `backupRevision`,
+`config` and `path`. Authenticated `POST /api/restore-backup` must send the three
+revision/version fields from that preview. Missing fields return 428; a changed
+active version, current revision or backup digest returns 409 with no writes.
+Invalid backups or unconfirmed v3 setups return 422. Restoring does not replace
+machine-local bindings or confirmations. Full v3 history snapshots and native
+v3 capture merging are not supported.
+
+The service also keeps the 10 most recent prior v2 portable documents under
 `$SPACEWRIGHT_CONFIG_ROOT/backups`; machine-local state is never included.
 
 The Apps page can perform read-only discovery of application names reported by

@@ -152,8 +152,9 @@ test('local server isolates machine bindings and generated skhd output', async (
   assert.equal(staleSave.status, 409);
   assert.equal(staleSave.body.code, 'configuration_conflict');
   assert.equal((await readdir(join(configRoot, 'backups'))).length, 1);
+  const backupPreview = await json(url, '/api/config-backup', {headers:{'x-spacewright-token':token}});
   const restored = await json(url, '/api/restore-backup', {
-    method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-spacewright-token': token }, body:JSON.stringify({version:backupPreview.body.version,baseRevision:backupPreview.body.baseRevision,backupRevision:backupPreview.body.backupRevision})
   });
   assert.equal(restored.status, 200);
   assert.equal(restored.body.config.metadata.name, first.metadata.name);

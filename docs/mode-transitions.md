@@ -68,15 +68,30 @@ ctrl + alt - escape : fish -lc 'spacewright mode-cancel'
 fn + shift - 9 : fish -lc 'spacewright workspace gtd_ai solo'
 ```
 
-`spacewright mode MODE --dry-run` prints the complete closed operation without
-acquiring a lock, displaying a banner, or changing the desktop.
+`spacewright mode MODE --dry-run` runs the same read-only configuration, binding,
+discovery, selector and executable-profile checks, then prints the planned
+display and layout stages without acquiring a lock, displaying a banner, or changing the desktop.
 `spacewright workspace ID MODE --dry-run` reports the target-scoped policy and
 likewise makes no desktop changes.
 
 ## Verification and cancellation
 
-Interactive requests run the shared apply engine after any explicit mode display
-profile step. Success requires its verified-convergence marker. Ordinary errors,
+Interactive mode requests run the display and layout phases in the shared apply
+engine under one inherited lease and total deadline. Read-only preflight rejects
+invalid configuration, missing bindings, incomplete discovery and unrecoverable
+required-window failures before the display profile. Declared adapter recovery
+remains deferred until after the display phase. Source and machine generations
+are rechecked immediately before display mutation. The profile runs once, then
+fresh discovery and setup resolution precede layout; logs distinguish preflight,
+display start/completion and layout failure.
+
+For v3, preflight projects a unique already-confirmed target setup with connected
+physical bindings, allowing its orientation to differ from the current display.
+Ambiguous targets, unconfirmed setups and unsupported physical combinations
+are rejected without adding confirmations. The live resolver checks the real
+after-display snapshot. There is no automatic display rollback.
+
+Success requires the verified-convergence marker. Ordinary errors,
 verification failure and timeout are terminal failures; diagnostic history
 retains the last step and output. The inherited total deadline also bounds child
 commands. Cancellation and replacement stop all registered process groups,

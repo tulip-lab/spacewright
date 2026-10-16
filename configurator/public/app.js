@@ -3,7 +3,7 @@ import { confirmAction, promptValue } from './dialog.js';
 const initialParams = new URLSearchParams(location.search);
 const token = initialParams.get('token') || sessionStorage.getItem('spacewright-session-token');
 const headers = { 'content-type': 'application/json', 'x-spacewright-token': token || '' };
-const state = { config: null, savedConfig: null, serverRevision: null, source: null, requiresInitialSave: false, legacyAvailable: false, legacyEditorReadOnly: false, machine: { version: 1, displayBindings: {} }, view: initialParams.get('view') || 'current', mode: initialParams.get('mode') || 'wide', selectedWorkspace: null, shortcutView: 'workspace', workspaceSearch: '', workspaceTab: 'apps', appSearch: '', appInventory: null, externalShortcuts: [], shortcutSources: [], autoImportedShortcuts: 0, recordingCleanup: null, runtime: null, liveSnapshot: null, livePlan: null, runPreview: null, dirty: false, importChanges: [], undoStack: [], redoStack: [], lastDraft: null, v3Config: null, v3SavedConfig: null, v3Revision: null, v3Source: null, v3SetupState: null, v3Hardware: null, v3Setup: null, v3Workspace: null, v3Configuration: null, v3DisplayKinds: {}, v3Bindings: {} };
+const state = { config: null, savedConfig: null, serverRevision: null, source: null, requiresInitialSave: false, legacyAvailable: false, legacyEditorReadOnly: false, machine: { version: 1, displayBindings: {} }, view: initialParams.get('view') || 'current', mode: initialParams.get('mode') || 'wide', selectedWorkspace: null, shortcutView: 'workspace', workspaceSearch: '', workspaceTab: 'apps', appSearch: '', appInventory: null, externalShortcuts: [], shortcutSources: [], autoImportedShortcuts: 0, recordingCleanup: null, runtime: null, capturePreview: null, liveSnapshot: null, livePlan: null, runPreview: null, dirty: false, importChanges: [], undoStack: [], redoStack: [], lastDraft: null, v3Config: null, v3SavedConfig: null, v3Revision: null, v3Source: null, v3SetupState: null, v3Hardware: null, v3Setup: null, v3Workspace: null, v3Configuration: null, v3DisplayKinds: {}, v3Bindings: {} };
 if (token) {
   sessionStorage.setItem('spacewright-session-token', token);
   const cleanUrl = new URL(location.href);
@@ -573,8 +573,9 @@ function workspaceEditor(id) {
   const availability = MODES.map((mode) => `<label class="mode-availability"><input type="checkbox" data-mode-enabled="${mode}" ${workspace.variants[mode] ? 'checked' : ''}> ${mode}</label>`).join('');
   if (!variant) return `<article class="card workspace-editor"><div class="editor-mode-banner">Editing <strong>${escapeHtml(state.mode)}</strong> · ${escapeHtml(workspace.name)}</div><div class="row"><div class="field"><label>Workspace name</label><input data-bind="name" value="${escapeHtml(workspace.name)}"></div><div class="field"><label>Stable ID</label><input value="${escapeHtml(id)}" disabled></div></div><div class="mode-availability-row"><span>Available modes</span>${availability}</div><p class="empty-lane">This workspace is disabled in ${escapeHtml(state.mode)} mode.</p><div class="actions"><button id="enable-current-mode" class="primary">Enable in ${escapeHtml(state.mode)}</button><button id="duplicate-workspace" class="quiet">Duplicate Workspace</button></div></article>`;
   const placement = workspacePlacement(state.config, state.mode, id); const displayName = placement ? state.config.displayRoles[placement.role]?.name || placement.role : 'Unassigned';
+  const captureNotice=state.capturePreview?.workspaceId===id ? `<section class="capture-preview"><h3>Captured window matching</h3><p>Review these conditions before saving. Title conditions depend on document titles; adjust them in Advanced role settings.</p>${state.capturePreview.matching.map(item=>`<p><strong>${escapeHtml(item.role)}</strong> · ${Object.entries(item.selector).map(([key,value])=>`${escapeHtml(({movable:'Movable',role:'Window type',subrole:'Window subtype',title_include:'Title contains',title_exclude:'Title excludes'})[key] || key)}: ${escapeHtml(String(value))}`).join(' · ')}</p>`).join('')}</section>` : '';
   return `<article class="card workspace-editor">
-    <div class="workspace-context"><strong>${escapeHtml(workspace.name)} · ${escapeHtml(state.mode)} · ${escapeHtml(displayName)} · ${placement ? `Space ${placement.index + 1}` : 'No Space'}</strong><small>Mode-specific placement and layout</small></div>
+    <div class="workspace-context"><strong>${escapeHtml(workspace.name)} · ${escapeHtml(state.mode)} · ${escapeHtml(displayName)} · ${placement ? `Space ${placement.index + 1}` : 'No Space'}</strong><small>Mode-specific placement and layout</small></div>${captureNotice}
     <div class="row"><div class="field"><label for="workspace-name">Workspace name</label><input id="workspace-name" name="workspace-name" autocomplete="off" data-bind="name" value="${escapeHtml(workspace.name)}"></div><div class="field"><label for="workspace-id">Stable ID</label><input id="workspace-id" value="${escapeHtml(id)}" disabled></div></div>
     <div class="field"><label for="workspace-label">Space label prefix</label><input id="workspace-label" name="workspace-label" autocomplete="off" data-bind="spaceLabel" value="${escapeHtml(workspace.spaceLabel)}"></div>
     <div class="mode-availability-row"><span>Available modes</span>${availability}</div>
@@ -932,7 +933,7 @@ async function historyView(epoch = renderEpoch) {
     root.querySelector('#clear-transition-history').onclick = async () => { if (!transitions.length) return toast('Run history is already empty'); if (!await confirmAction('Clear all recorded workspace and mode transitions?', { confirmLabel: 'Clear Run History', danger: true })) return; await request('/api/transition-history', { method: 'DELETE' }); toast('Run history cleared'); render(); };
     root.querySelectorAll('[data-compare-snapshot]').forEach((button) => button.onclick = async () => { const result = await request(`/api/history/${button.dataset.compareSnapshot}`); root.querySelector('#snapshot-compare').innerHTML = `<pre class="review-json">${escapeHtml(JSON.stringify(result.changes, null, 2))}</pre>`; });
     root.querySelectorAll('[data-rename-snapshot]').forEach((button) => button.onclick = async () => { const name = await promptValue('Snapshot Name'); if (!name) return; await request(`/api/history/${button.dataset.renameSnapshot}/rename`, { method: 'POST', body: JSON.stringify({ name }) }); render(); });
-    root.querySelectorAll('[data-restore-snapshot]').forEach((button) => button.onclick = async () => { if (!await confirmAction('Restore this snapshot as the active configuration?', { confirmLabel: 'Restore Snapshot', danger: true })) return; const result = await request(`/api/history/${button.dataset.restoreSnapshot}/restore`, { method: 'POST' }); state.config = result.config; state.savedConfig = structuredClone(result.config); state.serverRevision = result.revision; state.source = 'v2'; state.requiresInitialSave = false; markClean('Local · restored'); render(); });
+    root.querySelectorAll('[data-restore-snapshot]').forEach((button) => { button.disabled = state.legacyEditorReadOnly; button.title = state.legacyEditorReadOnly ? 'v2 history cannot restore over active v3; use Restore Backup.' : ''; button.onclick = async () => { if (!await confirmAction('Restore this snapshot as the active configuration?', { confirmLabel: 'Restore Snapshot', danger: true })) return; const result = await request(`/api/history/${button.dataset.restoreSnapshot}/restore`, { method: 'POST' }); state.config = result.config; state.savedConfig = structuredClone(result.config); state.serverRevision = result.revision; state.source = 'v2'; state.requiresInitialSave = false; markClean('Local · restored'); render(); }; });
     root.querySelectorAll('[data-delete-snapshot]').forEach((button) => button.onclick = async () => { if (!await confirmAction('Delete this snapshot?', { confirmLabel: 'Delete Snapshot', danger: true })) return; await request(`/api/history/${button.dataset.deleteSnapshot}`, { method: 'DELETE' }); render(); });
   } catch (error) {
     if (!viewIsCurrent('history', epoch)) return;
@@ -941,29 +942,18 @@ async function historyView(epoch = renderEpoch) {
   }
 }
 
-function mergeCapturedWorkspace(capture) {
-  const draft = structuredClone(capture.draft);
-  if (state.config.workspaces[draft.workspaceId]) throw new Error(`Workspace ID “${draft.workspaceId}” already exists.`);
-  const appMap = {};
-  for (const [capturedId, captured] of Object.entries(draft.apps || {})) {
-    const aliases = captured.match?.appNames || [];
-    const existing = Object.entries(state.config.apps).find(([, app]) => (app.match?.appNames || []).some((name) => aliases.includes(name)));
-    if (existing) { appMap[capturedId] = existing[0]; continue; }
-    let nextId = capturedId; let suffix = 2;
-    while (state.config.apps[nextId]) nextId = `${capturedId}_${suffix++}`;
-    state.config.apps[nextId] = captured;
-    appMap[capturedId] = nextId;
-  }
-  for (const window of Object.values(draft.workspace.windows || {})) window.app = appMap[window.app] || window.app;
-  state.config.workspaces[draft.workspaceId] = draft.workspace;
-  const displayRole = Object.entries(state.machine.displayBindings || {}).find(([, uuid]) => uuid === capture.capturedFrom.displayUuid)?.[0];
-  const lane = state.config.modes?.[capture.capturedFrom.mode]?.displays?.find((display) => display.role === displayRole);
-  if (lane) lane.workspaceOrder.push(draft.workspaceId);
-  state.selectedWorkspace = draft.workspaceId;
-  state.mode = capture.capturedFrom.mode;
-  state.workspaceTab = 'layout';
+async function mergeCapturedWorkspace(capture) {
+  if(state.legacyEditorReadOnly) throw new Error('Capture merge supports the v2 editor only; edit v3 in Hardware & Setups.');
+  const original=JSON.stringify(state.config);
+  const merged=await request('/api/capture/merge',{method:'POST',body:JSON.stringify({captureId:capture.captureId,config:state.config})});
+  if(JSON.stringify(state.config)!==original)throw new Error('Draft changed while checking capture; capture again.');
+  state.config=merged.config;
+  state.capturePreview={workspaceId:merged.workspaceId,matching:merged.matching};
+  state.selectedWorkspace=merged.workspaceId;
+  state.mode=capture.capturedFrom.mode;
+  state.workspaceTab='layout';
   markDirty();
-  return { workspaceId: draft.workspaceId, assigned: Boolean(lane), displayRole };
+  return merged;
 }
 
 async function currentView(epoch = renderEpoch) {
@@ -999,14 +989,15 @@ async function currentView(epoch = renderEpoch) {
     root.querySelector('#compare-workspace').onclick = () => showComparison({ kind: 'workspace', target: root.querySelector('#current-workspace').value, mode: state.mode });
     root.querySelector('#compare-mode').onclick = () => showComparison({ kind: 'mode', target: state.mode });
     root.querySelector('#capture-space-now').onclick = async () => {
+      if(state.legacyEditorReadOnly)return toast('Capture merge supports the v2 editor only; use CLI capture or Hardware & Setups for v3.',true);
       const workspaceId = root.querySelector('#capture-id').value.trim(); const name = root.querySelector('#capture-name').value.trim();
       if (!validId(workspaceId) || !name) return toast('Choose a name and a unique lowercase stable ID.', true);
       if (state.config.workspaces[workspaceId]) return toast(`Workspace “${workspaceId}” already exists.`, true);
       try {
         const capture = await request('/api/capture', { method: 'POST', body: JSON.stringify({ workspaceId, name, mode: state.mode, spaceUuid: root.querySelector('#capture-space').value }) });
-        const merged = mergeCapturedWorkspace(capture);
+        const merged = await mergeCapturedWorkspace(capture);
         state.view = 'workspaces'; render();
-        toast(`${name} captured as an unsaved draft${merged.assigned ? ` on ${merged.displayRole}` : '; assign it to a display lane before saving'}.`);
+        toast(`${name} captured as an unsaved draft on ${merged.displayRole}. ${merged.warnings.join('; ')}`);
       } catch (error) { toast(error.message, true); }
     };
   } catch (error) { if (viewIsCurrent('current', epoch)) root.innerHTML = title('Current state', 'Discovery failed', 'Nothing was changed.') + `<div class="errors">${escapeHtml(error.message)}</div>`; }
@@ -1170,7 +1161,23 @@ document.querySelector('#import-file').onchange = async (event) => {
 };
 document.querySelector('#revert-changes').onclick = async () => { if (!state.dirty || await confirmAction('Discard all unsaved changes?', { confirmLabel: 'Discard Draft', danger: true })) { state.config = structuredClone(state.savedConfig); state.autoImportedShortcuts = 0; state.selectedWorkspace = null; markClean(); render(); } };
 document.querySelector('#reset-defaults').onclick = async () => { if (!await confirmAction('Replace the editor contents with SpaceWright defaults? This remains unsaved until you save it.', { confirmLabel: 'Load Defaults', danger: true })) return; const result = await request('/api/defaults'); state.config = result.config; state.selectedWorkspace = null; markDirty(); render(); };
-document.querySelector('#restore-backup').onclick = async () => { if (!await confirmAction('Restore the previous valid configuration and replace the current file?', { confirmLabel: 'Restore Backup', danger: true })) return; try { const result = await request('/api/restore-backup', { method: 'POST' }); state.config = result.config; state.savedConfig = structuredClone(result.config); state.serverRevision = result.revision; state.source = 'v2'; state.requiresInitialSave = false; state.selectedWorkspace = null; markClean('Local · restored'); render(); toast('Restored the previous valid configuration'); } catch (error) { toast(error.message, true); } };
+document.querySelector('#restore-backup').onclick = async () => {
+  try {
+    const preview = await request('/api/config-backup');
+    if (!await confirmAction(`Restore v${preview.version} backup “${preview.config.metadata?.name || 'configuration'}” and replace the current file?`, {confirmLabel:'Restore Backup',danger:true})) return;
+    await request('/api/restore-backup',{method:'POST',body:JSON.stringify({version:preview.version,baseRevision:preview.baseRevision,backupRevision:preview.backupRevision})});
+    const [loaded, machine] = await Promise.all([request('/api/config'),request('/api/machine')]);
+    state.config = loaded.config; state.savedConfig = structuredClone(loaded.config); state.serverRevision = loaded.revision;
+    state.source = loaded.source; state.legacyEditorReadOnly = loaded.source.startsWith('v3-');
+    state.requiresInitialSave = false; state.selectedWorkspace = null; state.machine = machine.machine;
+    state.v3Config = null; state.v3SavedConfig = null; state.v3Revision = null; state.v3SetupState = null;
+    state.livePlan = null; state.runPreview = null; state.runtime = null; state.liveSnapshot = null; state.capturePreview = null; state.autoImportedShortcuts = 0; state.importChanges = [];
+    if(state.legacyEditorReadOnly) { await ensureV3(); state.view = 'hardware'; }
+    document.querySelector('#path').textContent = loaded.path;
+    markClean(state.legacyEditorReadOnly ? 'Hardware-aware · edit in Hardware & Setups' : 'Local · restored');
+    render(); toast('Restored the previous valid configuration');
+  } catch(error) { toast(error.message,true); }
+};
 addEventListener('beforeunload', (event) => { if (!state.dirty && !v3Dirty()) return; event.preventDefault(); event.returnValue = ''; });
 
 async function initialize() {

@@ -2,14 +2,14 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync } from 'node:fs';
-import { readFile, readdir, rm } from 'node:fs/promises';
+import { constants, existsSync } from 'node:fs';
+import { access, stat, readFile, readdir, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState, summarizeComparison } from './lib/state-engine.mjs';
 import { compileV2, validateV2 } from './lib/config-v2.mjs';
-import { resolveV3, validateV3 } from './lib/config-v3.mjs';
+import { resolveV3, validateV3, projectSetupToV2, selectHardwareProfile, topologyKey } from './lib/config-v3.mjs';
 import { restoreWindow, sameWindowIdentity,recoveryCandidates } from './lib/recovery.mjs';
 import { stableRead } from './lib/config-store.mjs';
 import { discoverState } from './lib/discovery.mjs';
@@ -50,16 +50,58 @@ export async function discover(machineOverride = null, { deadline = executionDea
   return discoverState(machineOverride || await readJson(machineFile, { version: 1, displayBindings: {} }), { deadline: Math.min(deadline, executionDeadline), signal: cancellation.signal });
 }
 
-async function context() {
+async function transitionProfile(mode) {
+  const profile = mode === 'solo' ? 'solo' : `${mode}_left`;
+  const name = mode === 'solo' ? 'display-solo-primary.fish' : `display-primary-plus-${mode}-left.fish`;
+  const root = process.env.SPACEWRIGHT_DISPLAY_PROFILES_ROOT || join(configRoot, 'displayprofiles');
+  const path = join(root, name);
+  await access(path, constants.R_OK | constants.X_OK).catch(() => { throw new Error(`display profile is missing or not executable: ${name}`); });
+  if(!(await stat(path)).isFile()) throw new Error(`display profile is not a regular executable file: ${name}`);
+  return profile;
+}
+
+// Project only an already confirmed target. Current geometry is deliberately
+// not presented to the live resolver as if the display command had run.
+function transitionResolution(config, machine, hardware, snapshot, mode) {
+  const selected = selectHardwareProfile(config, machine, hardware);
+  if (!selected.id || !machine.hardwareProfileConfirmed) throw new Error('hardware profile requires confirmation before switching mode');
+  const candidates = Object.entries(config.hardwareProfiles[selected.id].setups).filter(([id,setup]) => {
+    if(setup.compatibilityMode !== mode || machine.topologySelections?.[topologyKey(setup.match.displays)] !== id) return false;
+    const requirements = setup.match.displays;
+    return (setup.match.allowAdditionalDisplays || requirements.length === snapshot.displays.length)
+      && requirements.every(expected => {
+        const uuid = machine.displayBindings?.[expected.role], actual = snapshot.displays.find(d => d.uuid === uuid);
+        const kind = actual?.builtIn ? 'built_in' : machine.displayKinds?.[uuid] === 'sidecar' ? 'sidecar' : 'external';
+        return actual && (!expected.kind || kind === expected.kind);
+      });
+  });
+  if (candidates.length !== 1) throw new Error(`target setup for ${mode} is ambiguous, unconfirmed or missing required physical bindings`);
+  const [setupId, setup] = candidates[0];
+  const key = topologyKey(setup.match.displays);
+  if (machine.topologySelections?.[key] !== setupId) throw new Error(`target display setup “${setupId}” requires confirmation`);
+  const bound = new Set();
+  for (const expected of setup.match.displays) {
+    const uuid = machine.displayBindings?.[expected.role];
+    const actual = snapshot.displays.find(d => d.uuid === uuid);
+    const kind = actual?.builtIn ? 'built_in' : machine.displayKinds?.[uuid] === 'sidecar' ? 'sidecar' : 'external';
+    if (!expected.role || !actual || bound.has(uuid) || expected.kind && kind !== expected.kind) throw new Error(`target setup requires a valid physical binding: ${expected.role || 'unbound role'}`);
+    bound.add(uuid);
+  }
+  if (!setup.match.allowAdditionalDisplays && bound.size !== snapshot.displays.length) throw new Error('target setup does not support the connected physical displays');
+  return {hardwareProfileId:selected.id, setupId, v2:projectSetupToV2(config, selected.id, setupId)};
+}
+
+async function context(target) {
   const configFile = existsSync(v3ConfigFile) ? v3ConfigFile : v2ConfigFile;
   if (!existsSync(configFile)) throw new Error(`portable configuration not found under ${configRoot}; run “spacewright configure” first`);
   const { config: portableConfig, machine, source } = await stableRead(configFile, machineFile);
+  if(portableConfig.version !== (configFile === v3ConfigFile ? 3 : 2)) throw new Error('active configuration version does not match its filename');
   const snapshot = await discover(machine);
   const validation = portableConfig.version === 3 ? validateV3(portableConfig) : validateV2(portableConfig);
   if (!validation.valid) throw new Error(`configuration is invalid:\n${validation.errors.join('\n')}`);
   if (portableConfig.version === 3) {
     const hardware = await detectMacHardware({deadline:executionDeadline,signal:cancellation.signal});
-    const resolution = resolveV3(portableConfig, { machine, hardware, snapshot });
+    const resolution = flags['mode-transition'] ? transitionResolution(portableConfig, machine, hardware, snapshot, target.mode) : resolveV3(portableConfig, { machine, hardware, snapshot });
     return { config: resolution.v2, portableConfig, configFile, source, machine, snapshot, resolution, runtime: compileV2(resolution.v2) };
   }
   return { config: portableConfig, portableConfig, configFile, source, machine, snapshot, resolution: null, runtime: compileV2(portableConfig) };
@@ -75,11 +117,12 @@ function parseTarget(values = positional) {
 }
 
 async function livePlan(target = parseTarget(), frozen = null, snapshot = null) {
-  const value = frozen ? { ...frozen, snapshot: snapshot || await discover(frozen.machine) } : await context();
+  const value = frozen ? { ...frozen, snapshot: snapshot || await discover(frozen.machine) } : await context(target);
   const normalizedTarget = value.resolution && target.kind === 'workspace' && !target.mode
     ? { ...target, mode: value.config.modes[value.portableConfig.hardwareProfiles[value.resolution.hardwareProfileId].setups[value.resolution.setupId].compatibilityMode] ? value.portableConfig.hardwareProfiles[value.resolution.hardwareProfileId].setups[value.resolution.setupId].compatibilityMode : null }
     : target;
   const desired = buildDesiredState(value.config, value.runtime, normalizedTarget, value.snapshot);
+  if (flags['mode-transition'] && !value.displayPrepared) desired.orchestration.displayProfile = await transitionProfile(target.mode);
   const spaceLabelHints = await readSpaceLabelHints(stateRoot, desired, value.snapshot);
   const comparison = compareState(value.snapshot, desired, value.machine, { spaceLabelHints });
   const plan = buildExecutionPlan(value.snapshot, desired, comparison, { displayPrepared: value.displayPrepared });
@@ -206,8 +249,8 @@ async function assertExecutionContext(initial,effects = []) {
   if(initial.plan.scope==='mode' && JSON.stringify(executionCensus(snapshot.windows,initial.plan.selectedWindows).map(w=>w.id))!==JSON.stringify(initial.plan.preconditions.windows.map(w=>w.id)))throw new Error('global object census changed; replan required');
   const spaceLabelHints=Object.fromEntries(initial.plan.workspaces.filter(w=>w.targetSpace?.uuid).map(w=>[w.label,w.targetSpace.uuid]));
   const comparison = compareState(snapshot, initial.desired, initial.machine, {spaceLabelHints});
-  if(comparison.counts.blocker)throw new Error(`execution preconditions changed: ${comparison.drifts.filter(d=>d.severity==='blocker').map(d=>d.code).join(', ')}; replan required`);
   const currentPlan = buildExecutionPlan(snapshot, initial.desired, comparison);
+  if(!currentPlan.executable)throw new Error(`execution preconditions changed: ${currentPlan.blockers.map(d=>d.code).join(', ')}; replan required`);
   if (JSON.stringify(currentPlan.selectedWindows) !== JSON.stringify(initial.plan.selectedWindows)) throw new Error('planned windows or ownership changed; replan required');
   for (const original of initial.plan.workspaces) {
     if (!original.targetSpace && snapshot.spaces.some((s)=>s.label===original.label) && !effects.some((e)=>e.type==='ensure_space' && e.workspaceId===original.workspaceId)) throw new Error('target Space appeared after planning; replan required');
@@ -324,7 +367,7 @@ async function applyPlan(target) {
   const runId = `${Date.now()}-${randomBytes(4).toString('hex')}`;
   const releaseLock = await acquireLock(runId);
   const journalFile = join(stateRoot,'runs',`${runId}.json`);
-  let journal = {formatVersion:2,runId,status:'preflight',createdAt:new Date().toISOString(),target,steps:[],logs:[],effects:[],exitCode:0};
+  let journal = {formatVersion:2,runId,status:'preflight',phase:'preflight',createdAt:new Date().toISOString(),target,steps:[],logs:[],effects:[],exitCode:0};
   try {
     await assertNoPendingServiceRecovery();
     await executionLease.trackJournal(journalFile);
@@ -336,6 +379,7 @@ async function applyPlan(target) {
     journal.before=initial.snapshot;
     journal.comparison=initial.comparison;
     await atomicWrite(journalFile,journal);
+    await assertSavedConfiguration(initial);
     if (initial.snapshot.completeness !== 'complete') throw new Error(initial.snapshot.message);
     const expected = {
       planId: flags['expected-plan-id'],
@@ -359,6 +403,7 @@ async function applyPlan(target) {
       formatVersion: 2,
       runId,
       status: 'preflight',
+      phase: 'preflight',
       createdAt: new Date().toISOString(),
       target: initial.plan.target,
       plan: initial.plan,
@@ -388,12 +433,22 @@ async function applyPlan(target) {
     const displayStep = initial.plan.executionSteps.find(step => step.action === 'display_profile');
     if (displayStep) {
       await assertExecutionContext(initial, journal.effects);
+      if(flags['mode-transition']) await transitionProfile(target.mode);
+      await assertSavedConfiguration(initial);
+      await assertExecutionAllowed(stateRoot, executionLease.env);
+      assertNotCancelled();
       journal.displayPlan = initial.plan;
+      journal.phase = 'display_started';
+      process.stderr.write('==> Display profile started\n');
       journal.exitCode = await runCommand(displayStep.command, journal, journalFile, displayStep);
       assertNotCancelled();
       if (journal.exitCode !== 0) throw Object.assign(new Error(`display preparation command failed (${journal.exitCode}); layout was not attempted`), { code: journal.exitCode === 124 ? 'SPACEWRIGHT_TIMEOUT' : journal.exitCode === 130 ? 'SPACEWRIGHT_CANCELLED' : undefined });
+      journal.phase = 'display_completed';
+      process.stderr.write('==> Display profile completed; replan layout\n');
+      await atomicWrite(journalFile, journal);
       const next = await replanAfterDisplay(initial, target);
       (journal.planRelations ||= []).push({ phase:'display',fromPlanId:initial.plan.planId,toPlanId:next.plan.planId,beforeSnapshotId:initial.snapshot.snapshotId,afterSnapshotId:next.snapshot.snapshotId });
+      journal.phase = 'layout';
       initial = next; journal.plan = next.plan; journal.layoutBefore = next.snapshot;
       await atomicWrite(journal.envelopeFile, { plan:next.plan,desired:next.desired,machine:next.machine });
       await atomicWrite(journalFile, journal);

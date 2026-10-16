@@ -144,9 +144,9 @@ esac
   await page.locator('#capture-id').fill('captured_test');
   await page.locator('#capture-name').fill('Captured Test');
   await page.getByRole('button', { name: 'Capture into editor' }).click();
-  await page.locator('#workspace-id').waitFor();
-  assert.equal(await page.locator('#workspace-id').inputValue(), 'captured_test');
-  assert.equal(Object.hasOwn(await readJson(configFile).then((value) => value.workspaces), 'captured_test'), false);
+  await page.getByText(/Bind the captured display|Capture would change ownership|Captured draft is invalid|Alias or ownership conflict/).waitFor();
+  assert.equal(await page.locator('#capture-id').inputValue(), 'captured_test');
+  assert.equal(Object.hasOwn(await readJson(configFile).then(value=>value.workspaces), 'captured_test'), false);
   await page.reload();
   await page.getByRole('button', { name: /Profiles & Rules/i }).click();
   await page.getByRole('button', { name: 'Add Profile' }).click();

@@ -559,6 +559,7 @@ function captureGrid(windowFrame, displayFrame) {
 }
 
 export function captureWorkspace(snapshot, options = {}) {
+  if(snapshot.unavailable || snapshot.completeness && snapshot.completeness !== 'complete') throw Object.assign(new Error('capture requires complete read-only discovery'),{code:'capture_incomplete'});
   const mode = options.mode || 'wide';
   if (!MODES.has(mode)) throw new Error(`invalid capture mode “${mode}”; expected solo, wide, or tall`);
   const space = options.spaceUuid
@@ -569,7 +570,8 @@ export function captureWorkspace(snapshot, options = {}) {
   if (!space) throw new Error('no Space selected; focus a Space or pass a valid Space UUID/index');
   const display = snapshot.displays.find((item) => item.index === space.display);
   if (!display) throw new Error(`display ${space.display} for the selected Space is unavailable`);
-  const capturedWindows = snapshot.windows.filter((window) => window.space === space.index && !window.sticky && !window.nativeFullscreen && !window.minimized && window.hasAxReference);
+  const capturedWindows = snapshot.windows.filter(window => window.space === space.index && !isObservationOverlay(window));
+  if(capturedWindows.some(window => window.sticky || window.nativeFullscreen || window.minimized || !window.hasAxReference || !window.visible || !window.movable || !window.resizable || !window.frameVerified)) throw Object.assign(new Error('capture requires visible, movable, resizable windows with verified AX frames; restore unsupported windows or reduce the capture scope'),{code:'capture_unsupported'});
   if (!capturedWindows.length) throw new Error('the selected Space has no visible non-sticky windows to capture');
   const apps = {};
   const windows = {};
@@ -577,13 +579,38 @@ export function captureWorkspace(snapshot, options = {}) {
   const appIds = new Map();
   for (const [index, window] of capturedWindows.entries()) {
     const base = slug(window.app);
-    const appId = appIds.get(window.app) || base;
+    let appId = appIds.get(window.app) || base;
+    if(!appIds.has(window.app)) { let suffix=2; while(apps[appId])appId=`${base}_${suffix++}`; }
     appIds.set(window.app, appId);
     const role = index === 0 ? 'primary' : `window_${index + 1}`;
     apps[appId] ||= { name: window.app, match: { appNames: [window.app] } };
-    windows[role] = { app: appId, required: index === 0, selector: { movable: window.movable, visible: true, ...(window.role ? { role: window.role } : {}), ...(window.subrole ? { subrole: window.subrole } : {}) } };
+    windows[role] = { app: appId, required: index === 0, selector: { movable: true, ...(window.role ? { role: window.role } : {}), ...(window.subrole ? { subrole: window.subrole } : {}) } };
     regions.push({ role, grid: captureGrid(window.frame, display.frame) });
   }
+  const matching = [];
+  for(const [index, [role, portable]] of Object.entries(windows).entries()) {
+    const intended = capturedWindows[index];
+    const desired = {appNames:apps[portable.app].match.appNames,selector:portable.selector};
+    let result = selectRole(snapshot.windows,desired);
+    if(result.eligible.length !== 1 && intended.title) {
+      portable.selector.title_include = intended.title;
+      result = selectRole(snapshot.windows,desired);
+      if(result.eligible.length > 1) {
+        const exclusions = result.eligible.filter(w=>w.id !== intended.id).map(w=>w.title).filter(title=>title && !intended.title.includes(title));
+        for(const excluded of exclusions) {
+          portable.selector.title_exclude = excluded;
+          if(selectRole(snapshot.windows,desired).eligible.length === 1) break;
+        }
+        result = selectRole(snapshot.windows,desired);
+      }
+    }
+    if(result.eligible.length !== 1 || result.selected[0]?.id !== intended.id) {
+      const detail={app:intended.app,role,candidateCount:result.eligible.length,reason:'Give these windows distinct titles or AX types, or reduce the capture scope and retry.'};
+      throw Object.assign(new Error(`Cannot uniquely capture ${detail.app} role ${role} (${detail.candidateCount} candidates). ${detail.reason}`),{code:'capture_ambiguous',details:detail});
+    }
+    matching.push({role,windowId:intended.id,app:intended.app,selector:clone(portable.selector)});
+  }
+  if(new Set(matching.map(m=>m.windowId)).size !== matching.length) throw Object.assign(new Error('captured role selections overlap'),{code:'capture_ambiguous'});
   const workspaceId = options.workspaceId || slug(space.label || `captured_space_${space.index}`);
   const workspace = {
     name: options.name || (space.label ? space.label.split('_').map((part) => part[0]?.toUpperCase() + part.slice(1)).join(' ') : `Captured Space ${space.index}`),
@@ -595,7 +622,8 @@ export function captureWorkspace(snapshot, options = {}) {
     formatVersion: STATE_FORMAT_VERSION,
     capturedFrom: { snapshotId: snapshot.snapshotId, spaceUuid: space.uuid, displayUuid: display.uuid, mode },
     draft: { workspaceId, workspace, apps },
-    warnings: capturedWindows.filter((window) => !window.movable).map((window) => `window ${window.id} (${window.app}) is not movable and may require a dedicated adapter`)
+    matching,
+    warnings: matching.filter(item=>item.selector.title_include || item.selector.title_exclude).map(item=>`${item.role}: generated title conditions depend on document titles; review before saving`)
   };
 }
 
