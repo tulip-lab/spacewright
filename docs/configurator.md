@@ -129,7 +129,19 @@ fails the request if it differs. A verified configuration receives a second
 snapshot. **Revert changes** discards only the current unsaved edit, while
 **Reset to SpaceWright defaults** loads the product starter configuration as an
 unsaved preview. History entries can be compared, renamed, restored, or
-deleted. Restore itself creates a recovery snapshot first.
+deleted. A history restore sends the `baseRevision` fixed when comparison or
+confirmation begins. `POST /api/history/:id/restore` returns 428 without it,
+409 (`configuration_conflict`) when the active configuration has changed, and
+409 (`active_version_conflict`) while v3 is active. A conflict preserves the
+browser draft and requires reloading and comparing before retrying. Snapshot
+IDs must match the history ID format; missing snapshots return 404 and malformed
+or invalid snapshots return 422 before any persistent write.
+
+Restore creates a recovery snapshot first, then publishes and verifies the
+source and matching compiled runtime under the configuration write guard.
+Partial writes or failed verification retain the guard. An activity-log failure
+after a verified restore returns success with a warning, so the browser can
+accurately reflect the restored configuration.
 
 The History page also shows durable shortcut and CLI transition records. It
 summarizes completion rate and the latest target, filters by outcome and scope,
@@ -271,3 +283,12 @@ Opening `configurator/public/index.html` directly shows a read-only sample for
 design review. Saving, display discovery, machine binding, and skhd generation
 require `spacewright configure` so that the loopback service can validate and
 write the correct user-owned files.
+
+
+Diagnostics verifies the complete runtime body and generation metadata against
+compilation of the active source bytes, including compiler/source versions and
+the v3 machine, hardware and display context. Missing or corrupt caches require
+`spacewright config-compile`; diagnostics never rebuilds them. Invalid
+configurations report their validation errors. Dependent checks use “Not
+verified” when setup resolution, complete discovery or a stable generation is
+unavailable, including an active or incomplete configuration write.

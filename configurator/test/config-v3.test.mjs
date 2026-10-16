@@ -10,6 +10,7 @@ import {
   migrateV2ToV3,
   projectSetupToV2,
   resolveV3,
+  resolveModeTransition,
   setupBindingStatus,
   starterV3,
   topologyKey,
@@ -174,4 +175,48 @@ test('v3 shortcuts keep workspace selection hardware-aware', () => {
   const fragment = compileSkhdV3(config, { machine: local, snapshot: displays });
   assert.match(fragment, /spacewright workspace coding'/);
   assert.doesNotMatch(fragment, /workspace coding tall/);
+});
+
+for (const scenario of ['built_in','sidecar','wide','tall','wide_sidecar','tall_sidecar','omit-kind','additional','missing','wrong-binding','duplicate','disconnected','ambiguous','ambiguous-topology','bad-key','extra-kind']) test(`R1 transition confirmed topology: ${scenario}`, () => {
+  const config = starterV3();
+  let setupId = 'built_in', mode = 'solo';
+  const displays = [{index:1,uuid:'INTERNAL',builtIn:true,frame:{w:1200,h:900}}];
+  const bindings = {built_in:'INTERNAL'};
+  if (['wide','tall','wide_sidecar','tall_sidecar'].includes(scenario)) {
+    mode = scenario.startsWith('wide') ? 'wide' : 'tall'; setupId += `_${mode}`;
+    displays.push({index:2,uuid:'EXTERNAL',frame:{w:mode === 'wide' ? 900 : 1600,h:mode === 'wide' ? 1600 : 900}});
+    bindings[mode] = 'EXTERNAL';
+  }
+  if (scenario.includes('sidecar')) {
+    setupId += '_sidecar'; displays.push({index:3,uuid:'SIDECAR',frame:{w:1000,h:800}}); bindings.sidecar='SIDECAR';
+  }
+  const setup = config.hardwareProfiles.macbook.setups[setupId];
+  if (scenario === 'omit-kind') delete setup.match.displays[0].kind;
+  if (scenario === 'additional' || scenario === 'extra-kind') {
+    setup.match.allowAdditionalDisplays=true;displays.push({index:2,uuid:'EXTRA',frame:{w:1000,h:800}});
+  }
+  const target = describeDisplays({displays},{displayBindings:bindings,displayKinds:{SIDECAR:'sidecar'}}).map(d => ({...d,orientation:d.uuid === 'EXTERNAL' ? mode : d.orientation}));
+  const key = topologyKey(target);
+  const local = {hardwareProfile:'macbook',hardwareProfileConfirmed:true,displayBindings:bindings,displayKinds:{SIDECAR:'sidecar'},topologySelections:{[key]:setupId}};
+  if (scenario === 'missing') local.topologySelections={};
+  if (scenario === 'wrong-binding') local.displayBindings.built_in='MISSING';
+  if (scenario === 'duplicate') {setup.match.displays.push({role:'sidecar'});setup.lanes.push({role:'sidecar',workspaceOrder:[]});local.displayBindings.sidecar='INTERNAL';}
+  if (scenario === 'disconnected') displays.length=0;
+  if (scenario === 'ambiguous') {config.hardwareProfiles.macbook.setups.other=structuredClone(setup);local.topologySelections['built_in:tall']='other';}
+  if (scenario === 'ambiguous-topology') local.topologySelections['built_in:tall']=setupId;
+  if (scenario === 'bad-key') local.topologySelections={'built_in:undefined':setupId};
+  if (scenario === 'extra-kind') local.topologySelections={'built_in:wide+sidecar:wide':setupId};
+  const resolve = () => resolveModeTransition(config,{machine:local,snapshot:{displays},mode});
+  if (['missing','wrong-binding','duplicate','disconnected','ambiguous','ambiguous-topology','bad-key','extra-kind'].includes(scenario)) assert.throws(resolve,/ambiguous|binding/);
+  else {assert.equal(resolve().setupId,setupId);assert.equal(resolve().topologyKey,key);}
+});
+
+for (const mode of ['wide','tall']) test(`R1 physical role aliases resolve both before and after ${mode} transition`, () => {
+  const config=starterV3();
+  config.hardwareProfiles.mac_mini.setups={single_wide:config.hardwareProfiles.mac_mini.setups.single_wide,single_tall:config.hardwareProfiles.mac_mini.setups.single_tall};
+  const local={hardwareProfile:'mac_mini',hardwareProfileConfirmed:true,displayBindings:{wide:'EXTERNAL',tall:'EXTERNAL'},topologySelections:{'external:wide':'single_wide','external:tall':'single_tall'}};
+  const snapshot={displays:[{index:1,uuid:'EXTERNAL',frame:{w:mode==='wide'?900:1600,h:mode==='wide'?1600:900}}]};
+  assert.equal(resolveModeTransition(config,{machine:local,snapshot,mode}).setupId,`single_${mode}`);
+  snapshot.displays[0].frame={w:mode==='wide'?1600:900,h:mode==='wide'?900:1600};
+  assert.equal(resolveV3(config,{machine:local,snapshot}).setupId,`single_${mode}`);
 });

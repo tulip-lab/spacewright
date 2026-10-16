@@ -9,7 +9,7 @@ import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState, summarizeComparison } from './lib/state-engine.mjs';
 import { compileV2, validateV2 } from './lib/config-v2.mjs';
-import { resolveV3, validateV3, projectSetupToV2, selectHardwareProfile, topologyKey } from './lib/config-v3.mjs';
+import { resolveV3, validateV3, resolveModeTransition } from './lib/config-v3.mjs';
 import { restoreWindow, sameWindowIdentity,recoveryCandidates } from './lib/recovery.mjs';
 import { stableRead } from './lib/config-store.mjs';
 import { discoverState } from './lib/discovery.mjs';
@@ -60,37 +60,6 @@ async function transitionProfile(mode) {
   return profile;
 }
 
-// Project only an already confirmed target. Current geometry is deliberately
-// not presented to the live resolver as if the display command had run.
-function transitionResolution(config, machine, hardware, snapshot, mode) {
-  const selected = selectHardwareProfile(config, machine, hardware);
-  if (!selected.id || !machine.hardwareProfileConfirmed) throw new Error('hardware profile requires confirmation before switching mode');
-  const candidates = Object.entries(config.hardwareProfiles[selected.id].setups).filter(([id,setup]) => {
-    if(setup.compatibilityMode !== mode || machine.topologySelections?.[topologyKey(setup.match.displays)] !== id) return false;
-    const requirements = setup.match.displays;
-    return (setup.match.allowAdditionalDisplays || requirements.length === snapshot.displays.length)
-      && requirements.every(expected => {
-        const uuid = machine.displayBindings?.[expected.role], actual = snapshot.displays.find(d => d.uuid === uuid);
-        const kind = actual?.builtIn ? 'built_in' : machine.displayKinds?.[uuid] === 'sidecar' ? 'sidecar' : 'external';
-        return actual && (!expected.kind || kind === expected.kind);
-      });
-  });
-  if (candidates.length !== 1) throw new Error(`target setup for ${mode} is ambiguous, unconfirmed or missing required physical bindings`);
-  const [setupId, setup] = candidates[0];
-  const key = topologyKey(setup.match.displays);
-  if (machine.topologySelections?.[key] !== setupId) throw new Error(`target display setup “${setupId}” requires confirmation`);
-  const bound = new Set();
-  for (const expected of setup.match.displays) {
-    const uuid = machine.displayBindings?.[expected.role];
-    const actual = snapshot.displays.find(d => d.uuid === uuid);
-    const kind = actual?.builtIn ? 'built_in' : machine.displayKinds?.[uuid] === 'sidecar' ? 'sidecar' : 'external';
-    if (!expected.role || !actual || bound.has(uuid) || expected.kind && kind !== expected.kind) throw new Error(`target setup requires a valid physical binding: ${expected.role || 'unbound role'}`);
-    bound.add(uuid);
-  }
-  if (!setup.match.allowAdditionalDisplays && bound.size !== snapshot.displays.length) throw new Error('target setup does not support the connected physical displays');
-  return {hardwareProfileId:selected.id, setupId, v2:projectSetupToV2(config, selected.id, setupId)};
-}
-
 async function context(target) {
   const configFile = existsSync(v3ConfigFile) ? v3ConfigFile : v2ConfigFile;
   if (!existsSync(configFile)) throw new Error(`portable configuration not found under ${configRoot}; run “spacewright configure” first`);
@@ -101,7 +70,7 @@ async function context(target) {
   if (!validation.valid) throw new Error(`configuration is invalid:\n${validation.errors.join('\n')}`);
   if (portableConfig.version === 3) {
     const hardware = await detectMacHardware({deadline:executionDeadline,signal:cancellation.signal});
-    const resolution = flags['mode-transition'] ? transitionResolution(portableConfig, machine, hardware, snapshot, target.mode) : resolveV3(portableConfig, { machine, hardware, snapshot });
+    const resolution = flags['mode-transition'] ? resolveModeTransition(portableConfig, { machine, hardware, snapshot, mode:target.mode }) : resolveV3(portableConfig, { machine, hardware, snapshot });
     return { config: resolution.v2, portableConfig, configFile, source, machine, snapshot, resolution, runtime: compileV2(resolution.v2) };
   }
   return { config: portableConfig, portableConfig, configFile, source, machine, snapshot, resolution: null, runtime: compileV2(portableConfig) };

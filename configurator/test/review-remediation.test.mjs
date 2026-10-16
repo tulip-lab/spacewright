@@ -144,7 +144,7 @@ test('R2 a group that cannot be stopped retains the old execution ownership', as
   }
 });
 
-for (const scenario of ['mode-v2', 'mode-v3', 'resize', 'reconcile', 'no-display', 'command-failure', 'incomplete', 'unstable', 'config', 'machine', 'window', 'space', 'extra-space', 'display']) {
+for (const scenario of ['mode-v2', 'mode-v3', 'mode-v3-wide', 'mode-v3-tall', 'resize', 'reconcile', 'no-display', 'command-failure', 'incomplete', 'unstable', 'config', 'machine', 'window', 'space', 'extra-space', 'display']) {
   test(`R6 display phase replans with fixed ownership: ${scenario}`, async t => {
     const f = await fixture(t), packageRoot = join(f.root, 'package');
     await mkdir(join(packageRoot, 'bin'), { recursive: true });
@@ -155,14 +155,15 @@ for (const scenario of ['mode-v2', 'mode-v3', 'resize', 'reconcile', 'no-display
     if(scenario.startsWith('mode-')) {
       const profiles=join(f.configRoot,'displayprofiles'); await mkdir(profiles);
       await writeFile(join(profiles,'display-solo-primary.fish'),'#!/bin/sh\nexit 0\n',{mode:0o755});
-      if(scenario==='mode-v3') {
+      for (const direction of ['wide','tall']) await writeFile(join(profiles,`display-primary-plus-${direction}-left.fish`),'#!/bin/sh\nexit 0\n',{mode:0o755});
+      if(scenario.startsWith('mode-v3')) {
         const v3=starterV3(), setups=v3.hardwareProfiles.mac_mini.setups;
         v3.hardwareProfiles.mac_mini.setups={single_wide:setups.single_wide,single_tall:setups.single_tall};
-        setups.single_wide.compatibilityMode='solo';
+        if(scenario==='mode-v3')setups.single_wide.compatibilityMode='solo';
         v3.workspaces.coding.configurations.wide.layout={type:'window',role:'editor'};
         await writeFile(join(f.configRoot,'config.v3.json'),JSON.stringify(v3));
-        await writeFile(join(f.stateRoot,'machine.json'),JSON.stringify({hardwareProfile:'mac_mini',hardwareProfileConfirmed:true,activeSetup:'single_tall',topologySelections:{'external:wide':'single_wide','external:tall':'single_tall'},displayBindings:{wide:'DISPLAY-1'}}));
-        f.data.displays[0].frame.h=1920;f.data.spaces[0].label='coding_wide';
+        await writeFile(join(f.stateRoot,'machine.json'),JSON.stringify({hardwareProfile:'mac_mini',hardwareProfileConfirmed:true,activeSetup:'single_tall',topologySelections:{'external:wide':'single_wide','external:tall':'single_tall'},displayBindings:{wide:'DISPLAY-1',tall:'DISPLAY-1'}}));
+        f.data.displays[0].frame.h=scenario==='mode-v3-tall'?900:1920;f.data.spaces[0].label=scenario==='mode-v3-tall'?'coding_tall':'coding_wide';
         await writeFile(join(f.root,'data.json'),JSON.stringify(f.data));
         await writeFile(join(f.bin,'sysctl'),'#!/bin/sh\necho Macmini9,1\n',{mode:0o755});
       }
@@ -180,7 +181,7 @@ const owner=JSON.parse(fs.readFileSync(process.env.SPACEWRIGHT_STATE_ROOT+'/exec
 const envelope=JSON.parse(fs.readFileSync(process.env.SPACEWRIGHT_EXECUTION_ENVELOPE));
 fs.appendFileSync(root+'/commands',JSON.stringify({args,token:owner.token,deadline:owner.deadlineAt,plan:envelope.plan})+'\\n');
 if(args[0]==='display'){
- data.displays[0].frame.w=1600; if(scenario==='mode-v3')data.displays[0].frame.h=900;
+ data.displays[0].frame.w=1600; if(scenario.startsWith('mode-v3'))data.displays[0].frame.h=scenario==='mode-v3-tall'?1920:900;
  if(scenario==='config'){const p=process.env.SPACEWRIGHT_CONFIG_ROOT+'/config.v2.json',c=JSON.parse(fs.readFileSync(p));c.metadata.name='external change';fs.writeFileSync(p,JSON.stringify(c));}
  if(scenario==='machine'){const p=process.env.SPACEWRIGHT_STATE_ROOT+'/machine.json';fs.writeFileSync(p,JSON.stringify({displayBindings:{primary:'OTHER-DISPLAY'}}));}
  if(scenario==='window')data.windows[0].id=11;
@@ -195,7 +196,7 @@ if(args[0]==='display'){
  fs.writeFileSync(root+'/layout-attempted','yes');fs.writeFileSync(path,JSON.stringify(data));
 }
 `, { mode: 0o755 });
-    const result = await exec(process.execPath, [join(repo, 'configurator/state-cli.mjs'), 'apply', ...(scenario.startsWith('mode-')?['solo','--mode-transition']:['--profile=resize']), '--json', `--config-root=${f.configRoot}`, `--state-root=${f.stateRoot}`, `--package-root=${packageRoot}`, `--timeout-seconds=${scenario === 'unstable' ? 3 : 15}`], { env: { ...f.env, REVIEW_SCENARIO: scenario } }).catch(error => error);
+    const result = await exec(process.execPath, [join(repo, 'configurator/state-cli.mjs'), 'apply', ...(scenario.startsWith('mode-')?[scenario==='mode-v3-wide'?'wide':scenario==='mode-v3-tall'?'tall':'solo','--mode-transition']:['--profile=resize']), '--json', `--config-root=${f.configRoot}`, `--state-root=${f.stateRoot}`, `--package-root=${packageRoot}`, `--timeout-seconds=${scenario === 'unstable' ? 3 : 15}`], { env: { ...f.env, REVIEW_SCENARIO: scenario } }).catch(error => error);
     const applied = JSON.parse(result.stdout);
     const commands = (await readFile(join(f.root, 'commands'), 'utf8')).trim().split('\n').map(JSON.parse);
     const journal = JSON.parse(await readFile(applied.journal, 'utf8'));
@@ -206,7 +207,7 @@ if(args[0]==='display'){
       assert.equal(applied.status, 'completed', result.stdout);
       assert.equal(journal.planRelations, undefined);
       assert.equal(journal.verification.converged, true);
-    } else if (['mode-v2','mode-v3','resize', 'reconcile'].includes(scenario)) {
+    } else if (['mode-v2','mode-v3','mode-v3-wide','mode-v3-tall','resize', 'reconcile'].includes(scenario)) {
       assert.equal(applied.status, 'completed', result.stdout);
       assert.equal(journal.verification.converged, true);
       assert.ok(commands.some(c => c.args[0] === 'run'));
@@ -296,17 +297,41 @@ if(args[1]==='query') {
   assert.equal(existsSync(join(f.stateRoot,'execution.lock')),false);
 });
 
-test('F1 successful public mode keeps one lease and executes the display profile once',async t=>{
+for (const version of [2,3]) test(`F1 successful public mode keeps one lease and executes the display profile once (v${version})`,async t=>{
   const f=await fixture(t),profiles=join(f.configRoot,'displayprofiles');await mkdir(profiles);
   await writeFile(join(profiles,'display-solo-primary.fish'),`#!${process.execPath}
 const fs=require('fs'),root=process.env.REVIEW_ROOT,path=root+'/data.json',data=JSON.parse(fs.readFileSync(path));
 fs.appendFileSync(root+'/profile-ran','once\\n');data.displays[0].frame.w=1600;fs.writeFileSync(path,JSON.stringify(data));
 `,{mode:0o755});
-  const result=await exec(join(repo,'bin/spacewright'),['mode','solo'],{env:{...f.env,SPACEWRIGHT_BANNER_DISABLE:'1',WORKSPACE_DISPLAY_SETTLE_SECONDS:'0'},timeout:20000});
+  if (version === 3) {
+    f.data.displays[0]['is-built-in']=true;f.data.spaces[0].label='coding_laptop';
+    await writeFile(join(f.root,'data.json'),JSON.stringify(f.data));
+    await writeFile(join(f.configRoot,'config.v3.json'),JSON.stringify(starterV3()));
+    await writeFile(join(f.stateRoot,'machine.json'),JSON.stringify({hardwareProfile:'macbook',hardwareProfileConfirmed:true,topologySelections:{'built_in:wide':'built_in'},displayBindings:{built_in:'DISPLAY-1'}}));
+    await writeFile(join(f.bin,'sysctl'),'#!/bin/sh\necho MacBookPro18,3\n',{mode:0o755});
+  }
+  const result=await exec(join(repo,'bin/spacewright'),['mode','solo'],{env:{...f.env,SPACEWRIGHT_BANNER_DISABLE:'1',WORKSPACE_DISPLAY_SETTLE_SECONDS:'0'},timeout:20000}).catch(async error => {throw new Error(`${error.stderr} mutations=${await readFile(join(f.root,'mutations'),'utf8').catch(()=> '')} data=${await readFile(join(f.root,'data.json'),'utf8')}`);});
   assert.match(result.stdout,/SPACEWRIGHT_VERIFIED/);
   assert.equal(await readFile(join(f.root,'profile-ran'),'utf8'),'once\n');
   const journals=await readdir(join(f.stateRoot,'runs')),journal=JSON.parse(await readFile(join(f.stateRoot,'runs',journals[0])));
   assert.equal(journal.status,'completed');assert.equal(journal.effects.filter(e=>e.type==='display_profile').length,1);
   assert.equal(journal.layoutBefore.displays[0].frame.w,1600);assert.equal(journal.verification.converged,true);
   assert.equal(existsSync(join(f.stateRoot,'execution.lock')),false);
+});
+
+for (const source of ['starter', 'example']) test(`R1 optional orientation passes public MacBook mode preflight: ${source}`, async t => {
+  const f = await fixture(t);
+  const config = source === 'starter' ? starterV3() : JSON.parse(await readFile(join(repo, 'examples/config-v3.json')));
+  f.data.displays[0]['is-built-in'] = true;
+  await writeFile(join(f.root, 'data.json'), JSON.stringify(f.data));
+  await writeFile(join(f.configRoot, 'config.v3.json'), JSON.stringify(config));
+  await writeFile(join(f.stateRoot, 'machine.json'), JSON.stringify({hardwareProfile:'macbook',hardwareProfileConfirmed:true,topologySelections:{'built_in:wide':'built_in'},displayBindings:{built_in:'DISPLAY-1'}}));
+  await writeFile(join(f.bin, 'sysctl'), '#!/bin/sh\necho MacBookPro18,3\n', {mode:0o755});
+  await mkdir(join(f.configRoot, 'displayprofiles'));
+  await writeFile(join(f.configRoot, 'displayprofiles/display-solo-primary.fish'), '#!/bin/sh\nexit 0\n', {mode:0o755});
+  const result = await exec(join(repo, 'bin/spacewright'), ['mode','solo','--dry-run'], {env:f.env,timeout:10000});
+  assert.match(result.stdout, /status=executable/);
+  assert.equal(existsSync(join(f.root,'mutations')),false);
+  assert.equal(existsSync(join(f.stateRoot,'runs')),false);
+  assert.equal(existsSync(join(f.stateRoot,'mode-transition')),false);
 });

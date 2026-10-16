@@ -47,21 +47,24 @@ export function topologyKey(displays = []) {
   return displays.map((display) => `${display.kind}:${display.orientation}`).sort().join('+') || 'none';
 }
 
-function displayMatches(actual, expected) {
-  if (expected.role && actual.role && actual.role !== expected.role) return false;
+function displayMatches(actual, expected, bindings = {}) {
+  // One physical display may have different roles in different setups. A
+  // confirmed binding is authoritative over describeDisplays' display label.
+  const boundToRole = actual.uuid && bindings[expected.role] === actual.uuid;
+  if (expected.role && actual.role && actual.role !== expected.role && !boundToRole) return false;
   if (expected.kind && actual.kind !== expected.kind) return false;
   if (expected.orientation && actual.orientation !== expected.orientation) return false;
   return true;
 }
 
-function matchDisplaySet(actual, expected, allowAdditionalDisplays) {
+function matchDisplaySet(actual, expected, allowAdditionalDisplays, bindings = {}) {
   if (!allowAdditionalDisplays && actual.length !== expected.length) return false;
   if (actual.length < expected.length) return false;
   const used = new Set();
   const assign = (index) => {
     if (index === expected.length) return true;
     for (let candidate = 0; candidate < actual.length; candidate += 1) {
-      if (used.has(candidate) || !displayMatches(actual[candidate], expected[index])) continue;
+      if (used.has(candidate) || !displayMatches(actual[candidate], expected[index], bindings)) continue;
       used.add(candidate);
       if (assign(index + 1)) return true;
       used.delete(candidate);
@@ -71,12 +74,48 @@ function matchDisplaySet(actual, expected, allowAdditionalDisplays) {
   return assign(0);
 }
 
+// Confirmations describe concrete sets; match conditions may omit kind/direction.
+// Current geometry is not the target geometry until the display profile runs.
+export function resolveModeTransition(config, { machine = {}, hardware = {}, snapshot = {}, mode } = {}) {
+  const selected = selectHardwareProfile(config, machine, hardware);
+  if (!selected.id || !machine.hardwareProfileConfirmed) throw new Error('hardware profile requires confirmation before switching mode');
+  if (snapshot.unavailable || snapshot.completeness && snapshot.completeness !== 'complete') throw new Error(snapshot.message || 'display discovery is incomplete');
+  const physical = describeDisplays(snapshot, machine);
+  const candidates = [];
+  for (const [setupId, setup] of Object.entries(config.hardwareProfiles[selected.id].setups)) {
+    if (setup.compatibilityMode !== mode) continue;
+    const requirements = setup.match.displays;
+    const roles = new Set([...requirements.map(d => d.role), ...setup.lanes.map(l => l.role)].filter(Boolean));
+    const bound = new Set();
+    const bindingsValid = [...roles].every(role => {
+      const uuid = machine.displayBindings?.[role];
+      const display = physical.find(d => d.uuid === uuid);
+      if (!display || bound.has(uuid)) return false;
+      bound.add(uuid);
+      return requirements.filter(d => d.role === role).every(d => !d.kind || d.kind === display.kind);
+    });
+    if (!bindingsValid) continue;
+    const withoutOrientation = displays => displays.map(({ orientation, ...display }) => display);
+    if (!matchDisplaySet(physical, withoutOrientation(requirements), setup.match.allowAdditionalDisplays === true, machine.displayBindings)) continue;
+    for (const [key, confirmedSetup] of Object.entries(machine.topologySelections || {})) {
+      if (confirmedSetup !== setupId || !/^(built_in|external|sidecar):(wide|tall|square)(\+(built_in|external|sidecar):(wide|tall|square))*$/.test(key)) continue;
+      const confirmed = key.split('+').map(part => { const [kind, orientation] = part.split(':'); return {kind, orientation}; });
+      if (topologyKey(confirmed) !== key) continue;
+      if (!matchDisplaySet(confirmed, requirements, setup.match.allowAdditionalDisplays === true)) continue;
+      if (!matchDisplaySet(withoutOrientation(physical), withoutOrientation(confirmed), false)) continue;
+      candidates.push({hardwareProfileId:selected.id, setupId, topologyKey:key, v2:projectSetupToV2(config, selected.id, setupId)});
+    }
+  }
+  if (candidates.length !== 1) throw new Error(`target setup for ${mode} is ambiguous, unconfirmed or missing required physical bindings`);
+  return candidates[0];
+}
+
 export function matchingSetups(config, hardwareProfileId, snapshot = {}, machine = {}) {
   const profile = config.hardwareProfiles?.[hardwareProfileId];
   if (!profile || snapshot.unavailable) return [];
   const actual = describeDisplays(snapshot, machine);
   return Object.entries(profile.setups || {}).filter(([, setup]) => (
-    matchDisplaySet(actual, setup.match?.displays || [], setup.match?.allowAdditionalDisplays === true)
+    matchDisplaySet(actual, setup.match?.displays || [], setup.match?.allowAdditionalDisplays === true, machine.displayBindings)
   )).map(([id]) => id);
 }
 
@@ -88,7 +127,7 @@ export function setupBindingStatus(config, hardwareProfileId, setupId, snapshot 
     if (!requirement.role) continue;
     const uuid = machine.displayBindings?.[requirement.role];
     const display = uuid ? displays.find((candidate) => candidate.uuid === uuid) : null;
-    if (!display || !displayMatches(display, requirement)) missingRoles.push(requirement.role);
+    if (!display || !displayMatches(display, requirement, machine.displayBindings)) missingRoles.push(requirement.role);
   }
   return { ready: missingRoles.length === 0, missingRoles };
 }

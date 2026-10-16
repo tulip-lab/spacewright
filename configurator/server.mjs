@@ -15,7 +15,7 @@ import { compileSkhd, compileV2, migrateV1, starterConfig, validateV2 } from './
 import { compileV3, describeDisplays, matchingSetups, migrateV2ToV3, resolveV3, selectHardwareProfile, setupBindingStatus, starterV3, topologyKey, validateV3 } from './lib/config-v3.mjs';
 import { detectMacHardware } from './lib/hardware-detection.mjs';
 import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState } from './lib/state-engine.mjs';
-import { generationDocument, withConfigurationWrite, stableRead,atomicText, hash } from './lib/config-store.mjs';
+import { generationDocument, verifyRuntimeDocument, withConfigurationWrite, stableRead,atomicText, hash } from './lib/config-store.mjs';
 import { discoverState } from './lib/discovery.mjs';
 import { classifyTopology, matchingRules, ruleContext } from './lib/automation-policy.mjs';
 import { runWebTask, cancelWebTask } from './lib/task-coordinator.mjs';
@@ -581,10 +581,40 @@ async function api(request, response, url) {
     const snapshot = JSON.parse(await readFile(path, 'utf8')); snapshot.name = payload.name.trim(); await atomicWrite(path, `${JSON.stringify(snapshot, null, 2)}\n`); return json(response, 200, { renamed: true });
   }
   if (url.pathname.match(/^\/api\/history\/[^/]+\/restore$/) && request.method === 'POST') {
-    const id = url.pathname.split('/')[3]; const path = join(historyRoot, `${id}.json`); if (!existsSync(path)) return json(response, 404, { error: 'snapshot not found' });
-    const snapshot = JSON.parse(await readFile(path, 'utf8')); const validation = validateV2(snapshot.config); if (!validation.valid) return json(response, 422, validation);
-    await serializeConfigWrite(async () => { if(existsSync(configV3File)) throw Object.assign(new Error('v2 history restore is unavailable while v3 is active; use the active backup instead'),{statusCode:409}); await createSnapshot(await readConfig(), 'before-restore'); await atomicWrite(runtimeFile, `${JSON.stringify(compiledDocument(snapshot.config), null, 2)}\n`); await atomicWrite(configFile, serializedConfig(snapshot.config)); }); await activity('info', 'snapshot_restored', { id });
-    return json(response, 200, { restored: true, config: snapshot.config, revision: configRevision(snapshot.config) });
+    const id = url.pathname.split('/')[3];
+    if (!/^[0-9]+-[a-f0-9]{8}$/.test(id)) return json(response, 404, {error:'snapshot not found'});
+    const payload = await body(request);
+    const result = await serializeConfigWrite(async () => {
+      if (existsSync(configV3File)) return {status:409, body:{error:'v2 history restore is unavailable while v3 is active; use the active backup instead',code:'active_version_conflict'}};
+      const active = await activeDocument();
+      if (!payload.baseRevision) return {status:428, body:{error:'baseRevision is required to prevent overwriting a newer configuration',code:'revision_required',currentRevision:active.revision}};
+      if (payload.baseRevision !== active.revision) return {status:409, body:{error:'configuration changed on disk; reload or compare before restoring',code:'configuration_conflict',currentRevision:active.revision}};
+      let snapshot;
+      try { snapshot = JSON.parse(await readFile(join(historyRoot, `${id}.json`), 'utf8')); }
+      catch (error) {
+        if (error.code === 'ENOENT') return {status:404, body:{error:'snapshot not found'}};
+        if (error instanceof SyntaxError) return {status:422, body:{error:'snapshot is not valid JSON'}};
+        throw error;
+      }
+      const validation = validateV2(snapshot?.config);
+      if (!validation.valid) return {status:422, body:validation};
+      const source = serializedConfig(snapshot.config);
+      const runtime = generationDocument(snapshot.config, null, source);
+      const recovery = await createSnapshot(active.config, 'before-restore');
+      await atomicWrite(configFile, source);
+      await atomicWrite(runtimeFile, serializedConfig(runtime));
+      const readBack = await activeDocument();
+      const savedRuntime = JSON.parse(await readFile(runtimeFile, 'utf8'));
+      if (readBack.path !== active.path || readBack.version !== 2 || readBack.source !== source
+        || JSON.stringify(readBack.machine) !== JSON.stringify(active.machine)
+        || hash(savedRuntime) !== hash(generationDocument(readBack.config, null, readBack.source))) throw new Error('history restore read-back verification failed; saved generation is incomplete');
+      return {status:200, body:{restored:true,verified:true,config:readBack.config,revision:readBack.revision,recoverySnapshot:recovery}};
+    });
+    if (result.status === 200) {
+      try { await activity('info', 'snapshot_restored', {id}); }
+      catch (error) { result.body.warnings = [`Configuration restored, but the activity log could not be written: ${error.message}`]; }
+    }
+    return json(response, result.status, result.body);
   }
   if (url.pathname.startsWith('/api/history/') && request.method === 'DELETE') {
     const id = url.pathname.split('/').at(-1); const path = join(historyRoot, `${id}.json`); if (!existsSync(path)) return json(response, 404, { error: 'snapshot not found' }); await unlink(path); return json(response, 200, { deleted: true });
@@ -661,13 +691,29 @@ async function api(request, response, url) {
   if (url.pathname.match(/^\/api\/tasks\/[a-f0-9]+\/cancel$/) && request.method === 'POST') { const id = url.pathname.split('/')[3]; const task = tasks.get(id); if (!task) return json(response, 404, { error: 'task not found' }); if (!['queued', 'running'].includes(task.status)) return json(response, 409, { error: 'task is no longer running' }); cancelWebTask(task); appendTaskLog(task, 'SYSTEM cancellation requested'); return json(response, 200, { task: taskView(task) }); }
   if (url.pathname === '/api/topology' && request.method === 'GET') { const result = await queryDisplays(); return json(response, 200, { ...result, topology: classifyTopology(result.displays), mutates: false }); }
   if (url.pathname === '/api/diagnostics' && request.method === 'GET') {
-    const portableConfig = await readOperationalConfig(); const validation = portableConfig.version === 3 ? validateV3(portableConfig) : validateV2(portableConfig); const snapshot = await querySnapshot(); const machine = await readMachine(); const yabai = await commandCheck('yabai');
-    let config = portableConfig;
+    const selectedPath = existsSync(configV3File) ? configV3File : configFile;
+    let document = null, loadingError = null;
+    try { document = await stableRead(selectedPath, machineFile); }
+    catch (error) {
+      if (!(error instanceof SyntaxError) && !['ENOENT','EACCES','EISDIR'].includes(error.code) && !/configuration.*(generation|save)/.test(error.message)) throw error;
+      loadingError = `configuration cannot be loaded or verified: ${error.message}`;
+    }
+    const portableConfig = document?.config;
+    const validVersion = portableConfig?.version === (selectedPath === configV3File ? 3 : 2);
+    const validation = loadingError ? {valid:false,errors:[loadingError]}
+      : !validVersion ? {valid:false,errors:['active configuration version does not match its filename']}
+      : portableConfig?.version === 3 ? validateV3(portableConfig) : validateV2(portableConfig);
+    const machine = document?.machine || {};
+    const snapshot = await discoverState(machine);
+    const yabai = await commandCheck('yabai');
+    let config = portableConfig?.version === 3 ? null : portableConfig;
     let v3Resolution = null;
-    let resolutionError = portableConfig.version === 3 && snapshot.unavailable ? snapshot.message : null;
-    if (portableConfig.version === 3 && validation.valid && !snapshot.unavailable) {
+    let resolutionError = !validation.valid ? 'configuration is invalid; hardware setup cannot be verified'
+      : snapshot.completeness !== 'complete' ? snapshot.message || 'display discovery is incomplete' : null;
+    if (portableConfig?.version === 3 && !resolutionError) {
       try {
-        v3Resolution = resolveV3(portableConfig, { machine, hardware: await detectHardware(), snapshot });
+        const hardware = await detectHardware();
+        v3Resolution = {...resolveV3(portableConfig, {machine,hardware,snapshot}),machine,hardware,snapshot};
         config = v3Resolution.v2;
       } catch (error) { resolutionError = error.message; }
     }
@@ -675,20 +721,24 @@ async function api(request, response, url) {
     const duplicateLabels = [...new Set(snapshot.spaces.map((space) => space.label).filter(Boolean).filter((label, index, labels) => labels.indexOf(label) !== index))];
     const missingBindings = Object.entries(machine.displayBindings || {}).filter(([, uuid]) => !snapshot.displays.some((display) => display.uuid === uuid)).map(([role]) => role);
     const expectedRuntime = validation.valid && !resolutionError
-      ? portableConfig.version === 3 ? compiledV3Document(portableConfig, v3Resolution).generated.source_sha256 : compiledDocument(config).generated.source_sha256
-      : null;
-    let savedRuntime = null; let runtimeReadError = null;
-    if (existsSync(runtimeFile)) {
-      try { savedRuntime = JSON.parse(await readFile(runtimeFile, 'utf8')).generated?.source_sha256 || null; }
-      catch (error) { runtimeReadError = error.message; }
+      ? generationDocument(portableConfig, v3Resolution, document.source) : null;
+    let runtimeSource = null, runtimeCheck;
+    try {
+      runtimeSource = await readFile(runtimeFile, 'utf8');
+      const runtime = JSON.parse(runtimeSource);
+      runtimeCheck = expectedRuntime ? verifyRuntimeDocument(runtime, expectedRuntime) : null;
+    } catch (error) {
+      if (!(error instanceof SyntaxError) && !['ENOENT','EACCES','EISDIR'].includes(error.code)) throw error;
+      runtimeCheck = {ok:false,detail:`compiled runtime is ${error.code === 'ENOENT' ? 'missing' : 'unreadable'}: ${error.message}; run spacewright config-compile`};
     }
+    if (!expectedRuntime) runtimeCheck = {ok:null,detail:`compiled runtime cannot be verified: ${loadingError || resolutionError || 'configuration is invalid'}${runtimeCheck?.ok === false ? `; ${runtimeCheck.detail}` : ''}`};
     const packageVersion = (await readFile(join(packageRoot, 'VERSION'), 'utf8')).trim();
     const packagedRelease = basename(resolve(packageRoot, '..')) === 'releases';
     const inferredMode = v3Resolution
       ? portableConfig.hardwareProfiles[v3Resolution.hardwareProfileId].setups[v3Resolution.setupId].compatibilityMode
       : topology === 'solo' ? 'solo' : topology.startsWith('tall') ? 'tall' : topology.startsWith('wide') ? 'wide' : null;
     let reconciliation = null;
-    if (validation.valid && !snapshot.unavailable && inferredMode && config.modes[inferredMode]) {
+    if (validation.valid && !snapshot.unavailable && inferredMode && config?.modes?.[inferredMode] && snapshot.completeness === 'complete') {
       const desired = buildDesiredState(config, compileV2(config), { kind: 'mode', id: inferredMode, mode: inferredMode }, snapshot);
       const spaceLabelHints = await readSpaceLabelHints(stateRoot, desired, snapshot);
       reconciliation = compareState(snapshot, desired, machine, { spaceLabelHints });
@@ -703,18 +753,32 @@ async function api(request, response, url) {
       } catch {}
     }
     const recentTransitions = await readTransitionHistory(stateRoot, 10);
+    let generationError = loadingError;
+    if (document) {
+      try {
+        const currentPath = existsSync(configV3File) ? configV3File : configFile;
+        const current = await stableRead(selectedPath, machineFile);
+        if (currentPath !== selectedPath || current.source !== document.source
+          || JSON.stringify(current.machine) !== JSON.stringify(machine)) throw new Error('configuration or machine generation changed during diagnostics');
+        let currentRuntime = null;
+        try { currentRuntime = await readFile(runtimeFile, 'utf8'); }
+        catch (error) { if (!['ENOENT','EACCES','EISDIR'].includes(error.code)) throw error; }
+        if (currentRuntime !== runtimeSource) throw new Error('runtime generation changed during diagnostics');
+      } catch (error) { generationError = `generation cannot be verified: ${error.message}`; }
+    }
+    if (generationError) {runtimeCheck = {ok:null,detail:generationError};reconciliation = null;}
     const checks = [
       { id: 'yabai', ok: yabai.ok, detail: yabai.detail },
-      { id: 'accessibility_query', ok: !snapshot.unavailable, detail: snapshot.unavailable ? snapshot.message : `${snapshot.windows.length} windows queried` },
+      { id: 'accessibility_query', ok: snapshot.completeness === 'complete', detail: snapshot.completeness !== 'complete' ? snapshot.message : `${snapshot.windows.length} windows queried` },
       { id: 'scripting_addition', ok: null, detail: 'not proven by read-only queries; live mutation remains unverified' },
       { id: 'display', ok: snapshot.displays.length > 0, detail: `${snapshot.displays.length} detected; topology ${topology}` },
-      { id: 'display_bindings', ok: missingBindings.length === 0, detail: missingBindings.length ? `disconnected or stale: ${missingBindings.join(', ')}` : 'all bound roles are connected' },
-      { id: 'space_labels', ok: duplicateLabels.length === 0, detail: duplicateLabels.length ? `duplicates: ${duplicateLabels.join(', ')}` : `${snapshot.spaces.filter((space) => space.label).length} unique labels` },
+      { id: 'display_bindings', ok: generationError || snapshot.completeness !== 'complete' ? null : missingBindings.length === 0, detail: generationError || (snapshot.completeness !== 'complete' ? snapshot.message : null) || (missingBindings.length ? `disconnected or stale: ${missingBindings.join(', ')}` : 'all bound roles are connected') },
+      { id: 'space_labels', ok: snapshot.completeness !== 'complete' ? null : duplicateLabels.length === 0, detail: snapshot.completeness !== 'complete' ? snapshot.message : duplicateLabels.length ? `duplicates: ${duplicateLabels.join(', ')}` : `${snapshot.spaces.filter((space) => space.label).length} unique labels` },
       { id: 'backend', ok: true, detail: 'loopback authenticated writes' },
-      { id: 'schema', ok: validation.valid, detail: validation.valid ? 'valid' : validation.errors.join('; ') },
-      ...(portableConfig.version === 3 ? [{ id: 'hardware_setup', ok: !resolutionError, detail: resolutionError || `${v3Resolution.hardwareProfileId} · ${v3Resolution.setupId}` }] : []),
-      { id: 'compiled_runtime', ok: !runtimeReadError && expectedRuntime === savedRuntime, detail: runtimeReadError ? `compiled runtime is unreadable: ${runtimeReadError}` : expectedRuntime === savedRuntime ? 'source digest is current' : 'compiled runtime is missing or stale' },
-      { id: 'workspace', ok: Object.keys(config.workspaces || {}).length > 0, detail: `${Object.keys(config.workspaces || {}).length} configured` },
+      { id: 'schema', ok: generationError ? null : validation.valid, detail: generationError || (validation.valid ? 'valid' : validation.errors.join('; ')) },
+      ...(portableConfig?.version === 3 ? [{ id: 'hardware_setup', ok: generationError || !validation.valid || snapshot.completeness !== 'complete' ? null : Boolean(v3Resolution), detail: generationError || resolutionError || `${v3Resolution.hardwareProfileId} · ${v3Resolution.setupId}` }] : []),
+      { id: 'compiled_runtime', ...runtimeCheck },
+      { id: 'workspace', ok: generationError || !validation.valid || !config ? null : Object.keys(config.workspaces || {}).length > 0, detail: generationError || (!validation.valid || !config ? `workspace configuration cannot be verified: ${resolutionError}` : `${Object.keys(config.workspaces || {}).length} configured`) },
       { id: 'build_identity', ok: packagedRelease ? basename(packageRoot) === packageVersion : true, detail: packagedRelease ? `directory ${basename(packageRoot)}; VERSION ${packageVersion}` : `development checkout; VERSION ${packageVersion}` }
     ];
     if (reconciliation) checks.push({ id: 'current_mode_state', ok: reconciliation.converged, detail: `${inferredMode}: ${reconciliation.counts.blocker} blockers, ${reconciliation.counts.change} changes, ${reconciliation.counts.warning} warnings` });
