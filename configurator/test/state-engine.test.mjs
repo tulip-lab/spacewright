@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {selectRole} from '../lib/window-policy.mjs';
 import assert from 'node:assert/strict';
 import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState, normalizeSnapshot } from '../lib/state-engine.mjs';
 import { compileV2, starterConfig } from '../lib/config-v2.mjs';
@@ -395,4 +396,42 @@ test('comparison recovers a uniquely identifiable unlabeled Space', () => {
   assert.ok(comparison.drifts.some((item) => item.code === 'space_label_missing' && item.spaceUuid === 'SPACE-UNLABELED'));
   assert.ok(!comparison.drifts.some((item) => item.code === 'space_missing'));
   assert.ok(buildExecutionPlan(snapshot, state, comparison).actions.some((action) => action.type === 'recover_space_label' && action.spaceIndex === 1));
+});
+
+for (const titles of [['Alpha','Beta'],['A','AB'],['<A "quoted">','B & C']]) test(`F3 capture proves global one-to-one selectors: ${titles}`,()=>{
+  const snapshot=fixture();snapshot.windows[1]={...snapshot.windows[0],id:11,title:titles[1],frame:{x:600,y:0,w:600,h:900}};snapshot.windows[0].title=titles[0];
+  const capture=captureWorkspace(snapshot,{workspaceId:'captured',mode:'solo'});
+  for(const [index,role] of Object.values(capture.draft.workspace.windows).entries()) {
+    const result=selectRole(snapshot.windows,{appNames:capture.draft.apps[role.app].match.appNames,selector:role.selector});
+    assert.deepEqual(result.selected.map(w=>w.id),[snapshot.windows[index].id]);
+    const rebuilt=[...snapshot.windows].reverse().map(w=>({...w,id:w.id+100,pid:w.pid+100}));
+    assert.deepEqual(selectRole(rebuilt,{appNames:['Code'],selector:role.selector}).selected.map(w=>w.title),[titles[index]]);
+  }
+});
+for(const scenario of ['same','empty','outside','incomplete'])test(`F3 capture refuses indistinguishable or incomplete windows: ${scenario}`,()=>{
+  const snapshot=fixture();snapshot.windows[1]={...snapshot.windows[0],id:11};
+  if(scenario==='empty')snapshot.windows.forEach(w=>w.title='');
+  if(scenario==='outside')snapshot.windows[1].space=2;
+  if(scenario==='incomplete')snapshot.completeness='partial';
+  assert.throws(()=>captureWorkspace(snapshot,{workspaceId:'captured',mode:'solo'}),e=>e.code===(scenario==='incomplete'?'capture_incomplete':'capture_ambiguous'));
+});
+
+test('F3 AX types distinguish identical and empty titles without title conditions',()=>{
+  for(const title of ['Same','']){
+    const snapshot=fixture();snapshot.windows[0].title=title;snapshot.windows[1]={...snapshot.windows[0],id:11,subrole:'AXDialog'};
+    const capture=captureWorkspace(snapshot,{workspaceId:'captured',mode:'solo'});
+    assert.equal(capture.matching.length,2);assert.equal(capture.draft.workspace.windows.window_2.required,false);
+    for(const [index,item] of capture.matching.entries()){
+      assert.equal(item.selector.title_include,undefined);
+      assert.deepEqual(selectRole(snapshot.windows,{appNames:['Code'],selector:item.selector}).selected.map(w=>w.id),[10+index]);
+    }
+  }
+});
+test('F3 invisible windows on another Space still participate in global identity checks',()=>{
+  const snapshot=fixture();snapshot.windows[1]={...snapshot.windows[0],id:11,space:2,visible:false};
+  assert.throws(()=>captureWorkspace(snapshot,{mode:'solo'}),e=>e.code==='capture_ambiguous');
+});
+for(const state of ['nativeFullscreen','minimized','sticky'])test(`F3 capture refuses unsupported ${state}`,()=>{
+  const snapshot=fixture();snapshot.windows[1][state]=true;
+  assert.throws(()=>captureWorkspace(snapshot,{mode:'solo'}),e=>e.code==='capture_unsupported');
 });

@@ -186,9 +186,21 @@ cancelled journal with an interrupted step when one had started.
 
 `spacewright capture [ID] [MODE]` converts the focused or selected Space into an
 unsaved canvas-layout draft. The Web configurator exposes the same operation as
-**Capture into editor**, reuses existing app definitions by alias, and assigns
-the workspace to a display lane when that display has a known role. Saving is a
-separate, validated action.
+**Capture into editor**. Capture requires complete discovery and supported,
+visible AX windows. Each role must uniquely identify its original window in
+the global snapshot, including other Spaces. AX role/subrole conditions are
+preferred; distinct literal title conditions are added when needed. Titles such
+as `A` and `AB` may require a literal exclusion. Indistinguishable windows return
+`capture_ambiguous` (HTTP 422, CLI nonzero) without a successful draft. Window IDs
+and process identities are never persisted in the portable draft.
+
+The v2 editor checks alias mapping, full configuration validity, captured role
+identity and related mode ownership on a copy before replacing the draft. A
+bound display lane is required. Conflicts leave the original draft and dirty
+state intact. Generated conditions appear in the capture preview; document title
+changes can require edits in Advanced role settings. The local HTTP capture
+preview expires after five minutes. v3 projection editors reject capture merge;
+CLI portable capture remains available. Saving is a separate validated action.
 
 ## Profiles and topology events
 

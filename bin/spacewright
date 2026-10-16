@@ -161,13 +161,9 @@ switch "$command_name"
             exit 2
         end
         if contains -- --dry-run $argv
-            set -l profile $mode
-            test "$mode" = solo; or set profile "$mode"_left
-            set -l timeout_seconds "$SPACEWRIGHT_MODE_TIMEOUT_SECONDS"
-            test -n "$timeout_seconds"; or set timeout_seconds 120
-            printf 'dry_run=mode_transition\nmode=%s\ndisplay=display_apply_%s\nworkspace=work_%s\npolicy=latest_request_wins\ntimeout_seconds=%s\n' \
-                "$mode" "$profile" "$mode" "$timeout_seconds"
-            exit 0
+            command node "$package_root/configurator/state-cli.mjs" apply "$mode" --mode-transition --dry-run \
+                "--package-root=$package_root" "--config-root=$SPACEWRIGHT_CONFIG_ROOT" "--state-root=$SPACEWRIGHT_STATE_ROOT" $argv[2..-1]
+            exit $status
         end
         command node "$package_root/configurator/mode-transition.mjs" run "$mode" \
             "--package-root=$package_root" \

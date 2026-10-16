@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import http from 'node:http';
+import {mergeCapturedWorkspace} from './lib/capture-merge.mjs';
 import { readFile, writeFile, rename, mkdir, copyFile, readdir, unlink, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
@@ -14,7 +15,7 @@ import { compileSkhd, compileV2, migrateV1, starterConfig, validateV2 } from './
 import { compileV3, describeDisplays, matchingSetups, migrateV2ToV3, resolveV3, selectHardwareProfile, setupBindingStatus, starterV3, topologyKey, validateV3 } from './lib/config-v3.mjs';
 import { detectMacHardware } from './lib/hardware-detection.mjs';
 import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState } from './lib/state-engine.mjs';
-import { generationDocument, withConfigurationWrite, stableRead,atomicText } from './lib/config-store.mjs';
+import { generationDocument, withConfigurationWrite, stableRead,atomicText, hash } from './lib/config-store.mjs';
 import { discoverState } from './lib/discovery.mjs';
 import { classifyTopology, matchingRules, ruleContext } from './lib/automation-policy.mjs';
 import { runWebTask, cancelWebTask } from './lib/task-coordinator.mjs';
@@ -40,6 +41,7 @@ const publicRoot = join(packageRoot, 'configurator', 'public');
 const token = args['--token'] || randomBytes(24).toString('hex');
 const listenPort = Number(args['--port'] || 0);
 const tasks = new Map();
+const captures = new Map();
 const MAX_TASKS = 100;
 const MAX_TASK_LOG_LINES = 2000;
 const unsavedStarterConfig = starterConfig();
@@ -382,6 +384,24 @@ async function currentConfigDocument() {
   return { config, revision: configRevision(config) };
 }
 
+async function activeDocument() {
+  const path = existsSync(configV3File) ? configV3File : configFile;
+  const value = await stableRead(path, machineFile, {ownedWrite:Boolean(configurationScope.getStore())});
+  const version = path === configV3File ? 3 : 2;
+  if (value.config.version !== version) throw Object.assign(new Error('active configuration version does not match its file'), {statusCode:422});
+  return {...value, path, version, backupPath:`${path}.backup`, revision:configRevision(value.config)};
+}
+
+async function backupDocument(active) {
+  let source;
+  try { source = await readFile(active.backupPath, 'utf8'); }
+  catch(error) { if(error.code === 'ENOENT') throw Object.assign(new Error('no backup exists for the active configuration version'), {statusCode:404}); throw error; }
+  let config;
+  try { config = JSON.parse(source); } catch { throw Object.assign(new Error('the configuration backup is not valid JSON'), {statusCode:422}); }
+  if(config?.version !== active.version) throw Object.assign(new Error('backup version differs from the active configuration'), {statusCode:422});
+  return {source,config,backupRevision:hash(source)};
+}
+
 async function currentEditorDocument() {
   if (!existsSync(configV3File)) {
     const document = await currentConfigDocument();
@@ -500,7 +520,7 @@ async function api(request, response, url) {
       await atomicWrite(runtimeFile, `${JSON.stringify(runtime, null, 2)}\n`);
       await atomicWrite(configV3File, source);
       const readBack = (await stableRead(configV3File, machineFile, {ownedWrite:Boolean(configurationScope.getStore())})).config;
-      if (serializedConfig(readBack) !== source) return json(response, 500, { error: 'read-back verification failed' });
+      if (serializedConfig(readBack) !== source) throw new Error('read-back verification failed');
       await activity('info', 'v3_configuration_saved', { hardwareProfile: setupState.hardwareSelection.id, setup: setupState.confirmedSetup });
       return json(response, 200, { saved: true, verified: true, revision: configRevision(readBack), path: configV3File, runtimePath: runtimeFile });
     });
@@ -509,9 +529,9 @@ async function api(request, response, url) {
     return json(response, 200, await currentEditorDocument());
   }
   if (url.pathname === '/api/config-backup' && request.method === 'GET') {
-    const backup = `${configFile}.backup`;
-    if (!existsSync(backup)) return json(response, 404, { error: 'no configuration backup exists' });
-    return json(response, 200, { config: JSON.parse(await readFile(backup, 'utf8')), path: backup });
+    const active = await activeDocument();
+    const backup = await backupDocument(active);
+    return json(response, 200, { config:backup.config, version:active.version, path:active.backupPath, baseRevision:active.revision, backupRevision:backup.backupRevision });
   }
   if (url.pathname === '/api/legacy-preview' && request.method === 'GET') return json(response, 200, { config: migrateV1(await readLegacyConfig()), source: 'legacy-preview', writes: false });
   if (url.pathname === '/api/machine' && request.method === 'GET') return json(response, 200, { machine: await readMachine(), path: machineFile });
@@ -530,6 +550,7 @@ async function api(request, response, url) {
   if (url.pathname === '/api/save' && request.method === 'POST') {
     const payload = await body(request); const config = payload.config || payload;
     return await serializeConfigWrite(async () => {
+      if(existsSync(configV3File)) return json(response,409,{error:'v3 is active; edit and save in Hardware & Setups',code:'active_version_conflict'});
       const current = await currentConfigDocument();
       if (!payload.baseRevision) return json(response, 428, { error: 'baseRevision is required to prevent overwriting a newer configuration', code: 'revision_required', currentRevision: current.revision });
       if (payload.baseRevision !== current.revision) return json(response, 409, { error: 'configuration changed on disk; reload or compare before saving', code: 'configuration_conflict', currentRevision: current.revision });
@@ -541,7 +562,7 @@ async function api(request, response, url) {
       await atomicWrite(runtimeFile, `${JSON.stringify(compiledDocument(config), null, 2)}\n`);
       await atomicWrite(configFile, source);
       const readBack = await readConfig();
-      if (serializedConfig(readBack) !== source) return json(response, 500, { error: 'read-back verification failed' });
+      if (serializedConfig(readBack) !== source) throw new Error('read-back verification failed');
       const snapshot = await createSnapshot(readBack, 'apply');
       await activity('info', 'configuration_saved', { snapshotId: snapshot.id });
       return json(response, 200, { saved: true, verified: true, revision: configRevision(readBack), snapshot, path: configFile, runtimePath: runtimeFile });
@@ -562,7 +583,7 @@ async function api(request, response, url) {
   if (url.pathname.match(/^\/api\/history\/[^/]+\/restore$/) && request.method === 'POST') {
     const id = url.pathname.split('/')[3]; const path = join(historyRoot, `${id}.json`); if (!existsSync(path)) return json(response, 404, { error: 'snapshot not found' });
     const snapshot = JSON.parse(await readFile(path, 'utf8')); const validation = validateV2(snapshot.config); if (!validation.valid) return json(response, 422, validation);
-    await serializeConfigWrite(async () => { await createSnapshot(await readConfig(), 'before-restore'); await atomicWrite(runtimeFile, `${JSON.stringify(compiledDocument(snapshot.config), null, 2)}\n`); await atomicWrite(configFile, serializedConfig(snapshot.config)); }); await activity('info', 'snapshot_restored', { id });
+    await serializeConfigWrite(async () => { if(existsSync(configV3File)) throw Object.assign(new Error('v2 history restore is unavailable while v3 is active; use the active backup instead'),{statusCode:409}); await createSnapshot(await readConfig(), 'before-restore'); await atomicWrite(runtimeFile, `${JSON.stringify(compiledDocument(snapshot.config), null, 2)}\n`); await atomicWrite(configFile, serializedConfig(snapshot.config)); }); await activity('info', 'snapshot_restored', { id });
     return json(response, 200, { restored: true, config: snapshot.config, revision: configRevision(snapshot.config) });
   }
   if (url.pathname.startsWith('/api/history/') && request.method === 'DELETE') {
@@ -577,10 +598,23 @@ async function api(request, response, url) {
   }
   if (url.pathname === '/api/state' && request.method === 'GET') return json(response, 200, { snapshot: await querySnapshot(), mutates: false });
   if (url.pathname === '/api/capture' && request.method === 'POST') {
-    const payload = await body(request); const snapshot = await querySnapshot();
+    const payload = await body(request); const machine = await readMachine(); const snapshot = await discoverState(machine);
     if (snapshot.completeness !== 'complete') return json(response, 503, { error: snapshot.message });
-    try { return json(response, 200, { ...captureWorkspace(snapshot, payload), mutates: false }); }
-    catch (error) { return json(response, 422, { error: error.message }); }
+    try {
+      const capture=captureWorkspace(snapshot,payload), captureId=randomBytes(16).toString('hex');
+      for(const [id,value] of captures)if(Date.now()-value.createdAt>300000)captures.delete(id);
+      while(captures.size>=20)captures.delete(captures.keys().next().value);
+      captures.set(captureId,{capture,snapshot,machine,createdAt:Date.now()});
+      return json(response,200,{...capture,captureId,mutates:false});
+    } catch(error) { return json(response,422,{error:error.message,code:error.code,details:error.details}); }
+  }
+  if(url.pathname === '/api/capture/merge' && request.method === 'POST') {
+    const payload=await body(request);
+    if(existsSync(configV3File)) return json(response,409,{error:'Capture merge is unavailable in the v3 projection editor; use CLI portable capture or edit Hardware & Setups.',code:'capture_version_unsupported'});
+    const saved=captures.get(payload.captureId);
+    if(!saved || Date.now()-saved.createdAt>300000) return json(response,409,{error:'Capture preview expired; capture the Space again.',code:'capture_expired'});
+    try { return json(response,200,{...mergeCapturedWorkspace(payload.config,saved.capture,saved.snapshot,saved.machine),mutates:false}); }
+    catch(error) { return json(response,422,{error:error.message,code:error.code}); }
   }
   if (url.pathname === '/api/tasks' && request.method === 'GET') return json(response, 200, { tasks: [...tasks.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 50).map(taskView) });
   if (url.pathname === '/api/transition-history' && request.method === 'GET') {
@@ -720,16 +754,34 @@ async function api(request, response, url) {
     return response.end(YAML.stringify(config));
   }
   if (url.pathname === '/api/restore-backup' && request.method === 'POST') {
-    const backup = `${configFile}.backup`;
-    if (!existsSync(backup)) return json(response, 404, { error: 'no configuration backup exists' });
-    const config = JSON.parse(await readFile(backup, 'utf8'));
-    const validation = validateV2(config);
-    if (!validation.valid) return json(response, 422, { error: 'the configuration backup is invalid', ...validation });
-    await serializeConfigWrite(async () => {
-    await atomicWrite(runtimeFile, `${JSON.stringify(compiledDocument(config), null, 2)}\n`);
-    await atomicWrite(configFile, serializedConfig(config));
+    const payload = await body(request);
+    if (!payload.version || !payload.baseRevision || !payload.backupRevision) return json(response, 428, {error:'version, baseRevision and backupRevision are required',code:'revision_required'});
+    return serializeConfigWrite(async () => {
+      const active = await activeDocument();
+      if(payload.version !== active.version || payload.baseRevision !== active.revision) return json(response,409,{error:'active configuration changed; reload the backup preview',code:'configuration_conflict'});
+      const backup = await backupDocument(active);
+      if(payload.backupRevision !== backup.backupRevision) return json(response,409,{error:'backup changed; preview it again before restoring',code:'backup_conflict'});
+      const validation = active.version === 3 ? validateV3(backup.config) : validateV2(backup.config);
+      if(!validation.valid) return json(response,422,{error:'the configuration backup is invalid',...validation});
+      let resolution = null;
+      if(active.version === 3) {
+        const setup = await v3SetupState(backup.config);
+        if(!setup.ready) return json(response,422,{error:'backup requires confirmed hardware, topology and display bindings'});
+        resolution = {machine:setup.machine,hardware:setup.hardware,snapshot:setup.snapshot};
+      }
+      // Compilation must finish before even the first backup rotation. Keep the
+      // source bytes in memory because atomicWrite replaces the .backup file.
+      const runtime = generationDocument(backup.config,resolution,backup.source);
+      await atomicWrite(active.path,backup.source);
+      await atomicWrite(runtimeFile,serializedConfig(runtime));
+      const readBack = await activeDocument();
+      const savedRuntime = JSON.parse(await readFile(runtimeFile,'utf8'));
+      const expected = generationDocument(readBack.config,resolution,readBack.source);
+      if(readBack.path !== active.path || readBack.version !== active.version || readBack.source !== backup.source
+        || JSON.stringify(readBack.machine) !== JSON.stringify(active.machine)
+        || hash(savedRuntime) !== hash(expected)) throw new Error('backup restore read-back verification failed; saved generation is incomplete');
+      return json(response,200,{restored:true,verified:true,config:readBack.config,version:active.version,revision:readBack.revision,path:active.path,runtimePath:runtimeFile});
     });
-    return json(response, 200, { restored: true, config, revision: configRevision(config), path: configFile, runtimePath: runtimeFile });
   }
   if (url.pathname === '/api/skhd' && request.method === 'POST') {
     const config = await body(request);

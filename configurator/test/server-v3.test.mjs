@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {generationDocument} from '../lib/config-store.mjs';
 import { spawn } from 'node:child_process';
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -13,7 +15,7 @@ import YAML from 'yaml';
 const packageRoot = new URL('../..', import.meta.url).pathname;
 const systemChrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
-async function startServer(configRoot, stateRoot, fakeBin) {
+async function startServer(configRoot, stateRoot, fakeBin, extraEnv = {}) {
   const token = 'v3-integration-token';
   const child = spawn(process.execPath, [
     join(packageRoot, 'configurator/server.mjs'),
@@ -23,7 +25,7 @@ async function startServer(configRoot, stateRoot, fakeBin) {
     `--token=${token}`,
     '--port=0',
     '--no-open'
-  ], { env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` }, stdio: ['ignore', 'pipe', 'pipe'] });
+  ], { env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}`, ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'] });
   const url = await new Promise((resolve, reject) => {
     let output = '';
     const timer = setTimeout(() => reject(new Error(`server did not start: ${output}`)), 5000);
@@ -250,4 +252,113 @@ esac
   assert.equal(JSON.parse(await readFile(join(stateRoot, 'machine.json'))).activeSetup, 'single_tall_custom');
   assert.equal(existsSync(join(configRoot, '.configuration-write')), true);
   assert.equal((await json(url, '/api/v3/config', token)).status, 500);
+});
+
+for (const scenario of ['v2-only','v3-only','both']) test(`F2 backup restore uses active portable generation: ${scenario}`, async context => {
+  const root=await mkdtemp(join(tmpdir(),'spacewright-backup-'));
+  const configRoot=join(root,'config'),stateRoot=join(root,'state'),fakeBin=join(root,'bin');
+  await Promise.all([mkdir(configRoot),mkdir(stateRoot),mkdir(fakeBin)]);
+  const current=scenario==='v2-only'?starterConfig():starterV3(), backup=structuredClone(current);
+  current.metadata.name='Current unique document'; backup.metadata.name='Restored unique document'; backup.workspaces.coding.name='Restored coding';
+  const source=join(configRoot,`config.v${current.version}.json`), sourceText=JSON.stringify(current);
+  await writeFile(source,sourceText);await writeFile(`${source}.backup`,JSON.stringify(backup));
+  const legacyText=JSON.stringify(starterConfig());
+  if(scenario==='both') { await writeFile(join(configRoot,'config.v2.json'),legacyText);await writeFile(join(configRoot,'config.v2.json.backup'),legacyText); }
+  const machine=JSON.stringify({version:2,hardwareProfile:'mac_mini',hardwareProfileConfirmed:true,displayBindings:{tall:'DISPLAY-TALL-1234'},topologySelections:{'external:tall':'single_tall'},activeSetup:'single_tall'});
+  await writeFile(join(stateRoot,'machine.json'),machine);
+  await writeFile(join(fakeBin,'sysctl'),'#!/bin/sh\necho Macmini9,1\n',{mode:0o755});
+  await writeFile(join(fakeBin,'yabai'),`#!/bin/sh
+case "$3" in
+ --displays) echo '[{"index":1,"uuid":"DISPLAY-TALL-1234","frame":{"x":0,"y":0,"w":1200,"h":1920}}]';;
+ *) echo '[]';;
+esac
+`,{mode:0o755});
+  const {child,token,url}=await startServer(configRoot,stateRoot,fakeBin);
+  context.after(async()=>{child.kill('SIGTERM');await new Promise(resolve=>child.once('exit',resolve));await rm(root,{recursive:true,force:true});});
+  const preview=await json(url,'/api/config-backup',token);
+  assert.equal(preview.status,200);assert.equal(preview.body.version,current.version);assert.deepEqual(preview.body.config,backup);
+  const post=payload=>json(url,'/api/restore-backup',token,{method:'POST',body:JSON.stringify(payload)});
+  assert.equal((await post({})).status,428);
+  const payload={version:preview.body.version,baseRevision:preview.body.baseRevision,backupRevision:preview.body.backupRevision};
+  assert.equal((await post({...payload,baseRevision:'stale'})).status,409);
+  assert.equal((await post({...payload,backupRevision:'stale'})).status,409);
+  assert.equal(await readFile(source,'utf8'),sourceText);
+  for(const bad of ['{', JSON.stringify({...backup,version:current.version===3?2:3}),JSON.stringify({...backup,workspaces:null})]) {
+    await writeFile(`${source}.backup`,bad);
+    const rejected=await post({...payload,backupRevision:createHash('sha256').update(bad).digest('hex')});
+    assert.equal(rejected.status,422);assert.equal(await readFile(source,'utf8'),sourceText);
+    assert.equal(existsSync(join(configRoot,'generated')),false);assert.equal(existsSync(join(configRoot,'.configuration-write')),false);
+  }
+  await writeFile(`${source}.backup`,JSON.stringify(backup));
+  if(current.version===3)for(const broken of [{hardwareProfileConfirmed:false},{displayBindings:{tall:'MISSING-DISPLAY'}}]) {
+    await writeFile(join(stateRoot,'machine.json'),JSON.stringify({...JSON.parse(machine),...broken}));
+    assert.equal((await post(payload)).status,422);assert.equal(await readFile(source,'utf8'),sourceText);
+    assert.equal(existsSync(join(configRoot,'.configuration-write')),false);
+    await writeFile(join(stateRoot,'machine.json'),machine);
+  }
+  const restored=await post(payload);assert.equal(restored.status,200,JSON.stringify(restored.body));
+  assert.deepEqual(JSON.parse(await readFile(source)),backup);
+  assert.equal(await readFile(`${source}.backup`,'utf8'),sourceText,'restore must retain the previous current bytes for undo');
+  assert.equal(await readFile(join(stateRoot,'machine.json'),'utf8'),machine);
+  const runtime=JSON.parse(await readFile(join(configRoot,'generated/runtime.json')));
+  assert.equal(runtime.source_version,current.version);assert.equal(runtime.generated.source_version,current.version);
+  assert.equal(runtime.generated.source_sha256,createHash('sha256').update(await readFile(source)).digest('hex'));
+  let resolution=null;
+  if(current.version===3){const setup=(await json(url,'/api/v3/setup',token)).body;resolution={machine:setup.machine,hardware:setup.hardware,snapshot:setup.snapshot};}
+  assert.deepEqual(runtime,generationDocument(backup,resolution,await readFile(source,'utf8')));
+
+  if(scenario==='both'){assert.equal(await readFile(join(configRoot,'config.v2.json'),'utf8'),legacyText);assert.equal(await readFile(join(configRoot,'config.v2.json.backup'),'utf8'),legacyText);}
+  const undo=await json(url,'/api/config-backup',token);
+  assert.equal((await post({version:undo.body.version,baseRevision:undo.body.baseRevision,backupRevision:undo.body.backupRevision})).status,200);
+  assert.deepEqual(JSON.parse(await readFile(source)),current);
+  if(scenario==='v3-only') {
+    const browser=await chromium.launch({headless:true,...(existsSync(systemChrome)?{executablePath:systemChrome}:{})});
+    context.after(()=>browser.close());const page=await browser.newPage();
+    await page.goto(`${url}?token=${token}&view=hardware`);await page.locator('#v3-save').waitFor();
+    await page.locator('.more-menu summary').click();await page.locator('#restore-backup').click();await page.locator('dialog [value=confirm]').click();
+    await page.getByText('Restored the previous valid configuration',{exact:true}).waitFor();
+    await page.getByText('Restored coding',{exact:true}).first().waitFor();
+    await page.locator('#v3-tall-top-percent').fill('57');await page.locator('#v3-tall-top-percent').dispatchEvent('change');
+    const savedResponse=page.waitForResponse(response=>response.url().endsWith('/api/v3/save'));
+    await page.locator('#v3-save').click();assert.equal((await savedResponse).status(),200);
+    const saved=JSON.parse(await readFile(source));assert.equal(saved.workspaces.coding.name,'Restored coding');assert.equal(saved.settings.tallTopPercent,57);
+  }
+  if(current.version===3){
+    const runtimeBefore=await readFile(join(configRoot,'generated/runtime.json'),'utf8');
+    const unsupported=await json(url,'/api/capture/merge',token,{method:'POST',body:JSON.stringify({captureId:'unused',config:starterConfig()})});assert.equal(unsupported.status,409);assert.equal(unsupported.body.code,'capture_version_unsupported');
+    await mkdir(join(stateRoot,'history'),{recursive:true});
+    await writeFile(join(stateRoot,'history/123456789-1234abcd.json'),JSON.stringify({config:starterConfig()}));
+    assert.equal((await json(url,'/api/history/123456789-1234abcd/restore',token,{method:'POST'})).status,409);
+    const rejected=await json(url,'/api/save',token,{method:'POST',body:JSON.stringify({config:starterConfig(),baseRevision:restored.body.revision})});
+    assert.equal(rejected.status,409);assert.equal(await readFile(join(configRoot,'generated/runtime.json'),'utf8'),runtimeBefore);
+  }
+});
+
+for(const scenario of ['other-version-only','runtime-write-failure','read-back-mismatch'])test(`F2 restore fails closed: ${scenario}`,async context=>{
+  const root=await mkdtemp(join(tmpdir(),'spacewright-backup-failure-')),configRoot=join(root,'config'),stateRoot=join(root,'state'),fakeBin=join(root,'bin');
+  await Promise.all([mkdir(configRoot),mkdir(stateRoot),mkdir(fakeBin)]);
+  const current=starterConfig(),backup=structuredClone(current);backup.metadata.name='Recovery source';
+  const file=join(configRoot,'config.v2.json'),source=JSON.stringify(current),backupSource=JSON.stringify(backup);
+  await writeFile(file,source);
+  await writeFile(scenario==='other-version-only'?join(configRoot,'config.v3.json.backup'):`${file}.backup`,backupSource);
+  const extraEnv={};
+  if(scenario==='runtime-write-failure') {await mkdir(join(configRoot,'generated/runtime.json'),{recursive:true});}
+  if(scenario==='read-back-mismatch') {
+    const hook=join(root,'read-back-hook.mjs');
+    await writeFile(hook,`import fs from 'node:fs/promises';import{syncBuiltinESMExports}from 'node:module';const read=fs.readFile;fs.readFile=async function(path,...args){const value=await read.call(this,path,...args);if(String(path)==='${configRoot}/generated/runtime.json'){const doc=JSON.parse(value);doc.generated.runtime_sha256='injected-corruption';return JSON.stringify(doc);}return value;};syncBuiltinESMExports();`);
+    extraEnv.NODE_OPTIONS=`--import=${hook}`;
+  }
+  const {child,token,url}=await startServer(configRoot,stateRoot,fakeBin,extraEnv);
+  context.after(async()=>{child.kill('SIGTERM');await new Promise(resolve=>child.once('exit',resolve));await rm(root,{recursive:true,force:true});});
+  const preview=await json(url,'/api/config-backup',token);
+  if(scenario==='other-version-only') {
+    assert.equal(preview.status,404);
+    const rejected=await json(url,'/api/restore-backup',token,{method:'POST',body:JSON.stringify({version:2,baseRevision:'present',backupRevision:'present'})});
+    assert.equal(rejected.status,409);assert.equal(await readFile(file,'utf8'),source);assert.equal(existsSync(join(configRoot,'generated')),false);return;
+  }
+  assert.equal(preview.status,200);
+  const result=await json(url,'/api/restore-backup',token,{method:'POST',body:JSON.stringify({version:2,baseRevision:preview.body.baseRevision,backupRevision:preview.body.backupRevision})});
+  assert.equal(result.status,500,JSON.stringify(result.body));assert.equal(existsSync(join(configRoot,'.configuration-write')),true);
+  assert.equal(await readFile(`${file}.backup`,'utf8'),source);
+  const refused=await json(url,'/api/config',token);assert.equal(refused.status,500);assert.match(refused.body.error,/incomplete|in progress/);
 });

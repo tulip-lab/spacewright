@@ -84,8 +84,17 @@ node "$installed_release_root/configurator/cli.mjs" starter | jq -e '.version ==
 or exit 17
 node "$installed_release_root/configurator/cli.mjs" starter-v3 | jq -e '.version == 3 and .hardwareProfiles.mac_mini.setups.single_tall and .hardwareProfiles.mac_mini.setups.wide_sidecar' >/dev/null
 or exit 31
-"$bin_root/spacewright" mode wide --dry-run | string match -q '*policy=latest_request_wins*'
+# The installed entry must now perform real read-only preflight. With no
+# portable document it must reject, rather than print an unconditional success.
+env -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT \
+    SPACEWRIGHT_CONFIG_ROOT="$test_root/missing-mode-config" \
+    SPACEWRIGHT_STATE_ROOT="$test_root/mode-state" \
+    "$bin_root/spacewright" mode wide --dry-run >"$test_root/mode-preflight.log" 2>&1
+and exit 27
+string match -q '*portable configuration not found*' (string collect <"$test_root/mode-preflight.log")
 or exit 27
+not test -e "$test_root/mode-state/runs"
+or exit 48
 set -l workspace_dry_run (env \
     -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT -u SPACEWRIGHT_CONFIG_ROOT \
     -u SPACEWRIGHT_STATE_ROOT -u SPACEWRIGHT_DISPLAY_PROFILES_ROOT \

@@ -50,8 +50,7 @@ async function processOwnerKind(pid) {
 }
 
 function modeCommand(mode) {
-  const profile = mode === 'solo' ? 'display_apply_solo' : `display_apply_${mode}_left`;
-  return `source "$SPACEWRIGHT_TRANSITION_PACKAGE_ROOT/conf.d/spacewright.fish"; or exit 1; workspace_run_step "display profile" ${profile}; and "$SPACEWRIGHT_TRANSITION_PACKAGE_ROOT/bin/spacewright" apply ${mode} --verified-marker --json`;
+  return `"$SPACEWRIGHT_TRANSITION_PACKAGE_ROOT/bin/spacewright" apply ${mode} --mode-transition --verified-marker --json`;
 }
 
 function workspaceCommand(workspace, mode) {
@@ -284,7 +283,7 @@ export async function runTransition({
     const transitionSourceLabel = sourceSpaceLabel === undefined ? await focusedSpaceLabel() : sourceSpaceLabel;
     sourceLabel = transitionSourceLabel;
     await updateState({ sourceSpaceLabel: transitionSourceLabel });
-    const exitCode = await runBounded(fishExecutable, ['-lc', command], {
+    const exitCode = await runBounded(fishExecutable, ['--no-config', '-c', command], {
       graceMs:2500, deadline: now + timeoutMs, signal: cancellation.signal,
       env: { ...process.env, ...lock.lease.env, SPACEWRIGHT_CONFIG_ROOT: configRoot, SPACEWRIGHT_STATE_ROOT: stateRoot,
         SPACEWRIGHT_TRANSITION_PACKAGE_ROOT: packageRoot, SPACEWRIGHT_TRANSITION_RUN_ID: runId, SPACEWRIGHT_SOURCE_SPACE_LABEL: transitionSourceLabel },

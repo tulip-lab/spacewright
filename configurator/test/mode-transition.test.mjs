@@ -32,12 +32,12 @@ async function fixture() {
   const fakeFish = join(root, 'fake-fish');
   const log = join(root, 'runs.log');
   await writeFile(fakeFish, `#!/bin/sh
-trap 'printf "stopped %s\\n" "$2" >> "$FAKE_LOG"; exit 143' TERM INT
-printf 'started %s\\n' "$2" >> "$FAKE_LOG"
+trap 'printf "stopped %s\\n" "$3" >> "$FAKE_LOG"; exit 143' TERM INT
+printf 'started %s\\n' "$3" >> "$FAKE_LOG"
 printf '==> fake workspace step\\n'
 sleep "$FAKE_DURATION" &
 wait $!
-printf 'completed %s\\n' "$2" >> "$FAKE_LOG"
+printf 'completed %s\\n' "$3" >> "$FAKE_LOG"
 printf 'SPACEWRIGHT_VERIFIED\\n'
 `);
   await chmod(fakeFish, 0o755);
