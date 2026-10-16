@@ -19,6 +19,25 @@ export function generationDocument(config, resolution, source = `${JSON.stringif
   generated.generation_id = hash(generated).slice(0, 24);
   return { ...runtime, generated };
 }
+// Hash the parsed body in producer insertion order; file indentation/newlines
+// are not part of runtime_sha256. Source bytes deliberately remain significant.
+export function verifyRuntimeDocument(actual, expected) {
+  const object = value => value && typeof value === 'object' && !Array.isArray(value);
+  if (!object(actual) || !object(actual.generated)) return {ok:false,detail:'compiled runtime or generated metadata is invalid; run spacewright config-compile'};
+  const {generated, ...body} = actual;
+  const errors = [];
+  for (const field of Object.keys(expected.generated)) {
+    if (generated[field] !== expected.generated[field]) errors.push(`${field} is missing or stale`);
+  }
+  const bodyDigest = hash(body);
+  if (bodyDigest !== generated.runtime_sha256) errors.push('runtime body integrity does not match runtime_sha256');
+  if (bodyDigest !== expected.generated.runtime_sha256) errors.push('runtime body differs from the active compiled configuration');
+  const generation = Object.fromEntries(Object.keys(expected.generated).filter(key => key !== 'generation_id').map(key => [key,generated[key]]));
+  if (generated.generation_id !== hash(generation).slice(0,24)) errors.push('generation_id does not match its metadata');
+  return errors.length ? {ok:false,detail:`${errors.join('; ')}; run spacewright config-compile`}
+    : {ok:true,detail:'compiled runtime body, source, versions, context and generation are current'};
+}
+
 export async function stableRead(configPath, machinePath, { ownedWrite = false,allowMissingConfig=false } = {}) {
   const guard = join(dirname(configPath), '.configuration-write');
   const read = async () => {

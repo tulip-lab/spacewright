@@ -931,9 +931,29 @@ async function historyView(epoch = renderEpoch) {
     root.querySelector('#history-scope').onchange = renderTransitions;
     root.querySelector('#refresh-history').onclick = render;
     root.querySelector('#clear-transition-history').onclick = async () => { if (!transitions.length) return toast('Run history is already empty'); if (!await confirmAction('Clear all recorded workspace and mode transitions?', { confirmLabel: 'Clear Run History', danger: true })) return; await request('/api/transition-history', { method: 'DELETE' }); toast('Run history cleared'); render(); };
-    root.querySelectorAll('[data-compare-snapshot]').forEach((button) => button.onclick = async () => { const result = await request(`/api/history/${button.dataset.compareSnapshot}`); root.querySelector('#snapshot-compare').innerHTML = `<pre class="review-json">${escapeHtml(JSON.stringify(result.changes, null, 2))}</pre>`; });
+    let reviewedRevision = state.serverRevision;
+    root.querySelectorAll('[data-compare-snapshot]').forEach((button) => button.onclick = async () => { const baseRevision = state.serverRevision; const result = await request(`/api/history/${button.dataset.compareSnapshot}`); reviewedRevision = baseRevision; root.querySelector('#snapshot-compare').innerHTML = `<pre class="review-json">${escapeHtml(JSON.stringify(result.changes, null, 2))}</pre>`; });
     root.querySelectorAll('[data-rename-snapshot]').forEach((button) => button.onclick = async () => { const name = await promptValue('Snapshot Name'); if (!name) return; await request(`/api/history/${button.dataset.renameSnapshot}/rename`, { method: 'POST', body: JSON.stringify({ name }) }); render(); });
-    root.querySelectorAll('[data-restore-snapshot]').forEach((button) => { button.disabled = state.legacyEditorReadOnly; button.title = state.legacyEditorReadOnly ? 'v2 history cannot restore over active v3; use Restore Backup.' : ''; button.onclick = async () => { if (!await confirmAction('Restore this snapshot as the active configuration?', { confirmLabel: 'Restore Snapshot', danger: true })) return; const result = await request(`/api/history/${button.dataset.restoreSnapshot}/restore`, { method: 'POST' }); state.config = result.config; state.savedConfig = structuredClone(result.config); state.serverRevision = result.revision; state.source = 'v2'; state.requiresInitialSave = false; markClean('Local · restored'); render(); }; });
+    root.querySelectorAll('[data-restore-snapshot]').forEach((button) => {
+      button.disabled = state.legacyEditorReadOnly;
+      button.title = state.legacyEditorReadOnly ? 'v2 history cannot restore over active v3; use Restore Backup.' : '';
+      button.onclick = async () => {
+        const baseRevision = reviewedRevision;
+        if (!await confirmAction('Restore this snapshot as the active configuration?', { confirmLabel: 'Restore Snapshot', danger: true })) return;
+        try {
+          const result = await request(`/api/history/${button.dataset.restoreSnapshot}/restore`, {method:'POST',body:JSON.stringify({baseRevision})});
+          state.config = result.config; state.savedConfig = structuredClone(result.config); state.serverRevision = result.revision;
+          state.source = 'v2'; state.requiresInitialSave = false;
+          state.runtime = null; state.livePlan = null; state.runPreview = null; state.capturePreview = null; state.liveSnapshot = null;
+          state.importChanges = []; state.autoImportedShortcuts = 0;
+          markClean('Local · restored'); render();
+          if (result.warnings?.length) toast(result.warnings.join(' '), true);
+        } catch (error) {
+          toast(error.payload?.code === 'configuration_conflict' || error.payload?.code === 'active_version_conflict'
+            ? 'The configuration changed. Your draft is preserved; reload and compare before restoring.' : error.message, true);
+        }
+      };
+    });
     root.querySelectorAll('[data-delete-snapshot]').forEach((button) => button.onclick = async () => { if (!await confirmAction('Delete this snapshot?', { confirmLabel: 'Delete Snapshot', danger: true })) return; await request(`/api/history/${button.dataset.deleteSnapshot}`, { method: 'DELETE' }); render(); });
   } catch (error) {
     if (!viewIsCurrent('history', epoch)) return;
