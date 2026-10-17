@@ -9,6 +9,8 @@ interactive entry point for one workspace. It uses the same lock, cancellation,
 deadline, status, and progress banner, but deliberately skips mode-wide Sandbox
 collection, Space ordering, and finalization. It only runs the selected
 workspace through the same immutable apply plan used by the CLI and Web.
+After arranging the workspace, it switches to that workspace's Space and verifies
+focus. An already arranged workspace still switches when another Space is focused.
 Single-workspace execution explicitly plans only that workspace's empty opposite
 variant UUIDs. It rechecks complete discovery, labels, display and occupancy
 before deletion; other workspaces and user Spaces are outside its scope. A global

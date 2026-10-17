@@ -63,7 +63,7 @@ test('49/51 tall planning rejects equal heights and converges only after both fi
   const config=starterConfig();config.settings={tallTopPercent:49};
   for(const display of config.modes.tall.displays)display.role='primary';
   config.workspaces.coding.variants.tall.layout={type:'canvas',regions:[{role:'editor',grid:'2:1:0:0:1:1'},{role:'assistant',grid:'2:1:0:1:1:1'}]};
-  const value=raw();value.spaces[0].label='coding_tall';value.spaces[0].type='float';value.spaces.splice(1,1);
+  const value=raw();value.spaces[0].label='coding_tall';value.spaces[0].type='float';value.spaces[0]['has-focus']=true;value.spaces.splice(1,1);
   value.windows[0].frame.h=400;
   value.windows.push({...value.windows[0],id:11,app:'ChatGPT',frame:{x:0,y:400,w:1000,h:400}});
   const target={kind:'workspace',id:'coding',mode:'tall'};

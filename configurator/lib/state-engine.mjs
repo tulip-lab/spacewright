@@ -193,7 +193,8 @@ export function buildDesiredState(config, runtime, target = {}, snapshot = null)
       reconcile: resolved.profile.settings?.reconcile !== false
     } : {
       displayProfile: null,
-      focusWorkspace: contextualApps.find((rule) => rule.focusOwner)?.ownerWorkspaceId || null,
+      focusWorkspace: resolved.kind === 'workspace' ? resolved.id
+        : contextualApps.find((rule) => rule.focusOwner)?.ownerWorkspaceId || null,
       reconcile: true
     },
     configDigest: digest(config),
@@ -501,7 +502,9 @@ export function buildExecutionPlan(snapshot, desired, comparison, options = {}) 
   const affectedWorkspaces = desired.workspaces.filter((workspace) => affectedWorkspaceIds.has(workspace.workspaceId));
   const needsFinalization = desired.target.kind !== 'workspace' && (affectedWorkspaces.length > 0 || actions.some((action) => ['remove_empty_space', 'order_spaces'].includes(action.type)));
   if (needsFinalization) actions.push({ type: 'finalize_mode', mode: desired.target.mode });
-  if (orchestration.focusWorkspace && (actions.length || comparison.drifts.some((item) => item.code === 'workspace_focus_mismatch'))) actions.push({ type: 'focus_workspace', workspaceId: orchestration.focusWorkspace, mode: desired.target.mode });
+  if (orchestration.focusWorkspace
+    && !comparison.drifts.some(item => item.code === 'workspace_inactive' && item.workspaceId === orchestration.focusWorkspace)
+    && (actions.length || comparison.drifts.some((item) => item.code === 'workspace_focus_mismatch'))) actions.push({ type: 'focus_workspace', workspaceId: orchestration.focusWorkspace, mode: desired.target.mode });
   if (actions.length) actions.push({ type: 'verify', target: clone(desired.target) });
   const executionSteps = executionStepsFor({ desired, actions, affectedWorkspaces, affectedWorkspaceIds, needsFinalization, orchestration });
   const selectedWindows = comparison.matches.flatMap((match) => (match.selectedWindowIds || []).map((id) => ({

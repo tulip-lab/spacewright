@@ -2,6 +2,31 @@
 // never the subset selected for layout.
 import { remapTallLayout } from './config-v2.mjs';
 
+export function assertWorkspaceSpaceContinuity(plan, snapshot, effects = []) {
+  for (const workspace of plan.workspaces) {
+    if (!workspace.targetSpace) {
+      if (snapshot.spaces.some(s => s.label === workspace.label)
+        && !effects.some(e => e.type === 'ensure_space' && e.workspaceId === workspace.workspaceId)) {
+        throw new Error('target Space appeared after planning; replan required');
+      }
+      continue;
+    }
+    const uuid = workspace.targetSpace.uuid;
+    if (!uuid) continue;
+    const current = snapshot.spaces.find(s => s.uuid === uuid);
+    // Inactive workspaces may be removed by this plan's cleanup phase. Only a
+    // verified operation for the exact planned identity authorizes that absence.
+    const removed = !current && !plan.selectedWindows.some(w => w.workspaceId === workspace.workspaceId)
+      && plan.actions.some(a => a.type === 'remove_empty_space' && a.spaceUuid === uuid
+        && a.label === workspace.targetSpace.label
+        && effects.some(e => e.type === a.type && e.spaceUuid === uuid && e.label === a.label
+          && e.displayUuid === a.displayUuid && e.status === 'verified_success' && e.postcondition === true));
+    if (!removed && (!current || ![workspace.targetSpace.label, workspace.label].includes(current.label))) {
+      throw new Error('planned Space disappeared or its label changed; replan required');
+    }
+  }
+}
+
 export function variantLabels(config, ids, mode) {
   const claims = Object.entries(config.workspaces).flatMap(([id,w]) => Object.entries(w.variants).map(([variant,v]) => ({workspaceId:id,mode:variant,label:v.spaceLabel || `${w.spaceLabel}_${variant}`})));
   const opposite=claims.filter(c=>ids.includes(c.workspaceId) && c.mode!==mode && !claims.some(t=>ids.includes(t.workspaceId) && t.mode===mode && t.label===c.label))

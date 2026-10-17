@@ -138,15 +138,19 @@ test('apply journals the exact incremental command and verifies convergence', as
   const stateRoot = join(root, 'state');
   const fakeBin = join(root, 'fake-bin');
   const mutationMarker = join(root, 'mutation-attempted');
+  const focusMarker = join(root, 'focused');
   await Promise.all([mkdir(join(packageRoot, 'bin'), { recursive: true }), mkdir(configRoot), mkdir(stateRoot), mkdir(fakeBin)]);
   await writeFile(join(configRoot, 'config.v2.json'), `${JSON.stringify(starterConfig(), null, 2)}\n`);
   await writeFile(join(stateRoot, 'machine.json'), `${JSON.stringify({ version: 1, displayBindings: { primary: 'DISPLAY-PRIMARY' } })}\n`);
-  await writeFile(join(packageRoot, 'bin', 'spacewright'), `#!/bin/sh\ntouch "${mutationMarker}"\nexit 0\n`);
+  await writeFile(join(packageRoot, 'bin', 'spacewright'), `#!/bin/sh\nif test "$1" = focus; then touch "${focusMarker}"; else touch "${mutationMarker}"; fi\nexit 0\n`);
   await chmod(join(packageRoot, 'bin', 'spacewright'), 0o755);
   await writeFile(join(fakeBin, 'yabai'), `#!/bin/sh
 case "$3" in
   --displays) printf '%s\n' '[{"index":1,"uuid":"DISPLAY-PRIMARY","frame":{"x":0,"y":0,"w":1200,"h":900},"is-built-in":true,"spaces":[1]}]' ;;
-  --spaces) printf '%s\n' '[{"index":1,"uuid":"SPACE-CODING","display":1,"label":"coding_solo","type":"float"}]' ;;
+  --spaces)
+    if test -e "${focusMarker}"; then focused=true; else focused=false; fi
+    printf '[{"index":1,"uuid":"SPACE-CODING","display":1,"label":"coding_solo","type":"float","has-focus":%s}]\n' "$focused"
+    ;;
   --windows)
     if test -e "${mutationMarker}"; then width=1200; else width=600; fi
     printf '[{"id":10,"app":"Code","display":1,"space":1,"frame":{"x":0,"y":0,"w":%s,"h":900},"can-move":true,"can-resize":true,"is-visible":true}]\n' "$width"
@@ -168,10 +172,12 @@ esac
     const journal = JSON.parse(await readFile(join(stateRoot, 'runs', journals[0]), 'utf8'));
     assert.equal(journal.status, 'completed');
     assert.equal(journal.verification.converged, true);
-    assert.equal(journal.steps.length, 1);
+    assert.equal(journal.steps.length, 2);
     assert.equal(journal.steps[0].action, 'workspace');
     assert.deepEqual(journal.steps[0].command, ['spacewright', 'run', 'coding', 'solo']);
     assert.equal(journal.steps[0].status, 'completed');
+    assert.deepEqual(journal.steps[1].command, ['spacewright', 'focus', 'coding', 'solo']);
+    assert.equal(journal.steps[1].status, 'completed');
 
   } finally {
     await rm(root, { recursive: true, force: true });

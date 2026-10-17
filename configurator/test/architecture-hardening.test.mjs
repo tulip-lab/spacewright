@@ -50,6 +50,7 @@ if(kind==='config') {
 }
 if(kind==='query') {
  const key=args[2].slice(2); let result=data[key];
+ if(key==='spaces' && args[3]==='--space') result=args[4] ? data.spaces.find(s=>s.index===Number(args[4])) : data.spaces.find(s=>s['has-focus']);
  if(key==='windows' && args[3]==='--window') result=data.windows.find(w=>w.id===Number(args[4]));
  if(!result) process.exit(3); console.log(JSON.stringify(result)); process.exit(0);
 }
@@ -70,7 +71,7 @@ if(kind==='space' && command==='--label')data.spaces.find(s=>s.index===Number(ar
 if(kind==='space' && args[2]==='--create')data.spaces.push({index:Math.max(...data.spaces.map(s=>s.index))+1,uuid:'CREATED-'+data.spaces.length,display:Number(args[3]),label:'',type:'bsp'});
 if(kind==='space' && command==='--layout')data.spaces.find(s=>s.index===Number(args[2])).type=args[4];
 if(kind==='space' && args[2]==='--focus') {
- const index=Number(args[3]);data.spaces.forEach(s=>s['has-focus']=s.index===index);
+ const index=data.spaces.find(s=>s.index===Number(args[3]) || s.label===args[3])?.index;data.spaces.forEach(s=>s['has-focus']=s.index===index);
  if(data.axObservation && !data.axRequiresService)for(const w of data.windows.filter(w=>w.space===index))Object.assign(w,{'has-ax-reference':true,'can-move':!data.axNeedsRefresh,'can-resize':true,role:'AXWindow',subrole:'AXStandardWindow',title:'Observed'});
 }
 if(kind==='space' && command==='--destroy') {
@@ -89,7 +90,7 @@ const fs=require('fs'),d=JSON.parse(fs.readFileSync(process.env.MOCK_DATA,'utf8'
 fs.appendFileSync(process.env.MOCK_LOG,JSON.stringify(['open',...process.argv.slice(2)])+'\\n');
 if(d.recoveryMode==='fail')process.exit(7);
 if(d.recoveryMode==='timeout')process.exit(124);
-if(d.recoveryMode!=='ineffective') { d.windows[0]['can-move']=true;if(d.recoveryMode==='replace')d.windows[0].id=20;if(d.recoveryMode==='reuse')d.windows[0].pid++; }
+if(d.recoveryMode!=='ineffective') { d.axNeedsRefresh=false;d.windows[0]['can-move']=true;if(d.recoveryMode==='replace')d.windows[0].id=20;if(d.recoveryMode==='reuse')d.windows[0].pid++; }
 fs.writeFileSync(process.env.MOCK_DATA,JSON.stringify(d));
 `,{mode:0o755});
   const env = {...process.env, HOME:directory,XDG_CONFIG_HOME:configRoot,XDG_CACHE_HOME:join(directory,'cache'),PATH:`${fakeBin}:${process.env.PATH}`,SPACEWRIGHT_CONFIG_ROOT:configRoot,SPACEWRIGHT_STATE_ROOT:stateRoot,MOCK_DATA:dataFile,MOCK_LOG:logFile};

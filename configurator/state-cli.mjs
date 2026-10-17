@@ -19,6 +19,7 @@ import { consumeBudget } from './lib/execution-budget.mjs';
 import { detectMacHardware } from './lib/hardware-detection.mjs';
 import { readSpaceLabelHints } from './lib/space-label-history.mjs';
 import { executionCensus } from './lib/window-policy.mjs';
+import { assertWorkspaceSpaceContinuity } from './lib/finalization-policy.mjs';
 import { recoverYabai, recoveryPreview } from './lib/yabai-recovery.mjs';
 import { AX_UNAVAILABLE_EXIT } from './lib/adapter-preparation.mjs';
 
@@ -221,12 +222,8 @@ async function assertExecutionContext(initial,effects = []) {
   const currentPlan = buildExecutionPlan(snapshot, initial.desired, comparison);
   if(!currentPlan.executable)throw new Error(`execution preconditions changed: ${currentPlan.blockers.map(d=>d.code).join(', ')}; replan required`);
   if (JSON.stringify(currentPlan.selectedWindows) !== JSON.stringify(initial.plan.selectedWindows)) throw new Error('planned windows or ownership changed; replan required');
+  assertWorkspaceSpaceContinuity(initial.plan, snapshot, effects);
   for (const original of initial.plan.workspaces) {
-    if (!original.targetSpace && snapshot.spaces.some((s)=>s.label===original.label) && !effects.some((e)=>e.type==='ensure_space' && e.workspaceId===original.workspaceId)) throw new Error('target Space appeared after planning; replan required');
-    if (original.targetSpace?.uuid) {
-      const currentSpace = snapshot.spaces.find((s) => s.uuid === original.targetSpace.uuid);
-      if (!currentSpace || ![original.targetSpace.label,original.label].includes(currentSpace.label)) throw new Error('planned Space disappeared or its label changed; replan required');
-    }
     const beforeDisplay = initial.snapshot.displays.find((d) => d.role === original.displayRole);
     if (beforeDisplay && !snapshot.displays.some((d) => d.uuid === beforeDisplay.uuid && JSON.stringify(d.frame) === JSON.stringify(beforeDisplay.frame))) throw new Error('relevant display changed; replan required');
   }
