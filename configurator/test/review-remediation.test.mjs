@@ -27,8 +27,9 @@ async function fixture(t) {
   await writeFile(join(root, 'data.json'), JSON.stringify(data));
   await writeFile(join(bin, 'yabai'), `#!${process.execPath}
 const fs=require('fs'),root=process.env.REVIEW_ROOT,path=root+'/data.json',data=JSON.parse(fs.readFileSync(path)),args=process.argv.slice(2);
+if(args[1]==='query'&&args[2]==='--spaces'&&args[3]==='--space'){console.log(JSON.stringify(data.spaces.find(s=>s['has-focus'])));process.exit(0);}
 if(args[1]==='query')console.log(JSON.stringify(data[args[2].slice(2)]));
-else {fs.appendFileSync(root+'/mutations',JSON.stringify(args)+'\\n');if(args[1]==='window'&&args[3]==='--grid')data.windows[0].frame={...data.displays[0].frame};fs.writeFileSync(path,JSON.stringify(data));}
+else {fs.appendFileSync(root+'/mutations',JSON.stringify(args)+'\\n');if(args[1]==='window'&&args[3]==='--grid')data.windows[0].frame={...data.displays[0].frame};if(args[1]==='space'&&args[2]==='--focus')data.spaces.forEach(s=>s['has-focus']=s.index===Number(args[3])||s.label===args[3]);fs.writeFileSync(path,JSON.stringify(data));}
 `, { mode: 0o755 });
   const env = { ...process.env, REVIEW_ROOT: root, PATH: `${bin}:${process.env.PATH}`, SPACEWRIGHT_CONFIG_ROOT: configRoot, SPACEWRIGHT_STATE_ROOT: stateRoot, SPACEWRIGHT_DISPLAY_PROFILES_ROOT:join(configRoot,'displayprofiles') };
   return { root, configRoot, stateRoot, bin, data, env };

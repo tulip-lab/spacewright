@@ -39,6 +39,31 @@ test('comparison reports a converged workspace', () => {
   assert.equal(comparison.converged, true);
 });
 
+test('an arranged individual workspace on another Space produces a focus-only plan', () => {
+  const snapshot = fixture();
+  snapshot.spaces[0].focused = false;
+  const { desired: state } = desired();
+  const comparison = compareState(snapshot, state, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
+  const plan = buildExecutionPlan(snapshot, state, comparison);
+  assert.equal(state.orchestration.focusWorkspace, 'coding');
+  assert.equal(comparison.converged, false);
+  assert.deepEqual(comparison.drifts.filter(d => d.severity === 'change').map(d => d.code), ['workspace_focus_mismatch']);
+  assert.deepEqual(plan.runnerCommands, [['focus', 'coding', 'solo']]);
+  snapshot.spaces[0].focused = true;
+  const after = compareState(snapshot, state, { displayBindings: { primary: 'DISPLAY-PRIMARY' } });
+  assert.equal(after.converged, true);
+  assert.deepEqual(buildExecutionPlan(snapshot, state, after).actions, []);
+});
+
+test('individual workspace focus follows layout and precedes verification', () => {
+  const snapshot = fixture({ helperX: 50 });
+  snapshot.spaces[0].focused = false;
+  const { desired: state } = desired();
+  const plan = buildExecutionPlan(snapshot, state, compareState(snapshot, state, { displayBindings: { primary: 'DISPLAY-PRIMARY' } }));
+  assert.deepEqual(plan.runnerCommands, [['run', 'coding', 'solo'], ['focus', 'coding', 'solo']]);
+  assert.deepEqual(plan.actions.slice(-2).map(a => a.type), ['focus_workspace', 'verify']);
+});
+
 test('plan reports live move and resize actions without mutating', () => {
   const snapshot = fixture({ helperSpace: 2, helperX: 50 });
   const { desired: state } = desired();
@@ -47,7 +72,7 @@ test('plan reports live move and resize actions without mutating', () => {
   assert.equal(plan.executable, true);
   assert.ok(plan.actions.some((action) => action.type === 'move_window' && action.windowId === 11));
   assert.ok(plan.actions.some((action) => action.type === 'resize_window' && action.windowId === 10));
-  assert.deepEqual(plan.runnerCommands, [['run', 'coding', 'solo']]);
+  assert.deepEqual(plan.runnerCommands, [['run', 'coding', 'solo'], ['focus', 'coding', 'solo']]);
 });
 
 test('missing required windows block execution while optional windows warn', () => {
