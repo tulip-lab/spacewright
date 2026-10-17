@@ -156,16 +156,35 @@ switch "$command_name"
             $argv
     case mode
         set -l mode $argv[1]
+        set -l transition_args --mode-transition
+        set -l controller_args
+        if test "$mode" = auto
+            set -l setup_state (command node "$package_root/configurator/setup-cli.mjs" status "--config-root=$SPACEWRIGHT_CONFIG_ROOT" "--state-root=$SPACEWRIGHT_STATE_ROOT" | string collect)
+            or exit 1
+            if test (printf '%s\n' "$setup_state" | jq -r '.ready') != true
+                echo 'spacewright: confirm the current hardware/display setup with spacewright configure --view=hardware' >&2
+                if not contains -- --dry-run $argv
+                    command node "$package_root/configurator/setup-cli.mjs" show "--config-root=$SPACEWRIGHT_CONFIG_ROOT" "--state-root=$SPACEWRIGHT_STATE_ROOT"
+                end
+                exit 1
+            end
+            set mode (printf '%s\n' "$setup_state" | jq -r '.compatibilityMode')
+            set -l setup_id (printf '%s\n' "$setup_state" | jq -r '.confirmedSetup')
+            set -l profile_id (printf '%s\n' "$setup_state" | jq -r '.hardwareSelection.id')
+            set transition_args "--expected-setup=$setup_id" "--expected-hardware-profile=$profile_id"
+            set controller_args "--current-setup=$setup_id" "--hardware-profile=$profile_id"
+        end
         if not contains -- "$mode" solo wide tall
-            echo 'usage: spacewright mode <solo|wide|tall> [--dry-run]' >&2
+            echo 'usage: spacewright mode <auto|solo|wide|tall> [--dry-run]' >&2
             exit 2
         end
         if contains -- --dry-run $argv
-            command node "$package_root/configurator/state-cli.mjs" apply "$mode" --mode-transition --dry-run \
+            command node "$package_root/configurator/state-cli.mjs" apply "$mode" $transition_args --dry-run \
                 "--package-root=$package_root" "--config-root=$SPACEWRIGHT_CONFIG_ROOT" "--state-root=$SPACEWRIGHT_STATE_ROOT" $argv[2..-1]
             exit $status
         end
         command node "$package_root/configurator/mode-transition.mjs" run "$mode" \
+            $controller_args \
             "--package-root=$package_root" \
             "--config-root=$SPACEWRIGHT_CONFIG_ROOT" \
             "--state-root=$SPACEWRIGHT_STATE_ROOT"
@@ -176,20 +195,24 @@ switch "$command_name"
         end
         set -l workspace_id $argv[1]
         set -l mode $argv[2]
+        set -l controller_args
+        set -l plan_args
         if test -r "$SPACEWRIGHT_CONFIG_ROOT/config.v3.json"; and not contains -- "$mode" solo wide tall
-            set -l setup_command activate
-            if contains -- --dry-run $argv
-                set setup_command status
-            end
+            set -l setup_command status
             set -l activation (command node "$package_root/configurator/setup-cli.mjs" "$setup_command" \
                     "--config-root=$SPACEWRIGHT_CONFIG_ROOT" \
                     "--state-root=$SPACEWRIGHT_STATE_ROOT")
             or exit 1
             if test "$setup_command" = status; and test (printf '%s\n' "$activation" | jq -r '.ready') != true
                 echo 'spacewright: current hardware/display setup has not been confirmed' >&2
+                if not contains -- --dry-run $argv
+                    command node "$package_root/configurator/setup-cli.mjs" show "--config-root=$SPACEWRIGHT_CONFIG_ROOT" "--state-root=$SPACEWRIGHT_STATE_ROOT"
+                end
                 exit 1
             end
             set mode (printf '%s\n' "$activation" | jq -r '.compatibilityMode')
+            set controller_args "--current-setup="(printf '%s\n' "$activation" | jq -r '.confirmedSetup') "--hardware-profile="(printf '%s\n' "$activation" | jq -r '.hardwareSelection.id')
+            set plan_args "--expected-setup="(printf '%s\n' "$activation" | jq -r '.confirmedSetup') "--expected-hardware-profile="(printf '%s\n' "$activation" | jq -r '.hardwareSelection.id')
         end
         if not string match -qr '^[a-z][a-z0-9_]*$' -- "$workspace_id"; or not contains -- "$mode" solo wide tall
             echo 'usage: spacewright workspace <workspace> [solo|wide|tall] [--dry-run]' >&2
@@ -207,10 +230,16 @@ switch "$command_name"
             exit 1
         end
         if contains -- --dry-run $argv
+            if test (count $plan_args) -gt 0
+                command node "$package_root/configurator/state-cli.mjs" apply "$workspace_id" "$mode" --dry-run $plan_args \
+                    "--package-root=$package_root" "--config-root=$SPACEWRIGHT_CONFIG_ROOT" "--state-root=$SPACEWRIGHT_STATE_ROOT" $argv[2..-1]
+                exit $status
+            end
             printf 'dry_run=workspace_transition\nworkspace=%s\nmode=%s\nscope=target_only\nfinalization=none\n' "$workspace_id" "$mode"
             exit 0
         end
         command node "$package_root/configurator/mode-transition.mjs" workspace "$workspace_id" "$mode" \
+            $controller_args \
             "--label=$workspace_label · $mode" \
             "--package-root=$package_root" \
             "--config-root=$SPACEWRIGHT_CONFIG_ROOT" \
@@ -335,8 +364,8 @@ switch "$command_name"
         command node "$package_root/configurator/cli.mjs" migrate-v2 "$config_file"
     case setup
         set -l setup_command $argv[1]
-        contains -- "$setup_command" detect status confirm activate; or begin
-            echo 'usage: spacewright setup <detect|status|confirm|activate> [hardware-profile] [setup]' >&2
+        contains -- "$setup_command" detect status show confirm activate; or begin
+            echo 'usage: spacewright setup <detect|status|show|confirm|activate> [hardware-profile] [setup]' >&2
             exit 2
         end
         set -e argv[1]
@@ -430,9 +459,10 @@ switch "$command_name"
             '  apply TARGET [MODE]      execute a live plan; --dry-run only previews' \
             '  recover RUN_ID           restore matched windows; --dry-run only previews' \
             '  repair-yabai [--dry-run] safely restart yabai; --resume=ID restores a checkpoint' \
-            '  mode MODE                switch display and workspace with progress feedback' \
+            '  mode auto                arrange the current confirmed setup; keep display geometry' \
+            '  mode solo|wide|tall      deliberately switch display and workspace with progress feedback' \
             '  workspace ID [MODE]      arrange one workspace; v3 resolves configuration automatically' \
-            '  setup COMMAND            detect, confirm, activate, or report the current display setup' \
+            '  setup COMMAND            detect, show, confirm, activate, or report the current display setup' \
             '  mode-cancel              cancel the active mode transition' \
             '  mode-status              show the latest mode transition state' \
             '  transition-history       show recent mode and workspace transitions' \

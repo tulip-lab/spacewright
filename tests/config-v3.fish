@@ -52,7 +52,12 @@ or exit 7
 
 command cp "$state_root/machine.json" "$test_root/machine.before.json"
 command cp "$config_root/generated/runtime.json" "$test_root/runtime.before.json"
-env PATH="$fake_bin:$PATH" "$package_root/bin/spacewright" workspace coding --dry-run | string match -q '*mode=tall*'
+env PATH="$fake_bin:$PATH" "$package_root/bin/spacewright" workspace coding --dry-run --json > "$test_root/workspace-preview.json"
+# This fixture has no editor window: the full read-only plan must report the
+# missing required window rather than the old unconditional transition stub.
+test $status -eq 1
+or exit 8
+jq -e '.dryRun == true and .mutates == false and .plan.target.mode == "tall" and .plan.scope == "workspace" and .plan.executable == false' "$test_root/workspace-preview.json" >/dev/null
 or exit 8
 command cmp -s "$test_root/machine.before.json" "$state_root/machine.json"
 or exit 9

@@ -4,6 +4,8 @@
 
 ```fish
 spacewright configure
+# Open display setup confirmation directly:
+spacewright configure --view=hardware
 ```
 
 The command starts a local HTTP service on a random loopback port and opens the

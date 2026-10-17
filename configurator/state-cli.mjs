@@ -72,6 +72,7 @@ async function context(target) {
   if (portableConfig.version === 3) {
     const hardware = await detectMacHardware({deadline:executionDeadline,signal:cancellation.signal});
     const resolution = flags['mode-transition'] ? resolveModeTransition(portableConfig, { machine, hardware, snapshot, mode:target.mode }) : resolveV3(portableConfig, { machine, hardware, snapshot });
+    if (flags['expected-setup'] && (resolution.setupId !== flags['expected-setup'] || resolution.hardwareProfileId !== flags['expected-hardware-profile'])) throw new Error('current display setup changed; invoke the shortcut again to replan');
     return { config: resolution.v2, portableConfig, configFile, source, machine, snapshot, resolution, runtime: compileV2(resolution.v2) };
   }
   return { config: portableConfig, portableConfig, configFile, source, machine, snapshot, resolution: null, runtime: compileV2(portableConfig) };

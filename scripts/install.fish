@@ -143,6 +143,12 @@ else
     # must match the release directory even for local development builds.
     printf '%s\n' "$package_version" > "$staging_root/VERSION"
     if command -q swiftc
+        command swiftc "$staging_root/helpers/spacewright-setup-info.swift" -o "$staging_root/bin/spacewright-setup-info"
+        or begin
+            echo 'spacewright install: failed to compile the display setup summary' >&2
+            command rm -rf "$staging_root"
+            exit 1
+        end
         command swiftc "$staging_root/helpers/spacewright-banner.swift" -o "$staging_root/bin/spacewright-banner"
         or begin
             echo 'spacewright install: failed to compile the macOS transition banner' >&2

@@ -10,7 +10,7 @@ import { writeTransitionRecord } from '../lib/transition-history.mjs';
 const packageRoot = new URL('../..', import.meta.url).pathname;
 const integrationToken = 'integration-test-token';
 
-async function startServer(configRoot, stateRoot, skhdFile) {
+async function startServer(configRoot, stateRoot, skhdFile, view) {
   const token = integrationToken;
   const child = spawn(process.execPath, [
     join(packageRoot, 'configurator/server.mjs'),
@@ -20,6 +20,7 @@ async function startServer(configRoot, stateRoot, skhdFile) {
     `--skhd-file=${skhdFile}`,
     `--token=${token}`,
     '--port=0',
+    ...(view ? [`--view=${view}`] : []),
     '--no-open'
   ], { stdio: ['ignore', 'pipe', 'pipe'] });
   const url = await new Promise((resolve, reject) => {
@@ -30,10 +31,10 @@ async function startServer(configRoot, stateRoot, skhdFile) {
     child.stdout.on('data', (chunk) => {
       output += chunk;
       const match = output.match(/SPACEWRIGHT_CONFIGURATOR_URL=(http:\/\/[^?\s]+)/);
-      if (match) { clearTimeout(timer); resolve(match[1]); }
+      if (match) { clearTimeout(timer); resolve({url:match[1], launchUrl:output.match(/SPACEWRIGHT_CONFIGURATOR_URL=(\S+)/)[1]}); }
     });
   });
-  return { child, token, url };
+  return { child, token, ...url };
 }
 
 async function json(url, path, options = {}) {
@@ -63,7 +64,8 @@ test('local server isolates machine bindings and generated skhd output', async (
     startedAt: '2026-10-06T00:00:00.000Z', finishedAt: '2026-10-06T00:00:02.000Z', durationMs: 2000,
     warnings: ['optional ChatGPT missing'], skipped: ['skipping ChatGPT'], errors: [], logTail: ['OUT complete']
   });
-  const { child, token, url } = await startServer(configRoot, stateRoot, skhdFile);
+  const { child, token, url, launchUrl } = await startServer(configRoot, stateRoot, skhdFile, 'hardware');
+  assert.equal(new URL(launchUrl).searchParams.get('view'), 'hardware');
   context.after(async () => {
     child.kill('SIGTERM');
     await rm(root, { recursive: true, force: true });

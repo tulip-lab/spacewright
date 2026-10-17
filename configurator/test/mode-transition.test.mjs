@@ -278,3 +278,16 @@ test('a transition is stopped at its safety deadline', async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('current setup controller pins the setup and omits physical display profiles', async () => {
+  const {root,stateRoot,fakeFish,log}=await fixture();
+  const env={...process.env,SPACEWRIGHT_BANNER_DISABLE:'1',SPACEWRIGHT_TRANSITION_FISH:fakeFish,FAKE_LOG:log,FAKE_DURATION:'0'};
+  try {
+    await execFileAsync(process.execPath,[...args(stateRoot,'wide'),'--current-setup=wide_sidecar','--hardware-profile=mac_mini'],{env});
+    const command=await readFile(log,'utf8');
+    assert.match(command,/apply wide --expected-setup=wide_sidecar --expected-hardware-profile=mac_mini/);
+    assert.doesNotMatch(command,/--mode-transition/);
+    const history=JSON.parse(await readFile(join(stateRoot,'mode-transition','status.json'),'utf8'));
+    assert.equal(history.status,'completed');
+  } finally {await rm(root,{recursive:true,force:true});}
+});
