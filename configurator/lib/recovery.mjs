@@ -1,5 +1,9 @@
 export function sameWindowIdentity(expected, current) {
-  return Boolean(current && expected.id === current.id && expected.app === current.app
+  // yabai may refresh an app's display name (for example zoom.us -> Zoom)
+  // after restarting. A matching process fingerprint is stronger evidence;
+  // without it, retain the exact app-name guard.
+  return Boolean(current && expected.id === current.id
+    && (expected.app === current.app || expected.processFingerprint)
     && expected.pid === current.pid && (expected.bundleId || '') === (current.bundleId || '')
     && (expected.processFingerprint || null) === (current.processFingerprint || null));
 }

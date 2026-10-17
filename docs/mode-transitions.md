@@ -131,3 +131,12 @@ counters; child processes cannot extend them. Cancellation marks the shared run
 before stopping children, and a pipe gate prevents a child from executing until
 its process-group identity has been registered. Recovery journals distinguish
 unknown attempts and verified results, and exclude unoperated selections.
+
+## Keep the current display combination
+
+`spacewright mode auto [--dry-run]` uses the complete currently confirmed v3 setup,
+including Sidecar or wide + tall. It runs aggregate layout and finalization through
+the shared controller without applying a physical display profile. Explicit
+`mode solo/wide/tall` retains the display-changing behavior described above.
+Mode-free `spacewright workspace ID` resolves the same setup without saving or
+activating machine state first; its dry run includes the actual target-scoped plan.

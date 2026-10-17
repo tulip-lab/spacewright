@@ -1,7 +1,7 @@
-# Optional SpaceWright bindings. Merge only the shortcuts you want into skhdrc.
-ctrl + alt - c : fish -lc 'coding_editor_wide'
-ctrl + alt - w : fish -lc 'spacewright mode wide'
-ctrl + alt - t : fish -lc 'spacewright mode tall'
-ctrl + alt - s : fish -lc 'spacewright mode solo'
-# Optional emergency stop for the active transition.
+# Optional automatic bindings for a confirmed v3 setup.
+alt + shift - 0 : fish -lc 'spacewright mode auto'
+alt + shift - 1 : fish -lc 'spacewright workspace coding_editor'
+alt + shift - d : fish -lc 'spacewright setup show'
+ctrl + alt + shift - d : fish -lc 'spacewright configure --view=hardware'
 ctrl + alt - escape : fish -lc 'spacewright mode-cancel'
+# Deliberate display changes remain available as: spacewright mode wide/tall/solo

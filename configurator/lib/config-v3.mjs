@@ -120,14 +120,17 @@ export function matchingSetups(config, hardwareProfileId, snapshot = {}, machine
 }
 
 export function setupBindingStatus(config, hardwareProfileId, setupId, snapshot = {}, machine = {}) {
-  const requirements = config.hardwareProfiles?.[hardwareProfileId]?.setups?.[setupId]?.match?.displays || [];
+  const setup = config.hardwareProfiles?.[hardwareProfileId]?.setups?.[setupId];
+  const requirements = setup?.match?.displays || [];
   const displays = describeDisplays(snapshot, machine);
   const missingRoles = [];
-  for (const requirement of requirements) {
-    if (!requirement.role) continue;
-    const uuid = machine.displayBindings?.[requirement.role];
+  const roles = new Set([...requirements.map(r => r.role), ...(setup?.lanes || []).map(l => l.role)].filter(Boolean));
+  const used = new Set();
+  for (const role of roles) {
+    const uuid = machine.displayBindings?.[role];
     const display = uuid ? displays.find((candidate) => candidate.uuid === uuid) : null;
-    if (!display || !displayMatches(display, requirement, machine.displayBindings)) missingRoles.push(requirement.role);
+    if (!display || used.has(uuid) || !requirements.filter(r => r.role === role).every(r => displayMatches(display, r, machine.displayBindings))) missingRoles.push(role);
+    if (display) used.add(uuid);
   }
   return { ready: missingRoles.length === 0, missingRoles };
 }
@@ -230,6 +233,10 @@ export function projectSetupToV2(config, hardwareProfileId, setupId) {
     const configurationId = setup.workspaceConfigurations[workspaceId] || workspace.defaultConfiguration;
     const configuration = workspace.configurations[configurationId];
     const runtimeId = configuration.command || `spacewright_${workspaceId}_${configurationId}`;
+    const projectedRuntime = configuration.runtime ? { ...clone(configuration.runtime), windows: clone(configurationWindows(workspace, configuration)) } : null;
+    // v3 lanes own placement. A migrated variant's old displayRole must not
+    // disagree with the planner or split single-display ordering into two lanes.
+    if (projectedRuntime) delete projectedRuntime.displayRole;
     v2.workspaces[workspaceId] = {
       name: workspace.name,
       spaceLabel: workspace.spaceLabel,
@@ -240,7 +247,7 @@ export function projectSetupToV2(config, hardwareProfileId, setupId) {
           command: runtimeId,
           spaceLabel: configuration.spaceLabel || `${workspace.spaceLabel}_${configurationId}`,
           ...(configuration.activation ? { activation: clone(configuration.activation) } : {}),
-          ...(configuration.runtime ? { runtime: { ...clone(configuration.runtime), windows: clone(configurationWindows(workspace, configuration)) } } : {})
+          ...(projectedRuntime ? { runtime: projectedRuntime } : {})
         }
       }
     };

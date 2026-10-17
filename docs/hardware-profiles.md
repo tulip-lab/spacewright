@@ -125,3 +125,29 @@ or any workspace/configuration reference is invalid.
 The authoritative structural contract is
 [`spacewright-v3.schema.json`](../schemas/spacewright-v3.schema.json), with a
 portable starting point in [`config-v3.json`](../examples/config-v3.json).
+
+## One shortcut set for every confirmed setup
+
+Use `spacewright mode auto` to arrange all workspaces for the currently connected,
+confirmed setup. Use `spacewright workspace coding_editor` for a single workspace.
+Both resolve the complete topology, including explicitly classified Sidecar displays,
+and reject unconfirmed setups. They preserve display orientation and resolution;
+automatic whole-setup execution skips physical display profiles. The chosen setup
+identity is pinned into execution, so a topology change requires a new request.
+
+`spacewright setup show` displays a native summary of the detected setup, connected
+roles, dimensions and readiness. `spacewright setup show --dry-run` prints the same
+summary without opening a window. `spacewright configure --view=hardware` opens
+Hardware & Setups directly. These diagnostic entry points never arrange windows.
+
+Recommended bindings are Option + Shift + 0 for automatic whole-setup arrangement,
+Option + Shift + 1–9 for mode-free workspace commands, Option + Shift + D for the
+summary, Control + Option + Shift + D for setup configuration, and Control + Option
++ Escape for cancellation. Explicit `mode solo/wide/tall` remains a deliberate
+display-changing operation outside the daily automatic shortcuts.
+
+In v3, a setup's lanes are the authority for workspace display placement.
+Legacy `runtime.displayRole` values retained inside migrated configurations are
+ignored when projecting a setup into the execution engine. Planning, direct
+ordering and ordering verification therefore agree even when one physical
+screen replaces a former primary/task display pair.

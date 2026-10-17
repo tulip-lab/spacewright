@@ -7,6 +7,7 @@ import { executionCensus, isObservationOverlay, selectRole } from '../lib/window
 import { validatePlanObjects, executePinnedWorkspace } from '../lib/pinned-executor.mjs';
 import { windowOccupiesSpace } from '../lib/finalization-policy.mjs';
 import { axReferenceError, AX_UNAVAILABLE_EXIT } from '../lib/adapter-preparation.mjs';
+import { sameWindowIdentity } from '../lib/recovery.mjs';
 
 const snapshot = () => ({completeness:'complete',capturedAt:new Date().toISOString(),
   displays:[{index:1,uuid:'D',frame:{x:0,y:0,w:1200,h:1800}}],
@@ -54,6 +55,29 @@ test('one service restart restores labels and settings by UUID after indexes cha
   assert.deepEqual(f.consumed,['serviceRecovery']);
   assert.ok(f.commands.some(a=>a[2]==='2' && a[3]==='--label' && a[4]==='work'));
   assert.ok(!f.commands.some(a=>a[1]==='window' || a.includes('--destroy') || a.includes('--create')));
+});
+
+test('a refreshed app display name preserves recovery with the same process fingerprint',async()=>{
+  const f=fixture(),mutate=f.dependencies.mutate;
+  f.live.windows[0].app='zoom.us';
+  f.dependencies.mutate=async(args,intent,verify)=>mutate(args,intent,async()=>{
+    if(args[0]==='--restart-service')f.live.windows[0].app='Zoom';
+    return verify();
+  });
+  assert.equal((await recoverYabai(f.dependencies)).status,'completed');
+  assert.deepEqual(f.live.spaces.map(s=>s.label),['work','personal']);
+});
+
+test('renamed apps still require the same window, process, fingerprint and bundle',()=>{
+  const saved=snapshot().windows[0],renamed={...saved,app:'New display name'};
+  assert.equal(sameWindowIdentity(saved,renamed),true);
+  for(const change of [{id:11},{pid:101},{processFingerprint:'replacement'},
+    {processFingerprint:''},{bundleId:'another.app'}]) {
+    assert.equal(sameWindowIdentity(saved,{...renamed,...change}),false);
+  }
+  for(const processFingerprint of [undefined,null,'']) {
+    assert.equal(sameWindowIdentity({...saved,processFingerprint},{...renamed,processFingerprint}),false);
+  }
 });
 
 test('an interrupted restart has a durable checkpoint that resumes without another restart',async()=>{

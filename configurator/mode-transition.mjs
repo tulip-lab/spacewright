@@ -53,8 +53,8 @@ function modeCommand(mode) {
   return `"$SPACEWRIGHT_TRANSITION_PACKAGE_ROOT/bin/spacewright" apply ${mode} --mode-transition --verified-marker --json`;
 }
 
-function workspaceCommand(workspace, mode) {
-  return `source "$SPACEWRIGHT_TRANSITION_PACKAGE_ROOT/conf.d/spacewright.fish"; or exit 1; workspace_run_step "Arrange ${workspace} (${mode})" "$SPACEWRIGHT_TRANSITION_PACKAGE_ROOT/bin/spacewright" apply ${workspace} ${mode} --verified-marker --json`;
+function workspaceCommand(workspace, mode, expected = '') {
+  return `source "$SPACEWRIGHT_TRANSITION_PACKAGE_ROOT/conf.d/spacewright.fish"; or exit 1; workspace_run_step "Arrange ${workspace} (${mode})" "$SPACEWRIGHT_TRANSITION_PACKAGE_ROOT/bin/spacewright" apply ${workspace} ${mode} --verified-marker --json ${expected}`;
 }
 
 async function focusedSpaceLabel() {
@@ -92,14 +92,14 @@ function presentationSetupName(name = '') {
     .replace(/\b(wide|tall|sidecar)\b/gi, (value) => value[0].toUpperCase() + value.slice(1).toLowerCase());
 }
 
-export async function resolveHardwareContext({ stateRoot, configRoot } = {}) {
+export async function resolveHardwareContext({ stateRoot, configRoot, setupId: requestedSetup, hardwareProfileId } = {}) {
   if (!stateRoot || !configRoot) return {};
   const [machine, config] = await Promise.all([
     readJson(join(stateRoot, 'machine.json'), {}),
     readJson(join(configRoot, 'config.v3.json'), {}),
   ]);
-  const profileId = machine.hardwareProfile;
-  const setupId = machine.activeSetup;
+  const profileId = hardwareProfileId || machine.hardwareProfile;
+  const setupId = requestedSetup || machine.activeSetup;
   const profile = config.hardwareProfiles?.[profileId];
   const setup = profile?.setups?.[setupId];
   const hardwareLabel = profile?.name || machine.detectedHardware?.productName;
@@ -343,10 +343,20 @@ async function main() {
   const configRoot = option('config-root', process.env.SPACEWRIGHT_CONFIG_ROOT);
   const stateRoot = option('state-root', process.env.SPACEWRIGHT_STATE_ROOT);
   if (!stateRoot) throw new Error('state root is required');
+  const currentSetup = option('current-setup');
+  const hardwareProfileId = option('hardware-profile');
+  for (const id of [currentSetup, hardwareProfileId].filter(Boolean)) {
+    if (!/^[a-z][a-z0-9_]*$/.test(id)) throw new Error('invalid current setup identity');
+  }
+  if (currentSetup && !hardwareProfileId) throw new Error('current setup requires a hardware profile');
+  const expected = currentSetup ? `--expected-setup=${currentSetup} --expected-hardware-profile=${hardwareProfileId}` : '';
+  const hardwareContext = currentSetup ? await resolveHardwareContext({ stateRoot, configRoot, setupId: currentSetup, hardwareProfileId }) : undefined;
 
   if (action === 'run') {
     const mode = firstTarget;
-    const result = await runTransition({ mode, packageRoot, configRoot, stateRoot });
+    const result = await runTransition({ mode, packageRoot, configRoot, stateRoot,
+      ...(currentSetup ? { command: `"$SPACEWRIGHT_TRANSITION_PACKAGE_ROOT/bin/spacewright" apply ${mode} ${expected} --verified-marker --json`,
+        targetKey: `setup:${hardwareProfileId}:${currentSetup}`, hardwareContext } : {}) });
     if (!['completed', 'duplicate'].includes(result.status)) process.exitCode = 1;
   } else if (action === 'workspace') {
     const workspace = firstTarget;
@@ -358,10 +368,11 @@ async function main() {
       packageRoot,
       configRoot,
       stateRoot,
-      command: workspaceCommand(workspace, mode),
+      command: workspaceCommand(workspace, mode, expected),
+      hardwareContext,
       scope: 'workspace',
       workspace,
-      targetKey: `workspace:${workspace}:${mode}`,
+      targetKey: `workspace:${workspace}:${currentSetup ? `${hardwareProfileId}:${currentSetup}` : mode}`,
       targetLabel,
     });
     if (!['completed', 'duplicate'].includes(result.status)) process.exitCode = 1;

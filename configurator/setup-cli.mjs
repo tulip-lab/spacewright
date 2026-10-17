@@ -3,6 +3,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import {
@@ -127,13 +128,13 @@ function validateOptions() {
 try {
   validateOptions();
   const value = await inspect();
-  if (command === 'detect' || command === 'status') {
+  if (command === 'detect' || command === 'status' || command === 'show') {
     const confirmedSetup = value.machine.topologySelections?.[value.topologyKey] || null;
     const setup = confirmedSetup ? value.config.hardwareProfiles?.[value.selectedHardware.id]?.setups?.[confirmedSetup] : null;
     const bindingStatus = confirmedSetup && value.selectedHardware.id
       ? setupBindingStatus(value.config, value.selectedHardware.id, confirmedSetup, value.snapshot, value.machine)
       : { ready: false, missingRoles: [] };
-    print({
+    const status = {
       mutates: false,
       hardware: value.hardware,
       hardwareSelection: value.selectedHardware,
@@ -142,11 +143,31 @@ try {
       setupCandidates: value.setupCandidates,
       confirmedSetup,
       activeSetup: value.machine.activeSetup || null,
+      hardwareProfileName: value.config.hardwareProfiles[value.selectedHardware.id]?.name || value.hardware.productName,
+      setupName: setup?.name || null,
+      displayBindings: value.machine.displayBindings || {},
       compatibilityMode: setup?.compatibilityMode || null,
       workspaceConfigurations: setup?.workspaceConfigurations || {},
       bindingStatus,
       ready: Boolean(value.machine.hardwareProfileConfirmed && confirmedSetup && value.setupCandidates.includes(confirmedSetup) && bindingStatus.ready)
-    });
+    };
+    if (command !== 'show') print(status);
+    else {
+      const title = `${status.hardwareProfileName || 'Mac'} · ${status.setupName || status.topologyKey}`;
+      const lines = status.displays.map(d => {
+        const roles = Object.entries(status.displayBindings).filter(([, uuid]) => uuid === d.uuid).map(([role]) => role);
+        return `${roles.join(' / ') || 'unassigned'}: ${d.kind} · ${d.orientation} · ${d.frame.w}×${d.frame.h}`;
+      });
+      const detail = `${status.ready ? 'Ready' : 'Confirmation required — open Hardware & Setups'}\n${lines.join('\n')}`;
+      process.stdout.write(`${title}\n${detail}\n`);
+      if (!flags['dry-run']) {
+        const helper = new URL('../bin/spacewright-setup-info', import.meta.url).pathname;
+        if (!existsSync(helper)) throw new Error('setup display helper is missing; reinstall SpaceWright (use setup status for JSON)');
+        const child = spawn(helper, [title, detail], { detached: true, stdio: 'ignore' });
+        await new Promise((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
+        child.unref();
+      }
+    }
   } else if (command === 'confirm') {
     const hardwareProfileId = positional[0] || value.selectedHardware.id;
     const setupId = positional[1] || (value.setupCandidates.length === 1 ? value.setupCandidates[0] : null);

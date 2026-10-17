@@ -40,6 +40,8 @@ const sessionFile = join(stateRoot, 'configurator.json');
 const publicRoot = join(packageRoot, 'configurator', 'public');
 const token = args['--token'] || randomBytes(24).toString('hex');
 const listenPort = Number(args['--port'] || 0);
+const initialView = args['--view'];
+if (initialView && !['current', 'hardware', 'map', 'displays', 'workspaces', 'apps', 'shortcuts', 'automation', 'history', 'diagnostics', 'tasks', 'review'].includes(initialView)) throw new Error('unknown configurator view');
 const tasks = new Map();
 const captures = new Map();
 const MAX_TASKS = 100;
@@ -935,7 +937,7 @@ const server = http.createServer(async (request, response) => {
 
 server.listen(listenPort, '127.0.0.1', async () => {
   const { port } = server.address();
-  const url = `http://127.0.0.1:${port}/?token=${token}`;
+  const url = `http://127.0.0.1:${port}/?token=${token}${initialView ? `&view=${initialView}` : ''}`;
   await atomicWrite(sessionFile, `${JSON.stringify({ formatVersion: 1, pid: process.pid, port, startedAt: new Date().toISOString() }, null, 2)}\n`);
   process.stdout.write(`SPACEWRIGHT_CONFIGURATOR_URL=${url}\n`);
   if (!process.argv.includes('--no-open')) execFile('open', [url], () => {});

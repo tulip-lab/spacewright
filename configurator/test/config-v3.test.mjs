@@ -220,3 +220,23 @@ for (const mode of ['wide','tall']) test(`R1 physical role aliases resolve both 
   snapshot.displays[0].frame={w:mode==='wide'?1600:900,h:mode==='wide'?900:1600};
   assert.equal(resolveV3(config,{machine:local,snapshot}).setupId,`single_${mode}`);
 });
+
+test('setup readiness checks lane roles even when match requirements have no role', () => {
+  const config=starterV3();
+  config.hardwareProfiles.mac_mini.setups.single_wide.match.displays[0]={kind:'external',orientation:'wide'};
+  const snapshot={displays:[{uuid:'W',index:1,frame:{w:1920,h:1080}}]};
+  assert.deepEqual(setupBindingStatus(config,'mac_mini','single_wide',snapshot,{}),{ready:false,missingRoles:['wide']});
+  assert.equal(setupBindingStatus(config,'mac_mini','single_wide',snapshot,{displayBindings:{wide:'W'}}).ready,true);
+});
+
+test('v3 lanes override migrated runtime display roles for compiled execution and ordering', () => {
+  const config=starterV3();
+  config.displayRoles.primary={name:'Legacy primary',portableMatch:{}};
+  config.workspaces.coding.configurations.wide.runtime={runner:'generic_layout',displayRole:'primary',windows:[{role:'editor',app_key:'code',required:true}]};
+  const context={machine:machine('mac_mini',{wide:'WIDE'},{topologySelections:{'external:wide':'single_wide'}}),snapshot:snapshot([{uuid:'WIDE',index:1,frame:{w:2304,h:1296}}])};
+  const runtime=compileV3(config,context);
+  const workspace=Object.values(runtime.workspaces).find(w=>w.ui?.workspace_id==='coding' && w.ui.mode==='wide');
+  assert.equal(workspace.display_role,'wide__wide');
+  assert.equal(runtime.display_roles[workspace.display_role].base_role,'wide');
+  assert.equal(config.workspaces.coding.configurations.wide.runtime.displayRole,'primary');
+});
