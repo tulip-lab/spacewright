@@ -273,9 +273,12 @@ function emptyCleanupSpaces(snapshot, desired, bindings) {
   const occupants = snapshot.windows.filter((window) => windowOccupiesSpace(window, desired.nonoccupyingGhostApps || []));
   const ordinaryCount = (space) => occupants.filter((window) => window.space === space.index).length;
   const primaryDisplay = snapshot.displays.find((display) => display.uuid === bindings.primary);
-  const home = primaryDisplay
-    ? snapshot.spaces.filter((space) => space.display === primaryDisplay.index && !space.label).sort((a, b) => a.index - b.index)[0]
+  const firstPrimarySpace = primaryDisplay
+    ? snapshot.spaces.filter((space) => space.display === primaryDisplay.index).sort((a, b) => a.index - b.index)[0]
     : null;
+  // Only a leading unlabeled Space is Home. A later blank left between managed
+  // workspaces is a cleanup candidate, matching the legacy shortcut policy.
+  const home = firstPrimarySpace && !firstPrimarySpace.label ? firstPrimarySpace : null;
   const candidates = [];
   for (const display of snapshot.displays) {
     const lane = snapshot.spaces.filter((space) => space.display === display.index).sort((a, b) => a.index - b.index);
