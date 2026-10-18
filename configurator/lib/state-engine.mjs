@@ -427,7 +427,7 @@ export function compareState(snapshot, desired, machine = {}, options = {}) {
   }
   drifts.push(...cleanupCandidates(snapshot, desired,new Set(activeWorkspaces.map(w=>w.workspaceId))));
   for (const space of emptyCleanupSpaces(snapshot, desired, bindings)) {
-    if (activeWorkspaces.some(w=>w.label===space.label)) continue;
+    if (reservedSpaceUuids.has(space.uuid) || activeWorkspaces.some(w=>w.label===space.label)) continue;
     drifts.push({
       code: 'empty_space_cleanup_required',
       severity: 'change',

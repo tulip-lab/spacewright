@@ -407,6 +407,17 @@ test('optional stale adapter surfaces stay warnings and transient partial redisc
   });
   assert.deepEqual(result.after.map(w=>w.id),[10]);assert.equal(polls,1);
 });
+test('a uniquely selectable role does not recover other AX-less app surfaces',()=>{
+  const value=raw(),config=starterConfig();
+  value.windows.push({...value.windows[0],id:11,'has-ax-reference':false,'can-move':false,'can-resize':false});
+  const result=make(value,config);
+  assert.equal(result.plan.executable,true);
+  assert.ok(result.plan.selectedWindows.some(w=>w.id===10));
+  assert.ok(!result.plan.preparations.some(p=>p.type==='observe_space'));
+  config.workspaces.coding.windows.editor.cardinality='many';
+  assert.ok(make(value,config).plan.preparations.some(p=>p.type==='observe_space' && p.windows.some(w=>w.id===11)));
+});
+
 test('AX-less optional windows require Space observation before they can be declared missing',async()=>{
   const value=raw(),config=starterConfig();
   config.workspaces.coding.variants.solo.layout={type:'canvas',regions:[{role:'editor',grid:'1:2:0:0:1:1'},{role:'assistant',grid:'1:2:1:0:1:1'}]};

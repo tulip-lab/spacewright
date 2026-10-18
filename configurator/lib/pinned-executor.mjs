@@ -3,6 +3,17 @@ import { windowOccupiesSpace } from './finalization-policy.mjs';
 import { selectorResult,executionCensus } from './window-policy.mjs';
 import { geometryMatches } from './state-engine.mjs';
 
+export async function confirmWindowGeometry(verify, discover, {poll, check, delay=ms=>new Promise(resolve=>setTimeout(resolve,ms))}) {
+  for(let attempt=0;attempt<5;attempt++) {
+    await check();
+    try { return await verify(await discover()); }
+    catch(error) {
+      if(error.code!=='SPACEWRIGHT_GEOMETRY_PENDING' || attempt===4)throw error;
+      await poll();await delay(100);
+    }
+  }
+}
+
 function complete(snapshot) {
   if(snapshot.completeness!=='complete')throw new Error(snapshot.message || 'incomplete discovery; no mutation permitted');
   const age=Date.now()-new Date(snapshot.capturedAt).getTime();
@@ -87,7 +98,7 @@ export async function executePinnedWorkspace(plan,workspaceId,{discover,mutate,c
           await mutate(['-m','window',String(expected.id),op,value],{...intent,geometry:action.grid || action.geometry},s=>{
             const live=s.windows.find(w=>w.id===expected.id);if(!sameWindowIdentity(expected,live))return false;
             const result=geometryMatches(live,display,op==='--grid'?{grid:value}:op==='--move'?{move_abs:value}:{resize_abs:value});
-            if(!result.matches)throw new Error(`window geometry postcondition failed for ${expected.app} (${expected.id}): expected ${JSON.stringify(result.expected)}, actual ${JSON.stringify(live.frame)}; check the application's minimum window size and configured layout region`);
+            if(!result.matches)throw Object.assign(new Error(`window geometry postcondition failed for ${expected.app} (${expected.id}): expected ${JSON.stringify(result.expected)}, actual ${JSON.stringify(live.frame)}; check the application's minimum window size and configured layout region`),{code:'SPACEWRIGHT_GEOMETRY_PENDING'});
             return true;
           });
         }
