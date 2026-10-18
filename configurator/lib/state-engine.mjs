@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { selectorResult, selectRole,executionCensus,isObservationOverlay } from './window-policy.mjs';
+import { selectorResult, selectRole,executionCensus,isObservationOverlay,isTransientTooltip } from './window-policy.mjs';
 import { executionStepsFor } from './plan-backend.mjs';
 import { roleGrid } from './layout-policy.mjs';
 import { compileLayout,remapTallLayout,configuredWindows as windowsForVariant } from './config-v2.mjs';
@@ -573,7 +573,7 @@ export function captureWorkspace(snapshot, options = {}) {
   if (!space) throw new Error('no Space selected; focus a Space or pass a valid Space UUID/index');
   const display = snapshot.displays.find((item) => item.index === space.display);
   if (!display) throw new Error(`display ${space.display} for the selected Space is unavailable`);
-  const capturedWindows = snapshot.windows.filter(window => window.space === space.index && !isObservationOverlay(window));
+  const capturedWindows = snapshot.windows.filter(window => window.space === space.index && !isObservationOverlay(window) && !isTransientTooltip(window));
   if(capturedWindows.some(window => window.sticky || window.nativeFullscreen || window.minimized || !window.hasAxReference || !window.visible || !window.movable || !window.resizable || !window.frameVerified)) throw Object.assign(new Error('capture requires visible, movable, resizable windows with verified AX frames; restore unsupported windows or reduce the capture scope'),{code:'capture_unsupported'});
   if (!capturedWindows.length) throw new Error('the selected Space has no visible non-sticky windows to capture');
   const apps = {};
@@ -644,7 +644,7 @@ export function targetPreconditions(snapshot, desired, comparison) {
   for (const claim of desired.oppositeVariants || []) labels.add(claim.label);
   const selected = new Set(comparison.matches.flatMap((m) => m.selectedWindowIds || []));
   const destructive = desired.target.kind !== 'workspace';
-  const windows=destructive?executionCensus(snapshot.windows,[...selected]):snapshot.windows.filter(w=>selected.has(w.id) || !isObservationOverlay(w));
+  const windows=destructive?executionCensus(snapshot.windows,[...selected]):snapshot.windows.filter(w=>selected.has(w.id) || !isObservationOverlay(w) && !isTransientTooltip(w));
   const censusIds=new Set(windows.map(w=>w.id));
   return {
     configDigest: desired.configDigest,

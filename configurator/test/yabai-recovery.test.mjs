@@ -141,6 +141,29 @@ test('automatic recovery rejects changes since the failed observation before res
 const overlay = (id=20,title='Computer Use') => ({id,pid:200,app:'ChatGPT',bundleId:'com.openai.codex',
   title,role:'AXWindow',subrole:'AXSystemDialog',hasAxReference:true,frameVerified:true,
   frame:{x:10,y:10,w:360,h:264},resizable:false,space:1});
+const tooltip = () => ({...overlay(30),title:'',role:'AXHelpTag',subrole:'',movable:true,
+  frame:{x:911,y:867,w:57,h:21}});
+test('hover tooltips can churn without invalidating a mode, but remain occupied and explicitly selectable',()=>{
+  const value=snapshot(),hint=tooltip();
+  const plan={scope:'mode',preconditions:{windows:executionCensus([...value.windows,hint])},selectedWindows:[]};
+  validatePlanObjects(plan,value);
+  validatePlanObjects(plan,{...value,windows:[...value.windows,{...hint,id:31}]});
+  assert.equal(windowOccupiesSpace(hint),true);
+  assert.deepEqual(selectRole([hint],{appNames:['ChatGPT'],selector:{movable:true}}).selected,[]);
+  assert.deepEqual(selectRole([hint],{appNames:['ChatGPT'],selector:{role:'AXHelpTag'}}).selected,[hint]);
+  assert.deepEqual(selectRole([hint],{appNames:['ChatGPT'],windowId:30}).selected,[hint]);
+  assert.deepEqual(executionCensus([hint],[30]),[hint]);
+  const selectedPlan={...plan,preconditions:{windows:[...value.windows,hint]},selectedWindows:[hint]};
+  assert.throws(()=>validatePlanObjects(selectedPlan,value),/census changed/);
+});
+test('unverified or interactive help-tag lookalikes still invalidate the mode',()=>{
+  const value=snapshot(),plan={scope:'mode',preconditions:{windows:value.windows},selectedWindows:[]};
+  for(const change of [{role:'AXWindow',subrole:'AXSystemDialog'},{subrole:'AXDialog'},
+    {hasAxReference:false},{frameVerified:false},{resizable:true},{nativeFullscreen:true},
+    {frame:{x:0,y:0,w:601,h:21}},{frame:{x:0,y:0,w:57,h:201}},{frame:{x:0,y:0,w:0,h:21}}]) {
+    assert.throws(()=>validatePlanObjects(plan,{...value,windows:[...value.windows,{...tooltip(),...change}]}),/census changed/);
+  }
+});
 test('known observation overlays can appear and disappear without invalidating an aggregate layout',()=>{
   const value=snapshot();value.windows[0].hasAxReference=true;
   const plan={scope:'mode',preconditions:{windows:executionCensus(value.windows)},selectedWindows:[]};
@@ -193,6 +216,7 @@ for(const target of [{kind:'mode',id:'solo',mode:'solo'},{kind:'workspace',id:'c
     return buildExecutionPlan(normalized,desired,comparison);
   };
   const before=make(value);value.windows.push({...overlay(),movable:true},{...overlay(21,'Computer Use Controls'),movable:true});
+  value.windows.push(tooltip());
   const after=make(value);
   assert.equal(after.planId,before.planId);assert.deepEqual(after.selectedWindows,before.selectedWindows);
 });
