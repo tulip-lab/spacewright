@@ -12,6 +12,9 @@ export function createAutomationMonitor({readConfig,querySnapshot,activity,execu
   };
   async function dispatch(config,event,snapshot,topology) {
     if(stopped)return;
+    config=await readConfig();if(stopped)return;
+    if(config.settings?.eventAutomationEnabled!==true){await activity('info','event_ignored',{event,reason:'automation_disabled'});return;}
+    if(config.version!==2){await activity('info','event_ignored',{event,reason:'rules_version_unsupported',version:config.version});return;}
     const matches=matchingRules(config,ruleContext(config,event,snapshot,topology));
     await activity('info','event_evaluated',{event,topology,matches:matches.map(r=>r.id)});
     for(const rule of matches){if(stopped)return;await executeRule(config,rule);}
@@ -47,6 +50,7 @@ export function createAutomationMonitor({readConfig,querySnapshot,activity,execu
     trigger:event=>enqueue(async()=>{
       const config=await readConfig();if(stopped)return;
       if(config.settings?.eventAutomationEnabled!==true){await activity('info','event_ignored',{event,reason:'automation_disabled'});return;}
+      if(config.version!==2){await activity('info','event_ignored',{event,reason:'rules_version_unsupported',version:config.version});return;}
       const snapshot=await querySnapshot();if(stopped)return;
       if(snapshot.completeness!=='complete'){await activity('error','event_query_unavailable',{event,message:snapshot.message});return;}
       const topology=topologyFor(snapshot);if(topology==='unknown')return;

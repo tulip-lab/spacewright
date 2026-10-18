@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
-import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { dirname, join, resolve } from 'node:path';
-import { execFile } from 'node:child_process';
+import { basename, dirname, join, resolve } from 'node:path';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { CONFIG_COMPILER_VERSION, compileSkhd, compileV2, migrateV1, starterConfig, validateV2 } from './lib/config-v2.mjs';
 import { compileSkhdV3, compileV3, migrateV2ToV3, resolveV3, starterV3, validateV3 } from './lib/config-v3.mjs';
-import { generationDocument, stableRead, withConfigurationWrite } from './lib/config-store.mjs';
+import { atomicText, generationDocument, stableRead, withConfigurationWrite } from './lib/config-store.mjs';
 import { detectMacHardware } from './lib/hardware-detection.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -27,10 +27,10 @@ async function load(path) {
   return JSON.parse(await readFile(path, 'utf8'));
 }
 
-async function resolutionContext(config) {
+async function resolutionContext(config, machineOverride) {
   const stateRoot = resolve(flags['state-root'] || process.env.SPACEWRIGHT_STATE_ROOT || join(process.env.HOME, '.local', 'state', 'spacewright'));
   const machinePath = resolve(flags.machine || join(stateRoot, 'machine.json'));
-  const machine = existsSync(machinePath) ? JSON.parse(await readFile(machinePath, 'utf8')) : { version: 2, displayBindings: {}, displayKinds: {}, topologySelections: {} };
+  const machine = machineOverride ?? (existsSync(machinePath) ? JSON.parse(await readFile(machinePath, 'utf8')) : { version: 2, displayBindings: {}, displayKinds: {}, topologySelections: {} });
   const hardware = await detectMacHardware({ modelIdentifier: String(flags.model || ''), allowSystemProfiler: !flags.model });
   let snapshot;
   if (flags.snapshot) snapshot = JSON.parse(await readFile(resolve(flags.snapshot), 'utf8'));
@@ -55,14 +55,51 @@ async function compiledDocument(config, source = `${JSON.stringify(config, null,
   return generationDocument(config, config.version === 3 ? await resolutionContext(config) : null, source);
 }
 
-async function writeAtomic(path, value) {
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const temporary = `${path}.tmp-${process.pid}`;
-  await writeFile(temporary, value, { mode: 0o600 });
-  await rename(temporary, path);
+function validateCompileOptions() {
+  const valued = ['state-root', 'machine', 'model', 'snapshot', 'setup'];
+  for (const [key, value] of Object.entries(flags)) {
+    if (key === 'dry-run' && command === 'compile-to' && value === true) continue;
+    if (key === 'repair-incomplete-save' && command === 'compile-to' && value === true) continue;
+    if (!valued.includes(key)) throw new Error(`unknown option or invalid flag: --${key}`);
+    if (value === true || !value) throw new Error(`--${key} requires a value (--${key}=value)`);
+  }
+  const positional = process.argv.slice(3).filter(value => !value.startsWith('--'));
+  if (positional.length !== (['compile-to', 'diff'].includes(command) ? 2 : 1)) throw new Error(`${command} requires input${['compile-to', 'diff'].includes(command) ? ' and output' : ''} paths`);
+}
+
+async function readCompiledDocument({ownedWrite = false} = {}) {
+  const stateRoot = resolve(flags['state-root'] || process.env.SPACEWRIGHT_STATE_ROOT || join(process.env.HOME, '.local', 'state', 'spacewright'));
+  const machinePath = flags.machine || join(stateRoot, 'machine.json');
+  const activePath = () => join(dirname(resolve(file)), existsSync(join(dirname(resolve(file)), 'config.v3.json')) ? 'config.v3.json' : 'config.v2.json');
+  const selected = activePath();
+  const namedVersion = {'config.v2.json':2, 'config.v3.json':3}[basename(file)];
+  if (namedVersion && ['compile-to', 'diff'].includes(command) && selected !== resolve(file)) throw new Error('active configuration changed before compilation');
+  const loaded = await stableRead(file, machinePath, {ownedWrite});
+  if (namedVersion && loaded.config.version !== namedVersion) throw new Error('active configuration version does not match its filename');
+  const resolution = loaded.config.version === 3 ? await resolutionContext(loaded.config, loaded.machine) : null;
+  const document = generationDocument(loaded.config, resolution, loaded.source);
+  const after = await stableRead(file, machinePath, {ownedWrite});
+  if (selected !== activePath() || after.source !== loaded.source || JSON.stringify(after.machine) !== JSON.stringify(loaded.machine)) throw new Error('configuration generation changed during compilation');
+  return document;
+}
+
+async function diffDocument(output, document) {
+  // Feed the read-only candidate over stdin: no configuration guard or temporary
+  // candidate survives errors, cancellation, or an unavailable runtime file.
+  const child = spawn('diff', ['-u', output, '-'], {stdio: ['pipe', 'inherit', 'inherit']});
+  const code = await new Promise((resolve, reject) => {
+    child.once('error', reject); child.once('close', resolve);
+    child.stdin.on('error', error => { if (error.code !== 'EPIPE') { child.kill(); reject(error); } });
+    child.stdin.end(`${JSON.stringify(document, null, 2)}\n`);
+  });
+  if (code === 0) process.stdout.write('runtime is current\n');
+  // Preserve the public config-diff contract: differences are a successful
+  // inspection; compilation and comparison failures are errors.
+  else if (code !== 1) throw new Error(`runtime comparison failed (exit ${code})`);
 }
 
 try {
+  if (['compile', 'effective', 'compile-to', 'diff'].includes(command)) validateCompileOptions();
   if (command === 'starter') process.stdout.write(`${JSON.stringify(starterConfig(), null, 2)}\n`);
   else if (command === 'starter-v3') process.stdout.write(`${JSON.stringify(starterV3(), null, 2)}\n`);
   else if (command === 'validate') {
@@ -72,30 +109,25 @@ try {
       process.exitCode = 1;
     }
   } else if (command === 'compile' || command === 'effective') {
-    const stateRoot = resolve(flags['state-root'] || process.env.SPACEWRIGHT_STATE_ROOT || join(process.env.HOME, '.local', 'state', 'spacewright'));
-    const loaded = await stableRead(file, flags.machine || join(stateRoot, 'machine.json'));
-    const resolution = loaded.config.version === 3 ? await resolutionContext(loaded.config) : null;
-    if (resolution) resolution.machine = loaded.machine;
-    const candidate = generationDocument(loaded.config, resolution, loaded.source);
-    const after = await stableRead(file, flags.machine || join(stateRoot, 'machine.json'));
-    if (after.source !== loaded.source || JSON.stringify(after.machine) !== JSON.stringify(loaded.machine)) throw new Error('configuration generation changed during compilation');
+    const candidate = await readCompiledDocument();
     if (command === 'effective') delete candidate.generated;
     process.stdout.write(`${JSON.stringify(candidate, null, 2)}\n`);
   }
   else if (command === 'compile-to') {
     const output = process.argv[4];
     if (!file || !output) throw new Error('compile-to requires input and output paths');
-    const stateRoot = resolve(flags['state-root'] || process.env.SPACEWRIGHT_STATE_ROOT || join(process.env.HOME, '.local', 'state', 'spacewright'));
-    await withConfigurationWrite(dirname(resolve(file)), async () => {
-      const loaded = await stableRead(file, flags.machine || join(stateRoot,'machine.json'), {ownedWrite:true});
-      const resolution = loaded.config.version === 3 ? await resolutionContext(loaded.config) : null;
-      if (resolution) resolution.machine = loaded.machine;
-      const document = generationDocument(loaded.config,resolution,loaded.source);
-      const after = await stableRead(file,flags.machine || join(stateRoot,'machine.json'),{ownedWrite:true});
-      if (after.source !== loaded.source || JSON.stringify(after.machine) !== JSON.stringify(loaded.machine)) throw new Error('configuration changed during compilation');
-      await writeAtomic(output, `${JSON.stringify(document,null,2)}\n`);
-    }, {repair:flags['repair-incomplete-save'] === true});
+    if (flags['dry-run']) {
+      await readCompiledDocument();
+      process.stdout.write(`dry_run=true\nmutates=false\nruntime_path=${resolve(output)}\n`);
+    } else {
+      await withConfigurationWrite(dirname(resolve(file)), async transaction => {
+        const document = await readCompiledDocument({ownedWrite:true});
+        transaction.beginWrite();
+        await atomicText(output, `${JSON.stringify(document,null,2)}\n`);
+      }, {repair:flags['repair-incomplete-save'] === true, trackWrites:true});
+    }
   }
+  else if (command === 'diff') await diffDocument(process.argv[4], await readCompiledDocument());
   else if (command === 'migrate-v1') process.stdout.write(`${JSON.stringify(migrateV1(await load(file)), null, 2)}\n`);
   else if (command === 'migrate-v2') process.stdout.write(`${JSON.stringify(migrateV2ToV3(await load(file)), null, 2)}\n`);
   else if (command === 'skhd') {

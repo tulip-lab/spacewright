@@ -95,15 +95,19 @@ string match -q '*portable configuration not found*' (string collect <"$test_roo
 or exit 27
 not test -e "$test_root/mode-state/runs"
 or exit 48
-set -l workspace_dry_run (env \
+env \
     -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT -u SPACEWRIGHT_CONFIG_ROOT \
     -u SPACEWRIGHT_STATE_ROOT -u SPACEWRIGHT_DISPLAY_PROFILES_ROOT \
     -u SPACEWRIGHT_SKHD_ROOT -u SPACEWRIGHT_YABAI_ROOT \
     HOME="$test_root" XDG_CONFIG_HOME="$test_root/xdg" \
-    "$bin_root/spacewright" workspace gtd_ai solo --dry-run | string collect)
-string match -q '*scope=target_only*' -- "$workspace_dry_run"
-    and string match -q '*finalization=none*' -- "$workspace_dry_run"
+    SPACEWRIGHT_CONFIG_ROOT="$test_root/missing-workspace-config" \
+    SPACEWRIGHT_STATE_ROOT="$test_root/workspace-state" \
+    "$bin_root/spacewright" workspace gtd_ai solo --dry-run >"$test_root/workspace-preflight.log" 2>&1
+and exit 28
+string match -q '*portable configuration not found*' (string collect <"$test_root/workspace-preflight.log")
 or exit 28
+not test -e "$test_root/workspace-state"
+or exit 49
 env \
     -u SPACEWRIGHT_PACKAGE_ROOT -u SPACEWRIGHT_ROOT -u SPACEWRIGHT_CONFIG_ROOT \
     -u SPACEWRIGHT_STATE_ROOT -u SPACEWRIGHT_DISPLAY_PROFILES_ROOT \
