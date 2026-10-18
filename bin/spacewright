@@ -64,7 +64,10 @@ switch "$command_name"
         end
         set -l runtime_file "$SPACEWRIGHT_CONFIG_ROOT/generated/runtime.json"
         command node "$package_root/configurator/cli.mjs" compile-to "$config_file" "$runtime_file" "--state-root=$SPACEWRIGHT_STATE_ROOT" $argv
-        and printf 'compiled=%s\n' "$runtime_file"
+        or exit $status
+        if not contains -- --dry-run $argv
+            printf 'compiled=%s\n' "$runtime_file"
+        end
     case config-status
         spacewright_config_status
     case config-diff
@@ -81,17 +84,7 @@ switch "$command_name"
             echo 'spacewright: config-diff requires Node.js to compile the candidate plan' >&2
             exit 1
         end
-        set -l candidate (mktemp -t spacewright-runtime.XXXXXX)
-        command node "$package_root/configurator/cli.mjs" compile-to "$config_file" "$candidate" "--state-root=$SPACEWRIGHT_STATE_ROOT"
-        or exit 1
-        diff -u "$runtime_file" "$candidate"
-        set -l diff_status $status
-        command rm -f "$candidate"
-        if test "$diff_status" -eq 0
-            echo 'runtime is current'
-        else if test "$diff_status" -gt 1
-            exit "$diff_status"
-        end
+        command node "$package_root/configurator/cli.mjs" diff "$config_file" "$runtime_file" "--state-root=$SPACEWRIGHT_STATE_ROOT" $argv
     case config-explain
         if test (count $argv) -lt 1
             echo 'usage: spacewright config-explain <workspace> [solo|wide|tall]' >&2
@@ -195,9 +188,11 @@ switch "$command_name"
         end
         set -l workspace_id $argv[1]
         set -l mode $argv[2]
+        set -l preview_options $argv[3..-1]
         set -l controller_args
         set -l plan_args
         if test -r "$SPACEWRIGHT_CONFIG_ROOT/config.v3.json"; and not contains -- "$mode" solo wide tall
+            set preview_options $argv[2..-1]
             set -l setup_command status
             set -l activation (command node "$package_root/configurator/setup-cli.mjs" "$setup_command" \
                     "--config-root=$SPACEWRIGHT_CONFIG_ROOT" \
@@ -218,6 +213,11 @@ switch "$command_name"
             echo 'usage: spacewright workspace <workspace> [solo|wide|tall] [--dry-run]' >&2
             exit 2
         end
+        if contains -- --dry-run $argv
+            command node "$package_root/configurator/state-cli.mjs" apply "$workspace_id" "$mode" --dry-run $plan_args \
+                "--package-root=$package_root" "--config-root=$SPACEWRIGHT_CONFIG_ROOT" "--state-root=$SPACEWRIGHT_STATE_ROOT" $preview_options
+            exit $status
+        end
         set -l effective_config (spacewright_config_effective | string collect)
         or exit 1
         set -l workspace_label (printf '%s\n' "$effective_config" | jq -r --arg workspace "$workspace_id" --arg mode "$mode" --arg runtime_key "$workspace_id"_"$mode" '
@@ -228,15 +228,6 @@ switch "$command_name"
         if test -z "$workspace_label"
             echo "spacewright: no configured variant for $workspace_id $mode" >&2
             exit 1
-        end
-        if contains -- --dry-run $argv
-            if test (count $plan_args) -gt 0
-                command node "$package_root/configurator/state-cli.mjs" apply "$workspace_id" "$mode" --dry-run $plan_args \
-                    "--package-root=$package_root" "--config-root=$SPACEWRIGHT_CONFIG_ROOT" "--state-root=$SPACEWRIGHT_STATE_ROOT" $argv[2..-1]
-                exit $status
-            end
-            printf 'dry_run=workspace_transition\nworkspace=%s\nmode=%s\nscope=target_only\nfinalization=none\n' "$workspace_id" "$mode"
-            exit 0
         end
         command node "$package_root/configurator/mode-transition.mjs" workspace "$workspace_id" "$mode" \
             $controller_args \

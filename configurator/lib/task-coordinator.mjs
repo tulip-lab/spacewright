@@ -4,7 +4,7 @@ export function cancelWebTask(task) {
   if (task.status === 'queued') task.status = 'cancelled';
   task.abort?.abort(Object.assign(new Error('task cancelled'), { code: 'SPACEWRIGHT_CANCELLED' }));
 }
-export async function runWebTask(task, commands, { executable, env, activity, append, timeoutMs = 120000 }) {
+export async function runWebTask(task, commands, { executable, env, activity, append, beforeCommand, timeoutMs = 120000 }) {
   task.abort = new AbortController();
   const deadline = Date.now() + timeoutMs;
   try {
@@ -12,6 +12,8 @@ export async function runWebTask(task, commands, { executable, env, activity, ap
     task.status = 'running'; task.startedAt = new Date().toISOString();
     await activity('info', 'task_started', { id: task.id, target: task.target });
     for (const args of commands) {
+      if (task.cancelRequested) break;
+      await beforeCommand?.();
       if (task.cancelRequested) break;
       append(task, `$ spacewright ${args.join(' ')}`);
       const result = await runBounded(executable, args, { deadline, signal: task.abort.signal, env: { ...env, SPACEWRIGHT_EXECUTION_DEADLINE_MS: String(deadline) },
