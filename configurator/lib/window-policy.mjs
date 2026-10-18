@@ -12,9 +12,17 @@ export function isObservationOverlay(window) {
     && !window.nativeFullscreen && window.frame.w > 0 && window.frame.w <= 600
     && window.frame.h > 0 && window.frame.h <= 400;
 }
+// AXHelpTag is a transient hover hint, not an application layout window. Require
+// a verified, small, non-resizable surface; ordinary dialogs remain guarded.
+export function isTransientTooltip(window) {
+  return window.role === 'AXHelpTag' && !window.subrole
+    && window.hasAxReference && window.frameVerified && !window.resizable
+    && !window.nativeFullscreen && window.frame.w > 0 && window.frame.w <= 600
+    && window.frame.h > 0 && window.frame.h <= 200;
+}
 export function executionCensus(windows,selected=[]) {
   const ids=new Set(selected.map(w=>typeof w==='number'?w:w.id));
-  return windows.filter(w=>ids.has(w.id) || !isObservationOverlay(w) && (w.resizable || w.subrole!=='AXDialog'
+  return windows.filter(w=>ids.has(w.id) || !isObservationOverlay(w) && !isTransientTooltip(w) && (w.role==='AXHelpTag' || w.resizable || w.subrole!=='AXDialog'
     || !w.frameVerified || !(w.frame.w>0 && w.frame.w<=100 && w.frame.h>0 && w.frame.h<=40)));
 }
 
@@ -22,6 +30,7 @@ export function selectorResult(window, desired) {
   const selector = desired.selector || {};
   const reasons = [];
   if (isObservationOverlay(window) && desired.windowId !== window.id && selector.subrole !== 'AXSystemDialog') reasons.push('observation_overlay');
+  if (isTransientTooltip(window) && desired.windowId !== window.id && selector.role !== 'AXHelpTag') reasons.push('transient_tooltip');
   if (desired.windowId != null && window.id !== desired.windowId) reasons.push('fixed_window');
   if (desired.appNames.length && !desired.appNames.includes(window.app)) reasons.push('app_name');
   // Standard yabai snapshots do not expose a bundle identifier. Treat bundle IDs

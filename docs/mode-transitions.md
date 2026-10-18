@@ -126,6 +126,12 @@ Space occupancy checks and are excluded from ordinary application-role selection
 explicitly selected windows and ordinary dialogs,
 including permission prompts, retain the normal identity guards.
 
+Small native hover hints (`AXHelpTag`, verified AX frame, non-resizable, at most
+600×200) also remain in discovery and Space occupancy checks while being excluded
+from ordinary app selection and layout identity checks. Their appearance or
+disappearance does not interrupt a mode. An explicitly selected help tag remains
+guarded, as do unverified, oversized or interactive surfaces.
+
 The transition lease owns the total deadline and configured retry/recovery
 counters; child processes cannot extend them. Cancellation marks the shared run
 before stopping children, and a pipe gate prevents a child from executing until
