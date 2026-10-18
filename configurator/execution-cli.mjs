@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { acquireExecution, runBounded, verifyLease, processIdentity,assertExecutionAllowed } from './lib/execution-coordinator.mjs';
 import { discoverState } from './lib/discovery.mjs';
-import { executePinnedWorkspace, executePinnedCleanup, executePinnedOrder } from './lib/pinned-executor.mjs';
+import { executePinnedWorkspace, executePinnedCleanup, executePinnedOrder, confirmWindowGeometry } from './lib/pinned-executor.mjs';
 import { durableJson, journalMutation, operationRoot } from './lib/operation-journal.mjs';
 import { readJson } from './lib/execution-coordinator.mjs';
 import { consumeBudget } from './lib/execution-budget.mjs';
@@ -50,7 +50,9 @@ try {
       await assertExecutionAllowed(stateRoot);
       const result=await journalMutation({stateRoot,runId:operationRunId,intent:{...intent,arguments:arguments_,attempted:true},
         run:()=>runBounded('yabai',arguments_,{deadline:Math.min(deadline,Date.now()+3000),signal:abort.signal,onChild:lease.trackChild}),
-        verify:async()=>verify(await discover())});
+        verify:async()=>intent.type==='resize_window'
+          ? confirmWindowGeometry(verify,discover,{check:()=>assertExecutionAllowed(stateRoot),poll:()=>consumeBudget(stateRoot,'confirmation')})
+          : verify(await discover())});
       process.stderr.write(`[MUTATION] ${JSON.stringify({...intent,attempted:true,status:'verified_success'})}\n`);
       return result;
     };

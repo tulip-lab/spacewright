@@ -57,6 +57,18 @@ test('all cleanup retains a genuine leading Home and the last Space on another d
   assert.deepEqual(f.plan().actions.filter(a=>a.type==='remove_empty_space').map(a=>a.spaceUuid),['BLANK-2','BLANK-1']);
 });
 
+test('all cleanup preserves an empty unlabeled Space reserved for label restoration',()=>{
+  const f=fixture();
+  f.snapshot.spaces.find(s=>s.uuid==='MAIL').label='';
+  f.snapshot.windows.find(w=>w.app==='MAIL').space=1;
+  const comparison=compareState(f.snapshot,f.desired,f.machine,{spaceLabelHints:{mail_tall:'MAIL'}});
+  assert.ok(comparison.drifts.some(d=>d.code==='space_label_missing' && d.spaceUuid==='MAIL'));
+  assert.ok(!comparison.drifts.some(d=>d.code==='empty_space_cleanup_required' && d.spaceUuid==='MAIL'));
+  const plan=buildExecutionPlan(f.snapshot,f.desired,comparison);
+  assert.ok(!plan.actions.some(a=>a.type==='remove_empty_space' && a.spaceUuid==='MAIL'));
+  assert.ok(plan.actions.some(a=>a.type==='remove_empty_space' && a.spaceUuid==='BLANK-1'));
+});
+
 for(const policy of ['managed','none'])test(`${policy} cleanup still preserves unlabeled user Spaces`,()=>{
   assert.deepEqual(fixture({policy}).plan().actions.filter(a=>a.type==='remove_empty_space'),[]);
 });

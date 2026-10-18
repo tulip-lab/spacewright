@@ -65,7 +65,10 @@ export function assertRecoveryContinuity(checkpoint, snapshot) {
       || current.layout !== 'float' || current.label && current.label !== saved.label) throw new Error('Space ownership or label changed during yabai recovery; restore stopped');
   }
   const windows = executionCensus(snapshot.windows, checkpoint.windows);
-  if (windows.length !== checkpoint.windows.length || checkpoint.windows.some(saved => {
+  // Restarting yabai can discover additional app windows. Restoring Space
+  // metadata does not move them; the caller rediscovers and replans afterward.
+  // Every saved window must still retain its identity and Space ownership.
+  if (checkpoint.windows.some(saved => {
     const current = windows.find(w => w.id === saved.id);
     return !sameWindowIdentity(saved, current) || snapshot.spaces.find(s => s.index === current.space)?.uuid !== saved.spaceUuid;
   })) throw new Error('window identities or ownership changed during yabai recovery; layout was not attempted');

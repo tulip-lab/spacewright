@@ -294,7 +294,21 @@ promise of complete desktop rollback.
 Missing yabai AX references are a distinct observation phase: visit each
 affected Space by UUID, restore focus, and replan only after the same native
 window/process objects acquire AX references. Optional app roles do not bypass
-this phase. Persistent failures stop the run without automatic service restart.
+this phase. Persistent failures can use one declared, bounded yabai restart
+with a durable checkpoint that restores Space labels, settings, and focus.
+All saved windows must retain their process identity and Space ownership.
+Additional windows discovered after restart remain untouched during metadata
+restoration and are included in the subsequent layout replan. Missing or
+replaced saved windows, changed ownership, and native fullscreen still stop recovery.
+Single-window roles that already have a unique selectable window do not recover
+other AX-less surfaces of that app. Fixed-window roles observe only their pinned
+identity; many-window roles still observe unresolved app windows. All discovered
+surfaces continue to participate in Space occupancy checks.
+Window geometry confirmation allows up to five fresh observations for asynchronous
+native frame updates, consuming the confirmation budget between observations.
+It never repeats the mutation; identity errors and exhausted budgets stop immediately.
+Empty-Space cleanup excludes every UUID reserved for an active workspace,
+including currently unlabeled Spaces whose labels will be restored by the plan.
 Observation can precede one bounded app-recovery phase; layout waits for the
 resulting fixed plan. Recovery uses its verified pre-layout snapshot.
 Only tiny, unselected, non-resizable AXDialog helpers (verified native bounds

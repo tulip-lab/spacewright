@@ -4,7 +4,7 @@ import { recoverYabai, recoveryPreview, assertServiceRecoveryInput } from '../li
 import { starterConfig, compileV2 } from '../lib/config-v2.mjs';
 import { buildDesiredState, compareState, buildExecutionPlan } from '../lib/state-engine.mjs';
 import { executionCensus, isObservationOverlay, selectRole } from '../lib/window-policy.mjs';
-import { validatePlanObjects, executePinnedWorkspace } from '../lib/pinned-executor.mjs';
+import { validatePlanObjects, executePinnedWorkspace, confirmWindowGeometry } from '../lib/pinned-executor.mjs';
 import { windowOccupiesSpace } from '../lib/finalization-policy.mjs';
 import { axReferenceError, AX_UNAVAILABLE_EXIT } from '../lib/adapter-preparation.mjs';
 import { sameWindowIdentity } from '../lib/recovery.mjs';
@@ -16,6 +16,21 @@ const snapshot = () => ({completeness:'complete',capturedAt:new Date().toISOStri
   windows:[{id:10,pid:100,processFingerprint:'process-100',app:'Dia',bundleId:'',space:1,
     role:'AXWindow',subrole:'AXStandardWindow',hasAxReference:false,frameVerified:true,
     frame:{x:4,y:35,w:1192,h:1700},movable:false,resizable:false}]});
+
+test('native window geometry is confirmed after asynchronous frame updates without reissuing a command',async()=>{
+  let reads=0,polls=0;
+  const pending=()=>Object.assign(new Error('geometry not settled'),{code:'SPACEWRIGHT_GEOMETRY_PENDING'});
+  const options={check:async()=>{},poll:async()=>{polls++;},delay:async()=>{}};
+  assert.equal(await confirmWindowGeometry(value=>{if(value<3)throw pending();return true;},async()=>++reads,options),true);
+  assert.equal(reads,3);assert.equal(polls,2);
+  reads=0;polls=0;
+  await assert.rejects(confirmWindowGeometry(()=>{throw pending();},async()=>++reads,options),/not settled/);
+  assert.equal(reads,5);assert.equal(polls,4);
+  reads=0;
+  await assert.rejects(confirmWindowGeometry(()=>{throw new Error('identity changed');},async()=>++reads,options),/identity changed/);
+  assert.equal(reads,1);
+  await assert.rejects(confirmWindowGeometry(()=>{throw pending();},async()=>1,{...options,poll:async()=>{throw new Error('budget exhausted');}}),/budget exhausted/);
+});
 function fixture() {
   let live = snapshot(), checkpoint;
   const commands = [], saves = [], consumed = [];
@@ -78,6 +93,42 @@ test('renamed apps still require the same window, process, fingerprint and bundl
   for(const processFingerprint of [undefined,null,'']) {
     assert.equal(sameWindowIdentity({...saved,processFingerprint},{...renamed,processFingerprint}),false);
   }
+});
+
+test('new app windows after restart allow metadata restoration and remain available for replanning',async()=>{
+  const f=fixture(),mutate=f.dependencies.mutate;
+  f.dependencies.mutate=async(args,intent,verify)=>mutate(args,intent,async()=>{
+    if(args[0]==='--restart-service')f.live.windows.push({...f.live.windows[0],id:11,app:'SmartGit',pid:101,processFingerprint:'process-101'});
+    return verify();
+  });
+  assert.equal((await recoverYabai(f.dependencies)).status,'completed');
+  assert.deepEqual(f.live.spaces.map(s=>s.label),['work','personal']);
+  assert.ok(f.live.windows.some(w=>w.id===11));
+  assert.ok(!f.commands.some(a=>a[1]==='window'));
+});
+
+test('a recovery checkpoint resumes with an additional app window without another restart',async()=>{
+  const f=fixture(),mutate=f.dependencies.mutate;
+  f.dependencies.mutate=async(args,...rest)=>{await mutate(args,...rest);if(args[0]==='--restart-service')throw new Error('interrupted');};
+  await assert.rejects(recoverYabai(f.dependencies),/interrupted/);
+  f.live.windows.push({...f.live.windows[0],id:11});
+  f.dependencies.mutate=mutate;
+  assert.equal((await recoverYabai({...f.dependencies,resume:structuredClone(f.checkpoint)})).status,'completed');
+  assert.equal(f.commands.filter(a=>a[0]==='--restart-service').length,1);
+});
+
+for(const fault of ['missing','moved','fullscreen'])test(`an additional window does not bypass ${fault} recovery protection`,async()=>{
+  const f=fixture(),mutate=f.dependencies.mutate;
+  f.dependencies.mutate=async(args,intent,verify)=>mutate(args,intent,async()=>{
+    if(args[0]==='--restart-service') {
+      f.live.windows.push({...f.live.windows[0],id:11,nativeFullscreen:fault==='fullscreen'});
+      if(fault==='missing')f.live.windows.shift();
+      if(fault==='moved')f.live.windows[0].space=1;
+    }
+    return verify();
+  });
+  await assert.rejects(recoverYabai(f.dependencies),/changed|fullscreen/);
+  assert.deepEqual(f.commands,[['--restart-service']]);
 });
 
 test('an interrupted restart has a durable checkpoint that resumes without another restart',async()=>{

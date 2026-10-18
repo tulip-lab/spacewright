@@ -10,9 +10,16 @@ export function axReferenceError(preparation) {
 function spaceObservations(snapshot,desired) {
   const spaces=new Map();
   for(const workspace of desired.workspaces)for(const role of workspace.windows) {
+    // A one-window role with a unique selectable object needs no recovery of
+    // other, AX-less surfaces from that app. Keep those surfaces in discovery
+    // and occupancy checks, but do not let them block the selected window.
+    const selection=selectRole(snapshot.windows,role);
+    if(role.cardinality!=='many' && !selection.ambiguous && selection.selected.length
+      && selection.selected.every(w=>w.hasAxReference!==false))continue;
     for(const window of snapshot.windows) {
       // Without an AX reference, titles, roles and capabilities are unknown,
       // not evidence that an observed app window is absent or unlayoutable.
+      if(role.windowId!=null && role.windowId!==window.id)continue;
       if(window.hasAxReference!==false || !role.appNames.includes(window.app) || window.minimized || window.sticky
         || !window.frameVerified || window.frame.w<=0 || window.frame.h<=0)continue;
       const space=snapshot.spaces.find(s=>s.index===window.space);
