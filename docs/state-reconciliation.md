@@ -167,6 +167,14 @@ must have no title or AX role, be invisible and non-movable/non-resizable, and
 have no AX reference. This keeps the cleanup rule narrow while covering
 background root surfaces left by apps such as media players.
 
+Under `all`, Home is preserved only when the first Space on the primary display
+is unlabeled. An empty unlabeled Space after a named workspace is eligible for
+cleanup; it is not promoted to Home. Cleanup keeps occupied Spaces, custom
+labels and at least one Space per display, and rechecks each planned UUID before
+deletion. Removing empty gaps preserves the configured workspace order. The
+order check compares active workspaces, so inactive workspaces do not reserve
+blank numbered slots and unrelated occupied user Spaces are not moved.
+
 `spacewright recover RUN_ID --dry-run` lists the still-present candidate
 windows without changing them. Recovery without that flag is explicit and
 best-effort. It restores the
