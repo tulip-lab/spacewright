@@ -45,6 +45,24 @@ function display_apply_profile_mode --description "Apply a display profile, relo
         return 2
     end
 
+    # Consumer profiles can reconfigure every connected display. They cannot
+    # promise to preserve an explicitly ignored virtual display.
+    set -l machine_file "$SPACEWRIGHT_STATE_ROOT/machine.json"
+    if test -r "$machine_file"
+        set -l ignored_uuids (command jq -r '.displayKinds // {} | to_entries[] | select(.value == "ignored") | .key' "$machine_file")
+        or return 1
+        if test (count $ignored_uuids) -gt 0
+            set -l displays_json (ws_query_displays display_apply_profile_mode ignored-displays)
+            or return 1
+            for uuid in $ignored_uuids
+                if printf '%s\n' "$displays_json" | command jq -e --arg uuid "$uuid" 'any(.[]; .uuid == $uuid)' >/dev/null
+                    echo 'spacewright: physical display profiles cannot preserve ignored displays; use spacewright mode auto' >&2
+                    return 1
+                end
+            end
+        end
+    end
+
     # Consumer profiles retain the public environment contract. Resolve it from
     # the authoritative machine binding for this invocation, so an inherited
     # legacy Fish UUID cannot override a newly confirmed hardware setup.

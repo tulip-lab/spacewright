@@ -355,8 +355,8 @@ switch "$command_name"
         command node "$package_root/configurator/cli.mjs" migrate-v2 "$config_file"
     case setup
         set -l setup_command $argv[1]
-        contains -- "$setup_command" detect status show confirm activate; or begin
-            echo 'usage: spacewright setup <detect|status|show|confirm|activate> [hardware-profile] [setup]' >&2
+        contains -- "$setup_command" detect status show confirm activate ignore-display include-display; or begin
+            echo 'usage: spacewright setup <detect|status|show|confirm|activate|ignore-display|include-display> [hardware-profile] [setup]' >&2
             exit 2
         end
         set -e argv[1]

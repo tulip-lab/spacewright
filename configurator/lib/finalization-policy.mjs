@@ -5,8 +5,16 @@ import { remapTallLayout } from './config-v2.mjs';
 export function assertWorkspaceSpaceContinuity(plan, snapshot, effects = []) {
   for (const workspace of plan.workspaces) {
     if (!workspace.targetSpace) {
-      if (snapshot.spaces.some(s => s.label === workspace.label)
-        && !effects.some(e => e.type === 'ensure_space' && e.workspaceId === workspace.workspaceId)) {
+      const appeared = snapshot.spaces.filter(s => s.label === workspace.label);
+      if (appeared.length && (appeared.length !== 1 || !effects.some(e => {
+        const space = appeared[0];
+        const displayUuid = snapshot.displays?.find(d => d.index === space.display)?.uuid;
+        return e.type === 'ensure_space' && e.workspaceId === workspace.workspaceId
+          && e.status === 'verified_success' && e.postcondition?.createdSpaceUuid === space.uuid
+          && displayUuid && e.targetDisplayUuid === displayUuid
+          && e.postcondition.targetDisplayUuid === displayUuid
+          && (!workspace.targetDisplay || workspace.targetDisplay.uuid === displayUuid);
+      }))) {
         throw new Error('target Space appeared after planning; replan required');
       }
       continue;
@@ -41,6 +49,7 @@ export function cleanupCandidates(snapshot, desired,activeIds=new Set(desired.wo
     const spaces=snapshot.spaces.filter(s=>s.label===claim.label);
     if (claim.conflict || spaces.length>1) { drifts.push({code:'opposite_label_conflict',severity:'blocker',workspaceId:claim.workspaceId,label:claim.label}); continue; }
     for (const space of spaces) {
+      if (space.ignoredDisplay) continue;
       if(!space.uuid){drifts.push({code:'cleanup_space_identity_missing',severity:'blocker',workspaceId:claim.workspaceId,label:claim.label});continue;}
       const occupied=snapshot.windows.some(w=>w.space===space.index && windowOccupiesSpace(w,desired.nonoccupyingGhostApps));
       const survivor=snapshot.spaces.some(s=>s.display===space.display && s.uuid!==space.uuid && !claims.some(c=>c.label===s.label));
@@ -51,7 +60,7 @@ export function cleanupCandidates(snapshot, desired,activeIds=new Set(desired.wo
   return drifts;
 }
 export function sandboxWorkspace(snapshot, desired, runtime, selectedIds) {
-  const claimed=(window)=>Object.values(runtime.workspaces || {}).some(w=>w.label===snapshot.spaces.find(s=>s.index===window.space)?.label && (w.windows || []).some(r=>runtime.apps?.[r.app_key]?.names?.includes(window.app)));
+  const claimed=(window)=>Object.values(runtime.workspaces || {}).some(w=>w.label===snapshot.spaces.find(s=>s.index===window.space && !s.ignoredDisplay)?.label && (w.windows || []).some(r=>runtime.apps?.[r.app_key]?.names?.includes(window.app)));
   const windows=snapshot.windows.filter(w=>!selectedIds.has(w.id) && !claimed(w) && w.movable && w.resizable && !w.sticky && !w.minimized && !w.nativeFullscreen).sort((a,b)=>a.id-b.id);
   if (!windows.length) return null;
   const displayRole=desired.target.mode==='solo'?'primary':desired.workspaces.find(w=>w.displayRole!=='primary')?.displayRole || desired.workspaces[0]?.displayRole;

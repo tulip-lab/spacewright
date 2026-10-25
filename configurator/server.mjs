@@ -187,7 +187,7 @@ async function v3SetupState(config, machineOverride = null) {
   const [machine, hardware, displayResult] = await Promise.all([machineOverride || readMachine(), detectHardware(), queryDisplays()]);
   const snapshot = { unavailable: displayResult.unavailable === true, message: displayResult.message, displays: displayResult.displays || [] };
   const hardwareSelection = selectHardwareProfile(config, machine, hardware);
-  const displays = describeDisplays(snapshot, machine);
+  const displays = describeDisplays(snapshot, machine, { includeIgnored: true });
   const key = topologyKey(displays);
   const setupCandidates = hardwareSelection.id ? matchingSetups(config, hardwareSelection.id, snapshot, machine) : [];
   const confirmedSetup = machine.topologySelections?.[key] || null;

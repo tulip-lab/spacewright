@@ -43,6 +43,18 @@ fresh UUID lookup, never cached Space indexes. A new immutable plan is required
 before any window layout. Persistent AX failure stops without a second restart.
 Other errors, cancellation and total-deadline expiry never trigger recovery.
 A real native window with missing AX information still occupies its Space for cleanup.
+For an optional multi-window role with selectable AX windows, those known windows
+can be laid out while other AX-less surfaces produce `optional_windows_unavailable`
+warnings. Required multi-window roles, and optional roles without any selectable
+window, retain bounded AX observation and recovery.
+
+Preparation and layout share the active-workspace and shared-app ownership rules.
+An inactive workspace cannot take recovery away from an active owner; a role
+whose ownership was superseded cannot force recovery of its old app surfaces.
+A unique selectable window on the target Space uses the same preference during
+preparation and layout. Leaving a Space for observation requires fresh identity
+validation before revisiting it.
+
 
 `spacewright repair-yabai --dry-run` previews the same guarded recovery without
 changing the desktop. `spacewright repair-yabai` explicitly runs it. If restart
@@ -50,6 +62,14 @@ or restoration is interrupted, the error reports the saved checkpoint and
 `spacewright repair-yabai --resume=RUN_ID` restores it without another restart.
 Unfinished restoration blocks subsequent apply runs until it is resolved;
 changing Space ownership, window identity or display topology stops restoration.
+After restart has been attempted, a saved window disappearing no longer blocks
+metadata restoration. Recovery records its ID, app and observation time in
+`disappearedWindows`, retaining the original saved identity to detect ID reuse.
+Every surviving saved window must still have the same process identity and Space
+UUID. Missing windows before restart, incomplete discovery, reused IDs and changed
+Space ownership still fail closed. This applies to existing interrupted checkpoints
+as well; no manual checkpoint editing is needed. Restoration never moves or recreates
+these windows, and layout uses a fresh discovery and plan afterward.
 Recovery is not a guarantee against external application or yabai defects.
 Observation may be followed by one app-recovery phase when the newly available
 metadata requires it. Each phase records its predecessor and successor plan;
@@ -157,6 +177,17 @@ new layout windows still require unchanged identities or a new plan.
 After execution, SpaceWright discovers state again. If executable drift remains
 and reconciliation is enabled, it performs one retry and verifies once more.
 It never loops indefinitely.
+
+The reconciliation pass retains its own plan, plan relation, and terminal step
+status. Its checks use that same plan, including cleanup actions that only became
+possible after the first pass moved windows. A newly appearing target Space is
+accepted only with a successful, verified creation record matching its UUID and
+physical display; failed or incomplete attempts do not authorize it.
+
+Controller and executor boundaries use the same window census and process
+identity check. Census errors identify added, removed, and reused window IDs and
+application names without recording window titles in the error message.
+
 
 An empty managed Sandbox is reported as `empty_space_cleanup_required` instead
 of being hidden behind the Fish backend. With the explicit `all` cleanup

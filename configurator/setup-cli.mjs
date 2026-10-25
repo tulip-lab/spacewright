@@ -8,6 +8,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import {
   describeDisplays,
+  resolveV3,
   matchingSetups,
   selectHardwareProfile,
   setupBindingStatus,
@@ -53,7 +54,7 @@ function assignmentForSetup(config, hardwareProfileId, setupId, displays) {
   const used = new Set();
   const bindings = {};
   for (const requirement of requirements) {
-    const index = displays.findIndex((display, candidate) => !used.has(candidate)
+    const index = displays.findIndex((display, candidate) => !used.has(candidate) && !display.ignored
       && (!requirement.kind || display.kind === requirement.kind)
       && (!requirement.orientation || display.orientation === requirement.orientation)
       && (!requirement.role || !display.role || display.role === requirement.role));
@@ -75,7 +76,7 @@ async function inspect() {
   const validation = validateV3(config);
   if (!validation.valid) throw new Error(`configuration is invalid:\n${validation.errors.join('\n')}`);
   const selectedHardware = selectHardwareProfile(config, machine, hardware);
-  const displays = describeDisplays(snapshot, machine);
+  const displays = describeDisplays(snapshot, machine, { includeIgnored: true });
   const key = topologyKey(displays);
   const setupCandidates = selectedHardware.id ? matchingSetups(config, selectedHardware.id, snapshot, machine) : [];
   return {
@@ -121,7 +122,7 @@ function validateOptions() {
     if (!valued.includes(key)) throw new Error(`unknown option or invalid flag: --${key}`);
     if (value === true || !value) throw new Error(`--${key} requires a value (--${key}=value)`);
   }
-  const maximum = command === 'confirm' ? 2 : 0;
+  const maximum = command === 'confirm' ? 2 : ['ignore-display', 'include-display'].includes(command) ? 1 : 0;
   if (positional.length > maximum) throw new Error(`unexpected positional argument for ${command}`);
 }
 
@@ -156,7 +157,7 @@ try {
       const title = `${status.hardwareProfileName || 'Mac'} · ${status.setupName || status.topologyKey}`;
       const lines = status.displays.map(d => {
         const roles = Object.entries(status.displayBindings).filter(([, uuid]) => uuid === d.uuid).map(([role]) => role);
-        return `${roles.join(' / ') || 'unassigned'}: ${d.kind} · ${d.orientation} · ${d.frame.w}×${d.frame.h}`;
+        return `${d.ignored ? 'ignored' : roles.join(' / ') || 'unassigned'}: ${d.kind} · ${d.orientation} · ${d.frame.w}×${d.frame.h}`;
       });
       const detail = `${status.ready ? 'Ready' : 'Confirmation required — open Hardware & Setups'}\n${lines.join('\n')}`;
       process.stdout.write(`${title}\n${detail}\n`);
@@ -188,6 +189,18 @@ try {
     };
     const runtime = await persistSetup(value, next);
     print({ confirmed: !flags['dry-run'], dryRun: Boolean(flags['dry-run']), mutates: !flags['dry-run'], action: 'confirm', path: machineFile, runtimePath: runtimeFile, hardwareProfile: hardwareProfileId, setup: setupId, compatibilityMode: runtime.modes[`work_${value.config.hardwareProfiles[hardwareProfileId].setups[setupId].compatibilityMode}`].display_mode, topologyKey: value.topologyKey, displayBindings });
+  } else if (command === 'ignore-display' || command === 'include-display') {
+    const uuid = positional[0];
+    if (!uuid || !value.displays.some(display => display.uuid === uuid)) throw new Error('a connected display UUID is required');
+    if (value.snapshot.unavailable) throw new Error('display discovery is unavailable');
+    const displayKinds = { ...(value.machine.displayKinds || {}) };
+    if (command === 'ignore-display') displayKinds[uuid] = 'ignored';
+    else delete displayKinds[uuid];
+    const next = { ...value.machine, displayKinds };
+    const resolved = resolveV3(value.config, { machine: next, hardware: value.hardware, snapshot: value.snapshot });
+    next.activeSetup = resolved.setupId;
+    await persistSetup(value, next);
+    print({ dryRun: Boolean(flags['dry-run']), mutates: !flags['dry-run'], action: command, uuid, setup: resolved.setupId, topologyKey: resolved.topologyKey });
   } else if (command === 'activate') {
     const hardwareProfileId = value.machine.hardwareProfile;
     const setupId = value.machine.topologySelections?.[value.topologyKey];
@@ -199,7 +212,7 @@ try {
     const runtime = await persistSetup(value, next);
     print({ activated: !flags['dry-run'], dryRun: Boolean(flags['dry-run']), mutates: !flags['dry-run'], action: 'activate', displayBindings: next.displayBindings, hardwareProfile: hardwareProfileId, setup: setupId, compatibilityMode: value.config.hardwareProfiles[hardwareProfileId].setups[setupId].compatibilityMode, runtimePath: runtimeFile, sourceVersion: runtime.source_version });
   } else {
-    throw new Error('usage: setup-cli.mjs <detect|status|confirm|activate> [hardware-profile] [setup] [--config=path] [--snapshot=path] [--model=id]');
+    throw new Error('usage: setup-cli.mjs <detect|status|confirm|activate|ignore-display|include-display> [hardware-profile|display-uuid] [setup] [--config=path] [--snapshot=path] [--model=id]');
   }
 } catch (error) {
   process.stderr.write(`${error.message}\n`);

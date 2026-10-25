@@ -18,7 +18,7 @@ import { durableJson, operationRecords, journalMutation } from './lib/operation-
 import { consumeBudget } from './lib/execution-budget.mjs';
 import { detectMacHardware } from './lib/hardware-detection.mjs';
 import { readSpaceLabelHints } from './lib/space-label-history.mjs';
-import { executionCensus } from './lib/window-policy.mjs';
+import { assertWindowCensus } from './lib/window-policy.mjs';
 import { assertWorkspaceSpaceContinuity } from './lib/finalization-policy.mjs';
 import { recoverYabai, recoveryPreview } from './lib/yabai-recovery.mjs';
 import { AX_UNAVAILABLE_EXIT } from './lib/adapter-preparation.mjs';
@@ -217,7 +217,7 @@ async function assertExecutionContext(initial,effects = []) {
   await assertSavedConfiguration(initial);
   const snapshot = await discover(initial.machine);
   if (snapshot.completeness !== 'complete') throw new Error(snapshot.message);
-  if(initial.plan.scope==='mode' && JSON.stringify(executionCensus(snapshot.windows,initial.plan.selectedWindows).map(w=>w.id))!==JSON.stringify(initial.plan.preconditions.windows.map(w=>w.id)))throw new Error('global object census changed; replan required');
+  if(initial.plan.scope==='mode')assertWindowCensus(initial.plan.preconditions.windows,snapshot.windows,initial.plan.selectedWindows);
   const spaceLabelHints=Object.fromEntries(initial.plan.workspaces.filter(w=>w.targetSpace?.uuid).map(w=>[w.label,w.targetSpace.uuid]));
   const comparison = compareState(snapshot, initial.desired, initial.machine, {spaceLabelHints});
   const currentPlan = buildExecutionPlan(snapshot, initial.desired, comparison);
@@ -471,12 +471,18 @@ async function applyPlan(target) {
     journal.verification = verification.comparison;
     if (journal.exitCode === 0 && JSON.stringify(verification.plan.selectedWindows) === JSON.stringify(initial.plan.selectedWindows) && !verification.comparison.converged && verification.plan.executable && verification.plan.actions.length && initial.plan.recovery.automaticAttempts > 0 && !flags['no-reconcile']) {
       await consumeBudget(stateRoot,'reconciliation',{env:executionLease.env});
-      journal.steps.push({ type: 'reconciliation', status: 'started', startedAt: new Date().toISOString(), remaining: verification.comparison.counts, planId: verification.plan.planId });
+      const reconciliation = { type: 'reconciliation', status: 'running', startedAt: new Date().toISOString(), remaining: verification.comparison.counts, planId: verification.plan.planId };
+      journal.steps.push(reconciliation);
+      journal.reconciliationPlan = verification.plan;
+      (journal.planRelations ||= []).push({phase:'reconciliation',fromPlanId:initial.plan.planId,toPlanId:verification.plan.planId});
       await atomicWrite(journalFile, journal);
       await atomicWrite(journal.envelopeFile, { plan: verification.plan, desired: initial.desired, machine: initial.machine });
+      // Reconciliation authorizes a fresh set of actions, including cleanup of
+      // Spaces emptied by the first pass. Validate against that same plan.
+      const reconciliationContext = { ...initial, plan: verification.plan, snapshot: verification.snapshot };
       for (const step of verification.plan.executionSteps) {
         assertNotCancelled();
-        await assertExecutionContext(initial,journal.effects);
+        await assertExecutionContext(reconciliationContext,journal.effects);
         journal.exitCode = await runCommand(step.command, journal, journalFile, step, 1);
         await atomicWrite(journalFile, journal);
         assertNotCancelled();
@@ -486,6 +492,10 @@ async function applyPlan(target) {
       verification = await livePlan(target, initial);
       journal.after = verification.snapshot;
       journal.verification = verification.comparison;
+      reconciliation.status = journal.exitCode === 0 && verification.comparison.converged
+        && JSON.stringify(verification.plan.selectedWindows) === JSON.stringify(initial.plan.selectedWindows) ? 'completed' : 'failed';
+      reconciliation.exitCode = reconciliation.status === 'completed' ? 0 : journal.exitCode || 1;
+      reconciliation.finishedAt = new Date().toISOString();
     }
     journal.status = journal.exitCode === 0 && journal.verification.converged && JSON.stringify(verification.plan.selectedWindows) === JSON.stringify(initial.plan.selectedWindows) ? 'completed' : 'failed';
     if (journal.status === 'failed' && journal.exitCode === 0) journal.exitCode = 1;
