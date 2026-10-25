@@ -1,4 +1,4 @@
-import { selectRole } from './window-policy.mjs';
+import { selectRole, workspaceIsActive, finalWindowOwners } from './window-policy.mjs';
 import { sameWindowIdentity } from './recovery.mjs';
 const complexRunners=new Set(['office_document','gtd_support','primary_helper','gtd_review','gtd_meeting','gtd_ai','fixed_adapter']);
 const identity=w=>({id:w.id,app:w.app,pid:w.pid,bundleId:w.bundleId,processFingerprint:w.processFingerprint});
@@ -7,14 +7,15 @@ export function axReferenceError(preparation) {
   const windows = preparation.windows.map(w => `${w.app} (${w.id})`).join(', ');
   return Object.assign(new Error(`yabai window references unavailable after Space observation: ${windows}. A bounded service recovery is required before layout; use spacewright repair-yabai if automatic recovery cannot complete.`), { code: 'SPACEWRIGHT_AX_UNAVAILABLE' });
 }
-function spaceObservations(snapshot,desired) {
+function spaceObservations(snapshot,desired,owners) {
   const spaces=new Map();
   for(const workspace of desired.workspaces)for(const role of workspace.windows) {
-    // A one-window role with a unique selectable object needs no recovery of
-    // other, AX-less surfaces from that app. Keep those surfaces in discovery
-    // and occupancy checks, but do not let them block the selected window.
-    const selection=selectRole(snapshot.windows,role);
-    if(role.cardinality!=='many' && !selection.ambiguous && selection.selected.length
+    if(role.ownership!=='independent' && owners.get(role.appKey)!==workspace.workspaceId)continue;
+    // A unique one-window selection, or an optional multi-window role with
+    // known selectable windows, need not recover other AX-less app surfaces.
+    // Keep unknown surfaces in discovery and occupancy checks.
+    const selection=selectRole(snapshot.windows,role,{targetSpace:snapshot.spaces.find(s=>s.label===workspace.label && !s.ignoredDisplay)?.index});
+    if((role.cardinality!=='many' || !role.required) && !selection.ambiguous && selection.selected.length
       && selection.selected.every(w=>w.hasAxReference!==false))continue;
     for(const window of snapshot.windows) {
       // Without an AX reference, titles, roles and capabilities are unknown,
@@ -41,9 +42,14 @@ function spaceObservations(snapshot,desired) {
   return [...spaces.values()];
 }
 export function preparationsFor(snapshot,desired) {
-  const owners=new Map();for(const ws of desired.workspaces)for(const role of ws.windows)if(role.ownership!=='independent')owners.set(role.appKey,ws.workspaceId);
-  for(const rule of desired.contextualApps || [])owners.set(rule.appKey,rule.ownerWorkspaceId);
-  const observations=spaceObservations(snapshot,desired);
+  // Active workspaces decide ownership exactly as layout selection does. An
+  // inactive primary can still need observation before it becomes selectable;
+  // use the full set only for apps with no current active owner.
+  const owners=new Map([
+    ...finalWindowOwners(desired.workspaces,desired.contextualApps),
+    ...finalWindowOwners(desired.workspaces.filter(workspace=>workspaceIsActive(snapshot,workspace)),desired.contextualApps)
+  ]);
+  const observations=spaceObservations(snapshot,desired,owners);
   const preparations=[...observations],seen=new Set();
   for(const workspace of desired.workspaces)for(const role of workspace.windows) {
     if(role.ownership!=='independent' && owners.get(role.appKey)!==workspace.workspaceId)continue;
@@ -77,7 +83,8 @@ export function preparationCommand(preparation,before) {
     }
     return ['yabai',['-m','space','--focus',String(space.index)]];
   }
-  if(!sameWindowIdentity(preparation.window,before.windows.find(w=>w.id===preparation.window.id)))throw new Error('adapter input identity changed; replan required');
+  const current=before.windows.find(w=>w.id===preparation.window.id);
+  if(!sameWindowIdentity(preparation.window,current))throw new Error('adapter input identity changed; replan required');
   if(preparation.type==='native_fullscreen')return ['yabai',['-m','window',String(preparation.window.id),'--toggle','native-fullscreen']];
   if(preparation.commandPolicy==='outlook_reopen')return ['osascript',['-e','on run argv','-e','tell application (item 1 of argv) to activate','-e','tell application (item 1 of argv) to reopen','-e','end run',preparation.window.app]];
   return ['open',['-a',preparation.window.app]];
@@ -121,7 +128,8 @@ export async function executePreparation(preparation,{discover,command,...depend
   check();const before=await discover();
   const departure=preparationDepartureCommand(preparation,before);
   if(departure)await command(...departure);
-  const args=preparationCommand(preparation,before);
+  check();
+  const args=preparationCommand(preparation,departure ? await discover() : before);
   await command(...args);
   return verifyPreparation(preparation,{discover,...dependencies});
 }

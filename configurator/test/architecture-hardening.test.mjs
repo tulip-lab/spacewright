@@ -476,3 +476,28 @@ test('completed label history keeps fixed candidate preference during unlabeled-
   assert.equal(journal.after.spaces.find(s=>s.uuid==='S').label,'coding_solo');
  }finally{await f.close();}
 });
+
+
+test('reconciliation validates late empty-Space cleanup against its own plan',async()=>{
+  const config=starterConfig();
+  config.workspaces.coding.variants.solo.activation={type:'windowPresent',role:'editor'};
+  config.workspaces.chat={name:'Chat',spaceLabel:'chat',windows:{primary:{app:'chatgpt',required:true,selector:{movable:true}}},variants:{solo:{layout:{type:'window',role:'primary'}}}};
+  config.modes.solo.displays[0].workspaceOrder.push('chat');
+  const f=await fixture(config);
+  try {
+    await f.setData(data=>{
+      data.windows[0].app='ChatGPT';
+      data.spaces.push({index:2,uuid:'CHAT',display:1,label:'chat_solo',type:'float'});
+    });
+    const output=await f.cli(['apply','solo','--json']);
+    const result=JSON.parse(output.stdout);
+    assert.equal(result.status,'completed');
+    const journal=JSON.parse(await readFile(result.journal,'utf8'));
+    const reconciliation=journal.steps.find(step=>step.type==='reconciliation');
+    assert.equal(reconciliation.status,'completed');
+    assert.ok(reconciliation.finishedAt);
+    assert.ok(journal.planRelations.some(relation=>relation.phase==='reconciliation' && relation.toPlanId===journal.reconciliationPlan.planId));
+    assert.ok(journal.effects.some(effect=>effect.type==='remove_empty_space' && effect.spaceUuid==='S' && effect.status==='verified_success'));
+    assert.equal(journal.verification.converged,true);
+  } finally {await f.close();}
+});

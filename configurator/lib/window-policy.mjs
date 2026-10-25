@@ -1,3 +1,5 @@
+import { sameWindowIdentity } from './recovery.mjs';
+
 // Tiny, unselected, non-resizable AX helper dialogs can be recreated as their parent
 // moves (for example Electron's tiny "Window" surface). Keep them in discovery
 // and occupancy checks, but not the immutable layout object census.
@@ -22,13 +24,33 @@ export function isTransientTooltip(window) {
 }
 export function executionCensus(windows,selected=[]) {
   const ids=new Set(selected.map(w=>typeof w==='number'?w:w.id));
-  return windows.filter(w=>ids.has(w.id) || !isObservationOverlay(w) && !isTransientTooltip(w) && (w.role==='AXHelpTag' || w.resizable || w.subrole!=='AXDialog'
+  return windows.filter(w=>ids.has(w.id) || !w.ignoredDisplay && !isObservationOverlay(w) && !isTransientTooltip(w) && (w.role==='AXHelpTag' || w.resizable || w.subrole!=='AXDialog'
     || !w.frameVerified || !(w.frame.w>0 && w.frame.w<=100 && w.frame.h>0 && w.frame.h<=40)));
+}
+
+// Use the same object census at controller and executor boundaries. An ID alone
+// is not an incarnation: apps can close a window and reuse its number.
+export function assertWindowCensus(expected, windows, selected = []) {
+  const current = executionCensus(windows, selected);
+  const added = current.filter(w => !expected.some(saved => saved.id === w.id));
+  const removed = expected.filter(saved => !current.some(w => w.id === saved.id));
+  const changed = expected.filter(saved => {
+    const live = current.find(w => w.id === saved.id);
+    return live && !sameWindowIdentity(saved, live);
+  });
+  const duplicates = current.filter((w,index) => current.findIndex(candidate=>candidate.id===w.id)!==index);
+  if (expected.length !== current.length || duplicates.length || added.length || removed.length || changed.length) {
+    const changes = Object.fromEntries(Object.entries({added,removed,changed,duplicates})
+      .map(([key,value]) => [key,value.map(({id,app})=>({id,app}))]));
+    throw Object.assign(new Error(`global object census changed; replan required: ${JSON.stringify(changes)}`), {censusChanges:changes});
+  }
+  return current;
 }
 
 export function selectorResult(window, desired) {
   const selector = desired.selector || {};
   const reasons = [];
+  // Ignored displays are excluded as destinations, never as window sources.
   if (isObservationOverlay(window) && desired.windowId !== window.id && selector.subrole !== 'AXSystemDialog') reasons.push('observation_overlay');
   if (isTransientTooltip(window) && desired.windowId !== window.id && selector.role !== 'AXHelpTag') reasons.push('transient_tooltip');
   if (desired.windowId != null && window.id !== desired.windowId) reasons.push('fixed_window');
@@ -56,4 +78,27 @@ export function selectRole(windows, desired, { used = [], targetSpace = null } =
   const preferred = eligible.filter((w) => w.space === targetSpace);
   const ambiguous = (desired.cardinality || 'one') === 'one' && eligible.length > 1 && preferred.length !== 1;
   return { eligible, preferred, ambiguous, selected: ambiguous ? [] : desired.cardinality === 'many' ? eligible : [preferred[0] || eligible[0]].filter(Boolean) };
+}
+
+export function workspaceIsActive(snapshot, workspace) {
+  const activation = workspace.activation || (workspace.runner === 'office_document' ? { type: 'windowPresent', role: 'primary' } : { type: 'always' });
+  if (activation.type === 'always') return true;
+  if (activation.type === 'anyWindowPresent') return workspace.windows.some(role=>snapshot.windows.some(window=>selectorResult(window,role).matches));
+  if (activation.type !== 'windowPresent') return false;
+  const watched = workspace.windows.find((window) => window.role === activation.role);
+  return Boolean(watched && snapshot.windows.some(window=>selectorResult(window,watched).matches));
+}
+
+export function finalWindowOwners(workspaces, contextualApps = []) {
+  const owners = new Map();
+  for (const workspace of [...workspaces].reverse()) {
+    for (const desiredWindow of workspace.windows) {
+      if ((desiredWindow.ownership || 'lastApplicable') === 'independent') continue;
+      if (!owners.has(desiredWindow.appKey)) owners.set(desiredWindow.appKey, workspace.workspaceId);
+    }
+  }
+  for (const rule of contextualApps) {
+    if (workspaces.some((workspace) => workspace.workspaceId === rule.ownerWorkspaceId)) owners.set(rule.appKey, rule.ownerWorkspaceId);
+  }
+  return owners;
 }

@@ -362,3 +362,34 @@ for(const scenario of ['other-version-only','runtime-write-failure','read-back-m
   assert.equal(await readFile(`${file}.backup`,'utf8'),source);
   const refused=await json(url,'/api/config',token);assert.equal(refused.status,500);assert.match(refused.body.error,/incomplete|in progress/);
 });
+
+test('ignored virtual display is persisted through hardware confirmation and remains editable in the UI', async context => {
+  const root=await mkdtemp(join(tmpdir(),'spacewright-ignored-server-'));
+  const configRoot=join(root,'config'),stateRoot=join(root,'state'),fakeBin=join(root,'bin');
+  await Promise.all([mkdir(configRoot),mkdir(stateRoot),mkdir(fakeBin)]);
+  const config=starterV3();
+  await writeFile(join(configRoot,'config.v3.json'),JSON.stringify(config));
+  await writeFile(join(fakeBin,'sysctl'),'#!/bin/sh\necho Macmini9,1\n',{mode:0o755});
+  const displays=[{index:1,uuid:'PHYSICAL',frame:{x:0,y:0,w:1200,h:1920},spaces:[1]}, {index:2,uuid:'VIRTUAL',frame:{x:1200,y:0,w:1920,h:1080},spaces:[2]}];
+  await writeFile(join(fakeBin,'yabai'),`#!/bin/sh\ncase "$3" in\n--displays) echo '${JSON.stringify(displays)}';;\n--spaces) echo '[{"index":1,"uuid":"A","display":1,"label":"","type":"float"},{"index":2,"uuid":"B","display":2,"label":"","type":"float"}]';;\n--windows) echo '[]';;\nesac\n`,{mode:0o755});
+  const server=await startServer(configRoot,stateRoot,fakeBin,{SPACEWRIGHT_AUTOMATION_DISABLE:'1'});
+  context.after(async()=>{server.child.kill('SIGTERM');await rm(root,{recursive:true,force:true});});
+  const confirmed=await json(server.url,'/api/v3/setup/confirm',server.token,{method:'POST',body:JSON.stringify({config,hardwareProfile:'mac_mini',setup:'single_tall',displayKinds:{VIRTUAL:'ignored'}})});
+  assert.equal(confirmed.status,200,JSON.stringify(confirmed.body));
+  assert.equal(confirmed.body.setupState.ready,true);
+  assert.equal(confirmed.body.topologyKey,'external:tall');
+  assert.equal(confirmed.body.machine.displayBindings.tall,'PHYSICAL');
+  assert.equal(confirmed.body.setupState.displays.find(d=>d.uuid==='VIRTUAL').ignored,true);
+  const browser=await chromium.launch({headless:true,...(existsSync(systemChrome)?{executablePath:systemChrome}:{})});
+  context.after(()=>browser.close());
+  const page=await browser.newPage({viewport:{width:1440,height:1000}});
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.goto(`${server.url}?token=${server.token}&view=hardware`);
+  const select=page.locator('[data-v3-display-kind="VIRTUAL"]');
+  await select.waitFor();
+  assert.equal(await select.inputValue(),'ignored');
+  assert.match(await page.locator('.v3-detection').innerText(),/confirmed as single_tall/);
+  assert.equal(await select.locator('option[value="external"]').count(),1);
+  await page.screenshot({path:'/tmp/spacewright-ignored-display-ui.png'});
+  assert.deepEqual(errors,[]);
+});

@@ -151,3 +151,39 @@ Legacy `runtime.displayRole` values retained inside migrated configurations are
 ignored when projecting a setup into the execution engine. Planning, direct
 ordering and ordering verification therefore agree even when one physical
 screen replaces a former primary/task display pair.
+
+## Exclude a virtual display
+
+Display participation is an explicit machine-local choice; SpaceWright does not
+infer it from a display's name or resolution. On Hardware & Setups, select
+**Ignore for workspaces** for the virtual display, select the intended physical
+setup, and confirm. The display remains visible in the inventory as ignored.
+
+For an already confirmed physical setup, the CLI can apply the same policy:
+
+```fish
+spacewright setup ignore-display DISPLAY_UUID --dry-run
+spacewright setup ignore-display DISPLAY_UUID
+spacewright setup status
+spacewright mode auto --dry-run
+```
+
+This stores `displayKinds.DISPLAY_UUID: "ignored"` in `machine.json` and recompiles
+the runtime. It does not disable or disconnect the display or arrange windows.
+The remaining physical setup must already be confirmed; excluding the last
+managed display is rejected. The policy follows the UUID across reconnection.
+`setup include-display DISPLAY_UUID` removes the exclusion when the resulting
+setup is already confirmed; otherwise use Hardware & Setups to include it and
+confirm the new combination together.
+
+Ignored displays, Spaces and windows remain in full diagnostic discovery and
+occupancy data. Their windows remain eligible sources: configured apps return to
+their workspaces, and other movable, resizable, non-minimized windows enter
+Sandbox on a managed display during mode arrangement. Preparation may observe
+or activate source windows. Their Spaces remain excluded from cleanup. A managed label
+found on an ignored display blocks execution instead of moving that Space.
+Unselected window churn confined to an ignored display does not invalidate a
+pinned plan. Newly discovered eligible windows are collected on the next mode run.
+Physical display profiles are refused while an ignored display is connected,
+because consumer profile scripts may reconfigure every display. Use `mode auto`
+and mode-free workspace commands to preserve the ignored display.

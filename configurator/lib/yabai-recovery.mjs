@@ -67,9 +67,12 @@ export function assertRecoveryContinuity(checkpoint, snapshot) {
   const windows = executionCensus(snapshot.windows, checkpoint.windows);
   // Restarting yabai can discover additional app windows. Restoring Space
   // metadata does not move them; the caller rediscovers and replans afterward.
-  // Every saved window must still retain its identity and Space ownership.
+  // Once restart has been attempted, a saved window may have closed. Metadata
+  // restoration never moves windows, and layout requires a fresh plan. Retain
+  // the original checkpoint identities so a reused ID still fails closed.
   if (checkpoint.windows.some(saved => {
     const current = windows.find(w => w.id === saved.id);
+    if (!current && ['restart_attempted', 'restoring', 'completed'].includes(checkpoint.status)) return false;
     return !sameWindowIdentity(saved, current) || snapshot.spaces.find(s => s.index === current.space)?.uuid !== saved.spaceUuid;
   })) throw new Error('window identities or ownership changed during yabai recovery; layout was not attempted');
   if (snapshot.windows.some(w => w.nativeFullscreen)) throw new Error('native fullscreen appeared during yabai recovery');
@@ -82,6 +85,17 @@ export async function recoverYabai({ discover, query, mutate, persist, check, co
   delay = ms => new Promise(resolve => setTimeout(resolve, ms)) }) {
   let checkpoint = resume;
   const checkedDiscovery = async () => { await check(); const value = await discover(); await check(); return value; };
+  const continuity = snapshot => {
+    assertRecoveryContinuity(checkpoint, snapshot);
+    for (const saved of checkpoint.windows) {
+      if (snapshot.windows.some(window => window.id === saved.id)) continue;
+      checkpoint.disappearedWindows ||= [];
+      if (!checkpoint.disappearedWindows.some(window => window.id === saved.id)) {
+        checkpoint.disappearedWindows.push({ id: saved.id, app: saved.app, observedAt: snapshot.capturedAt });
+      }
+    }
+    return snapshot;
+  };
   if (!checkpoint) {
     const before = await checkedDiscovery();
     recoveryPreview(before);
@@ -109,7 +123,7 @@ export async function recoverYabai({ discover, query, mutate, persist, check, co
     await persist(checkpoint);
     const fresh = await checkedDiscovery();
     if (expectedSnapshot) assertServiceRecoveryInput(expectedSnapshot,fresh);
-    assertRecoveryContinuity(checkpoint, fresh);
+    continuity(fresh);
     if (checkpoint.spaces.some(s => {
       const current = fresh.spaces.find(c => c.uuid === s.uuid);
       return current.label !== s.label || current.index !== s.index;
@@ -120,17 +134,17 @@ export async function recoverYabai({ discover, query, mutate, persist, check, co
     await mutate(['--restart-service'], { type: 'restart_yabai', reversible: false }, async () => {
       for (let attempt = 0; attempt < 40; attempt++) {
         const snapshot = await checkedDiscovery();
-        if (snapshot.completeness === 'complete') { assertRecoveryContinuity(checkpoint, snapshot); return true; }
+        if (snapshot.completeness === 'complete') { continuity(snapshot); return true; }
         await consume('confirmation'); await delay(100);
       }
       throw new Error('yabai did not become available after restart; resume the saved recovery checkpoint');
     });
   }
   if (!['saved', 'restart_attempted', 'restoring', 'completed'].includes(checkpoint.status)) throw new Error('invalid yabai recovery checkpoint status');
-  assertRecoveryContinuity(checkpoint, await checkedDiscovery());
+  continuity(await checkedDiscovery());
   checkpoint.status = 'restoring'; await persist(checkpoint);
   for (const saved of checkpoint.spaces) {
-    let snapshot = assertRecoveryContinuity(checkpoint, await checkedDiscovery());
+    let snapshot = continuity(await checkedDiscovery());
     let space = snapshot.spaces.find(s => s.uuid === saved.uuid);
     if (space.label !== saved.label) {
       await mutate(['-m', 'space', String(space.index), '--label', saved.label],
@@ -142,12 +156,12 @@ export async function recoverYabai({ discover, query, mutate, persist, check, co
       if (typeof value !== 'string' || !/^\d+$/.test(value)) throw new Error('invalid saved Space settings');
       let args = ['-m', 'config', '--space', String(space.index), name];
       if ((await query(args)).trim() === value) continue;
-      snapshot = assertRecoveryContinuity(checkpoint, await checkedDiscovery());
+      snapshot = continuity(await checkedDiscovery());
       space = snapshot.spaces.find(s => s.uuid === saved.uuid);
       args = ['-m', 'config', '--space', String(space.index), name];
       await mutate([...args, value], {type:'restore_space_setting', spaceUuid:saved.uuid, name, value, reversible:false},
         async () => {
-          const fresh = assertRecoveryContinuity(checkpoint, await checkedDiscovery());
+          const fresh = continuity(await checkedDiscovery());
           return (await query(['-m','config','--space',String(fresh.spaces.find(s=>s.uuid===saved.uuid).index),name])).trim() === value;
         });
     }
@@ -158,13 +172,13 @@ export async function recoverYabai({ discover, query, mutate, persist, check, co
     await mutate(['-m','config','external_bar',checkpoint.externalBar], {type:'restore_external_bar',reversible:false},
       async () => (await query(['-m','config','external_bar'])).trim() === checkpoint.externalBar);
   }
-  const final = assertRecoveryContinuity(checkpoint, await checkedDiscovery());
+  const final = continuity(await checkedDiscovery());
   const focused = final.spaces.find(s => s.uuid === checkpoint.focusedSpaceUuid);
   if (focused && !focused.focused) {
     await mutate(['-m','space','--focus',String(focused.index)], {type:'restore_focus',spaceUuid:focused.uuid,reversible:false},
       async () => (await checkedDiscovery()).spaces.some(s=>s.uuid===focused.uuid && s.focused));
   }
-  const after = assertRecoveryContinuity(checkpoint, await checkedDiscovery());
+  const after = continuity(await checkedDiscovery());
   if (checkpoint.spaces.some(s => after.spaces.find(c => c.uuid === s.uuid)?.label !== s.label)) throw new Error('Space labels were not restored');
   for (const saved of checkpoint.spaces) {
     const space = after.spaces.find(s => s.uuid === saved.uuid);
@@ -173,7 +187,7 @@ export async function recoverYabai({ discover, query, mutate, persist, check, co
     }
   }
   if ((await query(['-m','config','external_bar'])).trim() !== checkpoint.externalBar) throw new Error('external bar setting was not restored');
-  const verified = assertRecoveryContinuity(checkpoint, await checkedDiscovery());
+  const verified = continuity(await checkedDiscovery());
   if (after.spaces.some(s => verified.spaces.find(v=>v.uuid===s.uuid)?.index !== s.index)
     || checkpoint.spaces.some(s => verified.spaces.find(v=>v.uuid===s.uuid)?.label !== s.label)) throw new Error('Space indexes or labels changed during recovery verification');
   checkpoint.status = 'completed'; checkpoint.finishedAt = new Date().toISOString(); await persist(checkpoint);

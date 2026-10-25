@@ -117,17 +117,64 @@ test('a recovery checkpoint resumes with an additional app window without anothe
   assert.equal(f.commands.filter(a=>a[0]==='--restart-service').length,1);
 });
 
-for(const fault of ['missing','moved','fullscreen'])test(`an additional window does not bypass ${fault} recovery protection`,async()=>{
+test('windows disappearing after restart do not strand metadata restoration',async()=>{
+  const f=fixture(),mutate=f.dependencies.mutate;
+  f.dependencies.mutate=async(args,intent,verify)=>mutate(args,intent,async()=>{
+    if(args[0]==='--restart-service')f.live.windows=[];
+    return verify();
+  });
+  const result=await recoverYabai(f.dependencies);
+  assert.equal(result.status,'completed');
+  assert.deepEqual(result.disappearedWindows.map(w=>({id:w.id,app:w.app})),[{id:10,app:'Dia'}]);
+  assert.equal(result.windows[0].id,10);
+  assert.deepEqual(f.live.spaces.map(s=>s.label),['work','personal']);
+  assert.equal(f.settings.A.left_padding,'16');assert.equal(f.settings.B.window_gap,'12');
+  assert.ok(!f.commands.some(a=>a[1]==='window'));
+});
+
+test('interrupted recovery resumes after an old window closes without another restart',async()=>{
+  const f=fixture(),mutate=f.dependencies.mutate;
+  f.dependencies.mutate=async(args,...rest)=>{await mutate(args,...rest);if(args[0]==='--restart-service')throw new Error('interrupted');};
+  await assert.rejects(recoverYabai(f.dependencies),/interrupted/);
+  f.live.windows=[];f.dependencies.mutate=mutate;
+  const result=await recoverYabai({...f.dependencies,resume:structuredClone(f.checkpoint)});
+  assert.equal(result.status,'completed');assert.equal(result.disappearedWindows.length,1);
+  assert.equal(f.commands.filter(a=>a[0]==='--restart-service').length,1);
+});
+
+test('a saved window disappearing before restart still stops recovery before mutation',async()=>{
+  const f=fixture(),persist=f.dependencies.persist;
+  f.dependencies.persist=async value=>{await persist(value);if(value.status==='saved')f.live.windows=[];};
+  await assert.rejects(recoverYabai(f.dependencies),/window identities or ownership changed/);
+  assert.deepEqual(f.commands,[]);
+});
+
+test('a disappeared ID reused during restoration is still rejected',async()=>{
+  const f=fixture(),mutate=f.dependencies.mutate,saved=structuredClone(f.live.windows[0]);
+  f.dependencies.mutate=async(args,intent,verify)=>mutate(args,intent,async()=>{
+    if(args[0]==='--restart-service')f.live.windows=[];
+    else f.live.windows=[{...saved,pid:101,space:2}];
+    return verify();
+  });
+  await assert.rejects(recoverYabai(f.dependencies),/window identities or ownership changed/);
+  assert.equal(f.checkpoint.status,'restoring');
+  assert.equal(f.checkpoint.windows[0].pid,100);
+  assert.ok(!f.commands.some(a=>a[1]==='window'));
+});
+
+for(const fault of ['moved','fullscreen','reused_id','partial'])test(`an additional window does not bypass ${fault} recovery protection`,async()=>{
   const f=fixture(),mutate=f.dependencies.mutate;
   f.dependencies.mutate=async(args,intent,verify)=>mutate(args,intent,async()=>{
     if(args[0]==='--restart-service') {
       f.live.windows.push({...f.live.windows[0],id:11,nativeFullscreen:fault==='fullscreen'});
-      if(fault==='missing')f.live.windows.shift();
       if(fault==='moved')f.live.windows[0].space=1;
+      if(fault==='reused_id')f.live.windows[0].pid++;
+      if(fault==='partial'){f.live.windows.shift();f.live.completeness='partial';}
     }
     return verify();
   });
-  await assert.rejects(recoverYabai(f.dependencies),/changed|fullscreen/);
+  await assert.rejects(recoverYabai(f.dependencies),fault==='partial'
+    ? /yabai did not become available after restart/ : /changed|fullscreen/);
   assert.deepEqual(f.commands,[['--restart-service']]);
 });
 

@@ -30,13 +30,14 @@ export function displayOrientation(display = {}) {
   return width > height ? 'wide' : 'tall';
 }
 
-export function describeDisplays(snapshot = {}, machine = {}) {
+export function describeDisplays(snapshot = {}, machine = {}, { includeIgnored = false } = {}) {
   const kinds = machine.displayKinds || {};
   const roleByUuid = new Map(Object.entries(machine.displayBindings || {}).map(([role, uuid]) => [uuid, role]));
-  return (snapshot.displays || []).map((display) => ({
+  return (snapshot.displays || []).filter(display => includeIgnored || kinds[display.uuid] !== 'ignored').map((display) => ({
     uuid: String(display.uuid || ''),
     role: roleByUuid.get(display.uuid) || display.role || null,
     kind: display.builtIn || display['is-built-in'] ? 'built_in' : kinds[display.uuid] === 'sidecar' ? 'sidecar' : 'external',
+    ...(kinds[display.uuid] === 'ignored' ? { ignored: true } : {}),
     orientation: displayOrientation(display),
     frame: clone(display.frame || {}),
     index: Number(display.index || 0)
@@ -44,7 +45,7 @@ export function describeDisplays(snapshot = {}, machine = {}) {
 }
 
 export function topologyKey(displays = []) {
-  return displays.map((display) => `${display.kind}:${display.orientation}`).sort().join('+') || 'none';
+  return displays.filter(display => !display.ignored).map((display) => `${display.kind}:${display.orientation}`).sort().join('+') || 'none';
 }
 
 function displayMatches(actual, expected, bindings = {}) {

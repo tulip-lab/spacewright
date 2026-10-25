@@ -1,6 +1,6 @@
 import { sameWindowIdentity } from './recovery.mjs';
 import { windowOccupiesSpace } from './finalization-policy.mjs';
-import { selectorResult,executionCensus } from './window-policy.mjs';
+import { selectorResult,assertWindowCensus } from './window-policy.mjs';
 import { geometryMatches } from './state-engine.mjs';
 
 export async function confirmWindowGeometry(verify, discover, {poll, check, delay=ms=>new Promise(resolve=>setTimeout(resolve,ms))}) {
@@ -23,9 +23,7 @@ function complete(snapshot) {
 export function validatePlanObjects(plan,snapshot) {
   complete(snapshot);
   if(plan.scope==='mode') {
-    const before=plan.preconditions.windows;
-    const current=executionCensus(snapshot.windows,plan.selectedWindows);
-    if(before.length!==current.length || before.some(w=>!sameWindowIdentity(w,current.find(window=>window.id===w.id))))throw new Error('global object census changed; replan required');
+    assertWindowCensus(plan.preconditions.windows,snapshot.windows,plan.selectedWindows);
   }
   for(const expected of plan.selectedWindows) {
     const current=snapshot.windows.find(w=>w.id===expected.id);
@@ -35,13 +33,13 @@ export function validatePlanObjects(plan,snapshot) {
 }
 function displayFor(snapshot,expected) {
   const display=snapshot.displays.find(d=>d.uuid===expected?.uuid);
-  if(!display || snapshot.displays.filter(d=>d.uuid===display.uuid).length!==1 || JSON.stringify(display.frame)!==JSON.stringify(expected.frame) || JSON.stringify(display.gridGeometry)!==JSON.stringify(expected.gridGeometry))throw new Error('planned display/grid geometry changed; replan required');
+  if(!display || display.ignored || snapshot.displays.filter(d=>d.uuid===display.uuid).length!==1 || JSON.stringify(display.frame)!==JSON.stringify(expected.frame) || JSON.stringify(display.gridGeometry)!==JSON.stringify(expected.gridGeometry))throw new Error('planned display/grid geometry changed; replan required');
   return display;
 }
 function spaceFor(snapshot,uuid,labels) {
   if(!uuid)throw new Error('planned Space UUID is missing; replan required');
   const space=snapshot.spaces.find(s=>s.uuid===uuid);
-  if(!space || snapshot.spaces.filter(s=>s.uuid===uuid).length!==1 || !labels.includes(space.label) || snapshot.spaces.filter(s=>s.label===space.label && space.label).length>1)throw new Error('planned Space identity/label changed; replan required');
+  if(!space || space.ignoredDisplay || snapshot.spaces.filter(s=>s.uuid===uuid).length!==1 || !labels.includes(space.label) || snapshot.spaces.filter(s=>s.label===space.label && space.label).length>1)throw new Error('planned Space identity/label changed; replan required');
   return space;
 }
 export async function executePinnedWorkspace(plan,workspaceId,{discover,mutate,createdSpaces={},registerCreated=async()=>{}}) {

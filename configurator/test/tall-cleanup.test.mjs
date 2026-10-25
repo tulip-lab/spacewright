@@ -39,7 +39,25 @@ for (const fault of ['unplanned', 'unjournaled', 'unknown', 'failed', 'unverifie
 test('an unplanned newly appearing target still blocks execution', () => {
   const { plan, snapshot } = fixture();
   plan.workspaces[0].targetSpace = null;
-  snapshot.spaces.push({ uuid: 'NEW', label: 'office_slides_tall' });
+  snapshot.spaces.push({ uuid: 'NEW', label: 'office_slides_tall', display: 1 });
+  snapshot.displays=[{index:1,uuid:'TALL'}];
   assert.throws(() => assertWorkspaceSpaceContinuity(plan, snapshot), /target Space appeared/);
-  assert.doesNotThrow(() => assertWorkspaceSpaceContinuity(plan, snapshot, [{ type: 'ensure_space', workspaceId: 'slides' }]));
+  assert.doesNotThrow(() => assertWorkspaceSpaceContinuity(plan, snapshot, [{ type: 'ensure_space', workspaceId: 'slides',targetDisplayUuid:'TALL',status:'verified_success',postcondition:{createdSpaceUuid:'NEW',targetDisplayUuid:'TALL'} }]));
+});
+
+
+for(const fault of ['unjournaled','failed','unknown','other-space','other-display','missing-proof'])test(`new target continuity rejects ${fault} creation evidence`,()=>{
+  const {plan,snapshot}=fixture();plan.workspaces[0].targetSpace=null;
+  snapshot.spaces.push({uuid:'NEW',label:'office_slides_tall',display:1});
+  snapshot.displays=[{index:1,uuid:'TALL'}];
+  const effect={type:'ensure_space',workspaceId:'slides',targetDisplayUuid:'TALL',status:'verified_success',postcondition:{createdSpaceUuid:'NEW',targetDisplayUuid:'TALL'}};
+  const effects=[effect];
+  assert.doesNotThrow(()=>assertWorkspaceSpaceContinuity(plan,snapshot,effects));
+  if(fault==='unjournaled')effects.length=0;
+  if(fault==='failed')effect.status='failed';
+  if(fault==='unknown')effect.status='attempted_unknown';
+  if(fault==='other-space')effect.postcondition.createdSpaceUuid='OTHER';
+  if(fault==='other-display')effect.postcondition.targetDisplayUuid='OTHER';
+  if(fault==='missing-proof')effect.postcondition=true;
+  assert.throws(()=>assertWorkspaceSpaceContinuity(plan,snapshot,effects),/target Space appeared/);
 });

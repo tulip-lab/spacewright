@@ -15,7 +15,7 @@ import { join } from 'node:path';
 import { execFile,execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createAutomationMonitor } from '../lib/automation-monitor.mjs';
-import { executePreparation } from '../lib/adapter-preparation.mjs';
+import { executePreparation, preparationsFor } from '../lib/adapter-preparation.mjs';
 import { withConfigurationWrite,stableRead,atomicText,generationDocument } from '../lib/config-store.mjs';
 import { spawn } from 'node:child_process';
 import { readSpaceLabelHints } from '../lib/space-label-history.mjs';
@@ -418,6 +418,20 @@ test('a uniquely selectable role does not recover other AX-less app surfaces',()
   assert.ok(make(value,config).plan.preparations.some(p=>p.type==='observe_space' && p.windows.some(w=>w.id===11)));
 });
 
+test('optional multi-window roles lay out known windows and warn about AX-less surfaces',()=>{
+  const value=raw(),config=starterConfig();
+  config.workspaces.coding.windows.editor.cardinality='many';
+  config.workspaces.coding.windows.editor.required=false;
+  value.windows.push({...value.windows[0],id:11,'has-ax-reference':false,'can-move':false,'can-resize':false});
+  const result=make(value,config);
+  assert.ok(result.plan.selectedWindows.some(w=>w.id===10));
+  assert.ok(!result.plan.selectedWindows.some(w=>w.id===11));
+  assert.ok(!result.plan.preparations.some(p=>p.type==='observe_space'));
+  assert.ok(result.comparison.drifts.some(d=>d.code==='optional_windows_unavailable' && d.windowIds.includes(11)));
+  value.windows.shift();
+  assert.ok(make(value,config).plan.preparations.some(p=>p.type==='observe_space'));
+});
+
 test('AX-less optional windows require Space observation before they can be declared missing',async()=>{
   const value=raw(),config=starterConfig();
   config.workspaces.coding.variants.solo.layout={type:'canvas',regions:[{role:'editor',grid:'1:2:0:0:1:1'},{role:'assistant',grid:'1:2:1:0:1:1'}]};
@@ -587,4 +601,73 @@ await journalMutation({stateRoot:root,runId,intent:{windowId:10,identity:{id:10}
     const journal=JSON.parse(await readFile(join(dir,'runs',`${runId}.json`),'utf8'));assert.equal(journal.status,'failed');assert.deepEqual(journal.effects.map(e=>e.windowId),[10]);assert.equal(journal.operations[0].status,'attempted_unknown');
     await replacement.release();
   }finally{child.kill('SIGKILL');await rm(dir,{recursive:true,force:true});}
+});
+
+
+test('AX observation follows the final shared-app owner and the target-Space preference',()=>{
+  const value=raw();
+  value.windows.push({...value.windows[0],id:11,space:2,'has-ax-reference':false,'can-move':false});
+  const snapshot=normalizeSnapshot(value,machine);
+  const role={role:'editor',appKey:'code',appNames:['Code'],required:true,selector:{movable:true}};
+  const owner={workspaceId:'coding',label:'coding_solo',windows:[role]};
+  const obsolete={workspaceId:'old',label:'old',windows:[{...role,cardinality:'many'}]};
+  assert.deepEqual(preparationsFor(snapshot,{workspaces:[obsolete,owner]}),[]);
+  value.windows.push({...value.windows[0],id:12,space:2});
+  assert.deepEqual(preparationsFor(normalizeSnapshot(value,machine),{workspaces:[owner]}),[]);
+  // Independent roles and an actual required multi-window owner still observe.
+  obsolete.windows[0].ownership='independent';
+  assert.ok(preparationsFor(snapshot,{workspaces:[obsolete,owner]}).some(p=>p.workspaceId==='old'));
+  owner.windows[0].cardinality='many';
+  assert.ok(preparationsFor(snapshot,{workspaces:[owner]}).some(p=>p.type==='observe_space'));
+});
+
+test('AX departure cannot reuse a stale snapshot to revisit a replaced window',async()=>{
+  const value=raw();value.spaces[0]['has-focus']=true;
+  Object.assign(value.windows[0],{'has-ax-reference':false,'can-move':false});
+  const snapshot=normalizeSnapshot(value,machine);
+  const desired={workspaces:[{workspaceId:'coding',label:'coding_solo',windows:[{role:'editor',appKey:'code',appNames:['Code'],required:true,selector:{movable:true}}]}]};
+  const preparation=preparationsFor(snapshot,desired)[0];
+  let reads=0;const commands=[];
+  await assert.rejects(executePreparation(preparation,{
+    discover:async()=>{const live=structuredClone(snapshot);if(reads++)live.windows[0].pid++;return live;},
+    command:async(...args)=>{commands.push(args);},poll:async()=>{},delay:async()=>{}
+  }),/observation window changed/);
+  assert.equal(commands.length,1);
+});
+
+
+for(const fault of ['new-window','closed-window','reused-id','reused-process','duplicate-window'])test(`global census rejects ${fault} before pinned mutation and names the changed objects`,async()=>{
+  const value=raw();
+  value.windows.push({...value.windows[0],id:11,pid:101,app:'Unrelated',processFingerprint:'old-process','is-minimized':true});
+  const {plan}=make(value,starterConfig(),{kind:'mode',id:'solo',mode:'solo'});
+  assert.ok(!plan.selectedWindows.some(w=>w.id===11));
+  const live=normalizeSnapshot(value,machine);
+  if(fault==='new-window')live.windows.push({...live.windows[1],id:12});
+  if(fault==='duplicate-window')live.windows.push({...live.windows[1]});
+  if(fault==='closed-window')live.windows.pop();
+  if(fault==='reused-id')live.windows[1].pid++;
+  if(fault==='reused-process')live.windows[1].processFingerprint='new-process';
+  let issued=0;
+  await assert.rejects(executePinnedWorkspace(plan,'coding',{discover:async()=>live,mutate:async()=>{issued++;}}),error=>{
+    assert.match(error.message,/global object census changed/);
+    const kind=fault==='new-window'?'added':fault==='closed-window'?'removed':fault==='duplicate-window'?'duplicates':'changed';
+    assert.deepEqual(error.censusChanges[kind].map(w=>w.id),[fault==='new-window'?12:11]);
+    assert.equal(error.message.includes('title'),false);
+    return true;
+  });
+  assert.equal(issued,0);
+});
+
+
+test('an inactive later workspace cannot steal AX recovery from the active shared-app owner',()=>{
+  const value=raw();value.windows.push({...value.windows[0],id:11,'has-ax-reference':false,'can-move':false});
+  const snapshot=normalizeSnapshot(value,machine);
+  const role={role:'editor',appKey:'code',appNames:['Code'],required:true,cardinality:'many',selector:{movable:true}};
+  const active={workspaceId:'coding',label:'coding_solo',windows:[role]};
+  const dormant={workspaceId:'dormant',label:'dormant',activation:{type:'windowPresent',role:'primary'},windows:[
+    {role:'primary',appKey:'missing',appNames:['Missing'],required:true,selector:{movable:true}},
+    {...role,required:false,cardinality:'one'}
+  ]};
+  const preparations=preparationsFor(snapshot,{workspaces:[active,dormant]});
+  assert.ok(preparations.some(p=>p.workspaceId==='coding' && p.windows.some(w=>w.id===11)));
 });
