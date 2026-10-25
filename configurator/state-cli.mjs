@@ -92,9 +92,10 @@ async function livePlan(target = parseTarget(), frozen = null, snapshot = null) 
   const normalizedTarget = value.resolution && target.kind === 'workspace' && !target.mode
     ? { ...target, mode: value.config.modes[value.portableConfig.hardwareProfiles[value.resolution.hardwareProfileId].setups[value.resolution.setupId].compatibilityMode] ? value.portableConfig.hardwareProfiles[value.resolution.hardwareProfileId].setups[value.resolution.setupId].compatibilityMode : null }
     : target;
-  const desired = buildDesiredState(value.config, value.runtime, normalizedTarget, value.snapshot);
-  if (flags['mode-transition'] && !value.displayPrepared) desired.orchestration.displayProfile = await transitionProfile(target.mode);
+  let desired = buildDesiredState(value.config, value.runtime, normalizedTarget, value.snapshot);
   const spaceLabelHints = await readSpaceLabelHints(stateRoot, desired, value.snapshot);
+  if (Object.keys(spaceLabelHints).length) desired = buildDesiredState(value.config, value.runtime, normalizedTarget, value.snapshot, { spaceLabelHints });
+  if (flags['mode-transition'] && !value.displayPrepared) desired.orchestration.displayProfile = await transitionProfile(target.mode);
   const comparison = compareState(value.snapshot, desired, value.machine, { spaceLabelHints });
   const plan = buildExecutionPlan(value.snapshot, desired, comparison, { displayPrepared: value.displayPrepared });
   return { ...value, desired, comparison, plan };

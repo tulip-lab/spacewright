@@ -125,7 +125,7 @@ function sourceWorkspaceId(config, snapshot) {
   ) === focusedLabel))?.[0] || null;
 }
 
-export function buildDesiredState(config, runtime, target = {}, snapshot = null) {
+export function buildDesiredState(config, runtime, target = {}, snapshot = null, options = {}) {
   const resolved = targetDefinition(config, target);
   const sourceWorkspace = sourceWorkspaceId(config, snapshot);
   const contextualRules = resolved.kind === 'workspace' ? [] : (runtime.modes?.[`work_${resolved.mode}`]?.contextual_apps || []);
@@ -208,7 +208,11 @@ export function buildDesiredState(config, runtime, target = {}, snapshot = null)
     runtimeSourceDigest: runtime.generated?.source_sha256 || null
   };
   if (snapshot && resolved.kind === 'mode') {
-    const selectedIds = new Set(compareState(snapshot, desired).matches.flatMap(m=>m.selectedWindowIds || []));
+    // Sandbox must use the same display bindings as the final comparison.
+    // Otherwise an unlabeled target Space cannot be inferred here, so an
+    // ambiguous app window can be assigned to both a workspace and Sandbox.
+    const displayBindings = Object.fromEntries(snapshot.displays.filter(display=>display.role).map(display=>[display.role,display.uuid]));
+    const selectedIds = new Set(compareState(snapshot, desired, {displayBindings}, options).matches.flatMap(m=>m.selectedWindowIds || []));
     const sandbox = sandboxWorkspace(snapshot, desired, runtime, selectedIds);
     if (sandbox) desired.workspaces.push(sandbox);
   }

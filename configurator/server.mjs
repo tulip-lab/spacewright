@@ -244,8 +244,9 @@ async function livePlan(config, payload) {
       target = { ...target, mode: config.hardwareProfiles[resolution.hardwareProfileId].setups[resolution.setupId].compatibilityMode };
     }
   }
-  const desired = buildDesiredState(effectiveConfig, compileV2(effectiveConfig), target, snapshot);
+  let desired = buildDesiredState(effectiveConfig, compileV2(effectiveConfig), target, snapshot);
   const spaceLabelHints = await readSpaceLabelHints(stateRoot, desired, snapshot);
+  if (Object.keys(spaceLabelHints).length) desired = buildDesiredState(effectiveConfig, compileV2(effectiveConfig), target, snapshot, { spaceLabelHints });
   const comparison = compareState(snapshot, desired, machine, { spaceLabelHints });
   const plan = buildExecutionPlan(snapshot, desired, comparison);
   return { validation, snapshot, desired, comparison, plan, resolution: resolution ? {
@@ -783,8 +784,9 @@ async function api(request, response, url) {
       : topology === 'solo' ? 'solo' : topology.startsWith('tall') ? 'tall' : topology.startsWith('wide') ? 'wide' : null;
     let reconciliation = null;
     if (validation.valid && !snapshot.unavailable && inferredMode && config?.modes?.[inferredMode] && snapshot.completeness === 'complete') {
-      const desired = buildDesiredState(config, compileV2(config), { kind: 'mode', id: inferredMode, mode: inferredMode }, snapshot);
+      let desired = buildDesiredState(config, compileV2(config), { kind: 'mode', id: inferredMode, mode: inferredMode }, snapshot);
       const spaceLabelHints = await readSpaceLabelHints(stateRoot, desired, snapshot);
+      if (Object.keys(spaceLabelHints).length) desired = buildDesiredState(config, compileV2(config), { kind: 'mode', id: inferredMode, mode: inferredMode }, snapshot, { spaceLabelHints });
       reconciliation = compareState(snapshot, desired, machine, { spaceLabelHints });
     }
     const runsRoot = join(stateRoot, 'runs');

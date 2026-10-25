@@ -240,6 +240,39 @@ test('mode Sandbox carries exact independent objects and geometry in the fixed p
   assert.ok(plan.actions.some(a=>a.type==='ensure_space' && a.workspaceId==='__sandbox'));
   assert.ok(plan.actions.some(a=>a.type==='resize_window' && a.windowId===99));
 });
+test('an unlabeled workspace Finder is not also assigned to Sandbox',()=>{
+  const config=starterConfig();
+  config.apps.finder={name:'Finder',match:{appNames:['Finder']}};
+  config.workspaces.review=structuredClone(config.workspaces.coding);
+  config.workspaces.review.spaceLabel='review';
+  config.workspaces.review.windows.editor.app='finder';
+  config.modes.solo.displays[0].workspaceOrder=['coding','review'];
+  const value=raw();
+  value.spaces=[{index:1,uuid:'HOME',display:1,label:''},{index:2,uuid:'REVIEW',display:1,label:''},{index:4,uuid:'CODING',display:1,label:''}];
+  value.windows[0].space=4;
+  value.windows.push(...[20,21].map((id,index)=>({...value.windows[0],id,app:'Finder',space:index?4:2})));
+  const {desired,comparison,plan}=make(value,config,{kind:'mode',id:'solo',mode:'solo'});
+  assert.deepEqual(desired.workspaces.find(w=>w.workspaceId==='__sandbox').windows.map(w=>w.windowId),[21]);
+  assert.equal(comparison.matches.find(m=>m.workspaceId==='review' && m.role==='editor').selectedWindowId,20);
+  assert.equal(plan.executable,true);
+});
+test('a recovered Space label excludes its selected window from Sandbox',()=>{
+  const config=starterConfig();
+  config.apps.finder={name:'Finder',match:{appNames:['Finder']}};
+  config.workspaces.coding.windows.editor.app='finder';
+  const value=raw();
+  value.spaces=[{index:1,uuid:'HOME',display:1,label:''},{index:2,uuid:'CODING',display:1,label:''},{index:3,uuid:'OTHER',display:1,label:''}];
+  value.windows=[20,21].map((id,index)=>({...raw().windows[0],id,app:'Finder',space:index?3:2}));
+  const snapshot=normalizeSnapshot(value,machine);
+  const target={kind:'mode',id:'solo',mode:'solo'};
+  const options={spaceLabelHints:{coding_solo:'CODING'}};
+  const desired=buildDesiredState(config,compileV2(config),target,snapshot,options);
+  const comparison=compareState(snapshot,desired,machine,options);
+  const plan=buildExecutionPlan(snapshot,desired,comparison);
+  assert.equal(comparison.matches.find(m=>m.workspaceId==='coding' && m.role==='editor').selectedWindowId,20);
+  assert.deepEqual(desired.workspaces.find(w=>w.workspaceId==='__sandbox').windows.map(w=>w.windowId),[21]);
+  assert.equal(plan.executable,true);
+});
 test('two portrait Sandbox windows preserve the Tall panel split through execution and verification',async()=>{
   const config=starterConfig();config.settings={tallTopPercent:49};
   for(const display of config.modes.tall.displays)display.role='primary';
