@@ -296,8 +296,9 @@ Primary read-only commands:
 `work_inventory` is the static workflow map. It records the top-level entries, module entries, managed apps, ownership policies, display entries, common helpers, and dependency boundaries in command output so the active system can be inspected without reading every function file.
 
 `yabai_doctor` is the dedicated yabai runtime check. Without options it is
-strictly read-only: it resolves the active binary and version, checks whether
-the required Homebrew HEAD build is active, confirms the loaded LaunchAgent is
+strictly read-only: it resolves the active binary and version, checks for the
+Homebrew HEAD build on macOS 26.6, warns that binary paths cannot prove Space
+compatibility on macOS 27 and later, confirms the loaded LaunchAgent is
 running, performs bounded display/Space/window queries, hashes the binary, and
 matches that hash against `sudo -n -l`. It does not load the scripting
 addition, restart a service, open System Settings, or create a Space.
@@ -306,11 +307,13 @@ addition, restart a service, open System Settings, or create a Space.
 dependency order is:
 
 ```text
-HEAD binary -> matching sudoers hash -> load scripting addition ->
+preserve macOS 27+ binary (or ensure HEAD on older macOS) -> matching sudoers hash -> load scripting addition ->
 restart loaded LaunchAgent -> Accessibility/query check ->
 temporary Space create/destroy probe -> work_doctor
 ```
 
+On macOS 27 and later, repair preserves the active yabai build and relies on
+the Space probe instead of replacing a compatible build with Homebrew HEAD.
 The sudoers candidate is validated with `visudo -cf` before installation and
 its temporary file is removed on success or failure. The Space probe destroys
 only one UUID proven absent from the pre-create snapshot and present in the

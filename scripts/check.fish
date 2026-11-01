@@ -27,6 +27,8 @@ fish --no-config tests/config-v3.fish
 or exit 1
 fish --no-config tests/config.fish
 or exit 1
+fish --no-config tests/yabai-doctor.fish
+or exit 1
 fish --no-config tests/install.fish
 or exit 1
 fish --no-config tests/release.fish

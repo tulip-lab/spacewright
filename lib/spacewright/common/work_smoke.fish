@@ -4024,6 +4024,10 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         work_reload >/dev/null; function workspace_execution_owned; return 0; end
         set -g __yabai_doctor_mutations
 
+        function __yabai_doctor_macos_version
+            echo 26.6
+        end
+
         function __yabai_doctor_binary_path
             echo /opt/homebrew/bin/yabai
         end
@@ -4289,6 +4293,10 @@ function work_smoke --description "Run read-only workspace smoke checks for help
         work_reload >/dev/null; function workspace_execution_owned; return 0; end
         set -g __yabai_doctor_head_phase stable
         set -g __yabai_doctor_brew_calls
+
+        function __yabai_doctor_macos_version
+            echo 26.6
+        end
 
         function __yabai_doctor_binary_path
             echo /opt/homebrew/bin/yabai
