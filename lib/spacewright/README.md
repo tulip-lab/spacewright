@@ -332,7 +332,7 @@ work_doctor
 | `work_smoke` | 检查 reload、command check、audit 和所有 dry-run 入口 |
 | `work_audit` | 检查 mode symmetry、ownership policy、helper coverage 和空 label 状态 |
 | `work_doctor` | 检查依赖、fish syntax、reload、只读 yabai query、display health 和 bad-window cache |
-| `yabai_doctor` | 只读检查 yabai binary/HEAD、LaunchAgent、query 和 sudoers SHA；显式 `--repair` 才修复 |
+| `yabai_doctor` | 只读检查 yabai binary、LaunchAgent、query 和 sudoers SHA；macOS 27+ 提示需通过修复探针验证 Space 操作；显式 `--repair` 才修复 |
 | `work_diagnostics` | 查看 display、labeled spaces、duplicate labels、empty spaces 和 bad-window cache |
 | `work_display_health [mode]` | 检查 primary/target display、外接屏位置、形状和 Dock 设置 |
 | `workspace_snapshot` | 一次查询并输出当前 displays、Spaces 和 windows JSON |
@@ -430,7 +430,8 @@ yabai_doctor
 yabai_doctor --repair
 ```
 
-修复模式会按依赖顺序检查或恢复 yabai HEAD、绑定当前 binary SHA-256 的
+修复模式在 macOS 26.6 检查或恢复 yabai HEAD；macOS 27+ 保留当前兼容版本，
+再按依赖顺序处理绑定当前 binary SHA-256 的
 sudoers 规则、scripting addition 和当前已加载的 LaunchAgent。服务恢复后，它只创建
 一个临时 Space，并且仅当能唯一识别该 Space 时才将其删除，最后运行
 `work_doctor`。它不会修改 SIP、重置 TCC、移动窗口、应用 display profile 或执行

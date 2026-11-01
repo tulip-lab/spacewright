@@ -50,10 +50,14 @@ function __yabai_doctor_head_required
     string match -rq '^[0-9]+$' -- "$minor"
     or return 1
 
-    test "$major" -gt 26
-    and return 0
-
     test "$major" -eq 26 -a "$minor" -ge 6
+end
+
+function __yabai_doctor_newer_macos
+    set -l major (string split . -- (__yabai_doctor_macos_version))[1]
+    string match -rq '^[0-9]+$' -- "$major"
+    or return 1
+    test "$major" -gt 26
 end
 
 function __yabai_doctor_loaded_service
@@ -124,10 +128,12 @@ function __yabai_doctor_check
     __yabai_doctor_ok "sha256=$hash"
     __yabai_doctor_ok "macOS=$macos_version"
 
-    if __yabai_doctor_head_active "$real_path"
+    if __yabai_doctor_newer_macos
+        __yabai_doctor_warn "macOS 27+ Space support cannot be inferred from the yabai binary path; run --repair to probe"
+    else if __yabai_doctor_head_active "$real_path"
         __yabai_doctor_ok "HEAD build active"
     else if __yabai_doctor_head_required
-        __yabai_doctor_fail "macOS 26.6 or newer requires the yabai HEAD Space fix"
+        __yabai_doctor_fail "macOS 26.6+ requires the yabai HEAD Space fix"
         set failed 1
     else
         __yabai_doctor_warn "stable yabai build active"
@@ -185,6 +191,15 @@ end
 
 function __yabai_doctor_ensure_head
     set -l path (__yabai_doctor_binary_path)
+    if __yabai_doctor_newer_macos
+        if test -n "$path"
+            echo "OK      preserve current yabai build on macOS 27+; Space probe will verify it"
+            return 0
+        end
+        echo "FAIL    install a macOS 27-compatible yabai build before repair" >&2
+        return 1
+    end
+
     if test -n "$path"
         set -l real_path (__yabai_doctor_real_path "$path")
         if __yabai_doctor_head_active "$real_path"
