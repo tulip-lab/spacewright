@@ -70,4 +70,26 @@ or exit 11
 not string match -q '*compiled runtime is missing or stale*' -- $doctor_output
 or exit 12
 
+printf '%s\n' '{"unavailable":false,"displays":[{"index":1,"uuid":"DISPLAY-WIDE-1234","frame":{"x":0,"y":0,"w":1920,"h":1200},"is-built-in":false}]}' > "$test_root/displays.json"
+command node "$package_root/configurator/setup-cli.mjs" confirm mac_mini single_wide \
+    "--config-root=$config_root" \
+    "--state-root=$state_root" \
+    "--snapshot=$test_root/displays.json" \
+    --model=Macmini9,1 >/dev/null
+or exit 13
+printf '%s\n' '#!/bin/sh' 'case "$3" in' \
+    '  --displays) printf "%s\n" '\''[{"index":1,"uuid":"DISPLAY-WIDE-1234","frame":{"x":0,"y":0,"w":1920,"h":1200},"is-built-in":false}]'\'' ;;' \
+    '  --spaces) printf "%s\n" '\''[{"index":1,"uuid":"SPACE-WIDE-1234","display":1,"label":"","windows":[],"has-focus":true}]'\'' ;;' \
+    '  --windows) printf "%s\n" '\''[]'\'' ;;' \
+    '  *) exit 2 ;;' \
+    'esac' > "$fake_bin/yabai"
+set doctor_output (work_doctor 2>&1)
+string match -q '*OK      workspace wide display present*' -- $doctor_output
+or begin
+    printf '%s\n' $doctor_output >&2
+    exit 14
+end
+not string match -q '*workspace tall display not connected*' -- $doctor_output
+or exit 15
+
 echo "OK      v3 hardware setup, compiled runtime freshness, and Fish planning"

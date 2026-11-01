@@ -146,18 +146,41 @@ function work_doctor --description "Run read-only workspace system checks"
         set -l display_count (echo $displays_json | ws_jq -r 'length')
         __work_doctor_ok "displays query count=$display_count"
 
-        set -l primary_uuid (get_workspace_primary_display_uuid 2>/dev/null)
-        if test -n "$primary_uuid"
-            set -l primary_present (echo $displays_json | ws_jq -r --arg uuid "$primary_uuid" 'any(.[]; .uuid==$uuid)')
-            if test "$primary_present" = "true"
-                __work_doctor_ok "workspace primary display present"
-            else
-                __work_doctor_fail "workspace primary display not connected: $primary_uuid"
+        if test -r (spacewright_config_v3_file)
+            set -l machine_file "$SPACEWRIGHT_STATE_ROOT/machine.json"
+            set -l active_roles
+            if test -r "$machine_file"
+                set active_roles (jq -r --slurpfile machine "$machine_file" '
+                    .hardwareProfiles[$machine[0].hardwareProfile].setups[$machine[0].activeSetup].lanes[]?.role // empty
+                ' (spacewright_config_v3_file) 2>/dev/null)
             end
-        else if test "$display_count" -eq 1
-            __work_doctor_ok "workspace primary display implicit from single display"
+            if test (count $active_roles) -eq 0
+                __work_doctor_fail "active display setup has no roles to check"
+            else
+                for role in $active_roles
+                    set -l role_uuid (jq -r --arg role "$role" '.displayBindings[$role] // empty' "$machine_file" 2>/dev/null)
+                    set -l role_present (echo $displays_json | ws_jq -r --arg uuid "$role_uuid" 'any(.[]; .uuid==$uuid)')
+                    if test -n "$role_uuid" -a "$role_present" = true
+                        __work_doctor_ok "workspace $role display present"
+                    else
+                        __work_doctor_fail "workspace $role display not connected"
+                    end
+                end
+            end
         else
-            __work_doctor_fail "workspace primary display UUID is not configured"
+            set -l primary_uuid (get_workspace_primary_display_uuid 2>/dev/null)
+            if test -n "$primary_uuid"
+                set -l primary_present (echo $displays_json | ws_jq -r --arg uuid "$primary_uuid" 'any(.[]; .uuid==$uuid)')
+                if test "$primary_present" = "true"
+                    __work_doctor_ok "workspace primary display present"
+                else
+                    __work_doctor_fail "workspace primary display not connected: $primary_uuid"
+                end
+            else if test "$display_count" -eq 1
+                __work_doctor_ok "workspace primary display implicit from single display"
+            else
+                __work_doctor_fail "workspace primary display UUID is not configured"
+            end
         end
     else
         __work_doctor_fail "could not query yabai displays"
