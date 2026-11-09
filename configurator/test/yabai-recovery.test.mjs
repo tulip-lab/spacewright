@@ -290,7 +290,7 @@ test('AX diagnostics name affected apps and windows and use a distinct recovery 
 test('an app minimum size reports the exact window and requested/actual geometry',async()=>{
   const value=snapshot(),config=starterConfig(),machine={displayBindings:{primary:'D'}};
   value.displays[0].frame.h=800;value.spaces[0].label='coding_solo';value.spaces[0].windows=[10];value.spaces[1].windows=[];
-  Object.assign(value.windows[0],{app:'Code',movable:true,resizable:true});
+  Object.assign(value.windows[0],{app:'Code',movable:true,resizable:true,hasAxReference:true});
   config.workspaces.coding.variants.solo.layout={type:'canvas',regions:[{role:'editor',grid:'2:1:0:0:1:1'}]};
   const desired=buildDesiredState(config,compileV2(config),{kind:'workspace',id:'coding',mode:'solo'},value);
   const plan=buildExecutionPlan(value,desired,compareState(value,desired,machine));
