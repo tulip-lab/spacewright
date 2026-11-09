@@ -51,6 +51,13 @@ test('a later blank Space is removed when the primary lane has no leading Home',
   assert.match(output, /\["TARGET","CUSTOM","ONLY"\]/);
 });
 
+test('an explicit UUID filter leaves other empty Spaces untouched', () => {
+  const output = cleanup('selected');
+  assert.match(output, /status=0/);
+  assert.match(output, /\["HOME","TARGET","EMPTY","CUSTOM","ONLY","EXTRA"\]/);
+  assert.equal((output.match(/DESTROY=/g) || []).length, 1);
+});
+
 test('workspace shortcut no-op preserves target-only scope even when a global cleanup hook exists', () => {
   for (const failure of [false, true]) {
     const root = mkdtempSync(join(tmpdir(), 'spacewright-shortcut-test-'));

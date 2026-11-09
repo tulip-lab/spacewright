@@ -11,8 +11,11 @@ function spaceObservations(snapshot,desired,owners) {
   const spaces=new Map();
   for(const workspace of desired.workspaces)for(const role of workspace.windows) {
     if(role.ownership!=='independent' && owners.get(role.appKey)!==workspace.workspaceId)continue;
-    // A unique one-window selection, or an optional multi-window role with
-    // known selectable windows, need not recover other AX-less app surfaces.
+    // An inaccessible optional window must not block all other roles or
+    // trigger a service restart. Keep it in the occupancy census and report
+    // it as unavailable; a later run can select it once AX access returns.
+    if(!role.required)continue;
+    // A unique one-window selection need not recover other AX-less app surfaces.
     // Keep unknown surfaces in discovery and occupancy checks.
     const selection=selectRole(snapshot.windows,role,{targetSpace:snapshot.spaces.find(s=>s.label===workspace.label && !s.ignoredDisplay)?.index});
     if((role.cardinality!=='many' || !role.required) && !selection.ambiguous && selection.selected.length

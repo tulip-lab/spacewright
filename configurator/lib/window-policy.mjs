@@ -74,7 +74,7 @@ export function selectorResult(window, desired) {
 
 export function selectRole(windows, desired, { used = [], targetSpace = null } = {}) {
   const usedIds = new Set(used);
-  const eligible = windows.filter((w) => selectorResult(w, desired).matches && !usedIds.has(w.id)).sort((a,b) => a.id-b.id);
+  const eligible = windows.filter((w) => w.hasAxReference !== false && selectorResult(w, desired).matches && !usedIds.has(w.id)).sort((a,b) => a.id-b.id);
   const preferred = eligible.filter((w) => w.space === targetSpace);
   const ambiguous = (desired.cardinality || 'one') === 'one' && eligible.length > 1 && preferred.length !== 1;
   return { eligible, preferred, ambiguous, selected: ambiguous ? [] : desired.cardinality === 'many' ? eligible : [preferred[0] || eligible[0]].filter(Boolean) };

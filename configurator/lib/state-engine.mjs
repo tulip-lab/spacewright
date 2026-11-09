@@ -374,15 +374,15 @@ export function compareState(snapshot, desired, machine = {}, options = {}) {
         rejected: candidates.filter(({ window, result }) => !result.matches && desiredWindow.appNames.includes(window.app)).map(({ window, result }) => ({ windowId: window.id, reasons: result.reasons }))
       });
       if (ambiguous) drifts.push(drift('window_match_ambiguous', desiredWindow.required ? 'blocker' : 'warning', workspace, { role: desiredWindow.role, candidateWindowIds: eligible.map(({ window }) => window.id) }));
-      if (!selected.length) {
-        drifts.push(drift(desiredWindow.required ? 'required_window_missing' : 'optional_window_missing', desiredWindow.required ? 'blocker' : 'warning', workspace, { role: desiredWindow.role, appKey: desiredWindow.appKey }));
-        continue;
-      }
-      if (!desiredWindow.required && cardinality === 'many') {
+      if (!desiredWindow.required) {
         const unavailable = snapshot.windows.filter(window => desiredWindow.appNames.includes(window.app)
           && window.hasAxReference === false && window.frameVerified && !window.minimized && !window.sticky);
         if (unavailable.length) drifts.push(drift('optional_windows_unavailable', 'warning', workspace,
           { role: desiredWindow.role, windowIds: unavailable.map(window => window.id) }));
+      }
+      if (!selected.length) {
+        drifts.push(drift(desiredWindow.required ? 'required_window_missing' : 'optional_window_missing', desiredWindow.required ? 'blocker' : 'warning', workspace, { role: desiredWindow.role, appKey: desiredWindow.appKey }));
+        continue;
       }
       for (const window of selected) usedWindowIds.add(window.id);
       for (const window of selected) {
@@ -422,7 +422,12 @@ export function compareState(snapshot, desired, machine = {}, options = {}) {
   }
   drifts.push(...cleanupCandidates(snapshot, desired,new Set(activeWorkspaces.map(w=>w.workspaceId))));
   for (const space of emptyCleanupSpaces(snapshot, desired, bindings)) {
-    if (reservedSpaceUuids.has(space.uuid) || activeWorkspaces.some(w=>w.label===space.label)) continue;
+    if (reservedSpaceUuids.has(space.uuid)) {
+      const workspace = activeWorkspaces.find(w=>resolvedSpaces.get(w.workspaceId)?.uuid===space.uuid);
+      drifts.push(drift('empty_space_reserved_for_label', 'warning', workspace, {spaceUuid:space.uuid,spaceIndex:space.index}));
+      continue;
+    }
+    if (activeWorkspaces.some(w=>w.label===space.label)) continue;
     drifts.push({
       code: 'empty_space_cleanup_required',
       severity: 'change',

@@ -44,6 +44,7 @@ switch "$scenario"
 end
 set -l flags
 test "$scenario" = dry_run; and set flags --dry-run
+test "$scenario" = selected; and set flags --uuid=BLANK
 workspace_cleanup_after_shortcut $flags
 echo status=$status
 echo $spaces | jq -c '[.[].uuid]'

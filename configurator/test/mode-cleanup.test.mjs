@@ -63,6 +63,7 @@ test('all cleanup preserves an empty unlabeled Space reserved for label restorat
   f.snapshot.windows.find(w=>w.app==='MAIL').space=1;
   const comparison=compareState(f.snapshot,f.desired,f.machine,{spaceLabelHints:{mail_tall:'MAIL'}});
   assert.ok(comparison.drifts.some(d=>d.code==='space_label_missing' && d.spaceUuid==='MAIL'));
+  assert.ok(comparison.drifts.some(d=>d.code==='empty_space_reserved_for_label' && d.spaceUuid==='MAIL' && d.workspaceId==='mail'));
   assert.ok(!comparison.drifts.some(d=>d.code==='empty_space_cleanup_required' && d.spaceUuid==='MAIL'));
   const plan=buildExecutionPlan(f.snapshot,f.desired,comparison);
   assert.ok(!plan.actions.some(a=>a.type==='remove_empty_space' && a.spaceUuid==='MAIL'));

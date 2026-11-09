@@ -43,6 +43,10 @@ fresh UUID lookup, never cached Space indexes. A new immutable plan is required
 before any window layout. Persistent AX failure stops without a second restart.
 Other errors, cancellation and total-deadline expiry never trigger recovery.
 A real native window with missing AX information still occupies its Space for cleanup.
+An optional window without an AX reference is reported as unavailable and is
+not arranged until a later run can select it. It does not trigger Space
+observation or a yabai restart, so other available roles can still be arranged.
+Required windows retain the bounded observation and recovery path.
 For an optional multi-window role with selectable AX windows, those known windows
 can be laid out while other AX-less surfaces produce `optional_windows_unavailable`
 warnings. Required multi-window roles, and optional roles without any selectable
