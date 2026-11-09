@@ -1,8 +1,12 @@
 function workspace_cleanup_after_shortcut --description "Remove empty managed Spaces after a successful shortcut, including a layout no-op"
-    argparse dry-run -- $argv
+    argparse dry-run 'uuid=+' -- $argv
     or return 2
-    if not set -q _flag_dry_run; and not workspace_execution_owned
-        command node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/execution-cli.mjs" exec fish --no-config -c 'source "$SPACEWRIGHT_PACKAGE_ROOT/conf.d/spacewright.fish"; or exit 1; source "$SPACEWRIGHT_ROOT/common/workspace_cleanup_after_shortcut.fish"; workspace_cleanup_after_shortcut'
+    if not set -q _flag_dry_run; and not workspace_execution_owned 2>/dev/null
+        set -l selected
+        for uuid in $_flag_uuid
+            set -a selected --uuid=$uuid
+        end
+        command node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/execution-cli.mjs" exec fish --no-config -c 'source "$SPACEWRIGHT_PACKAGE_ROOT/conf.d/spacewright.fish"; or exit 1; source "$SPACEWRIGHT_ROOT/common/workspace_cleanup_after_shortcut.fish"; workspace_cleanup_after_shortcut $argv' -- $selected
         return $status
     end
 
@@ -49,6 +53,9 @@ function workspace_cleanup_after_shortcut --description "Remove empty managed Sp
     for candidate in $candidates
         set -l fields (string split \t -- "$candidate")
         set -l uuid $fields[1]
+        if set -q _flag_uuid; and not contains -- "$uuid" $_flag_uuid
+            continue
+        end
         set -l live_spaces (ws_query_spaces workspace_cleanup_after_shortcut "before-$uuid")
         or return 1
         set -l live_windows (ws_query_windows workspace_cleanup_after_shortcut "before-$uuid")

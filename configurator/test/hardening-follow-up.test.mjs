@@ -462,29 +462,22 @@ test('optional multi-window roles lay out known windows and warn about AX-less s
   assert.ok(!result.plan.preparations.some(p=>p.type==='observe_space'));
   assert.ok(result.comparison.drifts.some(d=>d.code==='optional_windows_unavailable' && d.windowIds.includes(11)));
   value.windows.shift();
-  assert.ok(make(value,config).plan.preparations.some(p=>p.type==='observe_space'));
+  const unavailable=make(value,config);
+  assert.ok(!unavailable.plan.preparations.some(p=>p.type==='observe_space'));
+  assert.ok(unavailable.comparison.drifts.some(d=>d.code==='optional_windows_unavailable' && d.windowIds.includes(11)));
 });
 
-test('AX-less optional windows require Space observation before they can be declared missing',async()=>{
+test('AX-less optional windows warn without blocking other roles or triggering recovery',()=>{
   const value=raw(),config=starterConfig();
   config.workspaces.coding.variants.solo.layout={type:'canvas',regions:[{role:'editor',grid:'1:2:0:0:1:1'},{role:'assistant',grid:'1:2:1:0:1:1'}]};
   value.spaces[0]['has-focus']=true;
-  value.windows.push({...value.windows[0],id:11,pid:101,app:'ChatGPT','has-ax-reference':false,'can-move':false,'can-resize':false});
+  value.windows.push({...value.windows[0],id:11,pid:101,app:'ChatGPT','has-ax-reference':false,'can-move':true,'can-resize':true});
   const {plan,comparison}=make(value,config);
-  const preparation=plan.preparations[0];
-  assert.equal(plan.executable,true);assert.equal(preparation.type,'observe_space');
-  assert.ok(comparison.drifts.some(d=>d.code==='window_ax_reference_missing'));
-  assert.equal(preparation.spaceUuid,'S');assert.equal(preparation.returnSpaceUuid,'S');
-  assert.deepEqual(preparation.windows.map(w=>w.id),[11]);
-  assert.ok(plan.actions.some(a=>a.type==='prepare_adapter'));
-  let command;
-  const result=await executePreparation(preparation,{
-    discover:async()=>normalizeSnapshot(value,machine),
-    command:async(...args)=>{command=args;Object.assign(value.windows[1],{'has-ax-reference':true,'can-move':true,'can-resize':true});},
-    poll:async()=>{},delay:async()=>{}
-  });
-  assert.deepEqual(command,['yabai',['-m','space','--focus','1']]);
-  assert.deepEqual(result.after.map(w=>w.id),[11]);
+  assert.equal(plan.executable,true);
+  assert.ok(!plan.preparations.some(p=>p.type==='observe_space'));
+  assert.ok(comparison.drifts.some(d=>d.code==='optional_windows_unavailable' && d.windowIds.includes(11)));
+  assert.ok(plan.selectedWindows.some(w=>w.id===10));
+  Object.assign(value.windows[1],{'has-ax-reference':true,'can-move':true,'can-resize':true});
   const next=make(value,config);
   assert.equal(next.plan.preparations.length,0);
   assert.ok(next.plan.selectedWindows.some(w=>w.id===11));
@@ -492,6 +485,8 @@ test('AX-less optional windows require Space observation before they can be decl
 });
 test('Space observation batches shared app roles and refuses changed identities or ineffective focus',async()=>{
   const value=raw(),config=starterConfig();
+  config.workspaces.coding.windows.assistant.required=true;
+  config.workspaces.coding.variants.solo.layout=structuredClone(config.workspaces.coding.variants.wide.layout);
   for(const w of value.windows)Object.assign(w,{'has-ax-reference':false,'can-move':false,'can-resize':false});
   config.workspaces.coding.windows.editor.selector={movable:true,role:'AXWindow',non_empty_title:true};
   value.windows.push({...value.windows[0],id:11,app:'ChatGPT'});
