@@ -146,3 +146,10 @@ the shared controller without applying a physical display profile. Explicit
 `mode solo/wide/tall` retains the display-changing behavior described above.
 Mode-free `spacewright workspace ID` resolves the same setup without saving or
 activating machine state first; its dry run includes the actual target-scoped plan.
+
+If a window opens, closes, or changes identity during execution, the object
+check stops the transition because its plan may no longer be safe. Earlier
+actions may already have completed. Once the desktop has settled, run
+`spacewright mode auto --dry-run` to inspect the remaining changes, then run
+`spacewright mode auto` again to create and apply a fresh plan. The check also
+applies to windows outside the selected workspaces.

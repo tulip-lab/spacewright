@@ -26,6 +26,26 @@ export async function processIdentity(pid) {
   try { return (await exec('ps', ['-p', String(pid), '-o', 'lstart=', '-o', 'command='], { timeout: 2000 })).stdout.trim(); }
   catch { return null; }
 }
+export async function processIdentities(pids) {
+  const unique=[...new Set(pids.filter(pid=>Number.isInteger(pid) && pid>1))];
+  const identities=new Map(unique.map(pid=>[pid,null]));
+  for(let offset=0;offset<unique.length;offset+=64) {
+    const batch=unique.slice(offset,offset+64);
+    try {
+      const {stdout}=await exec('ps',['-p',batch.join(','),'-o','pid=','-o','lstart=','-o','command='],{timeout:2000,maxBuffer:1024*1024});
+      const seen=new Set();
+      for(const line of stdout.split('\n').filter(Boolean)) {
+        const match=line.match(/^\s*(\d+)\s+(.+\S)\s*$/);
+        if(!match || !identities.has(Number(match[1])) || seen.has(Number(match[1])))throw new Error('invalid batched process identity');
+        seen.add(Number(match[1]));identities.set(Number(match[1]),match[2]);
+      }
+    } catch {
+      // Preserve the previous per-PID behavior if ps cannot return a sound batch.
+      await Promise.all(batch.map(async pid=>identities.set(pid,await processIdentity(pid))));
+    }
+  }
+  return identities;
+}
 export function signalGroup(pid, signal = 'SIGTERM') {
   if (!Number.isInteger(pid) || pid <= 1) return;
   try { process.kill(-pid, signal); } catch (error) { if (error.code !== 'ESRCH') throw error; }

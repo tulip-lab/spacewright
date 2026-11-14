@@ -483,6 +483,19 @@ test('AX-less optional windows warn without blocking other roles or triggering r
   assert.ok(next.plan.selectedWindows.some(w=>w.id===11));
   assert.ok(next.plan.actions.some(a=>a.type==='resize_window' && a.windowId===11));
 });
+test('reports overlapping selected window regions without rejecting intentional overlays',()=>{
+  const value=raw(),config=starterConfig();
+  value.windows.push({...value.windows[0],id:11,pid:101,app:'ChatGPT'});
+  const variant=config.workspaces.coding.variants.solo;
+  variant.layout={type:'canvas',regions:[{role:'editor',grid:'1:3:0:0:2:1'},{role:'assistant',grid:'1:2:1:0:1:1'}]};
+  const overlap=make(value,config);
+  const warning=overlap.comparison.drifts.find(d=>d.code==='window_layout_overlap');
+  assert.deepEqual(warning?.roles,['editor','assistant']);
+  assert.equal(warning.severity,'warning');
+  assert.equal(overlap.plan.executable,true);
+  variant.layout.regions[1].grid='1:3:2:0:1:1';
+  assert.ok(!make(value,config).comparison.drifts.some(d=>d.code==='window_layout_overlap'));
+});
 test('Space observation batches shared app roles and refuses changed identities or ineffective focus',async()=>{
   const value=raw(),config=starterConfig();
   config.workspaces.coding.windows.assistant.required=true;
@@ -678,6 +691,7 @@ for(const fault of ['new-window','closed-window','reused-id','reused-process','d
   let issued=0;
   await assert.rejects(executePinnedWorkspace(plan,'coding',{discover:async()=>live,mutate:async()=>{issued++;}}),error=>{
     assert.match(error.message,/global object census changed/);
+    assert.match(error.message,/earlier actions may already have completed.*rerun the same command/);
     const kind=fault==='new-window'?'added':fault==='closed-window'?'removed':fault==='duplicate-window'?'duplicates':'changed';
     assert.deepEqual(error.censusChanges[kind].map(w=>w.id),[fault==='new-window'?12:11]);
     assert.equal(error.message.includes('title'),false);

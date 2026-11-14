@@ -1,10 +1,25 @@
-import { processIdentity, runBounded } from './execution-coordinator.mjs';
+import { processIdentities } from './execution-coordinator.mjs';
 import { normalizeSnapshot } from './state-engine.mjs';
 import { existsSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 const packageRoot=fileURLToPath(new URL('../..',import.meta.url));
-export async function discoverGridGeometry(displays,spaces,{executable='yabai',deadline=Date.now()+5000,signal,run=runBounded,onWindowFrames=()=>{}}={}) {
+const execFileAsync=promisify(execFile);
+async function runReadOnly(executable,args,{deadline=Date.now()+5000,signal}={}) {
+  if(signal?.aborted)throw signal.reason || new Error('cancelled');
+  const timeout=deadline-Date.now();
+  if(timeout<=0)throw Object.assign(new Error('discovery deadline exceeded'),{code:'SPACEWRIGHT_TIMEOUT'});
+  try {
+    const {stdout,stderr}=await execFileAsync(executable,args,{timeout,killSignal:'SIGKILL',signal,maxBuffer:10*1024*1024});
+    return {code:0,stdout,stderr};
+  } catch(error) {
+    if(signal?.aborted)throw signal.reason || error;
+    return {code:error.killed?124:error.code || 1,stdout:error.stdout || '',stderr:error.stderr || error.message};
+  }
+}
+export async function discoverGridGeometry(displays,spaces,{executable='yabai',deadline=Date.now()+5000,signal,run=runReadOnly,onWindowFrames=()=>{}}={}) {
   // Fixture/query providers may already supply geometry or omit native display
   // IDs. Native yabai always supplies IDs; its usable frame must be discovered.
   if(!displays.some(d=>d.id && !d.gridGeometry))return displays;
@@ -57,7 +72,7 @@ export function applyNativeWindowFrames(windows,frames) {
 export async function discoverState(machine = {}, { deadline = Date.now() + 15000, signal, executable = 'yabai' } = {}) {
   const capturedAt = new Date().toISOString();
   const queryValue = async (...args) => {
-    const result = await runBounded(executable, ['-m', 'query', ...args], { deadline: Math.min(deadline, Date.now() + 5000), signal });
+    const result = await runReadOnly(executable, ['-m', 'query', ...args], { deadline: Math.min(deadline, Date.now() + 5000), signal });
     if (result.code) throw new Error(result.stderr || `query ${args.join(' ')} failed (${result.code})`);
     return JSON.parse(result.stdout);
   };
@@ -86,11 +101,11 @@ export async function discoverState(machine = {}, { deadline = Date.now() + 1500
   // Keep the authoritative collections independently settled. Displays and
   // Spaces have a bounded single-object fallback because some yabai builds can
   // return a truncated collection while indexed queries remain healthy.
-  const results=[];
-  for(const operation of [()=>queryCollection('displays','display',16),()=>queryCollection('spaces','space',64),()=>query('--windows')]) {
-    try {results.push({status:'fulfilled',value:await operation()});}
-    catch(reason) {results.push({status:'rejected',reason});}
-  }
+  const results=await Promise.allSettled([
+    queryCollection('displays','display',16),
+    queryCollection('spaces','space',64),
+    query('--windows')
+  ]);
   let displays = results[0].status === 'fulfilled' ? results[0].value : [];
   const spaces = results[1].status === 'fulfilled' ? results[1].value : [];
   let windows = results[2].status === 'fulfilled' ? results[2].value : [];
@@ -110,7 +125,7 @@ export async function discoverState(machine = {}, { deadline = Date.now() + 1500
   const geometry=applyNativeWindowFrames(windows,nativeFrames);
   windows=geometry.windows;missingQueries.push(...geometry.missing);
   const pids = [...new Set(windows.map((w) => Number(w.pid)).filter((pid) => pid > 1))];
-  const processes = new Map(await Promise.all(pids.map(async (pid) => [pid, await processIdentity(pid)])));
+  const processes = await processIdentities(pids);
   windows = windows.map((w) => ({ ...w, processFingerprint: processes.get(Number(w.pid)) || null }));
   const completeness = missingQueries.length ? (displays.length || spaces.length || windows.length ? 'partial' : 'unavailable') : 'complete';
   return normalizeSnapshot({ capturedAt, displays, spaces, windows, completeness, missingQueries,

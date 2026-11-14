@@ -434,6 +434,63 @@ for(const scenario of ['replace','reuse','fail','ineffective','timeout'])test(`e
   }
  }finally{await f.close();}
 });
+for(const recovered of [true,false])test(`optional Outlook recovery ${recovered?'replans the shared layout':'reports incomplete mail layout'}`,async()=>{
+ const config=starterConfig();
+ config.apps.outlook={name:'Outlook',match:{appNames:['Microsoft Outlook']}};
+ config.workspaces.coding.windows={primary:{app:'code',required:true},helper:{app:'outlook',required:false}};
+ for(const mode of ['solo','wide','tall'])config.workspaces.coding.variants[mode]={
+  layout:{type:'canvas',regions:[{role:'primary',grid:'1:2:0:0:1:1'},{role:'helper',grid:'1:2:1:0:1:1'}]},
+  runtime:{runner:'primary_helper',primaryAloneLayout:[{role:'primary',grid:'1:1:0:0:1:1'}]}
+ };
+ const f=await fixture(config);try{
+  await f.setData(d=>{
+   d.spaces.push({index:2,uuid:'OUTLOOK-SPACE',display:1,label:'support_solo',type:'float'});
+   d.windows[0].frame={x:0,y:0,w:1200,h:900};
+   d.windows.push({...structuredClone(d.windows[0]),id:11,pid:101,app:'Microsoft Outlook',title:'',role:'',subrole:'',space:2,
+    frame:{x:600,y:0,w:600,h:900},'has-ax-reference':false,'can-move':false,'can-resize':false});
+   d.windows.push({...structuredClone(d.windows[0]),id:12,pid:102,app:'Dia',title:'Diagram',space:2});
+  });
+  await writeFile(join(f.directory,'bin','osascript'),`#!${process.execPath}\nconst fs=require('fs');const d=JSON.parse(fs.readFileSync(process.env.MOCK_DATA,'utf8'));fs.appendFileSync(process.env.MOCK_LOG,JSON.stringify(['osascript'])+'\\n');${recovered?"Object.assign(d.windows.find(w=>w.id===11),{'has-ax-reference':true,'can-move':true,'can-resize':true,title:'Inbox',role:'AXWindow'});":""}fs.writeFileSync(process.env.MOCK_DATA,JSON.stringify(d));\n`,{mode:0o755});
+  const preview=JSON.parse((await f.cli(['apply','coding','solo','--dry-run','--json'])).stdout);
+  assert.equal(preview.plan.preparations.length,1);
+  assert.deepEqual(await f.commands(),[]);
+  let applied;
+  try {applied=JSON.parse((await f.cli(['apply','coding','solo','--json'])).stdout);}
+  catch(error) {applied=JSON.parse(error.stdout);}
+  assert.equal(applied.status,recovered?'completed':'failed');
+  assert.equal((await f.commands()).filter(args=>args[0]==='osascript').length,1);
+  const journal=JSON.parse(await readFile(applied.journal,'utf8'));
+  assert.equal(journal.planRelations[0].phase,'preparation');
+  if(recovered)assert.ok(journal.plan.selectedWindows.some(w=>w.role==='helper' && w.id===11));
+  else {
+   assert.match(applied.error,/Outlook has no window that yabai can control/);
+   assert.ok((await f.commands()).some(args=>args[1]==='space' && args[2]==='--focus'));
+   assert.equal((JSON.parse(await readFile(f.dataFile,'utf8'))).windows.find(w=>w.id===11).space,2);
+  }
+  assert.equal((JSON.parse(await readFile(f.dataFile,'utf8'))).windows.find(w=>w.id===12).space,2);
+ }finally{await f.close();}
+});
+for(const recovered of [true,false])test(`running Outlook without a window ${recovered?'opens and joins mail layout':'fails visibly after one reopen'}`,async()=>{
+ const config=starterConfig();
+ config.apps.outlook={name:'Outlook',match:{appNames:['Microsoft Outlook']}};
+ config.workspaces.coding.windows={primary:{app:'code',required:true},helper:{app:'outlook',required:false}};
+ for(const mode of ['solo','wide','tall'])config.workspaces.coding.variants[mode]={
+  layout:{type:'canvas',regions:[{role:'primary',grid:'1:2:0:0:1:1'},{role:'helper',grid:'1:2:1:0:1:1'}]},
+  runtime:{runner:'primary_helper',primaryAloneLayout:[{role:'primary',grid:'1:1:0:0:1:1'}]}
+ };
+ const f=await fixture(config);try{
+  await writeFile(join(f.directory,'bin','pgrep'),`#!${process.execPath}\nconsole.log('650');\n`,{mode:0o755});
+  await writeFile(join(f.directory,'bin','osascript'),`#!${process.execPath}\nconst fs=require('fs'),d=JSON.parse(fs.readFileSync(process.env.MOCK_DATA,'utf8'));fs.appendFileSync(process.env.MOCK_LOG,JSON.stringify(['osascript'])+'\\n');${recovered?"d.windows.push({...structuredClone(d.windows[0]),id:11,pid:101,app:'Microsoft Outlook',title:'Inbox',role:'AXWindow',frame:{x:600,y:0,w:600,h:900}});":''}fs.writeFileSync(process.env.MOCK_DATA,JSON.stringify(d));\n`,{mode:0o755});
+  const preview=JSON.parse((await f.cli(['apply','coding','solo','--dry-run','--json'])).stdout);
+  assert.equal(preview.plan.preparations[0].window.id,null);
+  assert.deepEqual(await f.commands(),[]);
+  let applied;try{applied=JSON.parse((await f.cli(['apply','coding','solo','--json'])).stdout);}catch(error){applied=JSON.parse(error.stdout);}
+  assert.equal(applied.status,recovered?'completed':'failed');
+  assert.equal((await f.commands()).filter(args=>args[0]==='osascript').length,1);
+  if(recovered)assert.ok(applied.plan.selectedWindows.some(w=>w.role==='helper' && w.id===11));
+  else assert.match(applied.error,/Outlook has no window that yabai can control/);
+ }finally{await f.close();}
+});
 test('native fullscreen preparation is acknowledged before an immutable replacement plan',async()=>{
  const f=await fixture();try{
   await f.setData(d=>d.windows[0]['is-native-fullscreen']=true);

@@ -71,9 +71,15 @@ try {
         const departure=preparationDepartureCommand(preparation,before);
         if(departure)await mutate(departure[1],{type:'preparation_focus_departure',spaceUuid:preparation.departureSpaceUuid,reversible:false},after=>after.completeness==='complete' && after.spaces.some(s=>s.uuid===preparation.departureSpaceUuid && s.focused));
         const [exe,arguments_]=preparationCommand(preparation,before);
-        await journalMutation({stateRoot,runId:operationRunId,intent:{type:'adapter_preparation',preparation,windowId:null,identity:preparation.window,reversible:false},
-          run:()=>runBounded(exe,arguments_,{deadline:phaseDeadline,signal:abort.signal,onChild:lease.trackChild}),
-          verify:async()=>{relation=await verifyPreparation(preparation,{discover:()=>discoverState(envelope.machine,{deadline:phaseDeadline,signal:abort.signal}),check,poll:()=>consumeBudget(stateRoot,'confirmation')});return relation;}});
+        let commandExitCode;
+        try {
+          await journalMutation({stateRoot,runId:operationRunId,intent:{type:'adapter_preparation',preparation,windowId:null,identity:preparation.window,reversible:false},
+            run:async()=>{const result=await runBounded(exe,arguments_,{deadline:phaseDeadline,signal:abort.signal,onChild:lease.trackChild});commandExitCode=result.code;return result;},
+            verify:async()=>{relation=await verifyPreparation(preparation,{discover:()=>discoverState(envelope.machine,{deadline:phaseDeadline,signal:abort.signal}),check,poll:()=>consumeBudget(stateRoot,'confirmation')});return relation;}});
+        } catch(error) {
+          if(!preparation.bestEffort || commandExitCode==null || [124,130].includes(commandExitCode) || abort.signal.aborted || Date.now()>=deadline) throw error;
+          relation={before:preparation.window,after:[],outcome:'optional_unavailable',requiresReplan:true};
+        }
       } finally {
         if(preparation.type==='observe_space' && preparation.returnSpaceUuid) {
           const snapshot=await discover();
@@ -83,6 +89,7 @@ try {
           if(!space.focused)await mutate(['-m','space','--focus',String(space.index)],{type:'preparation_focus_restore',spaceUuid:space.uuid,reversible:false},after=>after.completeness==='complete' && after.spaces.some(s=>s.uuid===space.uuid && s.focused));
         }
       }
+      if(relation?.outcome==='optional_unavailable') process.stderr.write(`[WARN] ${preparation.window.app} is still unavailable to yabai after ${preparation.type==='observe_space'?'Space observation':'a bounded reopen'}; its mail layout remains incomplete\n`);
       process.stdout.write(`${JSON.stringify(relation)}\n`);
     } else if(action==='pinned-postprocess') {
       const hook=envelope.plan.fixedPostprocessors.find(h=>h.name===executable);

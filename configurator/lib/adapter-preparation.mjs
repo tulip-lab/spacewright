@@ -44,7 +44,7 @@ function spaceObservations(snapshot,desired,owners) {
   }
   return [...spaces.values()];
 }
-export function preparationsFor(snapshot,desired) {
+export function preparationsFor(snapshot,desired,{attemptedOptionalWindows=new Set(),runningApps=new Set()}={}) {
   // Active workspaces decide ownership exactly as layout selection does. An
   // inactive primary can still need observation before it becomes selectable;
   // use the full set only for apps with no current active owner.
@@ -56,6 +56,31 @@ export function preparationsFor(snapshot,desired) {
   const preparations=[...observations],seen=new Set();
   for(const workspace of desired.workspaces)for(const role of workspace.windows) {
     if(role.ownership!=='independent' && owners.get(role.appKey)!==workspace.workspaceId)continue;
+    // Outlook can remain in yabai's census without an AX window. Reopen it,
+    // then visit its Space once if necessary; never take over a mixed Space.
+    if(workspace.runner==='primary_helper' && role.role==='helper' && role.appKey==='outlook' && !role.required
+      && !selectRole(snapshot.windows,role).eligible.length) {
+      const candidates=snapshot.windows.filter(w=>role.appNames.includes(w.app) && !w.hasAxReference
+        && !w.minimized && !w.sticky && w.frameVerified && w.frame.w>0 && w.frame.h>0);
+      if(candidates.length===1 || !candidates.length && workspaceIsActive(snapshot,workspace) && runningApps.has('Microsoft Outlook')
+        && !snapshot.windows.some(w=>role.appNames.includes(w.app))) {
+        const window=candidates[0] || {id:null,app:'Microsoft Outlook',pid:null,bundleId:'',processFingerprint:null};
+        if(!attemptedOptionalWindows.has(`${workspace.workspaceId}:${role.role}:refresh_app`)) {
+          preparations.push({type:'refresh_app',workspaceId:workspace.workspaceId,role:role.role,adapter:workspace.runner,
+            commandPolicy:'outlook_reopen',window:identity(window),selection:role,bestEffort:true,
+            sideEffects:['activate_app','possible_window_creation_or_replacement'],phaseLimitMs:3000,budget:'appRecovery',requiresReplan:true});
+        } else if(window.id!=null && !attemptedOptionalWindows.has(`${workspace.workspaceId}:${role.role}:observe_space`)) {
+          const space=snapshot.spaces.find(s=>s.index===window.space);
+          const display=snapshot.displays.find(d=>d.index===space?.display);
+          const departure=snapshot.spaces.find(s=>s.display===space?.display && s.uuid!==space?.uuid);
+          if(space && display && departure) preparations.push({type:'observe_space',workspaceId:workspace.workspaceId,role:role.role,
+            window:identity(window),windows:[identity(window)],roles:[{workspaceId:workspace.workspaceId,role:role.role}],selection:role,
+            spaceUuid:space.uuid,displayUuid:display.uuid,departureSpaceUuid:departure.uuid,
+            returnSpaceUuid:snapshot.spaces.find(s=>s.focused)?.uuid,bestEffort:true,
+            sideEffects:['focus_space','restore_focus'],phaseLimitMs:3000,budget:'confirmation',requiresReplan:true});
+        }
+      }
+    }
     const selectable={...role,allowNativeFullscreen:true,selector:{...role.selector,movable:false,resizable:false,visible:false}};
     const {selected,ambiguous}=selectRole(snapshot.windows,selectable);
     if(ambiguous)continue;
@@ -86,8 +111,13 @@ export function preparationCommand(preparation,before) {
     }
     return ['yabai',['-m','space','--focus',String(space.index)]];
   }
-  const current=before.windows.find(w=>w.id===preparation.window.id);
-  if(!sameWindowIdentity(preparation.window,current))throw new Error('adapter input identity changed; replan required');
+  if(preparation.window.id==null) {
+    if(preparation.commandPolicy!=='outlook_reopen' || before.windows.some(w=>preparation.selection.appNames.includes(w.app)))
+      throw new Error('adapter input changed; replan required');
+  } else {
+    const current=before.windows.find(w=>w.id===preparation.window.id);
+    if(!sameWindowIdentity(preparation.window,current))throw new Error('adapter input identity changed; replan required');
+  }
   if(preparation.type==='native_fullscreen')return ['yabai',['-m','window',String(preparation.window.id),'--toggle','native-fullscreen']];
   if(preparation.commandPolicy==='outlook_reopen')return ['osascript',['-e','on run argv','-e','tell application (item 1 of argv) to activate','-e','tell application (item 1 of argv) to reopen','-e','end run',preparation.window.app]];
   return ['open',['-a',preparation.window.app]];
@@ -103,7 +133,7 @@ export function preparationDepartureCommand(preparation,before) {
 }
 export async function verifyPreparation(preparation,{discover,poll,check=()=>{},delay=ms=>new Promise(r=>setTimeout(r,ms))}) {
   let sawComplete=false,lastIncomplete=null;
-  for(let attempt=0;attempt<12;attempt++) {
+  for(let attempt=0;attempt<(preparation.bestEffort?3:12);attempt++) {
     check();if(attempt){await poll();await delay(250);check();}
     const after=await discover();
     if(after.completeness!=='complete') {lastIncomplete=after;continue;}
@@ -116,13 +146,16 @@ export async function verifyPreparation(preparation,{discover,poll,check=()=>{},
         if(!sameWindowIdentity(expected,current) || current.space!==space.index)throw new Error('observation window changed; replan required');
         return current;
       });
-      if(space.focused && windows.every(w=>w.hasAxReference))return {before:preparation.windows,after:windows.map(identity),requiresReplan:true};
+      if(space.focused && windows.every(w=>w.hasAxReference)
+        && (!preparation.bestEffort || selectRole(after.windows,preparation.selection).selected.length))
+        return {before:preparation.windows,after:windows.map(identity),requiresReplan:true};
       continue;
     }
     const selection=selectRole(after.windows,preparation.selection);
     if(!selection.ambiguous && selection.selected.length) return {before:identity(preparation.window),after:selection.selected.map(identity),requiresReplan:true};
   }
   if(!sawComplete)throw new Error(lastIncomplete?.message || 'adapter rediscovery incomplete');
+  if(preparation.bestEffort)return {before:identity(preparation.window),after:[],outcome:'optional_unavailable',requiresReplan:true};
   if (preparation.type === 'observe_space') throw axReferenceError(preparation);
   throw new Error('adapter completed without an effective selectable window');
 }

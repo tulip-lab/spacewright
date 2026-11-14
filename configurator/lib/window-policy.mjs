@@ -42,7 +42,7 @@ export function assertWindowCensus(expected, windows, selected = []) {
   if (expected.length !== current.length || duplicates.length || added.length || removed.length || changed.length) {
     const changes = Object.fromEntries(Object.entries({added,removed,changed,duplicates})
       .map(([key,value]) => [key,value.map(({id,app})=>({id,app}))]));
-    throw Object.assign(new Error(`global object census changed; replan required: ${JSON.stringify(changes)}`), {censusChanges:changes});
+    throw Object.assign(new Error(`global object census changed; replan required: ${JSON.stringify(changes)}. Some earlier actions may already have completed; once windows stop changing, rerun the same command to create a fresh plan.`), {censusChanges:changes});
   }
   return current;
 }
