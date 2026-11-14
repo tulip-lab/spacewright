@@ -19,6 +19,10 @@ If a display or Space collection is truncated, indexed fallback first queries
 the last object, reads every index through that endpoint, and confirms the
 endpoint again. Missing samples, duplicate identities, invalid indices and a
 changed endpoint leave discovery incomplete.
+Independent yabai collections are queried concurrently. Read-only queries use
+direct child processes with deadlines; mutating commands retain the execution
+coordinator. Process lifetimes are sampled in bounded batches and checked again
+before selected-window mutations.
 
 Window titles are available to the matching engine but the normal human
 overview prints application names only. JSON output is intended for local
@@ -44,13 +48,26 @@ before any window layout. Persistent AX failure stops without a second restart.
 Other errors, cancellation and total-deadline expiry never trigger recovery.
 A real native window with missing AX information still occupies its Space for cleanup.
 An optional window without an AX reference is reported as unavailable and is
-not arranged until a later run can select it. It does not trigger Space
-observation or a yabai restart, so other available roles can still be arranged.
+not arranged until a later run can select it. Most optional roles do not trigger
+Space observation or a yabai restart, so other available roles can still be
+arranged.
+For the Outlook helper in an active `primary_helper` mail workspace, apply first
+tries one bounded Outlook reopen when exactly one AX-less Outlook window is
+present, or when Outlook is already running without any window. The latter
+condition is checked with a bounded read-only process query; a stopped Outlook
+app is not launched just because its optional helper role is configured.
+If an AX-less Outlook window remains after the reopen, apply briefly visits its
+current Space and restores the original focus. Each attempt is followed by a
+fresh plan. If Outlook becomes selectable, both mail windows receive their
+configured layout. If a running Outlook app still has no selectable window,
+the transition reports an incomplete mail layout instead of success. It never
+takes over Outlook's whole Space, which may also contain other apps. Dry run
+only previews these steps.
 Required windows retain the bounded observation and recovery path.
 For an optional multi-window role with selectable AX windows, those known windows
 can be laid out while other AX-less surfaces produce `optional_windows_unavailable`
-warnings. Required multi-window roles, and optional roles without any selectable
-window, retain bounded AX observation and recovery.
+warnings. Required multi-window roles retain bounded AX observation and
+recovery; the Outlook mail helper follows the bounded reopen path above.
 
 Preparation and layout share the active-workspace and shared-app ownership rules.
 An inactive workspace cannot take recovery away from an active owner; a role

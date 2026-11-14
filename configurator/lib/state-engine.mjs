@@ -324,6 +324,7 @@ export function compareState(snapshot, desired, machine = {}, options = {}) {
   const reservedSpaceUuids = new Set();
   const resolvedSpaces = new Map();
   for (const workspace of activeWorkspaces) {
+    const plannedRegions = [];
     const expectedUuid = bindings[workspace.displayRole] || null;
     const expectedDisplay = expectedUuid ? snapshot.displays.find((display) => display.uuid === expectedUuid) : null;
     if (!expectedUuid) drifts.push(drift('display_binding_missing', 'blocker', workspace, { displayRole: workspace.displayRole }));
@@ -381,6 +382,14 @@ export function compareState(snapshot, desired, machine = {}, options = {}) {
           { role: desiredWindow.role, windowIds: unavailable.map(window => window.id) }));
       }
       if (!selected.length) {
+        if(workspace.runner==='primary_helper' && desiredWindow.role==='helper' && desiredWindow.appKey==='outlook'
+          && (options.runningApps?.has('Microsoft Outlook')
+            || options.attemptedOptionalWindows?.has(`${workspace.workspaceId}:${desiredWindow.role}:refresh_app`)
+            || snapshot.windows.some(window=>desiredWindow.appNames.includes(window.app) && !window.minimized && !window.sticky
+              && window.frameVerified && window.frame.w>0 && window.frame.h>0))) {
+          drifts.push(drift('outlook_window_unavailable','blocker',workspace,{role:desiredWindow.role,
+            message:'Microsoft Outlook has no window that yabai can control; reopen Outlook manually or repair yabai, then rerun auto'}));
+        }
         drifts.push(drift(desiredWindow.required ? 'required_window_missing' : 'optional_window_missing', desiredWindow.required ? 'blocker' : 'warning', workspace, { role: desiredWindow.role, appKey: desiredWindow.appKey }));
         continue;
       }
@@ -402,9 +411,16 @@ export function compareState(snapshot, desired, machine = {}, options = {}) {
           expectedGeometry.move_abs=`${expectedDisplay.frame.x+x}:${expectedDisplay.frame.y+y}`;
         }
         const geometry = geometryMatches(window, expectedDisplay || snapshot.displays.find((display) => display.index === window.display), expectedGeometry);
+        if (layout && geometry.comparable && geometry.expected) plannedRegions.push({ role: desiredWindow.role, windowId: window.id, frame: geometry.expected });
         if (layout && !geometry.comparable) drifts.push(drift('window_geometry_uncomparable', 'blocker', workspace, {windowId:window.id,role:desiredWindow.role}));
         if (!ambiguous && geometry?.comparable && (!geometry.matches || !targetSpace)) drifts.push(drift('window_geometry_mismatch', 'change', workspace, { role: desiredWindow.role, windowId: window.id, grid, expectedGeometry, geometry }));
       }
+    }
+    for (let i = 0; i < plannedRegions.length; i++) for (let j = i + 1; j < plannedRegions.length; j++) {
+      const a = plannedRegions[i], b = plannedRegions[j];
+      const width = Math.min(a.frame.x + a.frame.w, b.frame.x + b.frame.w) - Math.max(a.frame.x, b.frame.x);
+      const height = Math.min(a.frame.y + a.frame.h, b.frame.y + b.frame.h) - Math.max(a.frame.y, b.frame.y);
+      if (width > 2 && height > 2) drifts.push(drift('window_layout_overlap', 'warning', workspace, { roles: [a.role, b.role], windowIds: [a.windowId, b.windowId], overlap: { width, height } }));
     }
   }
   for(const workspace of activeWorkspaces.filter(w=>w.runner==='fixed_adapter')) {
@@ -481,9 +497,10 @@ export function buildExecutionPlan(snapshot, desired, comparison, options = {}) 
   for (const item of comparison.drifts.filter((entry) => entry.code === 'empty_space_cleanup_required')) actions.push({ type: 'remove_empty_space', spaceUuid: item.spaceUuid, displayUuid:item.displayUuid, spaceIndex: item.spaceIndex, display: item.display, label: item.label, scope:desired.target.kind==='workspace'?'workspace':'mode' });
   if (desired.target.kind !== 'workspace' && (actions.some((action) => ['ensure_space', 'recover_space_label', 'move_space'].includes(action.type)) || comparison.drifts.some((item) => item.code === 'space_order_mismatch'))) actions.push({ type: 'order_spaces', mode: desired.target.mode,
     spaces:desired.workspaces.filter(w=>!comparison.drifts.some(d=>d.workspaceId===w.workspaceId && d.code==='workspace_inactive')).map(w=>({workspaceId:w.workspaceId,label:w.label,spaceUuid:snapshot.spaces.find(s=>s.label===w.label)?.uuid || comparison.drifts.find(d=>d.workspaceId===w.workspaceId && d.code==='space_label_missing')?.spaceUuid || null,displayUuid:comparison.displayBindings?.[w.displayRole] || snapshot.displays.find(d=>d.role===w.displayRole)?.uuid || null})) });
-  const preparations=preparationsFor(snapshot,desired);
+  const preparations=preparationsFor(snapshot,desired,{attemptedOptionalWindows:options.attemptedOptionalWindows,runningApps:options.runningApps});
   for(const preparation of preparations)actions.unshift({...preparation,preparationType:preparation.type,type:'prepare_adapter'});
-  const blockers = comparison.drifts.filter(item=>item.severity==='blocker' && !(item.code==='required_window_missing' && preparations.some(p=>p.workspaceId===item.workspaceId && p.role===item.role || p.roles?.some(r=>r.workspaceId===item.workspaceId && r.role===item.role))));
+  const blockers = comparison.drifts.filter(item=>item.severity==='blocker' && !(['required_window_missing','outlook_window_unavailable'].includes(item.code)
+    && preparations.some(p=>p.workspaceId===item.workspaceId && p.role===item.role || p.roles?.some(r=>r.workspaceId===item.workspaceId && r.role===item.role))));
   if (orchestration.displayProfile && snapshot.displays.some(display => display.ignored)) blockers.push({ code: 'display_profile_with_ignored_display', severity: 'blocker', message: 'Physical display profiles cannot preserve ignored displays; use mode auto.' });
   const directlyAffectedWorkspaceIds = new Set(comparison.drifts.filter((item) => item.severity === 'change' && item.workspaceId && !item.code.startsWith('opposite_')).map((item) => item.workspaceId));
   const affectedWorkspaceIds = new Set(directlyAffectedWorkspaceIds);

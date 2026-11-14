@@ -96,8 +96,21 @@ async function livePlan(target = parseTarget(), frozen = null, snapshot = null) 
   const spaceLabelHints = await readSpaceLabelHints(stateRoot, desired, value.snapshot);
   if (Object.keys(spaceLabelHints).length) desired = buildDesiredState(value.config, value.runtime, normalizedTarget, value.snapshot, { spaceLabelHints });
   if (flags['mode-transition'] && !value.displayPrepared) desired.orchestration.displayProfile = await transitionProfile(target.mode);
-  const comparison = compareState(value.snapshot, desired, value.machine, { spaceLabelHints });
-  const plan = buildExecutionPlan(value.snapshot, desired, comparison, { displayPrepared: value.displayPrepared });
+  const runningApps = new Set();
+  if(desired.workspaces.some(workspace=>workspace.runner==='primary_helper'
+    && workspace.windows.some(role=>role.role==='helper' && role.appKey==='outlook'))
+    && !value.snapshot.windows.some(window=>window.app==='Microsoft Outlook')) {
+    try {
+      const {stdout}=await execFileAsync('pgrep',['-x','Microsoft Outlook'],{timeout:1000,signal:cancellation.signal});
+      if(stdout.trim()) runningApps.add('Microsoft Outlook');
+    } catch(error) {
+      if(error.code!==1) throw new Error(`Outlook process check failed: ${error.message}`);
+    }
+  }
+  const comparison = compareState(value.snapshot, desired, value.machine, { spaceLabelHints,runningApps,
+    attemptedOptionalWindows:value.attemptedOptionalWindows });
+  const plan = buildExecutionPlan(value.snapshot, desired, comparison, { displayPrepared: value.displayPrepared,
+    attemptedOptionalWindows:value.attemptedOptionalWindows,runningApps });
   return { ...value, desired, comparison, plan };
 }
 
@@ -128,7 +141,7 @@ function printPlan(plan, comparison) {
   console.log(`snapshot=${plan.snapshotId}`);
   console.log(`status=${plan.executable ? 'executable' : 'blocked'} ${summarizeComparison(comparison)}`);
   for (const blocker of plan.blockers) console.log(`BLOCK   ${blocker.code} ${blocker.workspaceId || ''} ${blocker.role || ''}`.trimEnd());
-  for (const warning of plan.warnings) console.log(`WARN    ${warning.code} ${warning.workspaceId || ''} ${warning.role || ''}`.trimEnd());
+  for (const warning of plan.warnings) console.log(`WARN    ${warning.code} ${warning.workspaceId || ''} ${warning.role || warning.roles?.join(' / ') || ''}`.trimEnd());
   if (!plan.actions.length) console.log('OK      no changes required');
   for (const [index, action] of plan.actions.entries()) {
     const subject = action.workspaceId
@@ -447,10 +460,15 @@ async function applyPlan(target) {
           : [...journal.logs].reverse().find(l=>l.stream==='stderr' && l.line.startsWith('SpaceWright:'))?.line || 'explicit adapter preparation failed';
         throw Object.assign(new Error(`${detail}; layout was not attempted`),{code:journal.exitCode===124?'SPACEWRIGHT_TIMEOUT':journal.exitCode===130?'SPACEWRIGHT_CANCELLED':undefined});
       }
+      initial.attemptedOptionalWindows ||= new Set();
+      for(const preparation of initial.plan.preparations.filter(p=>p.bestEffort)) initial.attemptedOptionalWindows.add(`${preparation.workspaceId}:${preparation.role}:${preparation.type}`);
       const saved=await stableRead(initial.configFile,machineFile);
       if(saved.source!==initial.source || JSON.stringify(saved.machine)!==JSON.stringify(initial.machine))throw new Error('configuration changed during preparation; replan required');
       const next=await livePlan(target,initial);
-      if(!next.plan.executable || !recovery && next.plan.preparations.length && (!observing || next.plan.preparations.some(p=>p.type==='observe_space')))throw new Error('adapter preparation did not satisfy layout prerequisites');
+      if(!next.plan.executable)throw new Error(next.plan.blockers.map(blocker=>blocker.message || blocker.code).join('; '));
+      if(!recovery && next.plan.preparations.some(p=>!p.bestEffort)
+        && (!observing || next.plan.preparations.some(p=>p.type==='observe_space' && !p.bestEffort)))
+        throw new Error('adapter preparation did not satisfy layout prerequisites');
       (journal.planRelations ||= []).push({phase:recovery?'service_recovery':'preparation',fromPlanId:initial.plan.planId,toPlanId:next.plan.planId,before:initial.plan.selectedWindows,after:next.plan.selectedWindows});
       initial=next;journal.plan=next.plan;journal.layoutBefore=next.snapshot;
       await atomicWrite(journal.envelopeFile,{plan:next.plan,desired:next.desired,machine:next.machine});
