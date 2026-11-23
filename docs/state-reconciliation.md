@@ -333,6 +333,11 @@ share the service-recovery allowance per lease. Read-only confirmation polling, 
 lease-wide counters in `settings.executionBudgets`; the owner deadline never
 resets for a subprocess.
 
+A resize preview advertises one conditional focus retry. When an acknowledged
+resize leaves the wrong frame on a hidden Space, SpaceWright can temporarily
+focus the target and retry under the same execution budget. The original frame
+check applies again after the retry.
+
 A geometry failure reports the app/window ID and expected versus actual frame
 in the CLI, journal and interactive error banner. Applications may enforce a
 minimum window size larger than a configured region. Such a layout must be

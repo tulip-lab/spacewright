@@ -59,7 +59,7 @@ if(data.delay)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,data.del
 if(data.fail || data.failId===Number(args[2])) process.exit(7);
 if(kind==='window') {
  const w=data.windows.find(w=>w.id===Number(args[2])); if(!w)process.exit(3);
- if(!data.ineffective) {
+if(!data.ineffective && (!data.resizeNeedsFocus || command!=='--grid' || data.spaces.some(s=>s.index===w.space && s['has-focus']))) {
  if(command==='--space') {w.space=Number(args[4]);w.display=data.spaces.find(s=>s.index===w.space).display;}
  if(command==='--grid') {const [rows,cols,x,y,width,height]=args[4].split(':').map(Number); const f=data.displays.find(d=>d.index===w.display).frame; w.frame={x:f.x+f.w*x/cols,y:f.y+f.h*y/rows,w:f.w*width/cols,h:f.h*height/rows};}
  if(command==='--move') {const p=args[4].split(':').slice(1).map(Number);w.frame.x=p[0];w.frame.y=p[1];}
@@ -72,6 +72,10 @@ if(kind==='space' && args[2]==='--create')data.spaces.push({index:Math.max(...da
 if(kind==='space' && command==='--layout')data.spaces.find(s=>s.index===Number(args[2])).type=args[4];
 if(kind==='space' && args[2]==='--focus') {
  const index=data.spaces.find(s=>s.index===Number(args[3]) || s.label===args[3])?.index;data.spaces.forEach(s=>s['has-focus']=s.index===index);
+ if(data.resizeNeedsFocus) {
+  const target=data.spaces.find(s=>s.index===index);
+  for(const space of data.spaces.filter(s=>s.display===target.display))space['is-visible']=space.index===index;
+ }
  if(data.axObservation && !data.axRequiresService)for(const w of data.windows.filter(w=>w.space===index))Object.assign(w,{'has-ax-reference':true,'can-move':!data.axNeedsRefresh,'can-resize':true,role:'AXWindow',subrole:'AXStandardWindow',title:'Observed'});
 }
 if(kind==='space' && command==='--destroy') {
@@ -100,6 +104,61 @@ fs.writeFileSync(process.env.MOCK_DATA,JSON.stringify(d));
   const setData = async (change) => {const data=JSON.parse(await readFile(dataFile,'utf8'));change(data);await writeFile(dataFile,JSON.stringify(data));};
   const commands = async () => (await readFile(logFile,'utf8').catch(()=>'' )).trim().split('\n').filter(Boolean).map(JSON.parse);
   return {directory,configRoot,stateRoot,dataFile,env,cli,setData,commands,close:()=>rm(directory,{recursive:true,force:true})};
+}
+
+for (const scenario of ['workspace', 'mode', 'ineffective', 'no retry budget']) {
+  test(`hidden Space resize recovery handles ${scenario}`, async () => {
+    const config = starterConfig();
+    config.modes.solo.displays[0].workspaceOrder = ['coding'];
+    config.settings = {cleanupEmptySpaces: 'none'};
+    if (scenario === 'no retry budget') config.settings.executionBudgets = {commandRetry: 0};
+    const f = await fixture(config);
+    try {
+      await f.setData(data => {
+        data.resizeNeedsFocus = true;
+        data.ineffective = scenario === 'ineffective';
+        data.spaces[0]['is-visible'] = false;
+        data.spaces.push({index: 2, uuid: 'VISIBLE', display: 1, label: 'personal', type: 'float',
+          'is-visible': true, 'has-focus': scenario !== 'mode'});
+        if (scenario === 'mode') {
+          data.displays.push({index: 2, uuid: 'OTHER-DISPLAY', frame: {x: 1200, y: 0, w: 1000, h: 900}});
+          data.spaces.push({index: 3, uuid: 'FOCUSED', display: 2, label: 'reference', type: 'float',
+            'is-visible': true, 'has-focus': true});
+        }
+      });
+      const target = scenario === 'mode' ? ['solo'] : ['coding', 'solo'];
+      const preview = JSON.parse((await f.cli(['apply', ...target, '--dry-run', '--json'])).stdout);
+      assert.equal(preview.plan.actions.find(action => action.type === 'resize_window').focusRetry, 'hidden_space_once');
+      assert.deepEqual(await f.commands(), []);
+
+      const failed = scenario === 'ineffective' || scenario === 'no retry budget';
+      const attempt = f.cli(['apply', ...target, '--json']);
+      const output = failed ? await attempt.then(() => assert.fail('expected the layout to fail'), error => error) : await attempt;
+      const result = JSON.parse(output.stdout);
+      assert.equal(result.status, failed ? 'failed' : 'completed');
+      const journal = JSON.parse(await readFile(result.journal, 'utf8'));
+      const focuses = (await f.commands()).filter(args => args[1] === 'space' && args[2] === '--focus').map(args => args[3]);
+      const resizes = (await f.commands()).filter(args => args[1] === 'window' && args[3] === '--grid');
+      if (scenario === 'no retry budget') {
+        assert.match(result.error, /commandRetry execution budget exhausted/);
+        assert.deepEqual(focuses, []);
+        assert.equal(resizes.length, 1);
+        return;
+      }
+      assert.equal(resizes.length, 2);
+      assert.equal(journal.operations.filter(op => op.type === 'resize_focus' && op.status === 'verified_success').length, 1);
+      if (scenario === 'ineffective') {
+        assert.match(result.error, /window geometry postcondition failed/);
+        assert.deepEqual(focuses, ['1', '2']);
+      } else {
+        assert.equal(journal.verification.converged, true);
+        if (scenario === 'mode') assert.deepEqual(focuses, ['1', '2', '3']);
+        else assert.ok(focuses.every(index => index === '1' || index === 'coding_solo'));
+      }
+    } finally {
+      await f.close();
+    }
+  });
 }
 
 for(const ineffective of [false,true])test(`persistent AX loss uses at most one service recovery (${ineffective?'ineffective':'recovered'})`,async()=>{

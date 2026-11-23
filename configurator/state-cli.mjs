@@ -148,7 +148,8 @@ function printPlan(plan, comparison) {
       || action.mode
       || action.profile
       || (action.spaceIndex ? `space=${action.spaceIndex} display=${action.display}${action.label ? ` label=${action.label}` : ''}` : '');
-    console.log(`${String(index + 1).padStart(2, '0')}      ${action.type} ${subject} ${action.role || ''}`.trimEnd());
+    const retry = action.focusRetry === 'hidden_space_once' ? ' (may focus a hidden Space once to retry)' : '';
+    console.log(`${String(index + 1).padStart(2, '0')}      ${action.type} ${subject} ${action.role || ''}`.trimEnd() + retry);
   }
   for (const step of plan.executionSteps || []) console.log(`RUN     spacewright ${step.command.join(' ')}`);
 }

@@ -4,7 +4,7 @@ import { recoverYabai, recoveryPreview, assertServiceRecoveryInput } from '../li
 import { starterConfig, compileV2 } from '../lib/config-v2.mjs';
 import { buildDesiredState, compareState, buildExecutionPlan } from '../lib/state-engine.mjs';
 import { executionCensus, isObservationOverlay, selectRole } from '../lib/window-policy.mjs';
-import { validatePlanObjects, executePinnedWorkspace, confirmWindowGeometry } from '../lib/pinned-executor.mjs';
+import { validatePlanObjects, executePinnedWorkspace, confirmPendingMutation } from '../lib/pinned-executor.mjs';
 import { windowOccupiesSpace } from '../lib/finalization-policy.mjs';
 import { axReferenceError, AX_UNAVAILABLE_EXIT } from '../lib/adapter-preparation.mjs';
 import { sameWindowIdentity } from '../lib/recovery.mjs';
@@ -21,15 +21,15 @@ test('native window geometry is confirmed after asynchronous frame updates witho
   let reads=0,polls=0;
   const pending=()=>Object.assign(new Error('geometry not settled'),{code:'SPACEWRIGHT_GEOMETRY_PENDING'});
   const options={check:async()=>{},poll:async()=>{polls++;},delay:async()=>{}};
-  assert.equal(await confirmWindowGeometry(value=>{if(value<3)throw pending();return true;},async()=>++reads,options),true);
+  assert.equal(await confirmPendingMutation(value=>{if(value<3)throw pending();return true;},async()=>++reads,options),true);
   assert.equal(reads,3);assert.equal(polls,2);
   reads=0;polls=0;
-  await assert.rejects(confirmWindowGeometry(()=>{throw pending();},async()=>++reads,options),/not settled/);
+  await assert.rejects(confirmPendingMutation(()=>{throw pending();},async()=>++reads,options),/not settled/);
   assert.equal(reads,5);assert.equal(polls,4);
   reads=0;
-  await assert.rejects(confirmWindowGeometry(()=>{throw new Error('identity changed');},async()=>++reads,options),/identity changed/);
+  await assert.rejects(confirmPendingMutation(()=>{throw new Error('identity changed');},async()=>++reads,options),/identity changed/);
   assert.equal(reads,1);
-  await assert.rejects(confirmWindowGeometry(()=>{throw pending();},async()=>1,{...options,poll:async()=>{throw new Error('budget exhausted');}}),/budget exhausted/);
+  await assert.rejects(confirmPendingMutation(()=>{throw pending();},async()=>1,{...options,poll:async()=>{throw new Error('budget exhausted');}}),/budget exhausted/);
 });
 function fixture() {
   let live = snapshot(), checkpoint;
