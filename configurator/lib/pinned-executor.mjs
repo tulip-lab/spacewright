@@ -3,12 +3,12 @@ import { windowOccupiesSpace } from './finalization-policy.mjs';
 import { selectorResult,assertWindowCensus } from './window-policy.mjs';
 import { geometryMatches } from './state-engine.mjs';
 
-export async function confirmWindowGeometry(verify, discover, {poll, check, delay=ms=>new Promise(resolve=>setTimeout(resolve,ms))}) {
+export async function confirmPendingMutation(verify, discover, {poll, check, delay=ms=>new Promise(resolve=>setTimeout(resolve,ms))}) {
   for(let attempt=0;attempt<5;attempt++) {
     await check();
     try { return await verify(await discover()); }
     catch(error) {
-      if(error.code!=='SPACEWRIGHT_GEOMETRY_PENDING' || attempt===4)throw error;
+      if(!['SPACEWRIGHT_GEOMETRY_PENDING','SPACEWRIGHT_FOCUS_PENDING'].includes(error.code) || attempt===4)throw error;
       await poll();await delay(100);
     }
   }
@@ -42,7 +42,75 @@ function spaceFor(snapshot,uuid,labels) {
   if(!space || space.ignoredDisplay || snapshot.spaces.filter(s=>s.uuid===uuid).length!==1 || !labels.includes(space.label) || snapshot.spaces.filter(s=>s.label===space.label && space.label).length>1)throw new Error('planned Space identity/label changed; replan required');
   return space;
 }
-export async function executePinnedWorkspace(plan,workspaceId,{discover,mutate,createdSpaces={},registerCreated=async()=>{}}) {
+function focusAnchor(snapshot, space) {
+  return { uuid: space.uuid, label: space.label, displayUuid: snapshot.displays.find(d => d.index === space.display)?.uuid };
+}
+
+function resolveFocusAnchor(snapshot, anchor) {
+  const space = spaceFor(snapshot, anchor.uuid, [anchor.label]);
+  const display = snapshot.displays.find(d => d.index === space.display);
+  if (!anchor.displayUuid || display?.uuid !== anchor.displayUuid || display.ignored) {
+    throw new Error('focus recovery Space changed displays; replan required');
+  }
+  return space;
+}
+
+async function focusForResize(snapshot, anchor, type, mutate) {
+  const space = resolveFocusAnchor(snapshot, anchor);
+  if (space.focused) return;
+  await mutate(['-m', 'space', '--focus', String(space.index)], {
+    type, spaceUuid: anchor.uuid, targetDisplayUuid: anchor.displayUuid, reversible: false
+  }, after => {
+    const focused = resolveFocusAnchor(complete(after), anchor);
+    if (!focused.focused || !focused.visible) {
+      throw Object.assign(new Error('resize focus did not settle'), { code: 'SPACEWRIGHT_FOCUS_PENDING' });
+    }
+    return true;
+  });
+}
+
+async function restoreResizeFocus(query, target, returnTo, mutate) {
+  let previous = target;
+  for (const anchor of returnTo) {
+    const snapshot = complete(await query());
+    // The user may have switched Spaces during the retry.
+    if (!resolveFocusAnchor(snapshot, previous).focused) return;
+    await focusForResize(snapshot, anchor, 'resize_focus_restore', mutate);
+    previous = anchor;
+  }
+}
+
+async function resizeWithFocusRetry({ before, resolve, apply, query, discover, mutate, retry, keepFocus }, allowFocusRetry) {
+  try {
+    await apply(before);
+  } catch (error) {
+    if (error.code !== 'SPACEWRIGHT_GEOMETRY_PENDING' || !allowFocusRetry || before.space.visible) throw error;
+    const snapshot = await discover();
+    const next = resolve(snapshot);
+    const visible = snapshot.spaces.filter(s => s.display === next.space.display && s.visible);
+    const focused = snapshot.spaces.filter(s => s.focused);
+    if (next.space.visible || visible.length !== 1 || focused.length !== 1 || focused[0].ignoredDisplay) throw error;
+    const target = focusAnchor(snapshot, next.space);
+    const returnTo = [...new Map([...visible, ...focused].map(s => [s.uuid, focusAnchor(snapshot, s)])).values()];
+    for (const anchor of returnTo) resolveFocusAnchor(snapshot, anchor);
+    await retry();
+    const fresh = await discover();
+    resolve(fresh);
+    if (!resolveFocusAnchor(fresh, returnTo.at(-1)).focused || !resolveFocusAnchor(fresh, returnTo[0]).visible) throw error;
+    let completed = false;
+    try {
+      await focusForResize(fresh, target, 'resize_focus', mutate);
+      const focusedTarget = resolve(await discover());
+      if (!focusedTarget.space.focused || !focusedTarget.space.visible) throw error;
+      await apply(focusedTarget);
+      completed = true;
+    } finally {
+      if (!completed || !keepFocus) await restoreResizeFocus(query, target, returnTo, mutate);
+    }
+  }
+}
+
+export async function executePinnedWorkspace(plan,workspaceId,{discover,mutate,retryResize,createdSpaces={},registerCreated=async()=>{}}) {
   const query=discover;discover=async()=>validatePlanObjects(plan,await query());
   const byId=plan.workspaces.filter(w=>w.workspaceId===workspaceId);
   const matches=byId.length?byId:plan.workspaces.filter(w=>w.runtimeId===workspaceId);
@@ -78,6 +146,8 @@ export async function executePinnedWorkspace(plan,workspaceId,{discover,mutate,c
     }
   }
   const selected=plan.selectedWindows.filter(w=>w.workspaceId===workspace.workspaceId);
+  const keepResizeFocus = plan.scope === 'workspace'
+    && plan.actions.some(action => action.type === 'focus_workspace' && action.workspaceId === workspace.workspaceId);
   for(const expected of selected) {
     const actions=plan.actions.filter(a=>a.windowId===expected.id && a.workspaceId===workspace.workspaceId);
     if(creating && !actions.some(a=>a.type==='move_window'))actions.unshift({type:'move_window'});
@@ -92,13 +162,27 @@ export async function executePinnedWorkspace(plan,workspaceId,{discover,mutate,c
       } else if(action.type==='resize_window') {
         const commands=action.grid?[['--grid',action.grid]]:Object.entries(action.geometry || {}).map(([key,value])=>key==='grid'?['--grid',value]:[key==='move_abs'?'--move':'--resize',`abs:${value.replace(/^abs:/,'')}`]);
         for(const [op,value] of commands) {
-          const fresh=complete(await discover());if(!sameWindowIdentity(expected,fresh.windows.find(w=>w.id===expected.id)))throw new Error('planned window identity changed');
-          await mutate(['-m','window',String(expected.id),op,value],{...intent,geometry:action.grid || action.geometry},s=>{
-            const live=s.windows.find(w=>w.id===expected.id);if(!sameWindowIdentity(expected,live))return false;
+          const resolve = snapshot => {
+            const space = spaceFor(complete(snapshot), uuid, [workspace.label]);
+            const display = displayFor(snapshot, workspace.targetDisplay);
+            const window = snapshot.windows.find(w => w.id === expected.id);
+            if (!sameWindowIdentity(expected, window) || window.space !== space.index || space.display !== display.index) {
+              throw new Error('planned resize window or Space changed; replan required');
+            }
+            return { space, display, window };
+          };
+          const apply = ({window}) => mutate(['-m','window',String(expected.id),op,value],{
+            ...intent, recoveryCandidate:window, recoverySpaceUuid:uuid, geometry:action.grid || action.geometry
+          },s=>{
+            const { window: live, display } = resolve(s);
             const result=geometryMatches(live,display,op==='--grid'?{grid:value}:op==='--move'?{move_abs:value}:{resize_abs:value});
             if(!result.matches)throw Object.assign(new Error(`window geometry postcondition failed for ${expected.app} (${expected.id}): expected ${JSON.stringify(result.expected)}, actual ${JSON.stringify(live.frame)}; check the application's minimum window size and configured layout region`),{code:'SPACEWRIGHT_GEOMETRY_PENDING'});
             return true;
           });
+          await resizeWithFocusRetry({
+            before:resolve(await discover()), resolve, apply, query, discover, mutate,
+            retry:retryResize, keepFocus:keepResizeFocus
+          }, action.focusRetry === 'hidden_space_once' && Boolean(retryResize));
         }
       }
     }

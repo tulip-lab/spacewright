@@ -306,7 +306,13 @@ identity; many-window roles still observe unresolved app windows. All discovered
 surfaces continue to participate in Space occupancy checks.
 Window geometry confirmation allows up to five fresh observations for asynchronous
 native frame updates, consuming the confirmation budget between observations.
-It never repeats the mutation; identity errors and exhausted budgets stop immediately.
+If an acknowledged resize fails confirmation while its target Space stays hidden,
+the fixed resize action may spend one command retry to focus that Space and issue
+the same command once. The executor checks the window, Space and display before
+the retry. Mode execution restores both the previous visible Space on the target
+display and the original keyboard focus. A successful single-workspace run can
+retain the focus already requested by its plan. Identity errors and exhausted
+budgets stop immediately.
 Empty-Space cleanup excludes every UUID reserved for an active workspace,
 including currently unlabeled Spaces whose labels will be restored by the plan.
 Observation can precede one bounded app-recovery phase; layout waits for the
