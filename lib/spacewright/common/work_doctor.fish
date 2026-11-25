@@ -147,24 +147,21 @@ function work_doctor --description "Run read-only workspace system checks"
         __work_doctor_ok "displays query count=$display_count"
 
         if test -r (spacewright_config_v3_file)
-            set -l machine_file "$SPACEWRIGHT_STATE_ROOT/machine.json"
-            set -l active_roles
-            if test -r "$machine_file"
-                set active_roles (jq -r --slurpfile machine "$machine_file" '
-                    .hardwareProfiles[$machine[0].hardwareProfile].setups[$machine[0].activeSetup].lanes[]?.role // empty
-                ' (spacewright_config_v3_file) 2>/dev/null)
-            end
-            if test (count $active_roles) -eq 0
-                __work_doctor_fail "active display setup has no roles to check"
+            set -l setup (workspace_setup_status_for_displays "$displays_json" | string collect)
+            if test $status -ne 0 -o -z "$setup"
+                __work_doctor_fail "could not resolve current display setup"
             else
-                for role in $active_roles
-                    set -l role_uuid (jq -r --arg role "$role" '.displayBindings[$role] // empty' "$machine_file" 2>/dev/null)
-                    set -l role_present (echo $displays_json | ws_jq -r --arg uuid "$role_uuid" 'any(.[]; .uuid==$uuid)')
-                    if test -n "$role_uuid" -a "$role_present" = true
+                set -l missing_roles (printf '%s\n' "$setup" | command jq -r '.bindingStatus.missingRoles[]')
+                for role in $missing_roles
+                    __work_doctor_fail "workspace $role display not connected or incompatible"
+                end
+                if test (printf '%s\n' "$setup" | command jq -r '.ready') = true
+                    set -l workspace_roles (printf '%s\n' "$setup" | command jq -r '.workspaceDisplayRoles[]')
+                    for role in $workspace_roles
                         __work_doctor_ok "workspace $role display present"
-                    else
-                        __work_doctor_fail "workspace $role display not connected"
                     end
+                else if test (count $missing_roles) -eq 0
+                    __work_doctor_fail "current display setup requires confirmation"
                 end
             end
         else

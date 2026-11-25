@@ -7,6 +7,8 @@ import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import {
+  confirmDisplaySetup,
+  currentDisplayBindings,
   describeDisplays,
   resolveV3,
   matchingSetups,
@@ -40,6 +42,11 @@ async function detectHardware() {
 }
 
 async function detectDisplays() {
+  if (flags.snapshot === '-') {
+    let input = '';
+    for await (const chunk of process.stdin) input += chunk;
+    return JSON.parse(input);
+  }
   if (flags.snapshot) return JSON.parse(await readFile(resolve(flags.snapshot), 'utf8'));
   try {
     const { stdout } = await execFileAsync('yabai', ['-m', 'query', '--displays'], { timeout: 5000, maxBuffer: 1_000_000 });
@@ -47,22 +54,6 @@ async function detectDisplays() {
   } catch (error) {
     return { unavailable: true, displays: [], message: `display discovery failed: ${error.message}` };
   }
-}
-
-function assignmentForSetup(config, hardwareProfileId, setupId, displays) {
-  const requirements = config.hardwareProfiles[hardwareProfileId].setups[setupId].match.displays;
-  const used = new Set();
-  const bindings = {};
-  for (const requirement of requirements) {
-    const index = displays.findIndex((display, candidate) => !used.has(candidate) && !display.ignored
-      && (!requirement.kind || display.kind === requirement.kind)
-      && (!requirement.orientation || display.orientation === requirement.orientation)
-      && (!requirement.role || !display.role || display.role === requirement.role));
-    if (index < 0) throw new Error(`could not bind display role “${requirement.role || 'unnamed'}”`);
-    used.add(index);
-    if (requirement.role) bindings[requirement.role] = displays[index].uuid;
-  }
-  return bindings;
 }
 
 async function inspect() {
@@ -76,7 +67,8 @@ async function inspect() {
   const validation = validateV3(config);
   if (!validation.valid) throw new Error(`configuration is invalid:\n${validation.errors.join('\n')}`);
   const selectedHardware = selectHardwareProfile(config, machine, hardware);
-  const displays = describeDisplays(snapshot, machine, { includeIgnored: true });
+  const displayBindings = currentDisplayBindings(snapshot, machine);
+  const displays = describeDisplays(snapshot, machine, { includeIgnored: true, displayBindings });
   const key = topologyKey(displays);
   const setupCandidates = selectedHardware.id ? matchingSetups(config, selectedHardware.id, snapshot, machine) : [];
   return {
@@ -86,6 +78,7 @@ async function inspect() {
     hardware,
     snapshot,
     displays,
+    displayBindings,
     topologyKey: key,
     selectedHardware,
     setupCandidates,
@@ -146,10 +139,11 @@ try {
       activeSetup: value.machine.activeSetup || null,
       hardwareProfileName: value.config.hardwareProfiles[value.selectedHardware.id]?.name || value.hardware.productName,
       setupName: setup?.name || null,
-      displayBindings: value.machine.displayBindings || {},
+      displayBindings: value.displayBindings,
       compatibilityMode: setup?.compatibilityMode || null,
       workspaceConfigurations: setup?.workspaceConfigurations || {},
       bindingStatus,
+      workspaceDisplayRoles: setup?.lanes.map(lane => lane.role) || [],
       ready: Boolean(value.machine.hardwareProfileConfirmed && confirmedSetup && value.setupCandidates.includes(confirmedSetup) && bindingStatus.ready)
     };
     if (command !== 'show') print(status);
@@ -173,20 +167,11 @@ try {
     const hardwareProfileId = positional[0] || value.selectedHardware.id;
     const setupId = positional[1] || (value.setupCandidates.length === 1 ? value.setupCandidates[0] : null);
     if (!hardwareProfileId || !value.config.hardwareProfiles[hardwareProfileId]) throw new Error('confirm requires a valid hardware profile id');
-    const candidates = matchingSetups(value.config, hardwareProfileId, value.snapshot, value.machine);
-    if (!setupId || !candidates.includes(setupId)) throw new Error(`confirm requires one matching setup id; candidates: ${candidates.join(', ') || 'none'}`);
-    const displayBindings = { ...(value.machine.displayBindings || {}), ...assignmentForSetup(value.config, hardwareProfileId, setupId, value.displays) };
-    const next = {
-      ...value.machine,
-      version: 2,
-      hardwareProfile: hardwareProfileId,
-      hardwareProfileConfirmed: true,
-      detectedHardware: value.hardware,
-      displayBindings,
-      displayKinds: value.machine.displayKinds || {},
-      topologySelections: { ...(value.machine.topologySelections || {}), [value.topologyKey]: setupId },
-      activeSetup: setupId
-    };
+    if (!setupId || !value.config.hardwareProfiles[hardwareProfileId].setups[setupId]) throw new Error(`confirm requires one matching setup id; candidates: ${value.setupCandidates.join(', ') || 'none'}`);
+    let next;
+    try { next = confirmDisplaySetup(value.config, { ...value, hardwareProfileId, setupId }); }
+    catch (error) { throw new Error(`${error.message}; candidates: ${value.setupCandidates.join(', ') || 'none'}`); }
+    const displayBindings = currentDisplayBindings(value.snapshot, next);
     const runtime = await persistSetup(value, next);
     print({ confirmed: !flags['dry-run'], dryRun: Boolean(flags['dry-run']), mutates: !flags['dry-run'], action: 'confirm', path: machineFile, runtimePath: runtimeFile, hardwareProfile: hardwareProfileId, setup: setupId, compatibilityMode: runtime.modes[`work_${value.config.hardwareProfiles[hardwareProfileId].setups[setupId].compatibilityMode}`].display_mode, topologyKey: value.topologyKey, displayBindings });
   } else if (command === 'ignore-display' || command === 'include-display') {
@@ -210,7 +195,7 @@ try {
     if (!bindingStatus.ready) throw new Error(`current display roles require confirmation: ${bindingStatus.missingRoles.join(', ')}`);
     const next = { ...value.machine, activeSetup: setupId };
     const runtime = await persistSetup(value, next);
-    print({ activated: !flags['dry-run'], dryRun: Boolean(flags['dry-run']), mutates: !flags['dry-run'], action: 'activate', displayBindings: next.displayBindings, hardwareProfile: hardwareProfileId, setup: setupId, compatibilityMode: value.config.hardwareProfiles[hardwareProfileId].setups[setupId].compatibilityMode, runtimePath: runtimeFile, sourceVersion: runtime.source_version });
+    print({ activated: !flags['dry-run'], dryRun: Boolean(flags['dry-run']), mutates: !flags['dry-run'], action: 'activate', displayBindings: value.displayBindings, hardwareProfile: hardwareProfileId, setup: setupId, compatibilityMode: value.config.hardwareProfiles[hardwareProfileId].setups[setupId].compatibilityMode, runtimePath: runtimeFile, sourceVersion: runtime.source_version });
   } else {
     throw new Error('usage: setup-cli.mjs <detect|status|confirm|activate|ignore-display|include-display> [hardware-profile|display-uuid] [setup] [--config=path] [--snapshot=path] [--model=id]');
   }

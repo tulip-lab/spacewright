@@ -148,6 +148,8 @@ esac
   assert.equal(confirmed.status, 200, JSON.stringify(confirmed.body));
   assert.equal(confirmed.body.machine.displayBindings.tall, 'DISPLAY-TALL-1234');
   assert.equal(confirmed.body.machine.topologySelections['external:tall'], 'single_tall');
+  assert.deepEqual(confirmed.body.machine.topologyBindings['external:tall'], { tall: 'DISPLAY-TALL-1234' });
+  assert.deepEqual(confirmed.body.setupState.displayBindings, { tall: 'DISPLAY-TALL-1234' });
 
   const saved = await json(url, '/api/v3/save', token, {
     method: 'POST',

@@ -1,3 +1,4 @@
+import { currentDisplayBindings } from './config-v3.mjs';
 import {compileV2, validateV2} from './config-v2.mjs';
 import {buildDesiredState, compareState} from './state-engine.mjs';
 import {selectRole} from './window-policy.mjs';
@@ -19,7 +20,7 @@ export function mergeCapturedWorkspace(config, capture, snapshot, machine) {
   for(const role of Object.values(draft.workspace.windows))role.app=appMap[role.app];
   next.workspaces[draft.workspaceId]=draft.workspace;
   const mode=capture.capturedFrom.mode;
-  const displayRole=Object.entries(machine.displayBindings || {}).find(([,uuid])=>uuid===capture.capturedFrom.displayUuid)?.[0];
+  const displayRole=Object.entries(currentDisplayBindings(snapshot, machine)).find(([,uuid])=>uuid===capture.capturedFrom.displayUuid)?.[0];
   const lane=next.modes?.[mode]?.displays.find(lane=>lane.role===displayRole);
   if(!lane)reject('Bind the captured display and add its lane to this mode before merging.');
   lane.workspaceOrder.push(draft.workspaceId);

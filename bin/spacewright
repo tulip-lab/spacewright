@@ -164,8 +164,9 @@ switch "$command_name"
             set mode (printf '%s\n' "$setup_state" | jq -r '.compatibilityMode')
             set -l setup_id (printf '%s\n' "$setup_state" | jq -r '.confirmedSetup')
             set -l profile_id (printf '%s\n' "$setup_state" | jq -r '.hardwareSelection.id')
-            set transition_args "--expected-setup=$setup_id" "--expected-hardware-profile=$profile_id"
-            set controller_args "--current-setup=$setup_id" "--hardware-profile=$profile_id"
+            set -l topology_key (printf '%s\n' "$setup_state" | jq -r '.topologyKey')
+            set transition_args "--expected-setup=$setup_id" "--expected-hardware-profile=$profile_id" "--expected-topology=$topology_key"
+            set controller_args "--current-setup=$setup_id" "--hardware-profile=$profile_id" "--current-topology=$topology_key"
         end
         if not contains -- "$mode" solo wide tall
             echo 'usage: spacewright mode <auto|solo|wide|tall> [--dry-run]' >&2
@@ -206,8 +207,11 @@ switch "$command_name"
                 exit 1
             end
             set mode (printf '%s\n' "$activation" | jq -r '.compatibilityMode')
-            set controller_args "--current-setup="(printf '%s\n' "$activation" | jq -r '.confirmedSetup') "--hardware-profile="(printf '%s\n' "$activation" | jq -r '.hardwareSelection.id')
-            set plan_args "--expected-setup="(printf '%s\n' "$activation" | jq -r '.confirmedSetup') "--expected-hardware-profile="(printf '%s\n' "$activation" | jq -r '.hardwareSelection.id')
+            set -l setup_id (printf '%s\n' "$activation" | jq -r '.confirmedSetup')
+            set -l profile_id (printf '%s\n' "$activation" | jq -r '.hardwareSelection.id')
+            set -l topology_key (printf '%s\n' "$activation" | jq -r '.topologyKey')
+            set controller_args "--current-setup=$setup_id" "--hardware-profile=$profile_id" "--current-topology=$topology_key"
+            set plan_args "--expected-setup=$setup_id" "--expected-hardware-profile=$profile_id" "--expected-topology=$topology_key"
         end
         if not string match -qr '^[a-z][a-z0-9_]*$' -- "$workspace_id"; or not contains -- "$mode" solo wide tall
             echo 'usage: spacewright workspace <workspace> [solo|wide|tall] [--dry-run]' >&2

@@ -8,8 +8,33 @@ function set_workspace_primary_display_uuid --description "Persist the workspace
     echo "WORKSPACE_PRIMARY_DISPLAY_UUID set to: $WORKSPACE_PRIMARY_DISPLAY_UUID"
 end
 
+function workspace_setup_status_for_displays --description "Resolve v3 setup status for a read-only yabai display snapshot"
+    printf '%s\n' "$argv[1]" | command jq -c '{displays: .}' |
+        command node "$SPACEWRIGHT_PACKAGE_ROOT/configurator/setup-cli.mjs" status \
+            "--config-root=$SPACEWRIGHT_CONFIG_ROOT" "--state-root=$SPACEWRIGHT_STATE_ROOT" --snapshot=-
+end
+
 function get_workspace_primary_display_uuid --description "Return the configured workspace primary display UUID"
     set -l machine_file "$SPACEWRIGHT_STATE_ROOT/machine.json"
+    if set -q SPACEWRIGHT_EXECUTION_ENVELOPE; and test -r "$SPACEWRIGHT_EXECUTION_ENVELOPE"
+        set -l planned_uuid (command jq -r '.machine.displayBindings.primary // empty' "$SPACEWRIGHT_EXECUTION_ENVELOPE")
+        if test -n "$planned_uuid"
+            echo "$planned_uuid"
+            return 0
+        end
+    end
+    if test -r "$SPACEWRIGHT_CONFIG_ROOT/config.v3.json"; and test -r "$machine_file"
+        and command jq -e '.topologyBindings | type == "object"' "$machine_file" >/dev/null
+        set -l displays_json (ws_query_displays get_workspace_primary_display_uuid configured_role read-only)
+        or return 1
+        set -l setup (workspace_setup_status_for_displays "$displays_json" | string collect)
+        or return 1
+        set -l bound_uuid (printf '%s\n' "$setup" | command jq -r 'select(.ready) | .displayBindings.primary // empty')
+        test -n "$bound_uuid"; or return 1
+        echo "$bound_uuid"
+        return 0
+    end
+
     if test -r "$machine_file"
         set -l bound_uuid (jq -r '.displayBindings.primary // empty' "$machine_file" 2>/dev/null)
         if test -n "$bound_uuid"
@@ -202,6 +227,24 @@ end
 
 function workspace_resolve_display_role --description "Resolve a workspace display role to a yabai display index"
     set -l role $argv[1]
+
+    if test -r "$SPACEWRIGHT_CONFIG_ROOT/config.v3.json"
+        set -l displays_json (ws_query_displays workspace_resolve_display_role configured_role)
+        or return 1
+        set -l setup (workspace_setup_status_for_displays "$displays_json" | string collect)
+        or return 1
+        set -l base_role (string replace -r '__(solo|wide|tall)$' '' -- "$role")
+        set -l bound_index (printf '%s\n' "$setup" | command jq -r --arg role "$base_role" '
+            select(.ready) | .displayBindings[$role] as $uuid | first(.displays[] | select(.uuid == $uuid) | .index) // empty
+        ')
+        if test -n "$bound_index"
+            echo "$bound_index"
+            return 0
+        end
+        # Keep the historical physical-mode aliases for callers of the manual commands.
+        contains -- "$role" primary solo wide tall; or return 1
+        test (printf '%s\n' "$setup" | command jq -r '.ready') = true; or return 1
+    end
 
     switch "$role"
         case primary solo
