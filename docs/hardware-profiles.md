@@ -33,10 +33,17 @@ Confirm the selected profile and setup once:
 spacewright setup confirm mac_mini single_tall
 ```
 
-Confirmation writes only machine-local state. SpaceWright records the current
-topology signature, display-role bindings, and selected setup, then compiles a
-digest-bound runtime. A new or ambiguous topology must be confirmed before any
-mutation; unavailable display discovery also fails closed.
+Confirmation writes only machine-local state. SpaceWright records the selected
+setup and its display-role bindings for the detected topology, then compiles a
+digest-bound runtime. Confirm each combination once. For example, single tall,
+single wide, wide + tall, and tall + Sidecar can each retain a different binding
+for the same workspace role. The shortcuts select the saved combination when you
+return to it, even if yabai has reordered the display indices.
+
+A new topology or a replaced display UUID can require confirmation before any
+mutation. Classify Sidecar once per display UUID. Older confirmations can still
+use compatible legacy bindings. Reconfirm a previously saved combination if its
+legacy binding is missing or points to the wrong display.
 
 Use `spacewright setup confirm mac_mini single_tall --dry-run` or
 `spacewright setup activate --dry-run` to validate and preview the selected
@@ -112,9 +119,9 @@ At command time SpaceWright:
 
 1. reads the Mac model family;
 2. queries displays through yabai;
-3. applies local Sidecar classifications and role bindings;
+3. applies local Sidecar and ignored-display classifications;
 4. computes a topology key from display kinds and orientations;
-5. selects the previously confirmed setup;
+5. selects the confirmed setup and its display-role bindings;
 6. resolves each workspace's named configuration;
 7. validates and compiles the projected runtime.
 

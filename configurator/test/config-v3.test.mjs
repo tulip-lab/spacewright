@@ -221,6 +221,19 @@ for (const mode of ['wide','tall']) test(`R1 physical role aliases resolve both 
   assert.equal(resolveV3(config,{machine:local,snapshot}).setupId,`single_${mode}`);
 });
 
+test('explicit rotation uses the destination topology bindings for the same physical display', () => {
+  const config = starterV3();
+  const snapshot = { displays: [{ index: 1, uuid: 'EXTERNAL', frame: { w: 1600, h: 900 } }] };
+  const local = machine('mac_mini', { tall: 'OTHER-DISPLAY' }, {
+    topologySelections: { 'external:wide': 'single_wide', 'external:tall': 'single_tall' },
+    topologyBindings: { 'external:wide': { wide: 'EXTERNAL' }, 'external:tall': { tall: 'EXTERNAL' } }
+  });
+  assert.deepEqual(resolveV3(config, { machine: local, snapshot }).displayBindings, { wide: 'EXTERNAL' });
+  const target = resolveModeTransition(config, { machine: local, snapshot, mode: 'tall' });
+  assert.equal(target.setupId, 'single_tall');
+  assert.deepEqual(target.displayBindings, { tall: 'EXTERNAL' });
+});
+
 test('setup readiness checks lane roles even when match requirements have no role', () => {
   const config=starterV3();
   config.hardwareProfiles.mac_mini.setups.single_wide.match.displays[0]={kind:'external',orientation:'wide'};

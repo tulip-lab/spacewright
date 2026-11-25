@@ -7,9 +7,9 @@ import { access, stat, readFile, readdir, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState, summarizeComparison } from './lib/state-engine.mjs';
+import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState, rebindSnapshotDisplays, summarizeComparison } from './lib/state-engine.mjs';
 import { compileV2, validateV2 } from './lib/config-v2.mjs';
-import { resolveV3, validateV3, resolveModeTransition } from './lib/config-v3.mjs';
+import { describeDisplays, resolveV3, topologyKey, validateV3, resolveModeTransition } from './lib/config-v3.mjs';
 import { restoreWindow, sameWindowIdentity,recoveryCandidates } from './lib/recovery.mjs';
 import { stableRead } from './lib/config-store.mjs';
 import { discoverState } from './lib/discovery.mjs';
@@ -73,7 +73,10 @@ async function context(target) {
     const hardware = await detectMacHardware({deadline:executionDeadline,signal:cancellation.signal});
     const resolution = flags['mode-transition'] ? resolveModeTransition(portableConfig, { machine, hardware, snapshot, mode:target.mode }) : resolveV3(portableConfig, { machine, hardware, snapshot });
     if (flags['expected-setup'] && (resolution.setupId !== flags['expected-setup'] || resolution.hardwareProfileId !== flags['expected-hardware-profile'])) throw new Error('current display setup changed; invoke the shortcut again to replan');
-    return { config: resolution.v2, portableConfig, configFile, source, machine, snapshot, resolution, runtime: compileV2(resolution.v2) };
+    const pinnedMachine = { ...machine, displayBindings: resolution.displayBindings };
+    delete pinnedMachine.topologyBindings;
+    return { config: resolution.v2, portableConfig, configFile, source, savedMachine: machine, machine: pinnedMachine,
+      snapshot: rebindSnapshotDisplays(snapshot, resolution.displayBindings), resolution, runtime: compileV2(resolution.v2) };
   }
   return { config: portableConfig, portableConfig, configFile, source, machine, snapshot, resolution: null, runtime: compileV2(portableConfig) };
 }
@@ -87,8 +90,15 @@ function parseTarget(values = positional) {
   return { kind: 'workspace', id, mode };
 }
 
+function assertExpectedTopology(snapshot, machine) {
+  if (flags['expected-topology'] && topologyKey(describeDisplays(snapshot, machine)) !== flags['expected-topology']) {
+    throw new Error('current display setup changed; invoke the shortcut again to replan');
+  }
+}
+
 async function livePlan(target = parseTarget(), frozen = null, snapshot = null) {
   const value = frozen ? { ...frozen, snapshot: snapshot || await discover(frozen.machine) } : await context(target);
+  assertExpectedTopology(value.snapshot, value.machine);
   const normalizedTarget = value.resolution && target.kind === 'workspace' && !target.mode
     ? { ...target, mode: value.config.modes[value.portableConfig.hardwareProfiles[value.resolution.hardwareProfileId].setups[value.resolution.setupId].compatibilityMode] ? value.portableConfig.hardwareProfiles[value.resolution.hardwareProfileId].setups[value.resolution.setupId].compatibilityMode : null }
     : target;
@@ -223,15 +233,14 @@ async function assertSavedConfiguration(initial) {
   if ((existsSync(v3ConfigFile) ? v3ConfigFile : v2ConfigFile) !== initial.configFile) throw new Error('active configuration changed during execution; replan required');
   const currentConfig = await stableRead(initial.configFile, machineFile);
   if (currentConfig.source !== initial.source) throw new Error('configuration changed during execution; replan required');
-  if(JSON.stringify(currentConfig.machine)!==JSON.stringify(initial.machine))throw new Error('machine generation changed during execution; replan required');
-  const roles = new Set(initial.desired.workspaces.map((w) => w.displayRole));
-  for (const role of roles) if (currentConfig.machine.displayBindings?.[role] !== initial.machine.displayBindings?.[role]) throw new Error('machine display bindings changed; replan required');
+  if (JSON.stringify(currentConfig.machine) !== JSON.stringify(initial.savedMachine || initial.machine)) throw new Error('machine generation changed during execution; replan required');
 }
 
 async function assertExecutionContext(initial,effects = []) {
   await assertSavedConfiguration(initial);
   const snapshot = await discover(initial.machine);
   if (snapshot.completeness !== 'complete') throw new Error(snapshot.message);
+  assertExpectedTopology(snapshot, initial.machine);
   if(initial.plan.scope==='mode')assertWindowCensus(initial.plan.preconditions.windows,snapshot.windows,initial.plan.selectedWindows);
   const spaceLabelHints=Object.fromEntries(initial.plan.workspaces.filter(w=>w.targetSpace?.uuid).map(w=>[w.label,w.targetSpace.uuid]));
   const comparison = compareState(snapshot, initial.desired, initial.machine, {spaceLabelHints});
@@ -290,8 +299,8 @@ async function replanAfterDisplay(initial, target) {
     if (stableSamples >= Math.max(2, initial.config.settings?.topologyStableSamples || 3)) {
       if (initial.resolution) {
         const hardware = await detectMacHardware({ deadline, signal: cancellation.signal });
-        const resolution = resolveV3(initial.portableConfig, { machine: initial.machine, hardware, snapshot });
-        if (resolution.hardwareProfileId !== initial.resolution.hardwareProfileId || resolution.setupId !== initial.resolution.setupId) throw new Error('hardware setup changed during display preparation; confirmation required');
+        const resolution = resolveV3(initial.portableConfig, { machine: initial.savedMachine, hardware, snapshot });
+        if (resolution.hardwareProfileId !== initial.resolution.hardwareProfileId || resolution.setupId !== initial.resolution.setupId || resolution.topologyKey !== initial.resolution.topologyKey) throw new Error('hardware setup changed during display preparation; confirmation required');
       }
       await assertSavedConfiguration(initial);
       return next;
@@ -463,8 +472,7 @@ async function applyPlan(target) {
       }
       initial.attemptedOptionalWindows ||= new Set();
       for(const preparation of initial.plan.preparations.filter(p=>p.bestEffort)) initial.attemptedOptionalWindows.add(`${preparation.workspaceId}:${preparation.role}:${preparation.type}`);
-      const saved=await stableRead(initial.configFile,machineFile);
-      if(saved.source!==initial.source || JSON.stringify(saved.machine)!==JSON.stringify(initial.machine))throw new Error('configuration changed during preparation; replan required');
+      await assertSavedConfiguration(initial);
       const next=await livePlan(target,initial);
       if(!next.plan.executable)throw new Error(next.plan.blockers.map(blocker=>blocker.message || blocker.code).join('; '));
       if(!recovery && next.plan.preparations.some(p=>!p.bestEffort)

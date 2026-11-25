@@ -30,9 +30,9 @@ export function displayOrientation(display = {}) {
   return width > height ? 'wide' : 'tall';
 }
 
-export function describeDisplays(snapshot = {}, machine = {}, { includeIgnored = false } = {}) {
+export function describeDisplays(snapshot = {}, machine = {}, { includeIgnored = false, displayBindings = machine.displayBindings } = {}) {
   const kinds = machine.displayKinds || {};
-  const roleByUuid = new Map(Object.entries(machine.displayBindings || {}).map(([role, uuid]) => [uuid, role]));
+  const roleByUuid = new Map(Object.entries(displayBindings || {}).map(([role, uuid]) => [uuid, role]));
   return (snapshot.displays || []).filter(display => includeIgnored || kinds[display.uuid] !== 'ignored').map((display) => ({
     uuid: String(display.uuid || ''),
     role: roleByUuid.get(display.uuid) || display.role || null,
@@ -46,6 +46,89 @@ export function describeDisplays(snapshot = {}, machine = {}, { includeIgnored =
 
 export function topologyKey(displays = []) {
   return displays.filter(display => !display.ignored).map((display) => `${display.kind}:${display.orientation}`).sort().join('+') || 'none';
+}
+
+export function displayBindingsForTopology(machine, key) {
+  return machine.topologyBindings?.[key] ?? machine.displayBindings ?? {};
+}
+
+export function currentDisplayBindings(snapshot, machine) {
+  return machine.topologyBindings
+    ? displayBindingsForTopology(machine, topologyKey(describeDisplays(snapshot, machine)))
+    : machine.displayBindings ?? {};
+}
+
+export function rememberTopologyBindings(machine, key, bindings) {
+  return { ...machine, topologyBindings: { ...machine.topologyBindings, [key]: bindings } };
+}
+
+function setupRoles(setup) {
+  return new Set([...setup.match.displays.map(display => display.role), ...setup.lanes.map(lane => lane.role)].filter(Boolean));
+}
+
+export function confirmDisplaySetup(config, { machine, hardware, snapshot, hardwareProfileId, setupId, requestedBindings = {} }) {
+  if (snapshot.unavailable) throw new Error(snapshot.message || 'display discovery is unavailable');
+  const setup = config.hardwareProfiles[hardwareProfileId].setups[setupId];
+  const displays = describeDisplays(snapshot, machine, { displayBindings: {} });
+  const key = topologyKey(displays);
+  const roles = setupRoles(setup);
+  const previous = machine.hardwareProfile && machine.hardwareProfile !== hardwareProfileId ? {} : displayBindingsForTopology(machine, key);
+  const requirements = setup.match.displays;
+  const requested = Object.fromEntries([...roles].filter(role => requestedBindings[role]).map(role => [role, requestedBindings[role]]));
+  const laneOnly = [...roles].filter(role => !requirements.some(requirement => requirement.role === role));
+  const bindings = Object.fromEntries(laneOnly.map(role => [role, requested[role] || previous[role]]));
+  const fixedUuids = Object.values(bindings);
+  if (new Set(fixedUuids).size !== fixedUuids.length || fixedUuids.some(uuid => !uuid || !displays.some(display => display.uuid === uuid))) {
+    throw new Error('could not bind all workspace display roles');
+  }
+  if ((!setup.match.allowAdditionalDisplays && displays.length !== requirements.length)
+    || displays.length < requirements.length) throw new Error('setup does not match the current displays');
+
+  function findAssignments(preferred) {
+    const assignments = [];
+    const used = new Set();
+    function assign(index, candidate) {
+      if (index === requirements.length) {
+        if (!assignments.some(existing => [...roles].every(role => existing[role] === candidate[role]))) assignments.push({ ...candidate });
+        return;
+      }
+      const { role, ...match } = requirements[index];
+      const target = role && (requested[role] || preferred[role]);
+      for (const display of displays) {
+        if (!display.uuid || used.has(display.uuid) || target && target !== display.uuid || !displayMatches(display, match)) continue;
+        if (role && (laneOnly.some(laneRole => bindings[laneRole] === display.uuid) || candidate[role] && candidate[role] !== display.uuid)) continue;
+        used.add(display.uuid);
+        if (role) candidate[role] = display.uuid;
+        assign(index + 1, candidate);
+        used.delete(display.uuid);
+        if (role) delete candidate[role];
+        if (assignments.length > 1) return;
+      }
+    }
+    assign(0, { ...bindings });
+    return assignments;
+  }
+  let assignments = findAssignments(previous);
+  if (!assignments.length) assignments = findAssignments({});
+  if (assignments.length > 1) throw new Error('display role assignment is ambiguous; select physical bindings in Hardware & Setups');
+  const [assignment] = assignments;
+  if (!assignment) throw new Error('could not bind the setup to the current displays');
+  const next = rememberTopologyBindings({
+    ...machine,
+    version: 2,
+    hardwareProfile: hardwareProfileId,
+    hardwareProfileConfirmed: true,
+    detectedHardware: hardware,
+    // Keep legacy bindings available for existing confirmations without a scoped map.
+    displayBindings: Object.keys(machine.topologySelections || {}).length
+      ? machine.displayBindings || {}
+      : { ...machine.displayBindings, ...assignment },
+    topologySelections: { ...machine.topologySelections, [key]: setupId },
+    activeSetup: setupId
+  }, key, assignment);
+  const status = setupBindingStatus(config, hardwareProfileId, setupId, snapshot, next);
+  if (!status.ready) throw new Error(`could not bind display roles: ${status.missingRoles.join(', ')}`);
+  return next;
 }
 
 function displayMatches(actual, expected, bindings = {}) {
@@ -81,31 +164,29 @@ export function resolveModeTransition(config, { machine = {}, hardware = {}, sna
   const selected = selectHardwareProfile(config, machine, hardware);
   if (!selected.id || !machine.hardwareProfileConfirmed) throw new Error('hardware profile requires confirmation before switching mode');
   if (snapshot.unavailable || snapshot.completeness && snapshot.completeness !== 'complete') throw new Error(snapshot.message || 'display discovery is incomplete');
-  const physical = describeDisplays(snapshot, machine);
   const candidates = [];
-  for (const [setupId, setup] of Object.entries(config.hardwareProfiles[selected.id].setups)) {
-    if (setup.compatibilityMode !== mode) continue;
+  const withoutOrientation = displays => displays.map(({ orientation, ...display }) => display);
+  for (const [key, setupId] of Object.entries(machine.topologySelections || {})) {
+    const setup = config.hardwareProfiles[selected.id].setups[setupId];
+    if (setup?.compatibilityMode !== mode || !/^(built_in|external|sidecar):(wide|tall|square)(\+(built_in|external|sidecar):(wide|tall|square))*$/.test(key)) continue;
+    const confirmed = key.split('+').map(part => { const [kind, orientation] = part.split(':'); return {kind, orientation}; });
+    if (topologyKey(confirmed) !== key) continue;
     const requirements = setup.match.displays;
-    const roles = new Set([...requirements.map(d => d.role), ...setup.lanes.map(l => l.role)].filter(Boolean));
+    const additional = setup.match.allowAdditionalDisplays === true;
+    if (!matchDisplaySet(confirmed, requirements, additional)) continue;
+    const displayBindings = displayBindingsForTopology(machine, key);
+    const physical = describeDisplays(snapshot, machine, { displayBindings });
     const bound = new Set();
-    const bindingsValid = [...roles].every(role => {
-      const uuid = machine.displayBindings?.[role];
+    const bindingsValid = [...setupRoles(setup)].every(role => {
+      const uuid = displayBindings[role];
       const display = physical.find(d => d.uuid === uuid);
       if (!display || bound.has(uuid)) return false;
       bound.add(uuid);
       return requirements.filter(d => d.role === role).every(d => !d.kind || d.kind === display.kind);
     });
-    if (!bindingsValid) continue;
-    const withoutOrientation = displays => displays.map(({ orientation, ...display }) => display);
-    if (!matchDisplaySet(physical, withoutOrientation(requirements), setup.match.allowAdditionalDisplays === true, machine.displayBindings)) continue;
-    for (const [key, confirmedSetup] of Object.entries(machine.topologySelections || {})) {
-      if (confirmedSetup !== setupId || !/^(built_in|external|sidecar):(wide|tall|square)(\+(built_in|external|sidecar):(wide|tall|square))*$/.test(key)) continue;
-      const confirmed = key.split('+').map(part => { const [kind, orientation] = part.split(':'); return {kind, orientation}; });
-      if (topologyKey(confirmed) !== key) continue;
-      if (!matchDisplaySet(confirmed, requirements, setup.match.allowAdditionalDisplays === true)) continue;
-      if (!matchDisplaySet(withoutOrientation(physical), withoutOrientation(confirmed), false)) continue;
-      candidates.push({hardwareProfileId:selected.id, setupId, topologyKey:key, v2:projectSetupToV2(config, selected.id, setupId)});
-    }
+    if (!bindingsValid || !matchDisplaySet(withoutOrientation(physical), withoutOrientation(requirements), additional, displayBindings)) continue;
+    if (!matchDisplaySet(withoutOrientation(physical), withoutOrientation(confirmed), false)) continue;
+    candidates.push({ hardwareProfileId: selected.id, setupId, topologyKey: key, displayBindings, v2: projectSetupToV2(config, selected.id, setupId) });
   }
   if (candidates.length !== 1) throw new Error(`target setup for ${mode} is ambiguous, unconfirmed or missing required physical bindings`);
   return candidates[0];
@@ -114,23 +195,25 @@ export function resolveModeTransition(config, { machine = {}, hardware = {}, sna
 export function matchingSetups(config, hardwareProfileId, snapshot = {}, machine = {}) {
   const profile = config.hardwareProfiles?.[hardwareProfileId];
   if (!profile || snapshot.unavailable) return [];
-  const actual = describeDisplays(snapshot, machine);
+  const displayBindings = currentDisplayBindings(snapshot, machine);
+  const actual = describeDisplays(snapshot, machine, { displayBindings });
   return Object.entries(profile.setups || {}).filter(([, setup]) => (
-    matchDisplaySet(actual, setup.match?.displays || [], setup.match?.allowAdditionalDisplays === true, machine.displayBindings)
+    matchDisplaySet(actual, setup.match?.displays || [], setup.match?.allowAdditionalDisplays === true, displayBindings)
   )).map(([id]) => id);
 }
 
 export function setupBindingStatus(config, hardwareProfileId, setupId, snapshot = {}, machine = {}) {
   const setup = config.hardwareProfiles?.[hardwareProfileId]?.setups?.[setupId];
   const requirements = setup?.match?.displays || [];
-  const displays = describeDisplays(snapshot, machine);
+  const displayBindings = currentDisplayBindings(snapshot, machine);
+  const displays = describeDisplays(snapshot, machine, { displayBindings });
   const missingRoles = [];
-  const roles = new Set([...requirements.map(r => r.role), ...(setup?.lanes || []).map(l => l.role)].filter(Boolean));
+  const roles = setup ? setupRoles(setup) : [];
   const used = new Set();
   for (const role of roles) {
-    const uuid = machine.displayBindings?.[role];
+    const uuid = displayBindings[role];
     const display = uuid ? displays.find((candidate) => candidate.uuid === uuid) : null;
-    if (!display || used.has(uuid) || !requirements.filter(r => r.role === role).every(r => displayMatches(display, r, machine.displayBindings))) missingRoles.push(role);
+    if (!display || used.has(uuid) || !requirements.filter(r => r.role === role).every(r => displayMatches(display, r, displayBindings))) missingRoles.push(role);
     if (display) used.add(uuid);
   }
   return { ready: missingRoles.length === 0, missingRoles };
@@ -154,7 +237,8 @@ export function resolveV3(config, { machine = {}, hardware = {}, snapshot = {}, 
   const selectedHardware = selectHardwareProfile(config, machine, hardware);
   if (!selectedHardware.id) throw new Error(`hardware profile is ${selectedHardware.candidates.length ? 'ambiguous' : 'unmatched'} for family “${selectedHardware.family || 'unknown'}”`);
   if (requireConfirmation && !machine.hardwareProfileConfirmed) throw new Error(`hardware profile “${selectedHardware.id}” requires confirmation`);
-  const displays = describeDisplays(snapshot, machine);
+  const displayBindings = currentDisplayBindings(snapshot, machine);
+  const displays = describeDisplays(snapshot, machine, { displayBindings });
   const key = topologyKey(displays);
   const candidates = matchingSetups(config, selectedHardware.id, snapshot, machine);
   const saved = setupId || machine.topologySelections?.[key] || machine.activeSetup;
@@ -169,6 +253,7 @@ export function resolveV3(config, { machine = {}, hardware = {}, snapshot = {}, 
     hardwareProfileId: selectedHardware.id,
     setupId: selectedSetup,
     topologyKey: key,
+    displayBindings,
     displays,
     candidates,
     bindingStatus,
@@ -501,11 +586,11 @@ export function migrateV2ToV3(v2) {
     };
     singleTallWorkspaceConfigurations[workspaceId] = singleTallConfiguration;
   }
-  v3.hardwareProfiles.mac_mini.setups.single_wide = { name: 'Single wide', compatibilityMode: 'wide', match: { displays: [{ kind: 'external', orientation: 'wide' }] }, lanes: [{ role: wideRole, workspaceOrder: widePlacement.order }], workspaceConfigurations: widePlacement.workspaceConfigurations };
-  v3.hardwareProfiles.mac_mini.setups.single_tall = { name: 'Single tall', compatibilityMode: 'tall', match: { displays: [{ kind: 'external', orientation: 'tall' }] }, lanes: [{ role: tallRole, workspaceOrder: tallPlacement.order }], workspaceConfigurations: singleTallWorkspaceConfigurations };
-  v3.hardwareProfiles.mac_mini.setups.wide_tall = { name: 'Wide + tall', compatibilityMode: 'wide', match: { displays: [{ kind: 'external', orientation: 'wide' }, { kind: 'external', orientation: 'tall' }] }, lanes: [{ role: secondaryRole, workspaceOrder: widePlacement.order }, { role: firstRole, workspaceOrder: [] }], workspaceConfigurations: widePlacement.workspaceConfigurations };
-  v3.hardwareProfiles.mac_mini.setups.wide_sidecar = { name: 'Wide + Sidecar', compatibilityMode: 'wide', match: { displays: [{ kind: 'external', orientation: 'wide' }, { kind: 'sidecar' }] }, lanes: [{ role: wideRole, workspaceOrder: widePlacement.order }, { role: 'sidecar', workspaceOrder: [] }], workspaceConfigurations: widePlacement.workspaceConfigurations };
-  v3.hardwareProfiles.mac_mini.setups.tall_sidecar = { name: 'Tall + Sidecar', compatibilityMode: 'tall', match: { displays: [{ kind: 'external', orientation: 'tall' }, { kind: 'sidecar' }] }, lanes: [{ role: tallRole, workspaceOrder: tallPlacement.order }, { role: 'sidecar', workspaceOrder: [] }], workspaceConfigurations: tallPlacement.workspaceConfigurations };
+  v3.hardwareProfiles.mac_mini.setups.single_wide = { name: 'Single wide', compatibilityMode: 'wide', match: { displays: [{ role: wideRole, kind: 'external', orientation: 'wide' }] }, lanes: [{ role: wideRole, workspaceOrder: widePlacement.order }], workspaceConfigurations: widePlacement.workspaceConfigurations };
+  v3.hardwareProfiles.mac_mini.setups.single_tall = { name: 'Single tall', compatibilityMode: 'tall', match: { displays: [{ role: tallRole, kind: 'external', orientation: 'tall' }] }, lanes: [{ role: tallRole, workspaceOrder: tallPlacement.order }], workspaceConfigurations: singleTallWorkspaceConfigurations };
+  v3.hardwareProfiles.mac_mini.setups.wide_tall = { name: 'Wide + tall', compatibilityMode: 'wide', match: { displays: [{ role: secondaryRole, kind: 'external', orientation: 'wide' }, { ...(secondaryRole !== firstRole ? { role: firstRole } : {}), kind: 'external', orientation: 'tall' }] }, lanes: [{ role: secondaryRole, workspaceOrder: widePlacement.order }, { role: firstRole, workspaceOrder: [] }], workspaceConfigurations: widePlacement.workspaceConfigurations };
+  v3.hardwareProfiles.mac_mini.setups.wide_sidecar = { name: 'Wide + Sidecar', compatibilityMode: 'wide', match: { displays: [{ role: wideRole, kind: 'external', orientation: 'wide' }, { role: 'sidecar', kind: 'sidecar' }] }, lanes: [{ role: wideRole, workspaceOrder: widePlacement.order }, { role: 'sidecar', workspaceOrder: [] }], workspaceConfigurations: widePlacement.workspaceConfigurations };
+  v3.hardwareProfiles.mac_mini.setups.tall_sidecar = { name: 'Tall + Sidecar', compatibilityMode: 'tall', match: { displays: [{ role: tallRole, kind: 'external', orientation: 'tall' }, { role: 'sidecar', kind: 'sidecar' }] }, lanes: [{ role: tallRole, workspaceOrder: tallPlacement.order }, { role: 'sidecar', workspaceOrder: [] }], workspaceConfigurations: tallPlacement.workspaceConfigurations };
   v3.hardwareProfiles.other.setups.default = { name: 'Default', compatibilityMode: 'solo', match: { displays: [{ kind: 'external' }], allowAdditionalDisplays: true }, lanes: [{ role: firstRole, workspaceOrder: soloPlacement.order }], workspaceConfigurations: soloPlacement.workspaceConfigurations };
   if (v2.aiRouting) {
     v3.aiRouting = {

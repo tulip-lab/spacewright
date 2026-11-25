@@ -6,6 +6,7 @@ import { compileLayout,remapTallLayout,configuredWindows as windowsForVariant } 
 import { cleanupCandidates, sandboxWorkspace, variantLabels,windowOccupiesSpace } from './finalization-policy.mjs';
 import { preparationsFor } from './adapter-preparation.mjs';
 import { gridFrame } from './grid-geometry.mjs';
+import { currentDisplayBindings } from './config-v3.mjs';
 
 export const STATE_FORMAT_VERSION = 1;
 export const PLAN_FORMAT_VERSION = 1;
@@ -46,7 +47,7 @@ function normalizedWindow(window) {
 }
 
 export function normalizeSnapshot(raw = {}, machine = {}) {
-  const bindings = machine.displayBindings || {};
+  const bindings = currentDisplayBindings(raw, machine);
   const boundRoles = new Map(Object.entries(bindings).map(([role, uuid]) => [uuid, role]));
   const ignoredIndexes = new Set((raw.displays || []).filter(display => machine.displayKinds?.[display.uuid] === 'ignored').map(display => number(display.index)));
   const ignoredSpaces = new Set((raw.spaces || []).filter(space => ignoredIndexes.has(number(space.display))).map(space => number(space.index)));
@@ -92,6 +93,13 @@ export function normalizeSnapshot(raw = {}, machine = {}) {
     capturedAt: raw.capturedAt || new Date().toISOString(),
     ...(raw.message ? { message: String(raw.message) } : {})
   };
+}
+
+export function rebindSnapshotDisplays(snapshot, bindings) {
+  const roles = new Map(Object.entries(bindings).map(([role, uuid]) => [uuid, role]));
+  const displays = snapshot.displays.map(display => ({ ...display, role: roles.get(display.uuid) || null }));
+  const { snapshotId, capturedAt, message, ...core } = snapshot;
+  return { ...snapshot, displays, snapshotId: digest({ ...core, displays }).slice(0, 20) };
 }
 
 function targetDefinition(config, target = {}) {
@@ -304,7 +312,7 @@ function inferUnlabeledSpace(snapshot, workspace, expectedDisplay, owners, reser
 export function compareState(snapshot, desired, machine = {}, options = {}) {
   const drifts = [];
   const matches = [];
-  const bindings = machine.displayBindings || {};
+  const bindings = currentDisplayBindings(snapshot, machine);
   const usedWindowIds = new Set();
   for(const label of new Set(desired.workspaces.map(w=>w.label))) {
     const claims=desired.workspaces.filter(w=>w.label===label);

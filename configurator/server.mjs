@@ -12,7 +12,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import { compileSkhd, compileV2, migrateV1, starterConfig, validateV2 } from './lib/config-v2.mjs';
-import { compileV3, describeDisplays, matchingSetups, migrateV2ToV3, resolveV3, selectHardwareProfile, setupBindingStatus, starterV3, topologyKey, validateV3 } from './lib/config-v3.mjs';
+import { compileV3, confirmDisplaySetup, currentDisplayBindings, describeDisplays, matchingSetups, migrateV2ToV3, resolveV3, rememberTopologyBindings, selectHardwareProfile, setupBindingStatus, starterV3, topologyKey, validateV3 } from './lib/config-v3.mjs';
 import { detectMacHardware } from './lib/hardware-detection.mjs';
 import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState } from './lib/state-engine.mjs';
 import { generationDocument, verifyRuntimeDocument, withConfigurationWrite, stableRead,atomicText, hash } from './lib/config-store.mjs';
@@ -165,29 +165,12 @@ async function detectHardware() {
   return detectMacHardware();
 }
 
-function assignSetupRoles(config, hardwareProfileId, setupId, displays, requested = {}) {
-  const requirements = config.hardwareProfiles[hardwareProfileId].setups[setupId].match.displays;
-  const used = new Set();
-  const bindings = {};
-  for (const requirement of requirements) {
-    if (!requirement.role) continue;
-    const requestedUuid = requested[requirement.role];
-    const index = displays.findIndex((display, candidate) => !used.has(candidate)
-      && (!requestedUuid || display.uuid === requestedUuid)
-      && (!requirement.kind || display.kind === requirement.kind)
-      && (!requirement.orientation || display.orientation === requirement.orientation));
-    if (index < 0) throw new Error(`could not bind display role “${requirement.role}”`);
-    used.add(index);
-    bindings[requirement.role] = displays[index].uuid;
-  }
-  return bindings;
-}
-
 async function v3SetupState(config, machineOverride = null) {
   const [machine, hardware, displayResult] = await Promise.all([machineOverride || readMachine(), detectHardware(), queryDisplays()]);
   const snapshot = { unavailable: displayResult.unavailable === true, message: displayResult.message, displays: displayResult.displays || [] };
   const hardwareSelection = selectHardwareProfile(config, machine, hardware);
-  const displays = describeDisplays(snapshot, machine, { includeIgnored: true });
+  const displayBindings = currentDisplayBindings(snapshot, machine);
+  const displays = describeDisplays(snapshot, machine, { includeIgnored: true, displayBindings });
   const key = topologyKey(displays);
   const setupCandidates = hardwareSelection.id ? matchingSetups(config, hardwareSelection.id, snapshot, machine) : [];
   const confirmedSetup = machine.topologySelections?.[key] || null;
@@ -209,6 +192,7 @@ async function v3SetupState(config, machineOverride = null) {
     compatibilityMode: setup?.compatibilityMode || null,
     workspaceConfigurations: setup?.workspaceConfigurations || {},
     bindingStatus,
+    displayBindings,
     ready: Boolean(machine.hardwareProfileConfirmed && confirmedSetup && setupCandidates.includes(confirmedSetup) && bindingStatus.ready),
     machine,
     snapshot
@@ -495,25 +479,12 @@ async function api(request, response, url) {
     const currentMachine=normalizedMachine(document.machine);
     const [hardware, displayResult] = await Promise.all([detectHardware(), queryDisplays()]);
     if (displayResult.unavailable) return json(response, 503, { error: displayResult.message });
-    const provisional = { ...currentMachine, displayBindings: { ...(currentMachine.displayBindings || {}), ...(payload.displayBindings || {}) }, displayKinds: { ...(currentMachine.displayKinds || {}), ...(payload.displayKinds || {}) } };
+    const provisional = { ...currentMachine, displayKinds: { ...currentMachine.displayKinds, ...payload.displayKinds } };
     const snapshot = { unavailable: false, displays: displayResult.displays };
-    const displays = describeDisplays(snapshot, provisional);
-    const candidates = matchingSetups(config, hardwareProfileId, snapshot, provisional);
-    if (!candidates.includes(setupId)) return json(response, 422, { error: `setup “${setupId}” does not match the current displays`, candidates });
-    let assigned;
-    try { assigned = assignSetupRoles(config, hardwareProfileId, setupId, displays, payload.displayBindings || {}); }
+    const key = topologyKey(describeDisplays(snapshot, provisional));
+    let machine;
+    try { machine = confirmDisplaySetup(config, { machine: provisional, hardware, snapshot, hardwareProfileId, setupId, requestedBindings: payload.displayBindings }); }
     catch (error) { return json(response, 422, { error: error.message }); }
-    const key = topologyKey(displays);
-    const machine = {
-      ...provisional,
-      version: 2,
-      hardwareProfile: hardwareProfileId,
-      hardwareProfileConfirmed: true,
-      detectedHardware: hardware,
-      displayBindings: { ...(provisional.displayBindings || {}), ...assigned },
-      topologySelections: { ...(provisional.topologySelections || {}), [key]: setupId },
-      activeSetup: setupId
-    };
     let runtime = null;
     await serializeConfigWrite(async () => {
       await assertSetupDocument(document);
@@ -764,7 +735,7 @@ async function api(request, response, url) {
     }
     const topology = snapshot.unavailable ? 'unknown' : classifyTopology(snapshot.displays.map((display) => ({ ...display, 'is-built-in': display.builtIn, 'is-visible': display.visible })));
     const duplicateLabels = [...new Set(snapshot.spaces.map((space) => space.label).filter(Boolean).filter((label, index, labels) => labels.indexOf(label) !== index))];
-    const missingBindings = Object.entries(machine.displayBindings || {}).filter(([, uuid]) => !snapshot.displays.some((display) => display.uuid === uuid)).map(([role]) => role);
+    const missingBindings = Object.entries(currentDisplayBindings(snapshot, machine)).filter(([, uuid]) => !snapshot.displays.some((display) => display.uuid === uuid)).map(([role]) => role);
     const expectedRuntime = validation.valid && !resolutionError
       ? generationDocument(portableConfig, v3Resolution, document.source) : null;
     let runtimeSource = null, runtimeCheck;
@@ -917,14 +888,22 @@ async function api(request, response, url) {
       }
       const uuids = Object.values(payload.displayBindings);
       if (new Set(uuids).size !== uuids.length) return json(response, 422, { error: 'one display UUID cannot be bound to multiple roles' });
-      const machine = {...normalizedMachine(document.machine),displayBindings:payload.displayBindings};
+      let machine = normalizedMachine(document.machine);
       let runtime;
       if(document.version===3) {
         const portable=document.config;
-        const setup=await v3SetupState(portable,machine);
-        if(!setup.ready)throw Object.assign(new Error('display bindings require confirmed topology before activation'),{statusCode:422});
-        runtime=compiledV3Document(portable,{machine,hardware:setup.hardware,snapshot:setup.snapshot},document.source);
-      } else if(document.version===2)runtime=generationDocument(document.config,null,document.source);
+        const state = await v3SetupState(portable, machine);
+        machine = rememberTopologyBindings(machine, state.topologyKey, payload.displayBindings);
+        if (!state.confirmedSetup || !machine.hardwareProfileConfirmed
+          || !matchingSetups(portable, state.hardwareSelection.id, state.snapshot, machine).includes(state.confirmedSetup)
+          || !setupBindingStatus(portable, state.hardwareSelection.id, state.confirmedSetup, state.snapshot, machine).ready) {
+          throw Object.assign(new Error('display bindings require confirmed topology before activation'), { statusCode: 422 });
+        }
+        runtime=compiledV3Document(portable,{machine,hardware:state.hardware,snapshot:state.snapshot},document.source);
+      } else {
+        machine.displayBindings = payload.displayBindings;
+        if (document.version === 2) runtime = generationDocument(document.config, null, document.source);
+      }
       await assertSetupDocument(document);
       await atomicWrite(machineFile,`${JSON.stringify(machine,null,2)}\n`);
       if(runtime)await atomicWrite(runtimeFile,`${JSON.stringify(runtime,null,2)}\n`);

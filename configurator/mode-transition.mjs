@@ -345,18 +345,22 @@ async function main() {
   if (!stateRoot) throw new Error('state root is required');
   const currentSetup = option('current-setup');
   const hardwareProfileId = option('hardware-profile');
+  const currentTopology = option('current-topology');
   for (const id of [currentSetup, hardwareProfileId].filter(Boolean)) {
     if (!/^[a-z][a-z0-9_]*$/.test(id)) throw new Error('invalid current setup identity');
   }
   if (currentSetup && !hardwareProfileId) throw new Error('current setup requires a hardware profile');
-  const expected = currentSetup ? `--expected-setup=${currentSetup} --expected-hardware-profile=${hardwareProfileId}` : '';
+  if (currentTopology && (!currentSetup || !/^(built_in|external|sidecar):(wide|tall|square)(\+(built_in|external|sidecar):(wide|tall|square))*$/.test(currentTopology))) throw new Error('invalid current display topology');
+  const setupIdentity = currentSetup ? [hardwareProfileId, currentSetup, currentTopology].filter(Boolean).join(':') : '';
+  const topologyOption = currentTopology ? ` --expected-topology=${currentTopology}` : '';
+  const expected = currentSetup ? `--expected-setup=${currentSetup} --expected-hardware-profile=${hardwareProfileId}${topologyOption}` : '';
   const hardwareContext = currentSetup ? await resolveHardwareContext({ stateRoot, configRoot, setupId: currentSetup, hardwareProfileId }) : undefined;
 
   if (action === 'run') {
     const mode = firstTarget;
     const result = await runTransition({ mode, packageRoot, configRoot, stateRoot,
       ...(currentSetup ? { command: `"$SPACEWRIGHT_TRANSITION_PACKAGE_ROOT/bin/spacewright" apply ${mode} ${expected} --verified-marker --json`,
-        targetKey: `setup:${hardwareProfileId}:${currentSetup}`, hardwareContext } : {}) });
+        targetKey: `setup:${setupIdentity}`, hardwareContext } : {}) });
     if (!['completed', 'duplicate'].includes(result.status)) process.exitCode = 1;
   } else if (action === 'workspace') {
     const workspace = firstTarget;
@@ -372,7 +376,7 @@ async function main() {
       hardwareContext,
       scope: 'workspace',
       workspace,
-      targetKey: `workspace:${workspace}:${currentSetup ? `${hardwareProfileId}:${currentSetup}` : mode}`,
+      targetKey: `workspace:${workspace}:${setupIdentity || mode}`,
       targetLabel,
     });
     if (!['completed', 'duplicate'].includes(result.status)) process.exitCode = 1;
