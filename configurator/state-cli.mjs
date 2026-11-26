@@ -241,6 +241,12 @@ async function assertExecutionContext(initial,effects = []) {
   const snapshot = await discover(initial.machine);
   if (snapshot.completeness !== 'complete') throw new Error(snapshot.message);
   assertExpectedTopology(snapshot, initial.machine);
+  if (initial.resolution) {
+    const connectedUuids = value => value.displays.filter(display => !display.ignored).map(display => display.uuid).sort();
+    if (JSON.stringify(connectedUuids(initial.snapshot)) !== JSON.stringify(connectedUuids(snapshot))) {
+      throw new Error('physical displays changed during execution; replan required');
+    }
+  }
   if(initial.plan.scope==='mode')assertWindowCensus(initial.plan.preconditions.windows,snapshot.windows,initial.plan.selectedWindows);
   const spaceLabelHints=Object.fromEntries(initial.plan.workspaces.filter(w=>w.targetSpace?.uuid).map(w=>[w.label,w.targetSpace.uuid]));
   const comparison = compareState(snapshot, initial.desired, initial.machine, {spaceLabelHints});
@@ -300,7 +306,11 @@ async function replanAfterDisplay(initial, target) {
       if (initial.resolution) {
         const hardware = await detectMacHardware({ deadline, signal: cancellation.signal });
         const resolution = resolveV3(initial.portableConfig, { machine: initial.savedMachine, hardware, snapshot });
-        if (resolution.hardwareProfileId !== initial.resolution.hardwareProfileId || resolution.setupId !== initial.resolution.setupId || resolution.topologyKey !== initial.resolution.topologyKey) throw new Error('hardware setup changed during display preparation; confirmation required');
+        if (resolution.hardwareProfileId !== initial.resolution.hardwareProfileId || resolution.setupId !== initial.resolution.setupId
+          || resolution.topologyKey !== initial.resolution.topologyKey
+          || JSON.stringify(resolution.displayBindings) !== JSON.stringify(initial.resolution.displayBindings)) {
+          throw new Error('hardware setup changed during display preparation; confirmation required');
+        }
       }
       await assertSavedConfiguration(initial);
       return next;

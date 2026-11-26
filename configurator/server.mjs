@@ -12,9 +12,9 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import { compileSkhd, compileV2, migrateV1, starterConfig, validateV2 } from './lib/config-v2.mjs';
-import { compileV3, confirmDisplaySetup, currentDisplayBindings, describeDisplays, matchingSetups, migrateV2ToV3, resolveV3, rememberTopologyBindings, selectHardwareProfile, setupBindingStatus, starterV3, topologyKey, validateV3 } from './lib/config-v3.mjs';
+import { compileV3, confirmDisplaySetup, currentDisplayBindings, describeDisplays, matchingSetups, migrateV2ToV3, resolveV3, resolveSetupDisplayBindings, rememberTopologyBindings, selectHardwareProfile, setupBindingStatus, starterV3, topologyKey, validateV3 } from './lib/config-v3.mjs';
 import { detectMacHardware } from './lib/hardware-detection.mjs';
-import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState } from './lib/state-engine.mjs';
+import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState, rebindSnapshotDisplays } from './lib/state-engine.mjs';
 import { generationDocument, verifyRuntimeDocument, withConfigurationWrite, stableRead,atomicText, hash } from './lib/config-store.mjs';
 import { discoverState } from './lib/discovery.mjs';
 import { classifyTopology, matchingRules, ruleContext } from './lib/automation-policy.mjs';
@@ -169,14 +169,14 @@ async function v3SetupState(config, machineOverride = null) {
   const [machine, hardware, displayResult] = await Promise.all([machineOverride || readMachine(), detectHardware(), queryDisplays()]);
   const snapshot = { unavailable: displayResult.unavailable === true, message: displayResult.message, displays: displayResult.displays || [] };
   const hardwareSelection = selectHardwareProfile(config, machine, hardware);
-  const displayBindings = currentDisplayBindings(snapshot, machine);
-  const displays = describeDisplays(snapshot, machine, { includeIgnored: true, displayBindings });
-  const key = topologyKey(displays);
-  const setupCandidates = hardwareSelection.id ? matchingSetups(config, hardwareSelection.id, snapshot, machine) : [];
+  const key = topologyKey(describeDisplays(snapshot, machine));
   const confirmedSetup = machine.topologySelections?.[key] || null;
+  const displayBindings = resolveSetupDisplayBindings(config, hardwareSelection.id, confirmedSetup, snapshot, machine);
+  const displays = describeDisplays(snapshot, machine, { includeIgnored: true, displayBindings });
+  const setupCandidates = hardwareSelection.id ? matchingSetups(config, hardwareSelection.id, snapshot, machine) : [];
   const setup = confirmedSetup && hardwareSelection.id ? config.hardwareProfiles[hardwareSelection.id]?.setups?.[confirmedSetup] : null;
   const bindingStatus = confirmedSetup && hardwareSelection.id
-    ? setupBindingStatus(config, hardwareSelection.id, confirmedSetup, snapshot, machine)
+    ? setupBindingStatus(config, hardwareSelection.id, confirmedSetup, snapshot, machine, displayBindings)
     : { ready: false, missingRoles: [] };
   return {
     mutates: false,
@@ -216,7 +216,7 @@ async function livePlan(config, payload) {
   const validation = config.version === 3 ? validateV3(config) : validateV2(config);
   if (!validation.valid) return { validation };
   const machine=await readMachine();
-  const snapshot=await discoverState(machine);
+  let snapshot=await discoverState(machine);
   let effectiveConfig = config;
   let resolution = null;
   let target = targetFromPayload(payload);
@@ -224,6 +224,7 @@ async function livePlan(config, payload) {
     const hardware = await detectHardware();
     resolution = resolveV3(config, { machine, hardware, snapshot });
     effectiveConfig = resolution.v2;
+    snapshot = rebindSnapshotDisplays(snapshot, resolution.displayBindings);
     if (target.kind === 'workspace' && !target.mode) {
       target = { ...target, mode: config.hardwareProfiles[resolution.hardwareProfileId].setups[resolution.setupId].compatibilityMode };
     }
@@ -231,7 +232,7 @@ async function livePlan(config, payload) {
   let desired = buildDesiredState(effectiveConfig, compileV2(effectiveConfig), target, snapshot);
   const spaceLabelHints = await readSpaceLabelHints(stateRoot, desired, snapshot);
   if (Object.keys(spaceLabelHints).length) desired = buildDesiredState(effectiveConfig, compileV2(effectiveConfig), target, snapshot, { spaceLabelHints });
-  const comparison = compareState(snapshot, desired, machine, { spaceLabelHints });
+  const comparison = compareState(snapshot, desired, machine, { spaceLabelHints, displayBindings: resolution?.displayBindings });
   const plan = buildExecutionPlan(snapshot, desired, comparison);
   return { validation, snapshot, desired, comparison, plan, resolution: resolution ? {
     hardwareProfileId: resolution.hardwareProfileId,
@@ -735,7 +736,8 @@ async function api(request, response, url) {
     }
     const topology = snapshot.unavailable ? 'unknown' : classifyTopology(snapshot.displays.map((display) => ({ ...display, 'is-built-in': display.builtIn, 'is-visible': display.visible })));
     const duplicateLabels = [...new Set(snapshot.spaces.map((space) => space.label).filter(Boolean).filter((label, index, labels) => labels.indexOf(label) !== index))];
-    const missingBindings = Object.entries(currentDisplayBindings(snapshot, machine)).filter(([, uuid]) => !snapshot.displays.some((display) => display.uuid === uuid)).map(([role]) => role);
+    const displayBindings = v3Resolution?.displayBindings ?? currentDisplayBindings(snapshot, machine);
+    const missingBindings = Object.entries(displayBindings).filter(([, uuid]) => !snapshot.displays.some((display) => display.uuid === uuid)).map(([role]) => role);
     const expectedRuntime = validation.valid && !resolutionError
       ? generationDocument(portableConfig, v3Resolution, document.source) : null;
     let runtimeSource = null, runtimeCheck;
@@ -755,10 +757,11 @@ async function api(request, response, url) {
       : topology === 'solo' ? 'solo' : topology.startsWith('tall') ? 'tall' : topology.startsWith('wide') ? 'wide' : null;
     let reconciliation = null;
     if (validation.valid && !snapshot.unavailable && inferredMode && config?.modes?.[inferredMode] && snapshot.completeness === 'complete') {
-      let desired = buildDesiredState(config, compileV2(config), { kind: 'mode', id: inferredMode, mode: inferredMode }, snapshot);
-      const spaceLabelHints = await readSpaceLabelHints(stateRoot, desired, snapshot);
-      if (Object.keys(spaceLabelHints).length) desired = buildDesiredState(config, compileV2(config), { kind: 'mode', id: inferredMode, mode: inferredMode }, snapshot, { spaceLabelHints });
-      reconciliation = compareState(snapshot, desired, machine, { spaceLabelHints });
+      const current = v3Resolution ? rebindSnapshotDisplays(snapshot, displayBindings) : snapshot;
+      let desired = buildDesiredState(config, compileV2(config), { kind: 'mode', id: inferredMode, mode: inferredMode }, current);
+      const spaceLabelHints = await readSpaceLabelHints(stateRoot, desired, current);
+      if (Object.keys(spaceLabelHints).length) desired = buildDesiredState(config, compileV2(config), { kind: 'mode', id: inferredMode, mode: inferredMode }, current, { spaceLabelHints });
+      reconciliation = compareState(current, desired, machine, { spaceLabelHints, displayBindings });
     }
     const runsRoot = join(stateRoot, 'runs');
     const runFiles = existsSync(runsRoot) ? (await readdir(runsRoot)).filter((name) => /^[0-9]+-[a-f0-9]{8}\.json$/.test(name)).sort().reverse().slice(0, 10) : [];

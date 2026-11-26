@@ -312,7 +312,7 @@ function inferUnlabeledSpace(snapshot, workspace, expectedDisplay, owners, reser
 export function compareState(snapshot, desired, machine = {}, options = {}) {
   const drifts = [];
   const matches = [];
-  const bindings = currentDisplayBindings(snapshot, machine);
+  const bindings = options.displayBindings ?? currentDisplayBindings(snapshot, machine);
   const usedWindowIds = new Set();
   for(const label of new Set(desired.workspaces.map(w=>w.label))) {
     const claims=desired.workspaces.filter(w=>w.label===label);

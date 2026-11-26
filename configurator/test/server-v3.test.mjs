@@ -115,13 +115,15 @@ test('v3 server confirms a Mac mini display setup and saves a digest-bound runti
   const configRoot = join(root, 'config');
   const stateRoot = join(root, 'state');
   const fakeBin = join(root, 'fake-bin');
+  const displayIdFile = join(fakeBin, 'yabai.display-id');
   await Promise.all([mkdir(configRoot), mkdir(stateRoot), mkdir(fakeBin)]);
   const config = starterV3();
   await writeFile(join(configRoot, 'config.v3.json'), `${JSON.stringify(config, null, 2)}\n`);
+  await writeFile(displayIdFile, 'DISPLAY-TALL-1234');
   await writeFile(join(fakeBin, 'sysctl'), '#!/bin/sh\nprintf "%s\\n" "Macmini9,1"\n');
   await writeFile(join(fakeBin, 'yabai'), `#!/bin/sh
 case "$3" in
-  --displays) printf '%s\n' '[{"index":1,"uuid":"DISPLAY-TALL-1234","frame":{"x":0,"y":0,"w":1200,"h":1920},"is-built-in":false,"spaces":[1]}]' ;;
+  --displays) printf '[{"index":1,"uuid":"%s","frame":{"x":0,"y":0,"w":1200,"h":1920},"is-built-in":false,"spaces":[1]}]\n' "$(cat "$0.display-id")" ;;
   --spaces) printf '%s\n' '[{"index":1,"uuid":"SPACE-CODING","display":1,"label":"coding_tall","type":"float"}]' ;;
   --windows) printf '%s\n' '[{"id":10,"app":"Code","display":1,"space":1,"frame":{"x":0,"y":0,"w":1200,"h":1920},"can-move":true,"can-resize":true,"is-visible":true}]' ;;
 esac
@@ -195,6 +197,20 @@ esac
   assert.equal(preview.body.resolution.hardwareProfileId, 'mac_mini');
   assert.equal(preview.body.resolution.setupId, 'single_tall');
   assert.equal(preview.body.plan.target.mode, 'tall');
+
+  await writeFile(displayIdFile, 'DISPLAY-TALL-5678');
+  const replacement = await json(url, '/api/v3/setup', token);
+  assert.equal(replacement.body.ready, true);
+  assert.deepEqual(replacement.body.displayBindings, { tall: 'DISPLAY-TALL-5678' });
+  const replacementPreview = await json(url, '/api/preview', token, {
+    method: 'POST',
+    body: JSON.stringify({ kind: 'workspace', target: 'coding' })
+  });
+  assert.equal(replacementPreview.status, 200);
+  assert.equal(replacementPreview.body.plan.executable, true);
+  assert.equal(replacementPreview.body.plan.workspaces[0].targetDisplay.uuid, 'DISPLAY-TALL-5678');
+  assert.equal(await readFile(join(stateRoot, 'machine.json'), 'utf8'), machineBefore);
+  assert.equal(await readFile(join(configRoot, 'generated', 'runtime.json'), 'utf8'), runtimeBefore);
 
   const browser = await chromium.launch({ headless: true, ...(existsSync(systemChrome) ? { executablePath: systemChrome } : {}) });
   context.after(() => browser.close());
@@ -292,7 +308,7 @@ esac
     assert.equal(existsSync(join(configRoot,'generated')),false);assert.equal(existsSync(join(configRoot,'.configuration-write')),false);
   }
   await writeFile(`${source}.backup`,JSON.stringify(backup));
-  if(current.version===3)for(const broken of [{hardwareProfileConfirmed:false},{displayBindings:{tall:'MISSING-DISPLAY'}}]) {
+  if(current.version===3)for(const broken of [{hardwareProfileConfirmed:false},{topologySelections:{}}]) {
     await writeFile(join(stateRoot,'machine.json'),JSON.stringify({...JSON.parse(machine),...broken}));
     assert.equal((await post(payload)).status,422);assert.equal(await readFile(source,'utf8'),sourceText);
     assert.equal(existsSync(join(configRoot,'.configuration-write')),false);
