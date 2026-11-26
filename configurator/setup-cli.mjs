@@ -11,6 +11,7 @@ import {
   currentDisplayBindings,
   describeDisplays,
   resolveV3,
+  resolveSetupDisplayBindings,
   matchingSetups,
   selectHardwareProfile,
   setupBindingStatus,
@@ -67,9 +68,10 @@ async function inspect() {
   const validation = validateV3(config);
   if (!validation.valid) throw new Error(`configuration is invalid:\n${validation.errors.join('\n')}`);
   const selectedHardware = selectHardwareProfile(config, machine, hardware);
-  const displayBindings = currentDisplayBindings(snapshot, machine);
+  const key = topologyKey(describeDisplays(snapshot, machine));
+  const confirmedSetup = machine.topologySelections?.[key] || null;
+  const displayBindings = resolveSetupDisplayBindings(config, selectedHardware.id, confirmedSetup, snapshot, machine);
   const displays = describeDisplays(snapshot, machine, { includeIgnored: true, displayBindings });
-  const key = topologyKey(displays);
   const setupCandidates = selectedHardware.id ? matchingSetups(config, selectedHardware.id, snapshot, machine) : [];
   return {
     config,
@@ -82,7 +84,7 @@ async function inspect() {
     topologyKey: key,
     selectedHardware,
     setupCandidates,
-    confirmedSetup: machine.topologySelections?.[key] || null
+    confirmedSetup
   };
 }
 
@@ -123,10 +125,10 @@ try {
   validateOptions();
   const value = await inspect();
   if (command === 'detect' || command === 'status' || command === 'show') {
-    const confirmedSetup = value.machine.topologySelections?.[value.topologyKey] || null;
+    const { confirmedSetup } = value;
     const setup = confirmedSetup ? value.config.hardwareProfiles?.[value.selectedHardware.id]?.setups?.[confirmedSetup] : null;
     const bindingStatus = confirmedSetup && value.selectedHardware.id
-      ? setupBindingStatus(value.config, value.selectedHardware.id, confirmedSetup, value.snapshot, value.machine)
+      ? setupBindingStatus(value.config, value.selectedHardware.id, confirmedSetup, value.snapshot, value.machine, value.displayBindings)
       : { ready: false, missingRoles: [] };
     const status = {
       mutates: false,
@@ -191,7 +193,7 @@ try {
     const setupId = value.machine.topologySelections?.[value.topologyKey];
     if (!value.machine.hardwareProfileConfirmed || !hardwareProfileId) throw new Error('hardware profile has not been confirmed; run “spacewright setup confirm”');
     if (!setupId || !value.setupCandidates.includes(setupId)) throw new Error(`current topology “${value.topologyKey}” has not been confirmed; run “spacewright setup confirm”`);
-    const bindingStatus = setupBindingStatus(value.config, hardwareProfileId, setupId, value.snapshot, value.machine);
+    const bindingStatus = setupBindingStatus(value.config, hardwareProfileId, setupId, value.snapshot, value.machine, value.displayBindings);
     if (!bindingStatus.ready) throw new Error(`current display roles require confirmation: ${bindingStatus.missingRoles.join(', ')}`);
     const next = { ...value.machine, activeSetup: setupId };
     const runtime = await persistSetup(value, next);

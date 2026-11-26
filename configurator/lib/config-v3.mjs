@@ -66,13 +66,8 @@ function setupRoles(setup) {
   return new Set([...setup.match.displays.map(display => display.role), ...setup.lanes.map(lane => lane.role)].filter(Boolean));
 }
 
-export function confirmDisplaySetup(config, { machine, hardware, snapshot, hardwareProfileId, setupId, requestedBindings = {} }) {
-  if (snapshot.unavailable) throw new Error(snapshot.message || 'display discovery is unavailable');
-  const setup = config.hardwareProfiles[hardwareProfileId].setups[setupId];
-  const displays = describeDisplays(snapshot, machine, { displayBindings: {} });
-  const key = topologyKey(displays);
+function displayAssignmentSearch(setup, displays, previous, requestedBindings = {}) {
   const roles = setupRoles(setup);
-  const previous = machine.hardwareProfile && machine.hardwareProfile !== hardwareProfileId ? {} : displayBindingsForTopology(machine, key);
   const requirements = setup.match.displays;
   const requested = Object.fromEntries([...roles].filter(role => requestedBindings[role]).map(role => [role, requestedBindings[role]]));
   const laneOnly = [...roles].filter(role => !requirements.some(requirement => requirement.role === role));
@@ -84,7 +79,7 @@ export function confirmDisplaySetup(config, { machine, hardware, snapshot, hardw
   if ((!setup.match.allowAdditionalDisplays && displays.length !== requirements.length)
     || displays.length < requirements.length) throw new Error('setup does not match the current displays');
 
-  function findAssignments(preferred) {
+  return function findAssignments(preferred) {
     const assignments = [];
     const used = new Set();
     function assign(index, candidate) {
@@ -107,7 +102,16 @@ export function confirmDisplaySetup(config, { machine, hardware, snapshot, hardw
     }
     assign(0, { ...bindings });
     return assignments;
-  }
+  };
+}
+
+export function confirmDisplaySetup(config, { machine, hardware, snapshot, hardwareProfileId, setupId, requestedBindings = {} }) {
+  if (snapshot.unavailable) throw new Error(snapshot.message || 'display discovery is unavailable');
+  const setup = config.hardwareProfiles[hardwareProfileId].setups[setupId];
+  const displays = describeDisplays(snapshot, machine, { displayBindings: {} });
+  const key = topologyKey(displays);
+  const previous = machine.hardwareProfile && machine.hardwareProfile !== hardwareProfileId ? {} : displayBindingsForTopology(machine, key);
+  const findAssignments = displayAssignmentSearch(setup, displays, previous, requestedBindings);
   let assignments = findAssignments(previous);
   if (!assignments.length) assignments = findAssignments({});
   if (assignments.length > 1) throw new Error('display role assignment is ambiguous; select physical bindings in Hardware & Setups');
@@ -197,15 +201,42 @@ export function matchingSetups(config, hardwareProfileId, snapshot = {}, machine
   if (!profile || snapshot.unavailable) return [];
   const displayBindings = currentDisplayBindings(snapshot, machine);
   const actual = describeDisplays(snapshot, machine, { displayBindings });
-  return Object.entries(profile.setups || {}).filter(([, setup]) => (
-    matchDisplaySet(actual, setup.match?.displays || [], setup.match?.allowAdditionalDisplays === true, displayBindings)
-  )).map(([id]) => id);
+  const confirmedSetup = machine.topologySelections?.[topologyKey(actual)];
+  return Object.entries(profile.setups || {}).filter(([id, setup]) => {
+    const bindings = id === confirmedSetup
+      ? resolveSetupDisplayBindings(config, hardwareProfileId, id, snapshot, machine) : displayBindings;
+    const displays = bindings === displayBindings ? actual : describeDisplays(snapshot, machine, { displayBindings: bindings });
+    return matchDisplaySet(displays, setup.match?.displays || [], setup.match?.allowAdditionalDisplays === true, bindings);
+  }).map(([id]) => id);
 }
 
-export function setupBindingStatus(config, hardwareProfileId, setupId, snapshot = {}, machine = {}) {
+export function resolveSetupDisplayBindings(config, hardwareProfileId, setupId, snapshot, machine) {
+  const saved = currentDisplayBindings(snapshot, machine);
+  if (snapshot.unavailable || (snapshot.completeness && snapshot.completeness !== 'complete')
+    || !machine.hardwareProfileConfirmed || machine.hardwareProfile !== hardwareProfileId) return saved;
+  const displays = describeDisplays(snapshot, machine, { displayBindings: saved });
+  if (machine.topologySelections?.[topologyKey(displays)] !== setupId) return saved;
+  const setup = config.hardwareProfiles?.[hardwareProfileId]?.setups?.[setupId];
+  if (!setup) return saved;
+
+  const status = setupBindingStatus(config, hardwareProfileId, setupId, snapshot, machine, saved);
+  if (status.ready) return saved;
+  const replaceable = new Set(setup.match.displays
+    .filter(match => match.role && match.kind === 'external' && ['wide', 'tall'].includes(match.orientation))
+    .map(match => match.role));
+  if (status.missingRoles.some(role => !replaceable.has(role))) return saved;
+
+  // Keep valid preferences and infer replacements only from the confirmed
+  // setup's physical requirements. The result is scoped to this observation.
+  const preferred = Object.fromEntries(Object.entries(saved).filter(([role]) => !status.missingRoles.includes(role)));
+  if (!matchDisplaySet(displays.map(display => ({ ...display, role: null })), setup.match.displays, setup.match.allowAdditionalDisplays)) return saved;
+  const assignments = displayAssignmentSearch(setup, displays, preferred)(preferred);
+  return assignments.length === 1 ? assignments[0] : saved;
+}
+
+export function setupBindingStatus(config, hardwareProfileId, setupId, snapshot = {}, machine = {}, displayBindings = currentDisplayBindings(snapshot, machine)) {
   const setup = config.hardwareProfiles?.[hardwareProfileId]?.setups?.[setupId];
   const requirements = setup?.match?.displays || [];
-  const displayBindings = currentDisplayBindings(snapshot, machine);
   const displays = describeDisplays(snapshot, machine, { displayBindings });
   const missingRoles = [];
   const roles = setup ? setupRoles(setup) : [];
@@ -237,9 +268,7 @@ export function resolveV3(config, { machine = {}, hardware = {}, snapshot = {}, 
   const selectedHardware = selectHardwareProfile(config, machine, hardware);
   if (!selectedHardware.id) throw new Error(`hardware profile is ${selectedHardware.candidates.length ? 'ambiguous' : 'unmatched'} for family “${selectedHardware.family || 'unknown'}”`);
   if (requireConfirmation && !machine.hardwareProfileConfirmed) throw new Error(`hardware profile “${selectedHardware.id}” requires confirmation`);
-  const displayBindings = currentDisplayBindings(snapshot, machine);
-  const displays = describeDisplays(snapshot, machine, { displayBindings });
-  const key = topologyKey(displays);
+  const key = topologyKey(describeDisplays(snapshot, machine));
   const candidates = matchingSetups(config, selectedHardware.id, snapshot, machine);
   const saved = setupId || machine.topologySelections?.[key] || machine.activeSetup;
   let selectedSetup = saved && candidates.includes(saved) ? saved : null;
@@ -247,7 +276,9 @@ export function resolveV3(config, { machine = {}, hardware = {}, snapshot = {}, 
   if (!selectedSetup && candidates.length === 1) selectedSetup = candidates[0];
   if (!selectedSetup) throw new Error(`display setup is ${candidates.length ? 'ambiguous' : 'unmatched'} for topology “${key}”`);
   if (requireConfirmation && machine.topologySelections?.[key] !== selectedSetup) throw new Error(`display setup “${selectedSetup}” for topology “${key}” requires confirmation`);
-  const bindingStatus = setupBindingStatus(config, selectedHardware.id, selectedSetup, snapshot, machine);
+  const displayBindings = resolveSetupDisplayBindings(config, selectedHardware.id, selectedSetup, snapshot, machine);
+  const displays = describeDisplays(snapshot, machine, { displayBindings });
+  const bindingStatus = setupBindingStatus(config, selectedHardware.id, selectedSetup, snapshot, machine, displayBindings);
   if (requireConfirmation && !bindingStatus.ready) throw new Error(`display setup “${selectedSetup}” requires renewed role binding: ${bindingStatus.missingRoles.join(', ')}`);
   return {
     hardwareProfileId: selectedHardware.id,

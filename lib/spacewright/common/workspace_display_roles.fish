@@ -29,7 +29,12 @@ function get_workspace_primary_display_uuid --description "Return the configured
         or return 1
         set -l setup (workspace_setup_status_for_displays "$displays_json" | string collect)
         or return 1
-        set -l bound_uuid (printf '%s\n' "$setup" | command jq -r 'select(.ready) | .displayBindings.primary // empty')
+        # Physical profiles use the saved primary UUID, even when auto can match a replacement.
+        set -l bound_uuid (printf '%s\n' "$setup" | command jq -r --slurpfile machine "$machine_file" '
+            select(.ready) as $setup |
+            ($machine[0].topologyBindings[$setup.topologyKey] // $machine[0].displayBindings).primary as $saved |
+            select($setup.displayBindings.primary == $saved) | $saved // empty
+        ')
         test -n "$bound_uuid"; or return 1
         echo "$bound_uuid"
         return 0

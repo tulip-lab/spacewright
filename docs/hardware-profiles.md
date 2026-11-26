@@ -40,10 +40,16 @@ single wide, wide + tall, and tall + Sidecar can each retain a different binding
 for the same workspace role. The shortcuts select the saved combination when you
 return to it, even if yabai has reordered the display indices.
 
-A new topology or a replaced display UUID can require confirmation before any
-mutation. Classify Sidecar once per display UUID. Older confirmations can still
-use compatible legacy bindings. Reconfirm a previously saved combination if its
-legacy binding is missing or points to the wrong display.
+For a confirmed combination, SpaceWright can automatically use a replacement
+external screen when the setup specifies its role, kind, and wide or tall
+orientation, and the connected screens allow exactly one assignment. Valid
+saved bindings are kept. The replacement is resolved for the current command
+without overwriting saved bindings, and its UUID is pinned in the execution plan.
+
+New topologies and ambiguous assignments require confirmation in Hardware &
+Setups. Roles without an explicit external wide/tall match still require a
+connected saved binding. Classify Sidecar once per display UUID. Explicit
+`mode solo/wide/tall` uses the saved physical bindings for display profiles.
 
 Use `spacewright setup confirm mac_mini single_tall --dry-run` or
 `spacewright setup activate --dry-run` to validate and preview the selected
@@ -121,7 +127,7 @@ At command time SpaceWright:
 2. queries displays through yabai;
 3. applies local Sidecar and ignored-display classifications;
 4. computes a topology key from display kinds and orientations;
-5. selects the confirmed setup and its display-role bindings;
+5. selects the confirmed setup and resolves its display-role bindings;
 6. resolves each workspace's named configuration;
 7. validates and compiles the projected runtime.
 

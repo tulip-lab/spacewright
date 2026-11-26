@@ -41,6 +41,7 @@ test('display profiles receive the confirmed machine UUID instead of an inherite
     const output=execFileSync('fish',['--no-config','-c',`
       source conf.d/spacewright.fish
       set -gx SPACEWRIGHT_STATE_ROOT "$TEST_MACHINE_ROOT"
+      set -gx SPACEWRIGHT_CONFIG_ROOT "$TEST_MACHINE_ROOT"
       set -gx WORKSPACE_PRIMARY_DISPLAY_UUID STALE
       function workspace_execution_owned; return 0; end
       function fixture_profile; echo received=$WORKSPACE_PRIMARY_DISPLAY_UUID; end
@@ -52,6 +53,35 @@ test('display profiles receive the confirmed machine UUID instead of an inherite
     `],{encoding:'utf8',env:{...process.env,TEST_MACHINE_ROOT:directory}});
     assert.match(output,/received=CURRENT/);assert.match(output,/inherited=STALE/);
   }finally{await rm(directory,{recursive:true,force:true});}
+});
+test('a physical profile primary lookup requires the saved UUID when auto matches a replacement', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'spacewright-saved-primary-'));
+  try {
+    await writeFile(join(directory, 'config.v3.json'), '{}');
+    await writeFile(join(directory, 'machine.json'), JSON.stringify({
+      topologyBindings: { 'external:tall': { primary: 'SAVED' } }
+    }));
+    const output = execFileSync('fish', ['--no-config', '-c', `
+      source conf.d/spacewright.fish
+      set -gx SPACEWRIGHT_STATE_ROOT "$TEST_MACHINE_ROOT"
+      set -gx SPACEWRIGHT_CONFIG_ROOT "$TEST_MACHINE_ROOT"
+      function ws_query_displays; echo '[]'; end
+      function workspace_setup_status_for_displays
+          printf '{"ready":true,"topologyKey":"external:tall","displayBindings":{"primary":"%s"}}\n' $test_uuid
+      end
+      set -g test_uuid SAVED
+      get_workspace_primary_display_uuid
+      or exit 1
+      set -g test_uuid REPLACEMENT
+      if get_workspace_primary_display_uuid
+          exit 1
+      end
+      exit 0
+    `], { encoding: 'utf8', env: { ...process.env, TEST_MACHINE_ROOT: directory } });
+    assert.equal(output.trim(), 'SAVED');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 function make(value=raw(), config=starterConfig(), target={kind:'workspace',id:'coding',mode:'solo'}) {
   config.workspaces.coding.variants.wide.spaceLabel='custom_wide';

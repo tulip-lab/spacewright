@@ -411,7 +411,8 @@ test('v3 generation includes topology, bindings, hardware, and rejects unavailab
   const context={machine:{version:2,hardwareProfile:'mac_mini',hardwareProfileConfirmed:true,displayBindings:{tall:'T'},topologySelections:{'external:tall':'single_tall'}},hardware:{family:'mac_mini',modelIdentifier:'Macmini9,1'},snapshot:{unavailable:false,displays:[{index:1,uuid:'T',frame:{x:0,y:0,w:1200,h:1920},builtIn:false}]}};
   const first=generationDocument(config,context);
   const moved=structuredClone(context);moved.snapshot.displays[0].frame.x=1200;assert.notEqual(generationDocument(config,moved).generated.generation_id,first.generated.generation_id);
-  const bound=structuredClone(context);bound.machine.displayBindings.tall='NEW';assert.throws(()=>generationDocument(config,bound),/binding/);
+  const bound=structuredClone(context);bound.machine.displayBindings.tall='OLD';assert.notEqual(generationDocument(config,bound).generated.generation_id,first.generated.generation_id);
+  const replacement=structuredClone(context);replacement.snapshot.displays[0].uuid='NEW';assert.notEqual(generationDocument(config,replacement).generated.generation_id,first.generated.generation_id);
   const hardware=structuredClone(context);hardware.hardware.modelIdentifier='Macmini10,1';assert.notEqual(generationDocument(config,hardware).generated.generation_id,first.generated.generation_id);
   const unavailable=structuredClone(context);unavailable.snapshot.unavailable=true;assert.throws(()=>generationDocument(config,unavailable),/unavailable/);
 });

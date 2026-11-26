@@ -69,7 +69,7 @@ test('Mac mini single tall resolves only after confirmation', () => {
   assert.equal(runtime.active_setup, 'single_tall');
 });
 
-test('confirmed setup is not ready when its display role binding is stale', () => {
+test('a confirmed setup resolves a new external display without changing its saved binding', () => {
   const config = starterV3();
   const displays = snapshot([{ index: 1, uuid: 'NEW-TALL', frame: { w: 1200, h: 1920 }, builtIn: false }]);
   const local = machine('mac_mini', { tall: 'OLD-TALL' }, {
@@ -79,7 +79,31 @@ test('confirmed setup is not ready when its display role binding is stale', () =
     ready: false,
     missingRoles: ['tall']
   });
-  assert.throws(() => resolveV3(config, { machine: local, snapshot: displays }), /renewed role binding: tall/);
+  const resolved = resolveV3(config, { machine: local, snapshot: displays });
+  assert.deepEqual(resolved.displayBindings, { tall: 'NEW-TALL' });
+  assert.equal(resolved.bindingStatus.ready, true);
+  assert.deepEqual(local.displayBindings, { tall: 'OLD-TALL' });
+  assert.throws(() => resolveModeTransition(config, { machine: local, snapshot: displays, mode: 'tall' }), /missing required physical bindings/);
+});
+
+test('replacement matching preserves a connected preference when two screens share an orientation', () => {
+  const config = starterV3();
+  config.hardwareProfiles.mac_mini.setups.wide_tall.match.allowAdditionalDisplays = true;
+  const topology = 'external:tall+external:wide+external:wide';
+  const displays = snapshot([
+    { index: 3, uuid: 'PREFERRED-WIDE', frame: { w: 1920, h: 1080 } },
+    { index: 1, uuid: 'OTHER-WIDE', frame: { w: 2560, h: 1440 } },
+    { index: 2, uuid: 'NEW-TALL', frame: { w: 1080, h: 1920 } }
+  ]);
+  const local = machine('mac_mini', {}, {
+    topologySelections: { [topology]: 'wide_tall' },
+    topologyBindings: { [topology]: { wide: 'PREFERRED-WIDE', tall: 'OLD-TALL' } }
+  });
+  assert.deepEqual(resolveV3(config, { machine: local, snapshot: displays }).displayBindings, {
+    wide: 'PREFERRED-WIDE', tall: 'NEW-TALL'
+  });
+  local.topologyBindings[topology].wide = 'OLD-WIDE';
+  assert.throws(() => resolveV3(config, { machine: local, snapshot: displays }), /renewed role binding/);
 });
 
 test('Mac mini wide plus tall and external plus Sidecar are distinct topologies', () => {

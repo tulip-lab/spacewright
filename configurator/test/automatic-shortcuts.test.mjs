@@ -65,6 +65,7 @@ test('confirmed display combinations keep their own bindings across automatic sh
   const tall = display('TALL-SINGLE', true), wide = display('WIDE-SINGLE', false);
   const dualTall = display('TALL-DUAL', true), dualWide = display('WIDE-DUAL', false);
   const sidecar = display('SIDECAR', false);
+  const ignored = display('IGNORED', false);
   const combinations = [
     ['single_tall', [tall], { tall: tall.uuid }],
     ['single_wide', [wide], { wide: wide.uuid }],
@@ -90,7 +91,8 @@ else process.exit(99);
     config.workspaces.coding.windows.editor.required = false;
     await writeFile(join(configRoot, 'config.v3.json'), JSON.stringify(config));
     const legacy = { version: 2, hardwareProfile: 'mac_mini', hardwareProfileConfirmed: true, activeSetup: 'wide_tall',
-      displayBindings: { tall: dualTall.uuid, wide: dualWide.uuid }, displayKinds: { [sidecar.uuid]: 'sidecar' },
+      displayBindings: { tall: dualTall.uuid, wide: dualWide.uuid },
+      displayKinds: { [sidecar.uuid]: 'sidecar', [ignored.uuid]: 'ignored' },
       topologySelections: { 'external:tall+external:wide': 'wide_tall' } };
     await writeFile(machinePath, JSON.stringify(legacy));
     for (const [setup, displays, bindings] of combinations) {
@@ -126,9 +128,24 @@ else process.exit(99);
         '--expected-topology=external:tall+sidecar:wide'),
       error => /current display setup changed/.test(error.stderr)
     );
-    await selectDisplays([display('UNKNOWN-TALL', true)]);
-    assert.equal((await run('setup', 'status')).ready, false);
-    await assert.rejects(run('mode', 'auto', '--dry-run'), error => /confirm the current/.test(error.stderr));
+    const replacementTall = display('REPLACEMENT-TALL', true), replacementWide = display('REPLACEMENT-WIDE', false);
+    for (const [connected, expected] of [
+      [[replacementTall], { tall: replacementTall.uuid }],
+      [[ignored, replacementWide], { wide: replacementWide.uuid }],
+      [[replacementWide, replacementTall], { wide: replacementWide.uuid, tall: replacementTall.uuid }],
+      [[sidecar, replacementWide], { sidecar: sidecar.uuid, wide: replacementWide.uuid }]
+    ]) {
+      await selectDisplays(connected);
+      const status = await run('setup', 'status');
+      assert.equal(status.ready, true);
+      assert.deepEqual(status.displayBindings, expected);
+      for (const args of [['mode', 'auto'], ['workspace', 'coding']]) {
+        const result = await run(...args, '--dry-run', '--json');
+        assert.equal(result.plan.executable, true);
+        assert.deepEqual(result.comparison.displayBindings, expected);
+        assert.equal(result.plan.workspaces[0].targetDisplay.uuid, expected[result.desired.workspaces[0].displayRole]);
+      }
+    }
     assert.equal(await readFile(machinePath, 'utf8'), savedMachine);
   } finally {
     await rm(root, { recursive: true, force: true });
