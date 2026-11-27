@@ -3,7 +3,7 @@ import { confirmAction, promptValue } from './dialog.js';
 const initialParams = new URLSearchParams(location.search);
 const token = initialParams.get('token') || sessionStorage.getItem('spacewright-session-token');
 const headers = { 'content-type': 'application/json', 'x-spacewright-token': token || '' };
-const state = { config: null, savedConfig: null, serverRevision: null, source: null, requiresInitialSave: false, legacyAvailable: false, legacyEditorReadOnly: false, machine: { version: 1, displayBindings: {} }, view: initialParams.get('view') || 'current', mode: initialParams.get('mode') || 'wide', selectedWorkspace: null, shortcutView: 'workspace', workspaceSearch: '', workspaceTab: 'apps', appSearch: '', appInventory: null, externalShortcuts: [], shortcutSources: [], autoImportedShortcuts: 0, recordingCleanup: null, runtime: null, capturePreview: null, liveSnapshot: null, livePlan: null, runPreview: null, dirty: false, importChanges: [], undoStack: [], redoStack: [], lastDraft: null, v3Config: null, v3SavedConfig: null, v3Revision: null, v3Source: null, v3SetupState: null, v3Hardware: null, v3Setup: null, v3Workspace: null, v3Configuration: null, v3DisplayKinds: {}, v3Bindings: {} };
+const state = { config: null, savedConfig: null, serverRevision: null, source: null, requiresInitialSave: false, legacyAvailable: false, legacyEditorReadOnly: false, machine: { version: 1, displayBindings: {} }, view: initialParams.get('view') || 'current', mode: initialParams.get('mode') || 'wide', selectedWorkspace: null, shortcutView: 'workspace', workspaceSearch: '', workspaceTab: 'apps', appSearch: '', appInventory: null, externalShortcuts: [], shortcutSources: [], autoImportedShortcuts: 0, recordingCleanup: null, runtime: null, capturePreview: null, liveSnapshot: null, livePlan: null, runTarget: null, runPreview: null, dirty: false, importChanges: [], undoStack: [], redoStack: [], lastDraft: null, v3Config: null, v3SavedConfig: null, v3Revision: null, v3Source: null, v3SetupState: null, v3Hardware: null, v3Setup: null, v3Workspace: null, v3Configuration: null, v3DisplayKinds: {}, v3Bindings: {} };
 if (token) {
   sessionStorage.setItem('spacewright-session-token', token);
   const cleanUrl = new URL(location.href);
@@ -13,6 +13,8 @@ if (token) {
 const root = document.querySelector('#workspace');
 let renderEpoch = 0;
 let undoBatchTimer = null;
+let v3Loading;
+let v3Saving = false;
 
 function previewConfig() {
   return {
@@ -106,11 +108,13 @@ function syncPersistenceControls() {
   const undo = document.querySelector('#undo');
   const redo = document.querySelector('#redo');
   if (!draft || !save) return;
-  draft.textContent = state.dirty ? 'Draft has unsaved changes' : 'Saved configuration';
-  draft.classList.toggle('dirty', state.dirty);
-  save.disabled = state.legacyEditorReadOnly || !state.dirty;
-  undo.disabled = !state.undoStack.length;
-  redo.disabled = !state.redoStack.length;
+  const v3View = isV3EditorView();
+  const dirty = v3View ? v3Dirty() || Boolean(state.v3Config && state.v3Source !== 'v3') : state.dirty;
+  draft.textContent = dirty ? 'Draft has unsaved changes' : 'Saved configuration';
+  draft.classList.toggle('dirty', dirty);
+  save.disabled = v3View ? v3Saving || !dirty : state.legacyEditorReadOnly || !dirty;
+  undo.disabled = v3View || !state.undoStack.length;
+  redo.disabled = v3View || !state.redoStack.length;
 }
 
 function moveDraftHistory(direction) {
@@ -132,6 +136,14 @@ function viewIsCurrent(view, epoch) { return state.view === view && renderEpoch 
 function validId(value) { return /^[a-z][a-z0-9_]*$/.test(value); }
 function renameKey(object, from, to) { object[to] = object[from]; delete object[from]; }
 function visitLayout(node, callback) { if (!node) return; callback(node); for (const child of node.children || []) visitLayout(child, callback); for (const region of node.regions || []) callback(region); }
+
+function availableId(name, collection, fallback) {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const base = validId(slug) ? slug : slug ? `${fallback}_${slug}` : fallback;
+  let id = base;
+  for (let suffix = 2; Object.hasOwn(collection, id) || id in Object.prototype; suffix++) id = `${base}_${suffix}`;
+  return id;
+}
 
 async function requestId(label, current, collection) {
   const next = await promptValue(label, current, 'Use a lowercase ID beginning with a letter; digits and underscores are allowed.');
@@ -195,7 +207,14 @@ function planPreview(result) {
   const plan = result.plan;
   const actionRows = (plan.actions || []).map((action) => `<li><b>${escapeHtml(action.type.replaceAll('_', ' '))}</b> ${escapeHtml(action.workspaceId || action.mode || action.target?.id || '')}${action.role ? ` · ${escapeHtml(action.role)}` : ''}</li>`).join('');
   const commandRows = (plan.executionSteps || []).map((step) => `<li><code>spacewright ${escapeHtml(step.command.join(' '))}</code></li>`).join('');
-  return `<section class="comparison-summary ${comparison.converged ? 'converged' : ''}"><div><p class="kicker">Dry run · no desktop changes</p><h3>${comparison.counts.blocker} blockers · ${comparison.counts.change} changes · ${comparison.counts.warning} warnings</h3><p>${comparison.converged ? '✓ Converged.' : plan.executable ? 'Ready to apply.' : 'Blocked.'} Plan ${escapeHtml(plan.planId)}.</p></div></section><div class="change-summary"><strong>${plan.actions.length ? 'Planned changes' : 'No changes required'}</strong>${actionRows ? `<ol>${actionRows}</ol>` : ''}${commandRows ? `<details><summary>Exact commands</summary><ol>${commandRows}</ol></details>` : ''}</div>`;
+  const blockers = (plan.blockers || []).map(item => {
+    const label = result.effectiveConfig?.workspaces[item.workspaceId]?.name || item.workspaceId;
+    const app = result.effectiveConfig?.apps[item.appKey]?.name || item.appKey;
+    const context = [label, item.role, app].filter(Boolean).join(' · ');
+    const reason = item.message || item.code.replaceAll('_', ' ');
+    return `<li>${escapeHtml(reason)}${context ? ` · ${escapeHtml(context)}` : ''}</li>`;
+  }).join('');
+  return `<section class="comparison-summary ${comparison.converged ? 'converged' : ''}"><div><p class="kicker">Dry run · no desktop changes</p><h3>${comparison.counts.blocker} blockers · ${comparison.counts.change} changes · ${comparison.counts.warning} warnings</h3><p>${comparison.converged ? '✓ Converged.' : plan.executable ? 'Ready to apply.' : 'Blocked.'} Plan ${escapeHtml(plan.planId)} · ${escapeHtml(plan.target.mode || plan.target.id)}.</p>${blockers ? `<ul class="errors">${blockers}</ul>` : ''}</div></section><div class="change-summary"><strong>${plan.actions.length ? 'Planned changes' : 'No changes required'}</strong>${actionRows ? `<ol>${actionRows}</ol>` : ''}${commandRows ? `<details><summary>Exact commands</summary><ol>${commandRows}</ol></details>` : ''}</div>`;
 }
 
 function toast(message, error = false) {
@@ -268,19 +287,23 @@ function onboarding() {
 
 async function ensureV3() {
   if (state.v3Config) return;
-  const [document, setup] = await Promise.all([request('/api/v3/config'), request('/api/v3/setup')]);
-  state.v3Config = document.config;
-  state.v3SavedConfig = structuredClone(document.config);
-  state.v3Revision = document.revision;
-  state.v3Source = document.source;
-  state.v3SetupState = setup;
-  state.v3Hardware = setup.hardwareSelection.id || ids(document.config.hardwareProfiles)[0];
-  state.v3Setup = setup.confirmedSetup || setup.setupCandidates[0] || ids(document.config.hardwareProfiles[state.v3Hardware]?.setups)[0];
-  state.v3Workspace = ids(document.config.workspaces)[0];
-  const selectedSetup = document.config.hardwareProfiles[state.v3Hardware]?.setups?.[state.v3Setup];
-  state.v3Configuration = selectedSetup?.workspaceConfigurations?.[state.v3Workspace] || document.config.workspaces[state.v3Workspace]?.defaultConfiguration || ids(document.config.workspaces[state.v3Workspace]?.configurations)[0];
-  state.v3DisplayKinds = Object.fromEntries((setup.displays || []).map((display) => [display.uuid, display.ignored ? 'ignored' : display.kind]));
-  state.v3Bindings = bindingsForDetectedSetup(setup);
+  if (!v3Loading) {
+    v3Loading = Promise.all([request('/api/v3/config'), request('/api/v3/setup')]).then(([document, setup]) => {
+      state.v3Config = document.config;
+      state.v3SavedConfig = structuredClone(document.config);
+      state.v3Revision = document.revision;
+      state.v3Source = document.source;
+      state.v3SetupState = setup;
+      state.v3Hardware = setup.hardwareSelection.id || ids(document.config.hardwareProfiles)[0];
+      state.v3Setup = setup.confirmedSetup || setup.setupCandidates[0] || ids(document.config.hardwareProfiles[state.v3Hardware]?.setups)[0];
+      state.v3Workspace = ids(document.config.workspaces)[0];
+      const selectedSetup = document.config.hardwareProfiles[state.v3Hardware]?.setups?.[state.v3Setup];
+      state.v3Configuration = selectedSetup?.workspaceConfigurations?.[state.v3Workspace] || document.config.workspaces[state.v3Workspace]?.defaultConfiguration || ids(document.config.workspaces[state.v3Workspace]?.configurations)[0];
+      state.v3DisplayKinds = Object.fromEntries((setup.displays || []).map((display) => [display.uuid, display.ignored ? 'ignored' : display.kind]));
+      state.v3Bindings = bindingsForDetectedSetup(setup);
+    }).finally(() => { v3Loading = null; });
+  }
+  await v3Loading;
 }
 
 function bindingsForDetectedSetup(setup) {
@@ -289,6 +312,59 @@ function bindingsForDetectedSetup(setup) {
 }
 
 function v3Dirty() { return JSON.stringify(state.v3Config) !== JSON.stringify(state.v3SavedConfig); }
+
+function usingV3Editor() {
+  return state.legacyEditorReadOnly || state.source === 'starter' || v3Dirty();
+}
+
+function isV3EditorView() {
+  return state.view === 'hardware' || ['apps', 'workspaces'].includes(state.view) && usingV3Editor();
+}
+
+function openView(view) {
+  state.view = view;
+  render();
+}
+
+async function saveV3() {
+  if (!state.v3Config || v3Saving || !v3Dirty() && state.v3Source === 'v3') return;
+  if (!state.v3SetupState?.ready) {
+    openView('hardware');
+    return toast('Confirm the connected display setup before saving.', true);
+  }
+  const config = structuredClone(state.v3Config);
+  v3Saving = true;
+  syncPersistenceControls();
+  const hardwareSave = root.querySelector('#v3-save');
+  if (hardwareSave) hardwareSave.disabled = true;
+  try {
+    const validation = await request('/api/v3/validate', { method: 'POST', body: JSON.stringify(config) });
+    if (validation.warnings?.length && !await confirmAction(`Save with ${validation.warnings.length} warning(s)?`, { title: 'Save v3 configuration', confirmLabel: 'Save' })) return;
+    const result = await request('/api/v3/save', { method: 'POST', body: JSON.stringify({ config, baseRevision: state.v3Revision }) });
+    state.v3SavedConfig = config;
+    state.v3Revision = result.revision;
+    state.v3Source = 'v3';
+    state.legacyEditorReadOnly = true;
+    const saved = await request('/api/config');
+    state.config = saved.config;
+    state.savedConfig = structuredClone(saved.config);
+    state.serverRevision = saved.revision;
+    state.source = saved.source;
+    state.requiresInitialSave = false;
+    document.querySelector('#path').textContent = result.path;
+    markClean('Hardware-aware · saved');
+    toast(`Saved and verified: ${result.path}`);
+    render();
+  } catch (error) { toast(error.message, true); }
+  finally {
+    v3Saving = false;
+    const currentHardwareSave = root.querySelector('#v3-save');
+    if (currentHardwareSave) currentHardwareSave.disabled = !(state.v3SetupState?.ready
+      && state.v3SetupState.hardwareSelection.id === state.v3Hardware
+      && state.v3SetupState.confirmedSetup === state.v3Setup);
+    syncPersistenceControls();
+  }
+}
 
 function v3LayoutPreview(layout, workspace) {
   if (layout?.type !== 'canvas') return `<div class="layout-preview">${layoutNode(layout)}</div>`;
@@ -339,31 +415,18 @@ async function hardwareView(epoch = renderEpoch) {
   root.querySelector('#v3-workspace').onchange = (event) => { state.v3Workspace=event.target.value;state.v3Configuration=setup.workspaceConfigurations[state.v3Workspace]||config.workspaces[state.v3Workspace].defaultConfiguration||ids(config.workspaces[state.v3Workspace].configurations)[0];render(); };
   root.querySelector('#v3-configuration').onchange = (event) => { state.v3Configuration=event.target.value;render(); };
   root.querySelector('#v3-copy-configuration').onclick = async () => { const id=await promptValue('New configuration ID',`${state.v3Configuration}_copy`,'Use a lowercase stable ID.');if(!id||!validId(id)||workspace.configurations[id])return toast('Choose a unique lowercase ID.',true);workspace.configurations[id]=structuredClone(configuration);state.v3Configuration=id;render(); };
-  root.querySelectorAll('[data-v3-template]').forEach((button) => button.onclick = () => { configuration.layout=layoutTemplate(button.dataset.v3Template,ids(workspace.windows));render(); });
+  root.querySelectorAll('[data-v3-template]').forEach((button) => button.onclick = () => { const layout = layoutTemplate(button.dataset.v3Template, ids(workspace.windows));
+    const placedRoles = layoutRoles(layout);
+    const required = Object.entries(workspace.windows).filter(([role, window]) => window.required && !placedRoles.has(role));
+    configuration.layout = required.reduce((current, [role]) => splitWithWindow(current, role), layout);
+    render(); });
   root.querySelector('#v3-free-layout').onclick = () => { configuration.layout=canvasFromLayout(configuration.layout,ids(workspace.windows));render(); };
   root.querySelectorAll('[data-v3-geometry]').forEach((input) => input.onchange = () => { const [field,role]=input.dataset.v3Geometry.split(':');const region=configuration.layout.regions.find((item)=>item.role===role);const values=gridValues(region);values[field]=input.value;setRegionGrid(region,values);render(); });
   root.querySelector('#v3-add-setup').onclick = async () => { const id=await promptValue('New display setup ID',`${state.v3Setup}_copy`,'Duplicate the selected setup, then adjust its display match.');if(!id||!validId(id)||hardware.setups[id])return toast('Choose a unique lowercase ID.',true);hardware.setups[id]=structuredClone(setup);hardware.setups[id].name=`${setup.name} Copy`;state.v3Setup=id;render(); };
   root.querySelector('#v3-refresh').onclick = async () => { state.v3SetupState=await request('/api/v3/setup');state.v3DisplayKinds=Object.fromEntries(state.v3SetupState.displays.map((display)=>[display.uuid,display.ignored?'ignored':display.kind]));state.v3Bindings=state.v3Setup===state.v3SetupState.confirmedSetup&&state.v3Hardware===state.v3SetupState.hardwareSelection.id?bindingsForDetectedSetup(state.v3SetupState):{};render(); };
   root.querySelector('#v3-confirm').onclick = async () => { try { const result=await request('/api/v3/setup/confirm',{method:'POST',body:JSON.stringify({config,hardwareProfile:state.v3Hardware,setup:state.v3Setup,displayKinds:state.v3DisplayKinds,displayBindings:state.v3Bindings})});state.machine=result.machine;state.v3SetupState=result.setupState||await request('/api/v3/setup');state.v3Bindings=bindingsForDetectedSetup(state.v3SetupState);toast(`Confirmed ${result.hardwareProfile} · ${result.setup}`);render(); } catch(error){toast(error.message,true);} };
-  root.querySelector('#v3-save').onclick = async () => {
-    try {
-      const validation = await request('/api/v3/validate', { method:'POST', body:JSON.stringify(config) });
-      if (validation.warnings?.length && !await confirmAction(`Save with ${validation.warnings.length} warning(s)?`, { title:'Save v3 configuration', confirmLabel:'Save' })) return;
-      const result = await request('/api/v3/save', { method:'POST', body:JSON.stringify({ config, baseRevision:state.v3Revision }) });
-      state.v3SavedConfig = structuredClone(config);
-      state.v3Revision = result.revision;
-      state.v3Source = 'v3';
-      const document = await request('/api/config');
-      state.config = document.config;
-      state.savedConfig = structuredClone(document.config);
-      state.serverRevision = document.revision;
-      state.requiresInitialSave = false;
-      state.legacyEditorReadOnly = true;
-      markClean('Hardware-aware · saved');
-      toast(`Saved and verified: ${result.path}`);
-      render();
-    } catch (error) { toast(error.message, true); }
-  };
+  root.querySelector('#v3-save').onclick = saveV3;
+  syncPersistenceControls();
 }
 
 function mapView() {
@@ -616,6 +679,132 @@ function openAppPicker(workspaceId, role) {
   overlay.addEventListener('cancel',(event)=>{event.preventDefault();close();}); overlay.onclick=(event)=>{if(event.target===overlay)close();}; document.body.append(overlay); renderPicker(); overlay.showModal(); overlay.querySelector('#app-picker-search').focus();
 }
 
+function splitWithWindow(layout, role) {
+  const window = { type: 'window', role };
+  return layout.type === 'empty' ? window :
+    { type: 'split', direction: 'columns', weights: [1, 1], children: [layout, window] };
+}
+
+async function v3WorkspacesView(epoch) {
+  if (!state.v3Config) root.innerHTML = '<p>Loading workspaces…</p>';
+  try { await ensureV3(); }
+  catch (error) {
+    if (viewIsCurrent('workspaces', epoch)) root.innerHTML = `<div class="errors">${escapeHtml(error.message)}</div>`;
+    return;
+  }
+  if (!viewIsCurrent('workspaces', epoch)) return;
+
+  const { apps, workspaces, hardwareProfiles, displayRoles } = state.v3Config;
+  const setup = hardwareProfiles[state.v3Hardware].setups[state.v3Setup];
+  const workspaceId = state.v3Workspace;
+  const workspace = workspaces[workspaceId];
+  const currentLane = setup.lanes.findIndex(lane => lane.workspaceOrder.includes(workspaceId));
+  const customRuntime = Object.values(workspace.configurations).some(configuration => configuration.runtime?.windows);
+  const appOptions = selected => Object.entries(apps).map(([id, app]) =>
+    `<option value="${id}" ${selected === id ? 'selected' : ''}>${escapeHtml(app.name)}</option>`).join('');
+  const laneOptions = selected => setup.lanes.map((lane, index) =>
+    `<option value="${index}" ${selected === index ? 'selected' : ''}>${escapeHtml(displayRoles[lane.role].name)}</option>`).join('');
+  const windowRows = Object.entries(workspace.windows).map(([role, window]) => `
+    <div class="card">
+      <h4>${escapeHtml(role)}</h4>
+      ${customRuntime ? `<p>${escapeHtml(apps[window.app].name)} · ${window.required ? 'Required' : 'Optional'}</p>` : `
+      <div class="row">
+        <label class="field">Application<select aria-label="${role} application" data-window-app="${role}">${appOptions(window.app)}</select></label>
+        <label class="field">Title contains<input aria-label="${role} title contains" data-window-title="${role}" value="${escapeHtml(window.selector?.title_include || '')}"></label>
+      </div>
+      <label class="check"><input type="checkbox" data-window-required="${role}" ${window.required ? 'checked' : ''}> Required window</label>`}
+    </div>`).join('');
+
+  root.innerHTML = title('Workspace registry', 'Workspaces', 'Choose the windows and display for each workspace.') + `
+    <div class="v3-main">
+    <form id="v3-new-workspace" class="card">
+      <h3>New workspace</h3>
+      <div class="row">
+        <label class="field">Workspace name<input name="name" required></label>
+        <label class="field">First application<select name="app">${appOptions()}</select></label>
+        <label class="field">Display in ${escapeHtml(setup.name)}<select name="lane">${laneOptions()}</select></label>
+      </div>
+      <div class="actions"><button class="primary">Add Workspace</button><button type="button" id="v3-go-apps" class="quiet">Manage Apps</button></div>
+    </form>
+    <article class="card">
+      <div class="row">
+        <label class="field">Workspace<select id="v3-edit-workspace">${Object.entries(workspaces).map(([id, item]) =>
+          `<option value="${id}" ${id === workspaceId ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('')}</select></label>
+        <label class="field">Display in ${escapeHtml(setup.name)}<select id="v3-workspace-lane">${currentLane < 0 ? '<option value="" selected disabled>Choose a display</option>' : ''}${laneOptions(currentLane)}</select></label>
+      </div>
+      <h3>Windows</h3>
+      <div class="cards">${windowRows}</div>
+      ${customRuntime ? '<p>Window assignments for this workspace are defined by its configuration adapters.</p>' : `
+      <form id="v3-add-window" class="actions">
+        <label class="field">Window role<input name="role" pattern="[a-z][a-z0-9_]*" required></label>
+        <label class="field">Application<select name="app">${appOptions()}</select></label>
+        <button class="quiet">Add Window</button>
+      </form>`}
+      <div class="actions"><button id="v3-edit-layout" class="quiet">Edit Layout & Setup</button><button id="v3-go-run" class="quiet">Preview Saved Workspace</button></div>
+    </article>
+    </div>`;
+
+  root.querySelector('#v3-new-workspace').onsubmit = event => {
+    event.preventDefault();
+    const { name, app, lane } = Object.fromEntries(new FormData(event.currentTarget));
+    const id = availableId(name, workspaces, 'workspace');
+    if (!name.trim()) return toast('Enter a workspace name.', true);
+    workspaces[id] = {
+      name: name.trim(), spaceLabel: id, defaultConfiguration: 'default',
+      windows: { primary: { app, required: true, selector: { movable: true } } },
+      configurations: { default: { layout: { type: 'window', role: 'primary' } } }
+    };
+    setup.lanes[Number(lane)].workspaceOrder.push(id);
+    state.v3Workspace = id;
+    state.v3Configuration = 'default';
+    render();
+  };
+  root.querySelector('#v3-edit-workspace').onchange = event => {
+    state.v3Workspace = event.target.value;
+    state.v3Configuration = setup.workspaceConfigurations[state.v3Workspace] || workspaces[state.v3Workspace].defaultConfiguration;
+    render();
+  };
+  root.querySelector('#v3-workspace-lane').onchange = event => {
+    const nextLane = Number(event.target.value);
+    if (currentLane >= 0) setup.lanes[currentLane].workspaceOrder.splice(setup.lanes[currentLane].workspaceOrder.indexOf(workspaceId), 1);
+    if (!setup.workspaceConfigurations[workspaceId] && !workspace.defaultConfiguration) {
+      setup.workspaceConfigurations[workspaceId] = ids(workspace.configurations)[0];
+    }
+    setup.lanes[nextLane].workspaceOrder.push(workspaceId);
+    render();
+  };
+  root.querySelectorAll('[data-window-app]').forEach(input => input.onchange = () => {
+    workspace.windows[input.dataset.windowApp].app = input.value;
+  });
+  root.querySelectorAll('[data-window-title]').forEach(input => input.oninput = () => {
+    const selector = workspace.windows[input.dataset.windowTitle].selector ||= {};
+    if (input.value) selector.title_include = input.value;
+    else delete selector.title_include;
+  });
+  root.querySelectorAll('[data-window-required]').forEach(input => input.onchange = () => {
+    workspace.windows[input.dataset.windowRequired].required = input.checked;
+  });
+  const addWindow = root.querySelector('#v3-add-window');
+  if (addWindow) addWindow.onsubmit = event => {
+    event.preventDefault();
+    const { role, app } = Object.fromEntries(new FormData(event.currentTarget));
+    if (!validId(role) || Object.hasOwn(workspace.windows, role)) return toast('Enter a unique lowercase window role.', true);
+    workspace.windows[role] = { app, required: false, selector: { movable: true } };
+    for (const configuration of Object.values(workspace.configurations)) {
+      if (configuration.layout.type === 'canvas') continue;
+      configuration.layout = splitWithWindow(configuration.layout, role);
+    }
+    render();
+  };
+  root.querySelector('#v3-go-apps').onclick = () => openView('apps');
+  root.querySelector('#v3-edit-layout').onclick = () => openView('hardware');
+  root.querySelector('#v3-go-run').onclick = () => {
+    state.runTarget = `workspace:${workspaceId}`;
+    openView('tasks');
+  };
+  syncPersistenceControls();
+}
+
 function workspacesView() {
   if (!state.selectedWorkspace || !state.config.workspaces[state.selectedWorkspace]) state.selectedWorkspace = ids(state.config.workspaces)[0];
   const mode = state.config.modes[state.mode] || { displays: [] };
@@ -818,40 +1007,58 @@ function aiView() {
   root.querySelector('#add-ai-route').onclick=()=>{const workspaceId=root.querySelector('#ai-route-workspace').value;if(routing.assignments[workspaceId])return toast('This workspace already has an AI route.',true);routing.assignments[workspaceId]={role:root.querySelector('#ai-route-role').value,provider:root.querySelector('#ai-route-provider').value,overrides:{}};markDirty();render();};
 }
 
-function appsView() {
+async function appsView(epoch = renderEpoch) {
+  const v3 = usingV3Editor();
+  if (v3 && !state.v3Config) {
+    root.innerHTML = '<p>Loading applications…</p>';
+    try { await ensureV3(); }
+    catch (error) {
+      if (viewIsCurrent('apps', epoch)) root.innerHTML = `<div class="errors">${escapeHtml(error.message)}</div>`;
+      return;
+    }
+    if (!viewIsCurrent('apps', epoch)) return;
+    syncPersistenceControls();
+  }
+  const config = v3 ? state.v3Config : state.config;
+  const edited = () => { if (v3) syncPersistenceControls(); else markDirty(); };
   const running = new Set(state.appInventory?.apps || []); const query=state.appSearch.toLowerCase();
-  const references=(appId)=>[...Object.entries(state.config.workspaces).flatMap(([workspaceId,workspace])=>{
+  const references=(appId)=>[...Object.entries(config.workspaces).flatMap(([workspaceId,workspace])=>{
     const results=[];
     for(const [role,window] of Object.entries(workspace.windows)) if(window.app===appId) results.push(`${workspace.name||workspaceId} · ${role}`);
-    for(const [mode,variant] of Object.entries(workspace.variants)) for(const runtimeWindow of variant.runtime?.windows||[]) if(runtimeWindow.app_key===appId) results.push(`${workspace.name||workspaceId} · ${mode} runtime · ${runtimeWindow.role}`);
+    for(const [mode,variant] of Object.entries(workspace.variants || workspace.configurations)) for(const runtimeWindow of variant.runtime?.windows||[]) if(runtimeWindow.app_key===appId) results.push(`${workspace.name||workspaceId} · ${mode} runtime · ${runtimeWindow.role}`);
     return [...new Set(results)];
-  }), ...Object.entries(state.config.aiProviders || {}).filter(([,provider])=>provider.app===appId).map(([providerId])=>`AI provider · ${providerId}`)];
-  const rows=Object.entries(state.config.apps).filter(([id,app])=>`${id} ${app.name} ${app.match.appNames.join(' ')} ${(app.match.bundleIds||[]).join(' ')}`.toLowerCase().includes(query)).map(([id,app])=>{const used=references(id);const detected=running.has(app.name)||app.match.appNames.some((name)=>running.has(name));return `<details class="app-list-row"><summary><span class="app-name-cell"><i class="app-avatar">${escapeHtml(app.name.slice(0,2).toUpperCase())}</i><span><strong>${escapeHtml(app.name)}</strong><small>${escapeHtml(id)}</small></span></span><span><b class="detection ${detected?'detected':''}">${state.appInventory ? detected?'Running':'Not detected':'Not checked'}</b></span><span>${escapeHtml(app.match.appNames.join(', '))}</span><span>${used.length?escapeHtml(used.join(', ')):'—'}</span><span>Expand</span></summary><div class="app-row-editor"><div class="field"><label>Display name</label><input data-app-name="${id}" value="${escapeHtml(app.name)}"></div><div class="field"><label>macOS aliases</label><input data-app-aliases="${id}" value="${escapeHtml(app.match.appNames.join(', '))}"></div><div class="field"><label>Bundle identifiers</label><input data-app-bundles="${id}" value="${escapeHtml((app.match.bundleIds||[]).join(', '))}" placeholder="com.example.App"></div><div class="actions"><button class="quiet" data-rename-app="${id}">Rename ID</button><button class="danger" data-delete-app="${id}">Delete App</button></div></div></details>`;}).join('');
-  const unmatched=(state.appInventory?.apps||[]).filter((name)=>!Object.values(state.config.apps).some((app)=>app.name===name||app.match.appNames.includes(name)));
+  }), ...Object.entries(config.aiProviders || {}).filter(([,provider])=>provider.app===appId).map(([providerId])=>`AI provider · ${providerId}`)];
+  const rows=Object.entries(config.apps).filter(([id,app])=>`${id} ${app.name} ${app.match.appNames.join(' ')} ${(app.match.bundleIds||[]).join(' ')}`.toLowerCase().includes(query)).map(([id,app])=>{const used=references(id);const detected=running.has(app.name)||app.match.appNames.some((name)=>running.has(name));return `<details class="app-list-row"><summary><span class="app-name-cell"><i class="app-avatar">${escapeHtml(app.name.slice(0,2).toUpperCase())}</i><span><strong>${escapeHtml(app.name)}</strong><small>${escapeHtml(id)}</small></span></span><span><b class="detection ${detected?'detected':''}">${state.appInventory ? detected?'Running':'Not detected':'Not checked'}</b></span><span>${escapeHtml(app.match.appNames.join(', '))}</span><span>${used.length?escapeHtml(used.join(', ')):'—'}</span><span>Expand</span></summary><div class="app-row-editor"><div class="field"><label>Display name</label><input data-app-name="${id}" value="${escapeHtml(app.name)}"></div><div class="field"><label>macOS aliases</label><input data-app-aliases="${id}" value="${escapeHtml(app.match.appNames.join(', '))}"></div><div class="field"><label>Bundle identifiers</label><input data-app-bundles="${id}" value="${escapeHtml((app.match.bundleIds||[]).join(', '))}" placeholder="com.example.App"></div><div class="actions">${v3 ? '' : `<button class="quiet" data-rename-app="${id}">Rename ID</button><button class="danger" data-delete-app="${id}">Delete App</button>`}</div></div></details>`;}).join('');
+  const unmatched=(state.appInventory?.apps||[]).filter((name)=>!Object.values(config.apps).some((app)=>app.name===name||app.match.appNames.includes(name)));
   root.innerHTML = title('Application registry', 'Applications at a glance', 'Search the shared registry used by every Workspace picker. Expand a row only when details need editing.', '<button id="discover-apps" class="quiet">Discover Open Apps</button><button id="add-app" class="primary">+ Add Application</button>') + `<label class="workspace-search app-search"><span>Search applications</span><input id="app-search" data-ui-only type="search" placeholder="Name, stable ID or alias" value="${escapeHtml(state.appSearch)}"></label>${state.appInventory?`<div class="discovery-summary"><strong>${running.size} open · ${running.size-unmatched.length} matched · ${unmatched.length} not registered</strong>${unmatched.length?`<p>${unmatched.map((name)=>`<button class="shortcut-pill" data-add-discovered="${escapeHtml(name)}">+ ${escapeHtml(name)}</button>`).join(' ')}</p>`:'<p>Every open application matches the registry.</p>'}</div>`:''}<div class="app-list-head"><span>App</span><span>Detection</span><span>Aliases</span><span>Used By</span><span>Actions</span></div><div class="app-list">${rows||'<p class="empty-lane">No applications match your search.</p>'}</div>`;
-  root.querySelectorAll('[data-app-name]').forEach((input) => input.oninput = () => state.config.apps[input.dataset.appName].name = input.value);
-  root.querySelectorAll('[data-app-aliases]').forEach((input) => input.oninput = () => state.config.apps[input.dataset.appAliases].match.appNames = input.value.split(',').map((v) => v.trim()).filter(Boolean));
-  root.querySelectorAll('[data-app-bundles]').forEach((input) => input.oninput = () => { const values=input.value.split(',').map((v)=>v.trim()).filter(Boolean); if(values.length)state.config.apps[input.dataset.appBundles].match.bundleIds=values;else delete state.config.apps[input.dataset.appBundles].match.bundleIds; });
+  root.querySelectorAll('[data-app-name]').forEach((input) => input.oninput = () => { config.apps[input.dataset.appName].name = input.value; });
+  root.querySelectorAll('[data-app-aliases]').forEach((input) => input.oninput = () => { config.apps[input.dataset.appAliases].match.appNames = input.value.split(',').map(v => v.trim()).filter(Boolean); });
+  root.querySelectorAll('[data-app-bundles]').forEach((input) => input.oninput = () => { const values=input.value.split(',').map((v)=>v.trim()).filter(Boolean); if(values.length)config.apps[input.dataset.appBundles].match.bundleIds=values;else delete config.apps[input.dataset.appBundles].match.bundleIds; });
   root.querySelector('#app-search').oninput=(event)=>{state.appSearch=event.target.value;appsView();root.querySelector('#app-search').focus();};
-  const addApp=(name)=>{let id=(name||'application').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^([^a-z])/,'app_$1');let i=2,base=id;while(state.config.apps[id])id=`${base}_${i++}`;state.config.apps[id]={name:name||'Application',match:{appNames:[name||'Application']}};markDirty();render();};
+  const addApp = name => {
+    const id = availableId(name, config.apps, 'application');
+    config.apps[id] = { name, match: { appNames: [name] } };
+    edited();
+    render();
+  };
   root.querySelector('#add-app').onclick = async () => { const name=await promptValue('Application Display Name','Application'); if(name?.trim())addApp(name.trim()); };
   root.querySelectorAll('[data-add-discovered]').forEach((button)=>button.onclick=()=>addApp(button.dataset.addDiscovered));
   root.querySelectorAll('[data-rename-app]').forEach((button) => button.onclick = async () => {
-    const oldId = button.dataset.renameApp; const newId = await requestId('New Application ID', oldId, state.config.apps); if (!newId) return;
-    renameKey(state.config.apps, oldId, newId);
-    for (const provider of Object.values(state.config.aiProviders || {})) if (provider.app === oldId) provider.app = newId;
-    for (const workspace of Object.values(state.config.workspaces)) for (const window of Object.values(workspace.windows)) if (window.app === oldId) window.app = newId;
-    for (const workspace of Object.values(state.config.workspaces)) for (const variant of Object.values(workspace.variants)) for (const runtimeWindow of variant.runtime?.windows || []) if (runtimeWindow.app_key === oldId) runtimeWindow.app_key = newId;
+    const oldId = button.dataset.renameApp; const newId = await requestId('New Application ID', oldId, config.apps); if (!newId) return;
+    renameKey(config.apps, oldId, newId);
+    for (const provider of Object.values(config.aiProviders || {})) if (provider.app === oldId) provider.app = newId;
+    for (const workspace of Object.values(config.workspaces)) for (const window of Object.values(workspace.windows)) if (window.app === oldId) window.app = newId;
+    for (const workspace of Object.values(config.workspaces)) for (const variant of Object.values(workspace.variants)) for (const runtimeWindow of variant.runtime?.windows || []) if (runtimeWindow.app_key === oldId) runtimeWindow.app_key = newId;
     markDirty(); render();
   });
   root.querySelectorAll('[data-delete-app]').forEach((button) => button.onclick = async () => {
     const id = button.dataset.deleteApp; const appReferences = references(id);
     if (appReferences.length) return toast(`Application “${id}” is used by: ${appReferences.join(', ')}. Reassign those roles first.`, true);
-    if (Object.keys(state.config.apps).length === 1) return toast('A configuration must keep at least 1 application.', true);
+    if (Object.keys(config.apps).length === 1) return toast('A configuration must keep at least 1 application.', true);
     if (!await confirmAction(`Delete application “${id}”?`, { confirmLabel: 'Delete Application', danger: true })) return;
-    delete state.config.apps[id]; markDirty(); render();
+    delete config.apps[id]; markDirty(); render();
   });
-  root.querySelector('#discover-apps').onclick = async () => { try { state.appInventory=await request('/api/apps'); appsView(); if(state.appInventory.unavailable)toast(state.appInventory.message||'Open app discovery unavailable',true); } catch (error) { toast(error.message, true); } };
+  root.querySelector('#discover-apps').onclick = async () => { try { state.appInventory=await request('/api/apps'); if (!viewIsCurrent('apps', epoch)) return; appsView(epoch); if(state.appInventory.unavailable)toast(state.appInventory.message||'Open app discovery unavailable',true); } catch (error) { toast(error.message, true); } };
 }
 
 function shortcutsView() {
@@ -1041,25 +1248,116 @@ async function diagnosticsView(epoch = renderEpoch) {
 async function tasksView(epoch = renderEpoch) {
   root.innerHTML = title('Run control', 'Activate and monitor workspaces', 'Preview first, then explicitly confirm any operation that moves windows or changes Spaces.') + '<p>Loading tasks…</p>';
   try {
-    const { tasks } = await request('/api/tasks');
+    const v3 = state.source?.startsWith('v3-');
+    const [{ tasks }, saved] = await Promise.all([
+      request('/api/tasks'),
+      v3 ? request('/api/config') : { config: state.savedConfig }
+    ]);
     if (!viewIsCurrent('tasks', epoch)) return;
-    const targetOptions = [
-      ...['solo', 'wide', 'tall'].map((id) => `<option value="mode:${id}">Mode · ${id}</option>`),
-      ...Object.entries(state.config.profiles || {}).map(([id, profile]) => `<option value="profile:${id}">Profile · ${escapeHtml(profile.name)}</option>`),
-      ...Object.entries(state.config.workspaces).map(([id, workspace]) => `<option value="workspace:${id}">Workspace · ${escapeHtml(workspace.name)}</option>`)
+    const targetOptions = saved.setupRequired ? '' : [
+      ...(v3 ? ['<option value="mode:auto">Current display setup</option>'] :
+        ['solo', 'wide', 'tall'].map(id => `<option value="mode:${id}">Mode · ${id}</option>`)),
+      ...Object.entries(saved.config.profiles || {}).map(([id, profile]) => `<option value="profile:${id}">Profile · ${escapeHtml(profile.name)}</option>`),
+      ...Object.entries(saved.config.workspaces).map(([id, workspace]) => `<option value="workspace:${id}">Workspace · ${escapeHtml(workspace.name)}</option>`)
     ].join('');
-    const draftNotice = state.dirty ? '<div class="run-safety warning"><strong>Save or revert your draft before running.</strong><span>Execution is pinned to the saved configuration, so an unsaved draft cannot be run accidentally.</span></div>' : '<div class="run-safety"><strong>Saved configuration</strong><span>Preview creates a short-lived, digest-pinned execution plan.</span></div>';
-    root.innerHTML = title('Run control', 'Activate and monitor workspaces', 'Preview the saved target, inspect the exact changes, then explicitly confirm execution.') + draftNotice + `<article class="card run-control"><div class="row"><div class="field"><label for="run-target">Target</label><select id="run-target" data-ui-only>${targetOptions}</select></div><div class="field"><label for="run-mode">Workspace mode</label><select id="run-mode" data-ui-only><option>solo</option><option selected>wide</option><option>tall</option></select></div></div><label class="check"><input id="execution-confirm" data-ui-only type="checkbox"> I understand that Run Now may launch apps, create or focus Spaces, and move or resize windows.</label><div class="actions"><button id="preview-target" class="quiet" ${state.dirty ? 'disabled' : ''}>Preview Saved Plan</button><button id="run-target-now" class="primary" disabled>Run Pinned Plan</button></div><div id="run-preview"></div></article><div class="section-head compact"><div><p class="kicker">Task queue</p><h2>Recent executions</h2></div><button id="refresh-tasks" class="quiet">Refresh</button></div><div class="cards">${tasks.map((task) => `<article class="card task-card" data-task-id="${task.id}"><p class="kicker">${escapeHtml(task.status)}</p><h3>${escapeHtml(task.kind)} · ${escapeHtml(task.target)}</h3><p>${escapeHtml(task.createdAt)}</p><pre>${escapeHtml(task.logs.join('\n') || 'Waiting for output…')}</pre>${['queued','running'].includes(task.status) ? `<button class="danger" data-cancel-task="${task.id}">Cancel</button>` : ''}</article>`).join('') || '<div class="empty-lane">No tasks have run in this server session.</div>'}</div>`;
-    const selection = () => { const [kind, target] = root.querySelector('#run-target').value.split(':'); return { kind, target, mode: root.querySelector('#run-mode').value }; };
-    const invalidatePreview = () => { state.runPreview = null; root.querySelector('#run-preview').innerHTML = ''; root.querySelector('#execution-confirm').checked = false; root.querySelector('#run-target-now').disabled = true; };
-    const syncMode = () => { root.querySelector('#run-mode').disabled = !root.querySelector('#run-target').value.startsWith('workspace:'); invalidatePreview(); };
-    syncMode(); root.querySelector('#run-target').onchange = syncMode; root.querySelector('#run-mode').onchange = invalidatePreview;
-    root.querySelector('#execution-confirm').onchange = (event) => { root.querySelector('#run-target-now').disabled = !event.target.checked || !state.runPreview; };
-    root.querySelector('#preview-target').onclick = async () => { const value = selection(); try { const result = await request('/api/preview', { method: 'POST', body: JSON.stringify({ config: state.savedConfig, ...value }) }); if (!viewIsCurrent('tasks', epoch)) return; state.runPreview = { selection: value, plan: result.plan, snapshotId: result.snapshot.snapshotId }; root.querySelector('#run-preview').innerHTML = planPreview(result); root.querySelector('#execution-confirm').checked = false; root.querySelector('#run-target-now').disabled = true; } catch (error) { toast(error.message, true); } };
-    root.querySelector('#run-target-now').onclick = async () => { const value = selection(); const preview = state.runPreview; if (!preview || JSON.stringify(preview.selection) !== JSON.stringify(value)) return toast('Preview this target again before running.', true); try { const result = await request('/api/execute', { method: 'POST', body: JSON.stringify({ ...value, confirmed: true, expectedPlanId: preview.plan.planId, expectedConfigDigest: preview.plan.configDigest, expectedSnapshotId: preview.snapshotId }) }); state.runPreview = null; toast(`Task ${result.task.id} started`); setTimeout(() => render(), 400); } catch (error) { state.runPreview = null; toast(error.message, true); render(); } };
+    const dirty = v3 ? v3Dirty() : state.dirty || v3Dirty();
+    const draftNotice = saved.setupRequired ? '<div class="run-safety warning"><strong>Confirm your display setup before running.</strong><button id="run-open-setup" class="quiet">Open Hardware &amp; Setups</button></div>'
+      : dirty ? '<div class="run-safety warning"><strong>Save or revert your draft before running.</strong></div>'
+      : '<div class="run-safety"><strong>Saved configuration</strong><span>Preview creates a digest-pinned execution plan.</span></div>';
+    root.innerHTML = title('Run control', 'Activate and monitor workspaces', 'Preview the saved target, inspect the exact changes, then explicitly confirm execution.') + draftNotice + `
+      <article class="card run-control">
+        <div class="row">
+          <label class="field">Target<select id="run-target" data-ui-only ${targetOptions ? '' : 'disabled'}>${targetOptions}</select></label>
+          ${v3 ? '' : '<label class="field">Workspace mode<select id="run-mode" data-ui-only><option>solo</option><option selected>wide</option><option>tall</option></select></label>'}
+        </div>
+        <label class="check"><input id="execution-confirm" data-ui-only type="checkbox" disabled> I understand that running may launch apps, create or focus Spaces, and move or resize windows.</label>
+        <div class="actions"><button id="preview-target" class="quiet" ${dirty || !targetOptions ? 'disabled' : ''}>Preview Saved Plan</button><button id="run-target-now" class="primary" disabled>Run Pinned Plan</button></div>
+        <div id="run-preview" aria-live="polite"></div>
+      </article>
+      <div class="section-head compact"><h2>Recent executions</h2><button id="refresh-tasks" class="quiet">Refresh</button></div>
+      <div class="cards">${tasks.map(task => `<article class="card task-card" data-task-id="${task.id}">
+        <p class="kicker">${escapeHtml(task.status)}${task.layoutIssues?.length ? ' · layout warnings' : ''}</p>
+        <h3>${escapeHtml(task.kind)} · ${escapeHtml(task.target)}</h3><p>${escapeHtml(task.createdAt)}</p>
+        ${task.layoutIssues?.length ? `<ul>${task.layoutIssues.map(issue => `<li>${escapeHtml(issue.message)}</li>`).join('')}</ul>` : ''}
+        <pre>${escapeHtml(task.logs.join('\n') || 'Waiting for output…')}</pre>
+        ${['queued', 'running'].includes(task.status) ? `<button class="danger" data-cancel-task="${task.id}">Cancel</button>` : ''}
+      </article>`).join('') || '<div class="empty-lane">No tasks have run in this server session.</div>'}</div>`;
+
+    const target = root.querySelector('#run-target');
+    const mode = root.querySelector('#run-mode');
+    const confirm = root.querySelector('#execution-confirm');
+    const previewButton = root.querySelector('#preview-target');
+    const runButton = root.querySelector('#run-target-now');
+    const previewOutput = root.querySelector('#run-preview');
+    let previewRevision = 0;
+    if ([...target.options].some(option => option.value === state.runTarget)) target.value = state.runTarget;
+    const selection = () => {
+      const [kind, id] = target.value.split(':');
+      return { kind, target: id, ...(mode && kind === 'workspace' ? { mode: mode.value } : {}) };
+    };
+    const invalidatePreview = () => {
+      previewRevision++;
+      state.runPreview = null;
+      previewOutput.innerHTML = '';
+      confirm.checked = false;
+      confirm.disabled = true;
+      runButton.disabled = true;
+    };
+    const syncTarget = () => {
+      if (mode) mode.disabled = selection().kind !== 'workspace';
+      state.runTarget = target.value;
+      invalidatePreview();
+    };
+    syncTarget();
+    target.onchange = syncTarget;
+    if (mode) mode.onchange = invalidatePreview;
+    const setupButton = root.querySelector('#run-open-setup');
+    if (setupButton) setupButton.onclick = () => openView('hardware');
+    confirm.onchange = () => { runButton.disabled = !confirm.checked || !state.runPreview?.plan.executable; };
+    previewButton.onclick = async () => {
+      const value = selection();
+      invalidatePreview();
+      const revision = previewRevision;
+      previewButton.disabled = true;
+      try {
+        const result = await request('/api/preview', { method: 'POST', body: JSON.stringify(value) });
+        if (!viewIsCurrent('tasks', epoch) || revision !== previewRevision) return;
+        state.runPreview = { plan: result.plan, snapshotId: result.snapshot.snapshotId };
+        previewOutput.innerHTML = planPreview(result);
+        confirm.disabled = !result.plan.executable;
+      } catch (error) {
+        if (viewIsCurrent('tasks', epoch) && revision === previewRevision) previewOutput.textContent = error.message;
+      } finally { previewButton.disabled = false; }
+    };
+    runButton.onclick = async () => {
+      const preview = state.runPreview;
+      if (!preview?.plan.executable || !confirm.checked) return;
+      const revision = previewRevision;
+      runButton.disabled = true;
+      confirm.disabled = true;
+      previewButton.disabled = true;
+      try {
+        const { task } = await request('/api/execute', { method: 'POST', body: JSON.stringify({
+          ...selection(), confirmed: true, expectedPlanId: preview.plan.planId,
+          expectedConfigDigest: preview.plan.configDigest, expectedSnapshotId: preview.snapshotId
+        }) });
+        toast(`Task ${task.id} queued`);
+        if (viewIsCurrent('tasks', epoch)) render();
+      } catch (error) {
+        if (!viewIsCurrent('tasks', epoch) || revision !== previewRevision) return;
+        invalidatePreview();
+        previewOutput.textContent = error.message;
+        if (error.payload?.plan) previewOutput.insertAdjacentHTML('beforeend', planPreview(error.payload));
+      } finally { previewButton.disabled = false; }
+    };
     root.querySelector('#refresh-tasks').onclick = render;
-    root.querySelectorAll('[data-cancel-task]').forEach((button) => button.onclick = async () => { try { await request(`/api/tasks/${button.dataset.cancelTask}/cancel`, { method: 'POST' }); toast('Cancellation requested'); render(); } catch (error) { toast(error.message, true); } });
-  } catch (error) { if (viewIsCurrent('tasks', epoch)) root.innerHTML = `<div class="errors">${escapeHtml(error.message)}</div>`; }
+    root.querySelectorAll('[data-cancel-task]').forEach(button => button.onclick = async () => {
+      try { await request(`/api/tasks/${button.dataset.cancelTask}/cancel`, { method: 'POST' }); toast('Cancellation requested'); render(); }
+      catch (error) { toast(error.message, true); }
+    });
+  } catch (error) {
+    if (viewIsCurrent('tasks', epoch)) root.innerHTML = `<div class="errors">${escapeHtml(error.message)}</div>`;
+  }
 }
 
 async function reviewView(epoch = renderEpoch) {
@@ -1118,9 +1416,9 @@ function render() {
   else if (state.view === 'current') currentView(epoch);
   else if (state.view === 'map') mapView();
   else if (state.view === 'displays') displaysView();
-  else if (state.view === 'workspaces') workspacesView();
+  else if (state.view === 'workspaces') usingV3Editor() ? v3WorkspacesView(epoch) : workspacesView();
   else if (state.view === 'ai') aiView();
-  else if (state.view === 'apps') appsView();
+  else if (state.view === 'apps') appsView(epoch);
   else if (state.view === 'shortcuts') shortcutsView();
   else if (state.view === 'automation') automationView();
   else if (state.view === 'history') historyView(epoch);
@@ -1132,9 +1430,9 @@ function render() {
 }
 
 document.querySelectorAll('#nav button').forEach((button) => button.onclick = () => { state.view = button.dataset.view; render(); });
-root.addEventListener('input', (event) => { if (!event.target.matches('[data-ui-only]')) markDirty(); });
-root.addEventListener('change', (event) => { if (!event.target.matches('[data-ui-only]')) markDirty(); });
-document.querySelector('#validate').onclick = () => { state.view = 'review'; render(); };
+root.addEventListener('input', (event) => { if (isV3EditorView()) syncPersistenceControls(); else if (!event.target.matches('[data-ui-only]')) markDirty(); });
+root.addEventListener('change', (event) => { if (isV3EditorView()) syncPersistenceControls(); else if (!event.target.matches('[data-ui-only]')) markDirty(); });
+document.querySelector('#validate').onclick = () => openView(isV3EditorView() ? 'hardware' : 'review');
 document.querySelector('#undo').onclick = () => moveDraftHistory('undo');
 document.querySelector('#redo').onclick = () => moveDraftHistory('redo');
 addEventListener('keydown', (event) => {
@@ -1142,7 +1440,7 @@ addEventListener('keydown', (event) => {
   event.preventDefault();
   moveDraftHistory(event.shiftKey ? 'redo' : 'undo');
 });
-document.querySelector('#save').onclick = async (event) => { const button = event.currentTarget; if (!state.dirty) return; if (shortcutConflicts().length) { state.view = 'shortcuts'; render(); return toast('Resolve shortcut conflicts before saving.', true); } button.disabled = true; button.textContent = 'Checking Diff…'; try { const payload = { config: state.config, baseRevision: state.serverRevision }; const diff = await request('/api/diff', { method: 'POST', body: JSON.stringify(payload) }); if (!diff.count && !state.requiresInitialSave) { markClean(); return toast('No changes to save'); } const changeCount = diff.count || 1; if (!await confirmAction(`Save ${changeCount} configuration change(s)? A recovery snapshot will be created first.`, { title: 'Save Configuration', confirmLabel: 'Save Changes' })) return; button.textContent = 'Saving…'; const result = await request('/api/save', { method: 'POST', body: JSON.stringify(payload) }); state.source = 'v2'; state.requiresInitialSave = false; state.savedConfig = structuredClone(state.config); state.serverRevision = result.revision; state.importChanges = []; state.autoImportedShortcuts = 0; markClean('Local · read/write · verified'); toast(`Saved and read-back verified: ${result.path}`); } catch (error) { if (error.payload?.code === 'configuration_conflict') toast('The configuration changed outside this page. Reload to review it before saving.', true); else toast(error.message, true); } finally { button.textContent = 'Save Configuration'; syncPersistenceControls(); } };
+document.querySelector('#save').onclick = async (event) => { const button = event.currentTarget; if (isV3EditorView()) return saveV3(); if (!state.dirty) return; if (shortcutConflicts().length) { state.view = 'shortcuts'; render(); return toast('Resolve shortcut conflicts before saving.', true); } button.disabled = true; button.textContent = 'Checking Diff…'; try { const payload = { config: state.config, baseRevision: state.serverRevision }; const diff = await request('/api/diff', { method: 'POST', body: JSON.stringify(payload) }); if (!diff.count && !state.requiresInitialSave) { markClean(); return toast('No changes to save'); } const changeCount = diff.count || 1; if (!await confirmAction(`Save ${changeCount} configuration change(s)? A recovery snapshot will be created first.`, { title: 'Save Configuration', confirmLabel: 'Save Changes' })) return; button.textContent = 'Saving…'; const result = await request('/api/save', { method: 'POST', body: JSON.stringify(payload) }); state.source = 'v2'; state.requiresInitialSave = false; state.savedConfig = structuredClone(state.config); state.serverRevision = result.revision; state.importChanges = []; state.autoImportedShortcuts = 0; markClean('Local · read/write · verified'); toast(`Saved and read-back verified: ${result.path}`); } catch (error) { if (error.payload?.code === 'configuration_conflict') toast('The configuration changed outside this page. Reload to review it before saving.', true); else toast(error.message, true); } finally { button.textContent = 'Save Configuration'; syncPersistenceControls(); } };
 document.querySelector('#export-config').onclick = async () => {
   try {
     const response = await fetch('/api/export', { headers });
@@ -1184,7 +1482,22 @@ document.querySelector('#import-file').onchange = async (event) => {
   } catch (error) { toast(error.message, true); }
   finally { event.target.value = ''; }
 };
-document.querySelector('#revert-changes').onclick = async () => { if (!state.dirty || await confirmAction('Discard all unsaved changes?', { confirmLabel: 'Discard Draft', danger: true })) { state.config = structuredClone(state.savedConfig); state.autoImportedShortcuts = 0; state.selectedWorkspace = null; markClean(); render(); } };
+document.querySelector('#revert-changes').onclick = async () => {
+  if (v3Dirty()) {
+    if (!await confirmAction('Discard unsaved v3 changes?', { confirmLabel: 'Discard Draft', danger: true })) return;
+    state.v3Config = null;
+    state.v3SavedConfig = null;
+    state.legacyEditorReadOnly = state.source?.startsWith('v3-');
+    return render();
+  }
+  if (!state.dirty || await confirmAction('Discard all unsaved changes?', { confirmLabel: 'Discard Draft', danger: true })) {
+    state.config = structuredClone(state.savedConfig);
+    state.autoImportedShortcuts = 0;
+    state.selectedWorkspace = null;
+    markClean();
+    render();
+  }
+};
 document.querySelector('#reset-defaults').onclick = async () => { if (!await confirmAction('Replace the editor contents with SpaceWright defaults? This remains unsaved until you save it.', { confirmLabel: 'Load Defaults', danger: true })) return; const result = await request('/api/defaults'); state.config = result.config; state.selectedWorkspace = null; markDirty(); render(); };
 document.querySelector('#restore-backup').onclick = async () => {
   try {
@@ -1241,7 +1554,7 @@ async function initialize() {
       document.querySelector('#status').textContent = state.legacyEditorReadOnly ? 'Hardware-aware · edit in Hardware & Setups' : state.autoImportedShortcuts ? `Local · ${state.autoImportedShortcuts} shortcut${state.autoImportedShortcuts===1?'':'s'} ready to save` : payload.source === 'v2' ? 'Local · read/write' : 'Starter · unsaved';
       document.querySelector('#path').textContent = payload.path;
       render();
-      if (payload.source === 'starter') toast('No v2 file yet. Review can import your current v1 setup before saving.');
+      if (payload.source === 'starter') toast('Use Apps and Workspaces to set up v3, or use Review to import an existing legacy configuration.');
     } catch (error) {
       document.querySelector('#status').textContent = 'Could not load';
       root.innerHTML = `<div class="errors">${escapeHtml(error.message)}</div>`;

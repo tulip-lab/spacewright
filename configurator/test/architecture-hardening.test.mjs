@@ -6,6 +6,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm, readdir } from 'node:fs/promis
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { starterConfig, compileV2 } from '../lib/config-v2.mjs';
+import { starterV3 } from '../lib/config-v3.mjs';
 import { normalizeSnapshot, buildDesiredState, compareState, buildExecutionPlan } from '../lib/state-engine.mjs';
 import { selectRole } from '../lib/window-policy.mjs';
 import { discoverState } from '../lib/discovery.mjs';
@@ -29,7 +30,7 @@ async function fixture(config = starterConfig()) {
   await Promise.all([mkdir(configRoot), mkdir(stateRoot), mkdir(fakeBin)]);
   const dataFile = join(directory,'data.json'), logFile = join(directory,'commands.jsonl');
   await writeFile(dataFile, JSON.stringify(raw()));
-  await writeFile(join(configRoot,'config.v2.json'), `${JSON.stringify(config,null,2)}\n`);
+  await writeFile(join(configRoot,`config.v${config.version}.json`), `${JSON.stringify(config,null,2)}\n`);
   await writeFile(join(stateRoot,'machine.json'), JSON.stringify(machine));
   const mock = `#!${process.execPath}
 const fs = require('fs');
@@ -50,6 +51,13 @@ if(kind==='config') {
 }
 if(kind==='query') {
  const key=args[2].slice(2); let result=data[key];
+ if(key==='spaces' && !args[3] && data.pendingFocus) {
+  if(data.pendingFocus.polls-- === 0) {
+   data.spaces.forEach(s=>s['has-focus']=s.index===data.pendingFocus.index);
+   delete data.pendingFocus;
+  }
+  fs.writeFileSync(process.env.MOCK_DATA,JSON.stringify(data));
+ }
  if(key==='spaces' && args[3]==='--space') result=args[4] ? data.spaces.find(s=>s.index===Number(args[4])) : data.spaces.find(s=>s['has-focus']);
  if(key==='windows' && args[3]==='--window') result=data.windows.find(w=>w.id===Number(args[4]));
  if(!result) process.exit(3); console.log(JSON.stringify(result)); process.exit(0);
@@ -62,6 +70,7 @@ if(kind==='window') {
 if(!data.ineffective && (!data.resizeNeedsFocus || command!=='--grid' || data.spaces.some(s=>s.index===w.space && s['has-focus']))) {
  if(command==='--space') {w.space=Number(args[4]);w.display=data.spaces.find(s=>s.index===w.space).display;}
  if(command==='--grid') {const [rows,cols,x,y,width,height]=args[4].split(':').map(Number); const f=data.displays.find(d=>d.index===w.display).frame; w.frame={x:f.x+f.w*x/cols,y:f.y+f.h*y/rows,w:f.w*width/cols,h:f.h*height/rows};}
+ if(command==='--grid' && data.lateWindows) {data.windows.push(...data.lateWindows);delete data.lateWindows;}
  if(command==='--move') {const p=args[4].split(':').slice(1).map(Number);w.frame.x=p[0];w.frame.y=p[1];}
  if(command==='--resize') {const p=args[4].split(':').slice(1).map(Number);w.frame.w=p[0];w.frame.h=p[1];}
  if(command==='--toggle' && args[4]==='native-fullscreen') w['is-native-fullscreen']=false;
@@ -71,7 +80,8 @@ if(kind==='space' && command==='--label')data.spaces.find(s=>s.index===Number(ar
 if(kind==='space' && args[2]==='--create')data.spaces.push({index:Math.max(...data.spaces.map(s=>s.index))+1,uuid:'CREATED-'+data.spaces.length,display:Number(args[3]),label:'',type:'bsp'});
 if(kind==='space' && command==='--layout')data.spaces.find(s=>s.index===Number(args[2])).type=args[4];
 if(kind==='space' && args[2]==='--focus') {
- const index=data.spaces.find(s=>s.index===Number(args[3]) || s.label===args[3])?.index;data.spaces.forEach(s=>s['has-focus']=s.index===index);
+ const index=data.spaces.find(s=>s.index===Number(args[3]) || s.label===args[3])?.index;
+ if(data.delayFocusConfirmation)data.pendingFocus={index,polls:1};else data.spaces.forEach(s=>s['has-focus']=s.index===index);
  if(data.resizeNeedsFocus) {
   const target=data.spaces.find(s=>s.index===index);
   for(const space of data.spaces.filter(s=>s.display===target.display))space['is-visible']=space.index===index;
@@ -105,6 +115,45 @@ fs.writeFileSync(process.env.MOCK_DATA,JSON.stringify(d));
   const commands = async () => (await readFile(logFile,'utf8').catch(()=>'' )).trim().split('\n').filter(Boolean).map(JSON.parse);
   return {directory,configRoot,stateRoot,dataFile,env,cli,setData,commands,close:()=>rm(directory,{recursive:true,force:true})};
 }
+
+test('auto mode replans once for a late configured window and leaves newly opened unrelated windows alone', async () => {
+  const config = starterV3();
+  config.apps.chat = { name: 'Chat', match: { appNames: ['Fixture Chat'] } };
+  config.workspaces.coding.windows.helper = { app: 'chat', required: false };
+  config.workspaces.coding.configurations.tall = {
+    layout: { type: 'canvas', regions: [{ role: 'editor', grid: '1:2:0:0:1:1' }, { role: 'helper', grid: '1:2:1:0:1:1' }] },
+    runtime: { runner: 'primary_helper' }
+  };
+  const f = await fixture(config);
+  try {
+    f.env.SPACEWRIGHT_BANNER_DISABLE = '1';
+    await writeFile(join(f.directory, 'bin', 'sysctl'), '#!/bin/sh\necho Macmini9,1\n', { mode: 0o755 });
+    await writeFile(join(f.stateRoot, 'machine.json'), JSON.stringify({
+      version: 2, hardwareProfile: 'mac_mini', hardwareProfileConfirmed: true, displayBindings: { tall: 'D' },
+      topologySelections: { 'external:tall': 'single_tall' }
+    }));
+    await f.setData(data => {
+      Object.assign(data.displays[0], { 'is-built-in': false, frame: { x: 0, y: 0, w: 900, h: 1200 } });
+      Object.assign(data.spaces[0], { label: 'coding_tall', 'has-focus': true, 'is-visible': true });
+      data.lateWindows = [
+        { ...data.windows[0], id: 21, pid: 201, app: 'Fixture Chat', title: 'Chat' },
+        { ...data.windows[0], id: 22, pid: 202, app: 'Unrelated', title: 'Unrelated' }
+      ];
+    });
+    const output = await f.cli(['mode', 'auto']);
+    const result = JSON.parse(output.stdout.replace(/\nSPACEWRIGHT_VERIFIED\n$/, ''));
+    assert.equal(result.status, 'completed');
+    assert.equal(result.verification.converged, true);
+    assert.deepEqual(result.plan.selectedWindows.map(window => window.id), [10, 21]);
+    const journal = JSON.parse(await readFile(result.journal, 'utf8'));
+    assert.equal(journal.steps.filter(step => step.type === 'reconciliation').length, 1);
+    assert.equal(journal.steps.find(step => step.type === 'reconciliation').reason, 'window_state_changed');
+    const commands = await f.commands();
+    assert.equal(commands.filter(args => args[1] === 'window' && args[2] === '10').length, 1);
+    assert.ok(commands.some(args => args[1] === 'window' && args[2] === '21'));
+    assert.ok(!commands.some(args => args[1] === 'window' && args[2] === '22'));
+  } finally { await f.close(); }
+});
 
 for (const scenario of ['workspace', 'mode', 'ineffective', 'no retry budget']) {
   test(`hidden Space resize recovery handles ${scenario}`, async () => {
@@ -248,6 +297,43 @@ test('Space AX observation restores focus and replans optional windows before fi
     assert.ok(!commands.some(a=>a[0]==='open' || a.includes('--restart-service')));
   }finally{await f.close();}
 });
+
+for (const [app, recovers] of [['Reminders', true], ['Reminders', false], ['Notes', true]]) test(`Tall observes optional ${app} once when AX ${recovers ? 'returns' : 'stays unavailable'}`, async () => {
+  const role = app.toLowerCase();
+  const config = starterConfig();
+  config.apps[role] = { name: app, match: { appNames: [app] } };
+  config.workspaces.coding.windows[role] = { app: role, required: false, selector: { movable: true } };
+  config.workspaces.coding.variants.tall.layout = { type: 'canvas', regions: [
+    { role: 'editor', grid: '2:1:0:1:1:1' }, { role, grid: '2:2:1:0:1:1' }
+  ] };
+  config.modes.tall.displays[0].role = 'primary';
+  const f = await fixture(config);
+  try {
+    await f.setData(data => {
+      data.axObservation = recovers;
+      data.displays[0].frame = { x: 0, y: 0, w: 900, h: 1200 };
+      Object.assign(data.spaces[0], { label: '', 'has-focus': true });
+      data.spaces.push({ index: 2, uuid: 'TARGET', display: 1, label: 'coding_tall', type: 'float' });
+      Object.assign(data.windows[0], { space: 2, frame: { x: 0, y: 600, w: 900, h: 600 } });
+      data.windows.push({ ...data.windows[0], id: 11, pid: 101, app, title: '', role: '',
+        frame: { x: 0, y: 600, w: 450, h: 600 }, 'has-ax-reference': false, 'can-move': false, 'can-resize': false });
+    });
+    const preview = JSON.parse((await f.cli(['apply', 'tall', '--dry-run', '--json'])).stdout);
+    assert.deepEqual(preview.plan.preparations.map(p => [p.type, p.role, p.bestEffort]), [['observe_space', role, true]]);
+    assert.deepEqual(await f.commands(), []);
+    const result = JSON.parse((await f.cli(['apply', 'tall', '--json'])).stdout);
+    assert.equal(result.status, 'completed');
+    assert.equal(result.verification.converged, true);
+    assert.equal(result.plan.selectedWindows.some(w => w.id === 11), recovers);
+    assert.deepEqual((await f.commands()).filter(a => a[2] === '--focus'), [['-m', 'space', '--focus', '2'], ['-m', 'space', '--focus', '1']]);
+    assert.ok(!(await f.commands()).some(a => a.includes('--restart-service')));
+    const data = JSON.parse(await readFile(f.dataFile, 'utf8'));
+    const window = data.windows.find(w => w.id === 11);
+    assert.equal(window.space, 2);
+    assert.deepEqual(window.frame, { x: recovers ? 450 : 0, y: recovers ? 0 : 600, w: 450, h: 600 });
+  } finally { await f.close(); }
+});
+
 for(const recovery of ['refresh','fullscreen'])test(`AX observation can precede a separate ${recovery} preparation without layout in between`,async()=>{
   const config=starterConfig();config.workspaces.coding.variants.solo.runtime={runner:'primary_helper'};
   const f=await fixture(config);
@@ -406,7 +492,6 @@ for (const scenario of ['identity','missing-window','missing-space','reordered-s
 });
 
 test('v3 generation includes topology, bindings, hardware, and rejects unavailable context', async () => {
-  const {starterV3}=await import('../lib/config-v3.mjs');
   const config=starterV3();
   const context={machine:{version:2,hardwareProfile:'mac_mini',hardwareProfileConfirmed:true,displayBindings:{tall:'T'},topologySelections:{'external:tall':'single_tall'}},hardware:{family:'mac_mini',modelIdentifier:'Macmini9,1'},snapshot:{unavailable:false,displays:[{index:1,uuid:'T',frame:{x:0,y:0,w:1200,h:1920},builtIn:false}]}};
   const first=generationDocument(config,context);
@@ -494,43 +579,68 @@ for(const scenario of ['replace','reuse','fail','ineffective','timeout'])test(`e
   }
  }finally{await f.close();}
 });
-for(const recovered of [true,false])test(`optional Outlook recovery ${recovered?'replans the shared layout':'reports incomplete mail layout'}`,async()=>{
- const config=starterConfig();
+for(const recovered of [true,false])test(`single-tall mode completes when optional Outlook ${recovered?'recovers':'stays unavailable'}`,async()=>{
+ const config=starterV3();
  config.apps.outlook={name:'Outlook',match:{appNames:['Microsoft Outlook']}};
  config.workspaces.coding.windows={primary:{app:'code',required:true},helper:{app:'outlook',required:false}};
- for(const mode of ['solo','wide','tall'])config.workspaces.coding.variants[mode]={
+ for(const id of Object.keys(config.workspaces.coding.configurations))config.workspaces.coding.configurations[id]={
   layout:{type:'canvas',regions:[{role:'primary',grid:'1:2:0:0:1:1'},{role:'helper',grid:'1:2:1:0:1:1'}]},
   runtime:{runner:'primary_helper',primaryAloneLayout:[{role:'primary',grid:'1:1:0:0:1:1'}]}
  };
  const f=await fixture(config);try{
+  f.env.SPACEWRIGHT_BANNER_DISABLE='1';
+  await writeFile(join(f.directory,'bin','sysctl'),'#!/bin/sh\necho Macmini9,1\n',{mode:0o755});
+  await writeFile(join(f.stateRoot,'machine.json'),JSON.stringify({
+   version:2,hardwareProfile:'mac_mini',hardwareProfileConfirmed:true,displayBindings:{tall:'D'},
+   topologySelections:{'external:tall':'single_tall'}
+  }));
   await f.setData(d=>{
-   d.spaces.push({index:2,uuid:'OUTLOOK-SPACE',display:1,label:'support_solo',type:'float'});
-   d.windows[0].frame={x:0,y:0,w:1200,h:900};
+   d.displays[0]['is-built-in']=false;
+   d.displays[0].frame={x:0,y:0,w:900,h:1200};
+   d.spaces[0].label='coding_tall';
+   d.spaces[0]['has-focus']=recovered;
+   d.spaces.push({index:2,uuid:'OUTLOOK-SPACE',display:1,label:'',type:'float','has-focus':!recovered});
+   d.delayFocusConfirmation=!recovered;
+   d.windows[0].frame={x:0,y:0,w:450,h:600};
    d.windows.push({...structuredClone(d.windows[0]),id:11,pid:101,app:'Microsoft Outlook',title:'',role:'',subrole:'',space:2,
     frame:{x:600,y:0,w:600,h:900},'has-ax-reference':false,'can-move':false,'can-resize':false});
-   d.windows.push({...structuredClone(d.windows[0]),id:12,pid:102,app:'Dia',title:'Diagram',space:2});
+   d.windows.push({...structuredClone(d.windows[0]),id:12,pid:102,app:'Dia',title:'Diagram',space:2,'can-move':false});
   });
   await writeFile(join(f.directory,'bin','osascript'),`#!${process.execPath}\nconst fs=require('fs');const d=JSON.parse(fs.readFileSync(process.env.MOCK_DATA,'utf8'));fs.appendFileSync(process.env.MOCK_LOG,JSON.stringify(['osascript'])+'\\n');${recovered?"Object.assign(d.windows.find(w=>w.id===11),{'has-ax-reference':true,'can-move':true,'can-resize':true,title:'Inbox',role:'AXWindow'});":""}fs.writeFileSync(process.env.MOCK_DATA,JSON.stringify(d));\n`,{mode:0o755});
-  const preview=JSON.parse((await f.cli(['apply','coding','solo','--dry-run','--json'])).stdout);
+  const preview=JSON.parse((await f.cli(['mode','auto','--dry-run','--json'])).stdout);
+  assert.equal(preview.plan.target.mode,'tall');
   assert.equal(preview.plan.preparations.length,1);
   assert.deepEqual(await f.commands(),[]);
-  let applied;
-  try {applied=JSON.parse((await f.cli(['apply','coding','solo','--json'])).stdout);}
-  catch(error) {applied=JSON.parse(error.stdout);}
-  assert.equal(applied.status,recovered?'completed':'failed');
-  assert.equal((await f.commands()).filter(args=>args[0]==='osascript').length,1);
+  const output=await f.cli(['mode','auto']);
+  assert.match(output.stdout,/^SPACEWRIGHT_VERIFIED$/m);
+  const applied=JSON.parse(output.stdout.replace(/\nSPACEWRIGHT_VERIFIED\n$/,''));
+  assert.equal(applied.status,'completed');
+  assert.equal(applied.verification.converged,true);
+  const commands=await f.commands();
+  assert.equal(commands.filter(args=>args[0]==='osascript').length,1);
+  assert.ok(!commands.some(args=>args[0]==='--restart-service'));
   const journal=JSON.parse(await readFile(applied.journal,'utf8'));
-  assert.equal(journal.planRelations[0].phase,'preparation');
+  const data=JSON.parse(await readFile(f.dataFile,'utf8'));
+  assert.deepEqual(journal.preparationPlans.flatMap(p=>p.preparations.map(a=>a.type)), recovered?['refresh_app']:['refresh_app','observe_space']);
   if(recovered)assert.ok(journal.plan.selectedWindows.some(w=>w.role==='helper' && w.id===11));
   else {
-   assert.match(applied.error,/Outlook has no window that yabai can control/);
-   assert.ok((await f.commands()).some(args=>args[1]==='space' && args[2]==='--focus'));
-   assert.equal((JSON.parse(await readFile(f.dataFile,'utf8'))).windows.find(w=>w.id===11).space,2);
+   assert.match(output.stderr,/\[WARN\].*Microsoft Outlook.*Outlook was skipped/);
+   assert.ok(journal.logs.some(entry=>/\[WARN\].*Microsoft Outlook.*Space observation/.test(entry.line)));
+   assert.ok(journal.operations.some(op=>op.type==='preparation_focus_departure' && op.status==='verified_success'));
+   assert.ok(applied.verification.drifts.some(d=>d.code==='outlook_window_unavailable' && d.severity==='warning'));
+   assert.ok(applied.layoutIssues.some(issue=>issue.workspaceId==='coding' && issue.kind==='skipped' && /Outlook/.test(issue.message)));
+   const status=JSON.parse(await readFile(join(f.stateRoot,'mode-transition','status.json'),'utf8'));
+   assert.match(status.phase,/skipped/);
+   assert.deepEqual(status.layoutIssues,applied.layoutIssues);
+   assert.ok(!commands.some(args=>args[1]==='window' && args[2]==='11'));
+   assert.deepEqual(data.windows.find(w=>w.id===10).frame,{x:0,y:0,w:900,h:1200});
+   assert.equal(data.windows.find(w=>w.id===11).space,2);
   }
-  assert.equal((JSON.parse(await readFile(f.dataFile,'utf8'))).windows.find(w=>w.id===12).space,2);
+  assert.equal(data.spaces.find(s=>s['has-focus']).uuid,recovered?'S':'OUTLOOK-SPACE');
+  assert.equal(data.windows.find(w=>w.id===12).space,2);
  }finally{await f.close();}
 });
-for(const recovered of [true,false])test(`running Outlook without a window ${recovered?'opens and joins mail layout':'fails visibly after one reopen'}`,async()=>{
+for(const recovered of [true,false])test(`running optional Outlook without a window ${recovered?'opens and joins mail layout':'warns after one reopen'}`,async()=>{
  const config=starterConfig();
  config.apps.outlook={name:'Outlook',match:{appNames:['Microsoft Outlook']}};
  config.workspaces.coding.windows={primary:{app:'code',required:true},helper:{app:'outlook',required:false}};
@@ -544,11 +654,12 @@ for(const recovered of [true,false])test(`running Outlook without a window ${rec
   const preview=JSON.parse((await f.cli(['apply','coding','solo','--dry-run','--json'])).stdout);
   assert.equal(preview.plan.preparations[0].window.id,null);
   assert.deepEqual(await f.commands(),[]);
-  let applied;try{applied=JSON.parse((await f.cli(['apply','coding','solo','--json'])).stdout);}catch(error){applied=JSON.parse(error.stdout);}
-  assert.equal(applied.status,recovered?'completed':'failed');
+  const applied=JSON.parse((await f.cli(['apply','coding','solo','--json'])).stdout);
+  assert.equal(applied.status,'completed');
+  assert.equal(applied.verification.converged,true);
   assert.equal((await f.commands()).filter(args=>args[0]==='osascript').length,1);
   if(recovered)assert.ok(applied.plan.selectedWindows.some(w=>w.role==='helper' && w.id===11));
-  else assert.match(applied.error,/Outlook has no window that yabai can control/);
+  else assert.ok(applied.plan.warnings.some(w=>w.code==='outlook_window_unavailable'));
  }finally{await f.close();}
 });
 test('native fullscreen preparation is acknowledged before an immutable replacement plan',async()=>{

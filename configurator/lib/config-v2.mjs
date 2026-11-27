@@ -165,10 +165,26 @@ function validateLayout(node, path, roles, errors, usedRoles, seen = new Set()) 
       if (!roles.has(region.role)) errors.push(`${path}.regions[${index}].role references unknown window role "${region.role}"`);
       else if (usedRoles.has(region.role)) errors.push(`${path}.regions[${index}].role places window role "${region.role}" more than once`);
       else usedRoles.add(region.role);
-      rejectUnknown(region, new Set(['role', 'grid', 'move_abs', 'resize_abs']), `${path}.regions[${index}]`, errors);
+      const regionPath = `${path}.regions[${index}]`;
+      rejectUnknown(region, new Set(['role', 'grid', 'move_abs', 'resize_abs', 'fit']), regionPath, errors);
       const hasGrid = typeof region.grid === 'string' && /^[0-9]+:[0-9]+:[0-9]+:[0-9]+:[0-9]+:[0-9]+$/.test(region.grid);
       const hasAbsolute = typeof region.move_abs === 'string' || typeof region.resize_abs === 'string';
       if (!hasGrid && !hasAbsolute) errors.push(`${path}.regions[${index}] must define grid or absolute geometry`);
+      if (region.fit !== undefined) {
+        const fit = region.fit;
+        if (!object(fit)) errors.push(`${regionPath}.fit must be an object`);
+        else {
+          rejectUnknown(fit, new Set(['minWidth', 'minHeight', 'fallbackGrid']), `${regionPath}.fit`, errors);
+          const minimums = [fit.minWidth, fit.minHeight].filter(value => value !== undefined);
+          if (!minimums.length || minimums.some(value => !Number.isSafeInteger(value) || value < 1)) {
+            errors.push(`${regionPath}.fit must define a positive integer minWidth or minHeight`);
+          }
+          if (fit.fallbackGrid !== undefined && (typeof fit.fallbackGrid !== 'string'
+            || !/^[1-9][0-9]*:[1-9][0-9]*:[0-9]+:[0-9]+:[0-9]+:[0-9]+$/.test(fit.fallbackGrid))) {
+            errors.push(`${regionPath}.fit.fallbackGrid must be a grid with positive rows and columns`);
+          }
+        }
+      }
     }
   } else if (node.type === 'split') {
     rejectUnknown(node, new Set(['type', 'direction', 'weights', 'children']), path, errors);
@@ -491,7 +507,8 @@ export function remapTallLayout(actions, topPercent = 50) {
     const adjoining=rectangles.some((other,i)=>other && i!==index
       && Math.min(rect.right,other.right)>Math.max(rect.left,other.left)
       && (Math.abs(other.bottom-rect.top)<1e-9 || Math.abs(other.top-rect.bottom)<1e-9));
-    return {...action,grid:remapTallGrid(action.grid,topPercent,adjoining)};
+    return {...action,grid:remapTallGrid(action.grid,topPercent,adjoining),
+      ...(action.fit?.fallbackGrid ? { fit: { ...action.fit, fallbackGrid: remapTallGrid(action.fit.fallbackGrid, topPercent) } } : {})};
   });
 }
 

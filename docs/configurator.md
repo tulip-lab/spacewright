@@ -71,10 +71,12 @@ Saving configuration does not move windows, create Spaces, apply display
 profiles, or reload skhd. Live changes still require an explicit workspace or
 display command.
 
-The hardware-aware page validates and writes `config.v3.json` plus a
-digest-bound `generated/runtime.json`. The legacy editor writes `config.v2.json` only while v2 is active. Once v3 is
-active, legacy save and v2 history restoration are rejected; edit the portable
-v3 document in Hardware & Setups. Import validates external JSON as an
+Apps, Workspaces, and Hardware & Setups share the v3 draft. Discover or
+register an app in Apps, then add a workspace and choose its windows and display
+in Workspaces. Use Hardware & Setups to confirm the connected setup and edit
+the reusable layout. Saving writes `config.v3.json` plus a digest-bound
+`generated/runtime.json`. Existing v2 installations can continue using the v2
+editor until they save a v3 configuration. Import validates external JSON as an
 unsaved preview. Export downloads the portable document. Restore Backup
 revalidates and recompiles the previous saved document before activating it.
 Backup preview and restore always select v3 when `config.v3.json` exists,
@@ -187,27 +189,21 @@ the closed runner sequence without launching applications, creating Spaces,
 focusing a window, or changing a display. The Current state page can also
 capture one live Space into an unsaved canvas-layout draft.
 
-The Run & tasks page is the browser execution control surface. Modes,
-profiles, and individual workspace variants can be previewed, explicitly
-confirmed, started, monitored, and cancelled. The server maps each request to
-closed `spacewright apply` arguments; request data is never interpreted as a
-shell command. Runs are serialized, process-group cancellation is supported,
-and each apply writes a durable state journal. Execution output is streamed
-into the current server session's task record and the rotating durable activity
-log records task start and completion. Running is available only for the exact
-plan, configuration digest, and desktop snapshot returned by the latest
-preview. If any of them changes, execution fails closed and the user must
-preview again. In-memory task history and per-task output are bounded so a
-long-running configurator session cannot grow without limit.
+In **Run & Tasks**, choose **Current display setup** for all placed v3
+workspaces, or choose an individual workspace. Both targets use the saved
+configuration for the detected setup. The preview lists blockers and planned
+actions. A successful preview enables explicit confirmation. If a relevant
+precondition changes before execution, preview the target again. Runs are
+serialized, can be cancelled, and record execution output in the task list and
+a durable journal.
 
-Topology rules can be evaluated without mutation from the browser. Setting
-`settings.eventAutomationEnabled` to `true` opts into five-second topology
-monitoring while the configurator service is running. A transition must remain
-stable for `topologyStableSamples` observations and pass the
-`topologyCooldownSeconds` cooldown before it can run a matching rule. Query
-failure is reported as unknown rather than solo. `spacewright event wake`
-delivers the wake event to the running service. Automation is off by default
-and stops when the configurator process exits.
+While the configurator is running, its five-second monitor reads the connected
+displays. It activates a confirmed v3 setup after the observed topology stays
+stable for `topologyStableSamples` samples. For v2, enable
+`settings.eventAutomationEnabled` to dispatch rules. Confirmed topology
+changes also respect `topologyCooldownSeconds`. The monitor reads Spaces and
+windows when an enabled rule can match the event. `spacewright event wake`
+delivers a wake event to the running service.
 
 ## Diagnostics and portable configuration
 

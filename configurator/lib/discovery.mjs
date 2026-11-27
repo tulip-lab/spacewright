@@ -47,7 +47,7 @@ export async function discoverGridGeometry(displays,spaces,{executable='yabai',d
     const values=await Promise.all(['top_padding','bottom_padding','left_padding','right_padding','window_gap'].map(key=>config(['--space',String(active.index),key])));
     if(!values.every(v=>/^\d+$/.test(v)))throw new Error('invalid grid padding/gap');
     const [top,bottom,left,right,gap]=values.map(Number), frame={...matches[0].frame};
-    // NSScreen already excludes the menu bar. External bar padding is additional.
+    // The native helper reserves the system menu bar. External bar padding is additional.
     if(external[0]==='all' || external[0]==='main' && display.index===1) {
       frame.y+=Number(external[1]);frame.h-=Number(external[1])+Number(external[2]);
     }
@@ -69,8 +69,7 @@ export function applyNativeWindowFrames(windows,frames) {
   });
   return {windows:resolved,missing};
 }
-export async function discoverState(machine = {}, { deadline = Date.now() + 15000, signal, executable = 'yabai' } = {}) {
-  const capturedAt = new Date().toISOString();
+function discoveryQueries(executable, deadline, signal) {
   const queryValue = async (...args) => {
     const result = await runReadOnly(executable, ['-m', 'query', ...args], { deadline: Math.min(deadline, Date.now() + 5000), signal });
     if (result.code) throw new Error(result.stderr || `query ${args.join(' ')} failed (${result.code})`);
@@ -98,6 +97,34 @@ export async function discoverState(machine = {}, { deadline = Date.now() + 1500
     if(confirmed?.index!==last.index || confirmed?.uuid!==last.uuid || values.at(-1).uuid!==last.uuid)throw new Error(`${plural} changed during indexed discovery`);
     return values;
   };
+  return { query, queryCollection };
+}
+
+export async function discoverDisplays({ deadline = Date.now() + 10000, signal, executable = 'yabai' } = {}) {
+  const { queryCollection } = discoveryQueries(executable, deadline, signal);
+  try {
+    const displays = await queryCollection('displays', 'display', 16);
+    return { displays, completeness: 'complete', unavailable: false };
+  } catch (error) {
+    return { displays: [], completeness: 'unavailable', unavailable: true, message: error.message };
+  }
+}
+
+export async function discoverFocusState(machine, { deadline, signal, executable = 'yabai' }) {
+  const { queryCollection } = discoveryQueries(executable, deadline, signal);
+  const capturedAt = new Date().toISOString();
+  try {
+    const [displays, spaces] = await Promise.all([queryCollection('displays', 'display', 16), queryCollection('spaces', 'space', 64)]);
+    return normalizeSnapshot({ capturedAt, displays, spaces, windows: [], completeness: 'complete' }, machine);
+  } catch (error) {
+    if (signal?.aborted) throw signal.reason || error;
+    return { completeness: 'unavailable', message: error.message };
+  }
+}
+
+export async function discoverState(machine = {}, { deadline = Date.now() + 15000, signal, executable = 'yabai' } = {}) {
+  const capturedAt = new Date().toISOString();
+  const { query, queryCollection } = discoveryQueries(executable, deadline, signal);
   // Keep the authoritative collections independently settled. Displays and
   // Spaces have a bounded single-object fallback because some yabai builds can
   // return a truncated collection while indexed queries remain healthy.

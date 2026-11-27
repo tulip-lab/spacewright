@@ -28,6 +28,7 @@ async function fixture(t) {
   await writeFile(join(root, 'data.json'), JSON.stringify(data));
   await writeFile(join(bin, 'yabai'), `#!${process.execPath}
 const fs=require('fs'),root=process.env.REVIEW_ROOT,path=root+'/data.json',data=JSON.parse(fs.readFileSync(path)),args=process.argv.slice(2);
+if(fs.existsSync(root+'/trace-queries'))fs.appendFileSync(root+'/queries',args[2]+'\\n');
 if(args[1]==='query'&&args[2]==='--displays'&&(fs.existsSync(root+'/discovery-block')||fs.existsSync(root+'/setup-discovery-block')&&fs.existsSync(process.env.SPACEWRIGHT_CONFIG_ROOT+'/.configuration-write'))){fs.writeFileSync(root+'/discovery-ready','yes');while(!fs.existsSync(root+'/discovery-continue'))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10);}
 if(args[1]==='query'&&args[2]==='--spaces'&&args[3]==='--space'){console.log(JSON.stringify(data.spaces.find(s=>s['has-focus'])));process.exit(0);}
 if(args[1]==='query')console.log(JSON.stringify(data[args[2].slice(2)]));
@@ -533,6 +534,51 @@ for(const format of ['compact','two','four','newlines'])test(`SW-01/SW-05 topolo
   const setup=(await s.api('/api/v3/setup')).body,runtime=JSON.parse(await readFile(join(f.configRoot,'generated/runtime.json')));
   assert.equal(verifyRuntimeDocument(runtime,generationDocument(config,{machine:setup.machine,hardware:setup.hardware,snapshot:setup.snapshot},source)).ok,true);
   assert.equal((await s.api('/api/diagnostics')).body.checks.find(c=>c.id==='compiled_runtime').ok,true);
+});
+
+test('v3 monitor activates an external-only rotation and replacement using display queries alone', async t => {
+  const f = await fixture(t);
+  const config = starterV3();
+  config.settings = { topologyStableSamples: 2 };
+  const source = JSON.stringify(config);
+  const display = { ...f.data.displays[0], 'is-built-in': false, frame: { x: 0, y: 0, w: 1200, h: 1920 } };
+  f.data.displays = [display];
+  f.data.windows = null;
+  const machine = {
+    version: 2, hardwareProfile: 'mac_mini', hardwareProfileConfirmed: true, activeSetup: 'single_tall',
+    topologySelections: { 'external:tall': 'single_tall', 'external:wide': 'single_wide' },
+    topologyBindings: { 'external:tall': { tall: display.uuid }, 'external:wide': { wide: display.uuid } },
+    displayBindings: { tall: display.uuid }
+  };
+  await Promise.all([
+    writeFile(join(f.configRoot, 'config.v3.json'), source),
+    writeFile(join(f.stateRoot, 'machine.json'), JSON.stringify(machine)),
+    writeFile(join(f.bin, 'sysctl'), '#!/bin/sh\necho Macmini9,1\n', { mode: 0o755 }),
+    writeFile(join(f.root, 'trace-queries'), ''),
+    writeFile(join(f.root, 'data.json'), JSON.stringify(f.data))
+  ]);
+  const server = await reviewServer(t, f, { hook: fastMonitor, mockExecutor: true });
+  const queries = async () => (await readFile(join(f.root, 'queries'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean);
+  await waitUntil(async () => (await queries()).length >= 3);
+  assert.deepEqual([...new Set(await queries())], ['--displays']);
+
+  display.frame = { x: 0, y: 0, w: 1920, h: 1200 };
+  await atomicText(join(f.root, 'data.json'), JSON.stringify(f.data));
+  const activity = () => readFile(join(f.stateRoot, 'activity.jsonl'), 'utf8').catch(() => '');
+  await waitUntil(async () => (await activity()).includes('"setup":"single_wide"'));
+  assert.equal(JSON.parse(await readFile(join(f.stateRoot, 'machine.json'))).activeSetup, 'single_wide');
+  assert.deepEqual([...new Set(await queries())], ['--displays']);
+
+  display.uuid = 'REPLACEMENT';
+  await atomicText(join(f.root, 'data.json'), JSON.stringify(f.data));
+  await waitUntil(async () => ((await activity()).match(/v3_setup_activated/g) || []).length === 2);
+  const setup = (await server.api('/api/v3/setup')).body;
+  assert.deepEqual(setup.displayBindings, { wide: 'REPLACEMENT' });
+  assert.deepEqual(setup.machine.topologyBindings, machine.topologyBindings);
+  const runtime = JSON.parse(await readFile(join(f.configRoot, 'generated/runtime.json')));
+  assert.equal(verifyRuntimeDocument(runtime, generationDocument(config, setup, source)).ok, true);
+  assert.deepEqual([...new Set(await queries())], ['--displays']);
+  assert.equal(existsSync(join(f.root, 'dispatches')), false);
 });
 
 for(const enabled of [false,true])test(`SW-01 v2 topology honors automation ${enabled}`,async t=>{

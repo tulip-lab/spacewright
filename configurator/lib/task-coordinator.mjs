@@ -23,6 +23,7 @@ export async function runWebTask(task, commands, { executable, env, activity, ap
       let completion;
       try { completion = JSON.parse(result.stdout); } catch {}
       if (result.code !== 0 || !(completion?.noop || completion?.status === 'completed' && completion?.verification?.converged)) { task.exitCode ||= 1; break; }
+      if (Array.isArray(completion.layoutIssues)) (task.layoutIssues ||= []).push(...completion.layoutIssues);
     }
     task.status = task.cancelRequested ? 'cancelled' : task.exitCode === 0 ? 'completed' : 'failed';
   } catch (error) {

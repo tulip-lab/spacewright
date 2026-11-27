@@ -1,5 +1,8 @@
 import { sameWindowIdentity } from './recovery.mjs';
 
+export const WINDOWS_CHANGED = 'SPACEWRIGHT_WINDOWS_CHANGED';
+export const WINDOWS_CHANGED_EXIT = 77;
+
 // Tiny, unselected, non-resizable AX helper dialogs can be recreated as their parent
 // moves (for example Electron's tiny "Window" surface). Keep them in discovery
 // and occupancy checks, but not the immutable layout object census.
@@ -42,9 +45,29 @@ export function assertWindowCensus(expected, windows, selected = []) {
   if (expected.length !== current.length || duplicates.length || added.length || removed.length || changed.length) {
     const changes = Object.fromEntries(Object.entries({added,removed,changed,duplicates})
       .map(([key,value]) => [key,value.map(({id,app})=>({id,app}))]));
-    throw Object.assign(new Error(`global object census changed; replan required: ${JSON.stringify(changes)}. Some earlier actions may already have completed; once windows stop changing, rerun the same command to create a fresh plan.`), {censusChanges:changes});
+    throw Object.assign(new Error(`global object census changed; replan required: ${JSON.stringify(changes)}. Some earlier actions may already have completed; once windows stop changing, rerun the same command to create a fresh plan.`), {
+      censusChanges: changes,
+      code: changed.length || duplicates.length ? undefined : WINDOWS_CHANGED
+    });
   }
   return current;
+}
+
+export function assertReplanSelections(before, after) {
+  const oldWindows = before.plan.preconditions.windows;
+  const newWindows = after.plan.preconditions.windows;
+  if (new Set(newWindows.map(window => window.id)).size !== newWindows.length
+    || oldWindows.some(old => newWindows.some(current => current.id === old.id && !sameWindowIdentity(old, current)))) {
+    throw new Error('window identity changed during automatic replan');
+  }
+  for (const old of before.plan.selectedWindows) {
+    const role = before.plan.workspaces.find(workspace => workspace.workspaceId === old.workspaceId)?.windows.find(role => role.role === old.role);
+    const current = after.plan.selectedWindows.find(window => window.id === old.id);
+    if (!current && (!role?.required || old.workspaceId === '__sandbox') && !after.snapshot.windows.some(window => window.id === old.id)) continue;
+    if (!current || old.workspaceId !== current.workspaceId || old.role !== current.role || !sameWindowIdentity(old, current)) {
+      throw new Error('planned window selection or ownership changed during automatic replan');
+    }
+  }
 }
 
 export function selectorResult(window, desired) {

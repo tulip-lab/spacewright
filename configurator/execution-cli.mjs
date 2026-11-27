@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import { normalizeSnapshot } from './lib/state-engine.mjs';
-import { selectRole } from './lib/window-policy.mjs';
+import { selectRole, WINDOWS_CHANGED, WINDOWS_CHANGED_EXIT } from './lib/window-policy.mjs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { acquireExecution, runBounded, verifyLease, processIdentity,assertExecutionAllowed } from './lib/execution-coordinator.mjs';
-import { discoverState } from './lib/discovery.mjs';
+import { discoverFocusState, discoverState } from './lib/discovery.mjs';
 import { executePinnedWorkspace, executePinnedCleanup, executePinnedOrder, confirmPendingMutation } from './lib/pinned-executor.mjs';
 import { durableJson, journalMutation, operationRoot } from './lib/operation-journal.mjs';
 import { readJson } from './lib/execution-coordinator.mjs';
@@ -46,12 +46,14 @@ try {
     const createdFile=join(operationRoot(stateRoot,operationRunId),'created-spaces.json');
     const createdSpaces=await readJson(createdFile,{});
     const discover=()=>discoverState(envelope.machine,{deadline,signal:abort.signal});
+    const discoverFocus=()=>discoverFocusState(envelope.machine,{deadline,signal:abort.signal});
     const mutate=async(arguments_,intent,verify)=>{
       await assertExecutionAllowed(stateRoot);
+      const confirmsFocus = ['resize_focus','resize_focus_restore','preparation_focus_departure','preparation_focus_restore'].includes(intent.type);
       const result=await journalMutation({stateRoot,runId:operationRunId,intent:{...intent,arguments:arguments_,attempted:true},
         run:()=>runBounded('yabai',arguments_,{deadline:Math.min(deadline,Date.now()+3000),signal:abort.signal,onChild:lease.trackChild}),
-        verify:async()=>['resize_window','resize_focus','resize_focus_restore'].includes(intent.type)
-          ? confirmPendingMutation(verify,discover,{check:()=>assertExecutionAllowed(stateRoot),poll:()=>consumeBudget(stateRoot,'confirmation')})
+        verify:async()=>confirmsFocus || intent.type === 'resize_window'
+          ? confirmPendingMutation(verify,confirmsFocus ? discoverFocus : discover,{check:()=>assertExecutionAllowed(stateRoot),poll:()=>consumeBudget(stateRoot,'confirmation')})
           : verify(await discover())});
       process.stderr.write(`[MUTATION] ${JSON.stringify({...intent,attempted:true,status:'verified_success'})}\n`);
       return result;
@@ -64,13 +66,26 @@ try {
       const phaseDeadline=Math.min(deadline,Date.now()+preparation.phaseLimitMs);
       let relation;
       const check=()=>{if(abort.signal.aborted)throw abort.signal.reason;if(Date.now()>=deadline)throw Object.assign(new Error('execution deadline exceeded'),{code:'SPACEWRIGHT_TIMEOUT'});if(Date.now()>=phaseDeadline)throw preparation.type==='observe_space'?axReferenceError(preparation):Object.assign(new Error('adapter deadline exceeded'),{code:'SPACEWRIGHT_TIMEOUT'});};
+      const confirmFocus = (before, uuid) => {
+        const space = before.spaces.find(s => s.uuid === uuid);
+        const displayUuid = before.displays.find(d => d.index === space?.display)?.uuid;
+        return after => {
+          if (after.completeness !== 'complete') throw Object.assign(new Error(`focus confirmation discovery incomplete: ${after.message}`), { code: 'SPACEWRIGHT_FOCUS_PENDING' });
+          const current = after.spaces.find(s => s.uuid === uuid);
+          if (!displayUuid || after.displays.find(d => d.index === current?.display)?.uuid !== displayUuid) {
+            throw new Error('preparation focus Space changed; replan required');
+          }
+          if (!current.focused) throw Object.assign(new Error('preparation focus did not settle'), { code: 'SPACEWRIGHT_FOCUS_PENDING' });
+          return true;
+        };
+      };
       // The operation record stores the input incarnation and explicit output
       // incarnations before any new immutable layout plan can be issued.
       try {
         const before=await discover();
         const departure=preparationDepartureCommand(preparation,before);
-        if(departure)await mutate(departure[1],{type:'preparation_focus_departure',spaceUuid:preparation.departureSpaceUuid,reversible:false},after=>after.completeness==='complete' && after.spaces.some(s=>s.uuid===preparation.departureSpaceUuid && s.focused));
-        const [exe,arguments_]=preparationCommand(preparation,before);
+        if(departure)await mutate(departure[1],{type:'preparation_focus_departure',spaceUuid:preparation.departureSpaceUuid,reversible:false},confirmFocus(before,preparation.departureSpaceUuid));
+        const [exe,arguments_]=preparationCommand(preparation,departure ? await discover() : before);
         let commandExitCode;
         try {
           await journalMutation({stateRoot,runId:operationRunId,intent:{type:'adapter_preparation',preparation,windowId:null,identity:preparation.window,reversible:false},
@@ -82,14 +97,16 @@ try {
         }
       } finally {
         if(preparation.type==='observe_space' && preparation.returnSpaceUuid) {
-          const snapshot=await discover();
-          if(snapshot.completeness!=='complete')throw new Error('focus restoration discovery incomplete');
+          const snapshot = await confirmPendingMutation(value => {
+            if (value.completeness === 'complete') return value;
+            throw Object.assign(new Error(`focus restoration discovery incomplete: ${value.message}`), { code: 'SPACEWRIGHT_FOCUS_PENDING' });
+          }, discoverFocus, { check: () => assertExecutionAllowed(stateRoot), poll: () => consumeBudget(stateRoot, 'confirmation') });
           const space=snapshot.spaces.find(s=>s.uuid===preparation.returnSpaceUuid);
           if(!space)throw new Error('original focus Space disappeared');
-          if(!space.focused)await mutate(['-m','space','--focus',String(space.index)],{type:'preparation_focus_restore',spaceUuid:space.uuid,reversible:false},after=>after.completeness==='complete' && after.spaces.some(s=>s.uuid===space.uuid && s.focused));
+          if(!space.focused)await mutate(['-m','space','--focus',String(space.index)],{type:'preparation_focus_restore',spaceUuid:space.uuid,reversible:false},confirmFocus(snapshot,space.uuid));
         }
       }
-      if(relation?.outcome==='optional_unavailable') process.stderr.write(`[WARN] ${preparation.window.app} is still unavailable to yabai after ${preparation.type==='observe_space'?'Space observation':'a bounded reopen'}; its mail layout remains incomplete\n`);
+      if(relation?.outcome==='optional_unavailable') process.stderr.write(`[WARN] ${preparation.window.app} is still unavailable to yabai after ${preparation.type==='observe_space'?'Space observation':'a bounded reopen'}; its window layout was skipped\n`);
       process.stdout.write(`${JSON.stringify(relation)}\n`);
     } else if(action==='pinned-postprocess') {
       const hook=envelope.plan.fixedPostprocessors.find(h=>h.name===executable);
@@ -121,4 +138,4 @@ try {
       || s.non_empty_title && !current.title || s.title_include && !String(current.title || '').includes(s.title_include)
       || s.title_exclude && String(current.title || '').includes(s.title_exclude) || s.role && current.role !== s.role || s.subrole && current.subrole !== s.subrole) throw new Error(`planned window ${executable} precondition changed; replan required`);
   } else throw new Error('unknown execution coordination action');
-} catch (error) { process.stderr.write(`SpaceWright: ${error.message}\n`); process.exitCode = error.code === 'SPACEWRIGHT_AX_UNAVAILABLE' ? AX_UNAVAILABLE_EXIT : error.code === 'SPACEWRIGHT_CANCELLED' ? 130 : error.code === 'SPACEWRIGHT_TIMEOUT' ? 124 : 1; }
+} catch (error) { process.stderr.write(`SpaceWright: ${error.message}\n`); process.exitCode = error.code === 'SPACEWRIGHT_AX_UNAVAILABLE' ? AX_UNAVAILABLE_EXIT : error.code === WINDOWS_CHANGED ? WINDOWS_CHANGED_EXIT : error.code === 'SPACEWRIGHT_CANCELLED' ? 130 : error.code === 'SPACEWRIGHT_TIMEOUT' ? 124 : 1; }

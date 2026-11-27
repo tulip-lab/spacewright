@@ -183,7 +183,17 @@
                   "role": { "$ref": "#/$defs/id" },
                   "grid": { "type": "string", "pattern": "^[0-9]+:[0-9]+:[0-9]+:[0-9]+:[0-9]+:[0-9]+$" },
                   "move_abs": { "type": "string" },
-                  "resize_abs": { "type": "string" }
+                  "resize_abs": { "type": "string" },
+                  "fit": {
+                    "type": "object",
+                    "properties": {
+                      "minWidth": { "type": "integer", "minimum": 1 },
+                      "minHeight": { "type": "integer", "minimum": 1 },
+                      "fallbackGrid": { "type": "string", "pattern": "^[1-9][0-9]*:[1-9][0-9]*:[0-9]+:[0-9]+:[0-9]+:[0-9]+$" }
+                    },
+                    "anyOf": [{ "required": ["minWidth"] }, { "required": ["minHeight"] }],
+                    "additionalProperties": false
+                  }
                 },
                 "anyOf": [{ "required": ["grid"] }, { "required": ["move_abs"] }, { "required": ["resize_abs"] }],
                 "additionalProperties": false

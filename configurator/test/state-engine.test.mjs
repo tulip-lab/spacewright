@@ -1,8 +1,8 @@
 import test from 'node:test';
 import {selectRole} from '../lib/window-policy.mjs';
 import assert from 'node:assert/strict';
-import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState, normalizeSnapshot } from '../lib/state-engine.mjs';
-import { compileV2, starterConfig } from '../lib/config-v2.mjs';
+import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState, layoutIssues, normalizeSnapshot } from '../lib/state-engine.mjs';
+import { compileV2, starterConfig, validateV2 } from '../lib/config-v2.mjs';
 
 function fixture({ helperSpace = 1, helperX = 600 } = {}) {
   return normalizeSnapshot({
@@ -37,6 +37,31 @@ test('comparison reports a converged workspace', () => {
   assert.equal(comparison.counts.blocker, 0);
   assert.equal(comparison.counts.change, 0);
   assert.equal(comparison.converged, true);
+});
+
+test('canvas minimum size selects the declared fallback in preview and verification', () => {
+  const config = starterConfig(), snapshot = fixture();
+  const region = { role: 'editor', grid: '1:3:0:0:1:1', fit: { minWidth: 570, fallbackGrid: '1:1:0:0:1:1' } };
+  config.workspaces.coding.variants.solo.layout = { type: 'canvas', regions: [region] };
+  const currentPlan = () => {
+    const machine = { displayBindings: { primary: 'DISPLAY-PRIMARY' } };
+    const desired = buildDesiredState(config, compileV2(config), { kind: 'workspace', id: 'coding', mode: 'solo' }, snapshot);
+    const comparison = compareState(snapshot, desired, machine);
+    return { comparison, plan: buildExecutionPlan(snapshot, desired, comparison) };
+  };
+  const verified = currentPlan();
+  assert.equal(verified.comparison.converged, true);
+  assert.equal(layoutIssues(verified.comparison).find(issue => issue.role === 'editor')?.kind, 'fallback');
+  snapshot.windows[0].frame.w = 600;
+  assert.equal(currentPlan().plan.actions.find(action => action.type === 'resize_window')?.grid, region.fit.fallbackGrid);
+  delete region.fit.fallbackGrid;
+  const blocked = currentPlan().plan;
+  assert.equal(blocked.executable, false);
+  assert.equal(blocked.blockers[0].code, 'window_region_too_small');
+  assert.equal(blocked.blockers[0].expected.w, 400);
+  assert.equal(validateV2(config).valid, true);
+  region.fit.minWidth = -1;
+  assert.equal(validateV2(config).valid, false);
 });
 
 test('an arranged individual workspace on another Space produces a focus-only plan', () => {
@@ -356,6 +381,33 @@ test('aggregate execution runs only workspaces with change drift', () => {
   const plan = buildExecutionPlan(snapshot, state, comparison, { createdAt: '2026-10-02T00:00:00.000Z' });
   assert.deepEqual(plan.runnerCommands, [['run', 'coding', 'solo'], ['postprocess', 'gtd_ai_expand_hermes_when_alone'], ['finalize', 'solo']]);
   assert.ok(!plan.runnerCommands.some((command) => command[1] === 'work_solo'));
+});
+
+test('Tall Sandbox leaves the colocated SmartGit companion with its selected main window', () => {
+  const config = starterConfig();
+  config.apps.smartgit = { name: 'SmartGit', match: { appNames: ['SmartGit'] } };
+  config.workspaces.coding.windows.editor = { app: 'smartgit', required: true, selector: { non_empty_title: true } };
+  config.workspaces.coding.variants.tall.layout = { type: 'window', role: 'editor' };
+  config.modes.tall.displays[0].role = 'primary';
+  const frame = { x: 0, y: 0, w: 900, h: 1200 };
+  const smartGit = { app: 'SmartGit', pid: 100, title: '', display: 1, space: 2, frame,
+    role: 'AXWindow', subrole: 'AXStandardWindow', 'can-move': true, 'can-resize': true };
+  const machine = { displayBindings: { primary: 'DISPLAY-PRIMARY' } };
+  const snapshot = normalizeSnapshot({
+    displays: [{ index: 1, uuid: 'DISPLAY-PRIMARY', frame }],
+    spaces: [{ index: 1, uuid: 'CODING', display: 1, label: 'coding_tall' },
+      { index: 2, uuid: 'SOURCE', display: 1, label: '' }, { index: 3, uuid: 'OTHER', display: 1, label: '' }],
+    windows: [
+      { ...smartGit, id: 10, title: 'Repository' }, { ...smartGit, id: 11 },
+      { ...smartGit, id: 12, pid: 101 }, { ...smartGit, id: 13, space: 3 }
+    ]
+  }, machine);
+  const state = buildDesiredState(config, compileV2(config), { kind: 'mode', id: 'tall' }, snapshot);
+  const plan = buildExecutionPlan(snapshot, state, compareState(snapshot, state, machine));
+  assert.deepEqual(plan.selectedWindows.map(window => [window.id, window.workspaceId]),
+    [[10, 'coding'], [12, '__sandbox'], [13, '__sandbox']]);
+  assert.ok(plan.preconditions.windows.some(window => window.id === 11));
+  assert.ok(!plan.actions.some(action => action.type === 'remove_empty_space' && action.spaceUuid === 'SOURCE'));
 });
 
 test('empty Sandbox and headless root surfaces become explicit finalization drift', () => {

@@ -58,28 +58,16 @@ The configurator listens only on the local Mac and opens in the default
 browser. Saving configuration does not move windows, create Spaces, apply a
 display profile, or reload a shortcut service.
 
-Complete these pages for the current user:
-
-1. **Apps** — register every application used by a workspace. Use read-only app
-   discovery to capture the names reported by yabai and add aliases when one app
-   can appear under more than one name.
-2. **AI Routing** — optionally select the provider used by each semantic AI
-   role and add mode-specific overrides only where needed.
-3. **Hardware & Setups** — confirm the automatically detected MacBook, Mac mini,
-   or other-Mac profile and the current display setup. Mark an iPad display as
-   Sidecar when needed. Display UUID bindings and topology confirmations are
-   machine-local and must be repeated on another Mac.
-4. **Workspaces** — define stable workspace IDs, Space labels, required and
-   optional windows, and the selector that identifies each window.
-5. **Workspace configurations** — create reusable laptop, wide, tall, Sidecar,
-   or other named layouts and choose the configuration used by each hardware
-   setup. A required window must appear in every applicable layout.
-6. **Display setup lanes** — place workspaces in their desired order on each
-   display role. This lane order controls both execution and final Space ordering.
-7. **Shortcuts** — optionally create structured SpaceWright shortcuts. Saving
-   generates a fragment; the user must explicitly include that fragment from
-   their own skhd configuration.
-8. **Review** — resolve validation errors and inspect warnings, then save.
+1. In **Apps**, discover an open app or add it by name. Add aliases if yabai
+   reports more than one name for the same app.
+2. In **Workspaces**, create a workspace, choose its first app, and place it on
+   a display in the detected setup. Add window roles and title matching when
+   you need to distinguish windows of the same app.
+3. In **Hardware & Setups**, confirm the detected setup and adjust the layout.
+   Mark an iPad as Sidecar when needed. Repeat machine-local confirmation on
+   each Mac.
+4. Save the configuration and use **Preview Saved Workspace** from
+   Workspaces to check the arrangement before running it.
 
 Portable configuration is stored at:
 

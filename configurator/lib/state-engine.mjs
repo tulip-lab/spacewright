@@ -135,7 +135,7 @@ function sourceWorkspaceId(config, snapshot) {
 
 export function buildDesiredState(config, runtime, target = {}, snapshot = null, options = {}) {
   const resolved = targetDefinition(config, target);
-  const sourceWorkspace = sourceWorkspaceId(config, snapshot);
+  const sourceWorkspace = sourceWorkspaceId(config, options.contextSnapshot ?? snapshot);
   const contextualRules = resolved.kind === 'workspace' ? [] : (runtime.modes?.[`work_${resolved.mode}`]?.contextual_apps || []);
   const sourceRuleIndex = contextualRules.findIndex((rule) => rule.workspace_ids.includes(sourceWorkspace));
   const fallbackFocusIndex = contextualRules.findIndex((rule) => rule.focus_owner === true);
@@ -221,7 +221,7 @@ export function buildDesiredState(config, runtime, target = {}, snapshot = null,
     // ambiguous app window can be assigned to both a workspace and Sandbox.
     const displayBindings = Object.fromEntries(snapshot.displays.filter(display=>display.role).map(display=>[display.role,display.uuid]));
     const selectedIds = new Set(compareState(snapshot, desired, {displayBindings}, options).matches.flatMap(m=>m.selectedWindowIds || []));
-    const sandbox = sandboxWorkspace(snapshot, desired, runtime, selectedIds);
+    const sandbox = sandboxWorkspace(snapshot, desired, runtime, selectedIds, options.sandboxWindowIds);
     if (sandbox) desired.workspaces.push(sandbox);
   }
   return { ...desired, desiredStateId: digest(desired).slice(0, 20) };
@@ -320,7 +320,7 @@ export function compareState(snapshot, desired, machine = {}, options = {}) {
   }
   if (snapshot.completeness && snapshot.completeness !== 'complete') drifts.push({ code: 'discovery_incomplete', severity: 'blocker', missingQueries: snapshot.missingQueries });
   if (snapshot.unavailable) drifts.push({ code: 'snapshot_unavailable', severity: 'blocker', message: snapshot.message || 'live state is unavailable' });
-  for(const preparation of preparationsFor(snapshot,desired).filter(p=>p.type==='observe_space')) {
+  for(const preparation of preparationsFor(snapshot,desired).filter(p=>p.type==='observe_space' && !p.bestEffort)) {
     drifts.push({code:'window_ax_reference_missing',severity:'change',spaceUuid:preparation.spaceUuid,windowIds:preparation.windows.map(w=>w.id)});
   }
   const activeWorkspaces = desired.workspaces.filter((workspace) => {
@@ -390,13 +390,13 @@ export function compareState(snapshot, desired, machine = {}, options = {}) {
           { role: desiredWindow.role, windowIds: unavailable.map(window => window.id) }));
       }
       if (!selected.length) {
-        if(workspace.runner==='primary_helper' && desiredWindow.role==='helper' && desiredWindow.appKey==='outlook'
+        if(!desiredWindow.required && workspace.runner==='primary_helper' && desiredWindow.role==='helper' && desiredWindow.appKey==='outlook'
           && (options.runningApps?.has('Microsoft Outlook')
             || options.attemptedOptionalWindows?.has(`${workspace.workspaceId}:${desiredWindow.role}:refresh_app`)
             || snapshot.windows.some(window=>desiredWindow.appNames.includes(window.app) && !window.minimized && !window.sticky
               && window.frameVerified && window.frame.w>0 && window.frame.h>0))) {
-          drifts.push(drift('outlook_window_unavailable','blocker',workspace,{role:desiredWindow.role,
-            message:'Microsoft Outlook has no window that yabai can control; reopen Outlook manually or repair yabai, then rerun auto'}));
+          drifts.push(drift('outlook_window_unavailable','warning',workspace,{role:desiredWindow.role,
+            message:'Microsoft Outlook has no window that yabai can control'}));
         }
         drifts.push(drift(desiredWindow.required ? 'required_window_missing' : 'optional_window_missing', desiredWindow.required ? 'blocker' : 'warning', workspace, { role: desiredWindow.role, appKey: desiredWindow.appKey }));
         continue;
@@ -413,12 +413,31 @@ export function compareState(snapshot, desired, machine = {}, options = {}) {
         const hermesHook=desired.target.kind==='mode' && desired.postprocessors?.some(h=>h.name==='gtd_ai_expand_hermes_when_alone');
         if (hermesHook && desiredWindow.appKey==='hermes' && Object.values(roleSelections).flat().length===1
           && !snapshot.windows.some(w=>w.space===targetSpace?.index && w.id!==window.id && windowOccupiesSpace(w,desired.nonoccupyingGhostApps))) grid='1:1:0:0:1:1';
-        const expectedGeometry = {...layout, ...(grid ? {grid} : {})};
+        let expectedGeometry = {...layout, ...(grid ? {grid} : {})};
         if(workspace.adapter==='coding_control' && expectedGeometry.move_abs && expectedDisplay) {
           const [x,y]=expectedGeometry.move_abs.replace(/^abs:/,'').split(':').map(Number);
           expectedGeometry.move_abs=`${expectedDisplay.frame.x+x}:${expectedDisplay.frame.y+y}`;
         }
-        const geometry = geometryMatches(window, expectedDisplay || snapshot.displays.find((display) => display.index === window.display), expectedGeometry);
+        const display = expectedDisplay || snapshot.displays.find((display) => display.index === window.display);
+        let geometry = geometryMatches(window, display, expectedGeometry);
+        const fit = layout?.fit;
+        // Dry runs and post-verification select the same rectangle. A window's
+        // current size is never taken as proof of its minimum supported size.
+        const fits = ({ expected }) => expected?.w >= (fit.minWidth ?? 0) && expected?.h >= (fit.minHeight ?? 0);
+        if (fit && geometry.comparable && (!desired.orchestration?.displayProfile || options.displayPrepared) && !fits(geometry)) {
+          const fallback = fit.fallbackGrid && geometryMatches(window, display, { grid: fit.fallbackGrid });
+          if (fallback && fits(fallback)) {
+            grid = fit.fallbackGrid;
+            expectedGeometry = { grid };
+            geometry = fallback;
+            drifts.push(drift('window_layout_fallback', 'warning', workspace, { role: desiredWindow.role, windowId: window.id, grid }));
+          } else {
+            drifts.push(drift('window_region_too_small', 'blocker', workspace, { role: desiredWindow.role, windowId: window.id,
+              minimum: { width: fit.minWidth, height: fit.minHeight }, expected: geometry.expected, fallback: fallback?.expected,
+              message: `${workspace.label}: ${desiredWindow.role} does not fit the configured region or fallback` }));
+            continue;
+          }
+        }
         if (layout && geometry.comparable && geometry.expected) plannedRegions.push({ role: desiredWindow.role, windowId: window.id, frame: geometry.expected });
         if (layout && !geometry.comparable) drifts.push(drift('window_geometry_uncomparable', 'blocker', workspace, {windowId:window.id,role:desiredWindow.role}));
         if (!ambiguous && geometry?.comparable && (!geometry.matches || !targetSpace)) drifts.push(drift('window_geometry_mismatch', 'change', workspace, { role: desiredWindow.role, windowId: window.id, grid, expectedGeometry, geometry }));
@@ -507,7 +526,7 @@ export function buildExecutionPlan(snapshot, desired, comparison, options = {}) 
     spaces:desired.workspaces.filter(w=>!comparison.drifts.some(d=>d.workspaceId===w.workspaceId && d.code==='workspace_inactive')).map(w=>({workspaceId:w.workspaceId,label:w.label,spaceUuid:snapshot.spaces.find(s=>s.label===w.label)?.uuid || comparison.drifts.find(d=>d.workspaceId===w.workspaceId && d.code==='space_label_missing')?.spaceUuid || null,displayUuid:comparison.displayBindings?.[w.displayRole] || snapshot.displays.find(d=>d.role===w.displayRole)?.uuid || null})) });
   const preparations=preparationsFor(snapshot,desired,{attemptedOptionalWindows:options.attemptedOptionalWindows,runningApps:options.runningApps});
   for(const preparation of preparations)actions.unshift({...preparation,preparationType:preparation.type,type:'prepare_adapter'});
-  const blockers = comparison.drifts.filter(item=>item.severity==='blocker' && !(['required_window_missing','outlook_window_unavailable'].includes(item.code)
+  const blockers = comparison.drifts.filter(item=>item.severity==='blocker' && !(item.code==='required_window_missing'
     && preparations.some(p=>p.workspaceId===item.workspaceId && p.role===item.role || p.roles?.some(r=>r.workspaceId===item.workspaceId && r.role===item.role))));
   if (orchestration.displayProfile && snapshot.displays.some(display => display.ignored)) blockers.push({ code: 'display_profile_with_ignored_display', severity: 'blocker', message: 'Physical display profiles cannot preserve ignored displays; use mode auto.' });
   const directlyAffectedWorkspaceIds = new Set(comparison.drifts.filter((item) => item.severity === 'change' && item.workspaceId && !item.code.startsWith('opposite_')).map((item) => item.workspaceId));
@@ -573,6 +592,28 @@ export function buildExecutionPlan(snapshot, desired, comparison, options = {}) 
     targetDisplay: targetDisplay ? {uuid:targetDisplay.uuid,index:targetDisplay.index,role:targetDisplay.role,frame:targetDisplay.frame,gridGeometry:targetDisplay.gridGeometry} : null,
     targetSpace: targetSpace ? {uuid:targetSpace.uuid,index:targetSpace.index,display:targetSpace.display,label:targetSpace.label,layout:targetSpace.layout} : null}));
   return { ...planCore, planId: digest(stablePlan).slice(0, 20), createdAt: options.createdAt || new Date().toISOString() };
+}
+
+export function layoutIssues(comparison) {
+  const issues = new Map();
+  for (const drift of comparison?.drifts || []) {
+    if (drift.severity !== 'warning') continue;
+    const location = `${drift.workspaceId || drift.label}`;
+    let issue;
+    if (drift.code === 'window_layout_overlap') {
+      issue = { workspaceId: drift.workspaceId, kind: 'overlap', roles: drift.roles,
+        message: `${location}: ${drift.roles.join(' and ')} overlap` };
+    } else if (drift.code === 'window_layout_fallback') {
+      issue = { workspaceId: drift.workspaceId, kind: 'fallback', role: drift.role,
+        message: `${location}: ${drift.role} uses its fallback region` };
+    } else if (['optional_windows_unavailable', 'outlook_window_unavailable', 'window_match_ambiguous'].includes(drift.code)) {
+      issue = { workspaceId: drift.workspaceId, kind: 'skipped', role: drift.role,
+        message: drift.code === 'outlook_window_unavailable' ? `${drift.message}; Outlook was skipped`
+          : `${location}: ${drift.role} was ${drift.code === 'window_match_ambiguous' ? 'ambiguous' : 'partly or fully unavailable'}` };
+    }
+    if (issue) issues.set(JSON.stringify([issue.workspaceId, issue.kind, issue.role || issue.roles]), issue);
+  }
+  return [...issues.values()];
 }
 
 function slug(value) {

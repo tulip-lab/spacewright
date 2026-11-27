@@ -59,9 +59,17 @@ export function cleanupCandidates(snapshot, desired,activeIds=new Set(desired.wo
   }
   return drifts;
 }
-export function sandboxWorkspace(snapshot, desired, runtime, selectedIds) {
+export function sandboxWorkspace(snapshot, desired, runtime, selectedIds, eligibleIds) {
   const claimed=(window)=>Object.values(runtime.workspaces || {}).some(w=>w.label===snapshot.spaces.find(s=>s.index===window.space && !s.ignoredDisplay)?.label && (w.windows || []).some(r=>runtime.apps?.[r.app_key]?.names?.includes(window.app)));
-  const windows=snapshot.windows.filter(w=>!selectedIds.has(w.id) && !claimed(w) && w.movable && w.resizable && !w.sticky && !w.minimized && !w.nativeFullscreen).sort((a,b)=>a.id-b.id);
+  const smartGitApps = new Set(desired.workspaces.flatMap(workspace => workspace.windows)
+    .filter(role => role.appKey === 'smartgit' && role.selector?.non_empty_title).flatMap(role => role.appNames));
+  const smartGitOwners = snapshot.windows.filter(w => selectedIds.has(w.id) && smartGitApps.has(w.app) && w.title && w.pid > 0);
+  // SmartGit moves its colocated untitled companion with the main window.
+  // Keep the companion in discovery and occupancy without assigning a second destination.
+  const followsSmartGitOwner = w => !w.title && w.role === 'AXWindow' && w.subrole === 'AXStandardWindow'
+    && smartGitOwners.some(owner => owner.pid === w.pid && owner.app === w.app && owner.space === w.space);
+  const windows=snapshot.windows.filter(w=>(!eligibleIds || eligibleIds.has(w.id)) && !selectedIds.has(w.id) && !claimed(w) && !followsSmartGitOwner(w)
+    && w.movable && w.resizable && !w.sticky && !w.minimized && !w.nativeFullscreen).sort((a,b)=>a.id-b.id);
   if (!windows.length) return null;
   const displayRole=desired.target.mode==='solo'?'primary':desired.workspaces.find(w=>w.displayRole!=='primary')?.displayRole || desired.workspaces[0]?.displayRole;
   const display=snapshot.displays.find(d=>d.role===displayRole);
