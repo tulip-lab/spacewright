@@ -44,6 +44,19 @@ function spaceObservations(snapshot,desired,owners) {
   }
   return [...spaces.values()];
 }
+
+function optionalSpaceObservation(snapshot, workspace, role, window) {
+  const space = snapshot.spaces.find(s => s.index === window.space);
+  const display = snapshot.displays.find(d => d.index === space?.display);
+  const departure = snapshot.spaces.find(s => s.display === space?.display && s.uuid !== space?.uuid);
+  if (!space || !display || !departure) return null;
+  return {type:'observe_space',workspaceId:workspace.workspaceId,role:role.role,
+    window:identity(window),windows:[identity(window)],roles:[{workspaceId:workspace.workspaceId,role:role.role}],selection:role,
+    spaceUuid:space.uuid,displayUuid:display.uuid,departureSpaceUuid:departure.uuid,
+    returnSpaceUuid:snapshot.spaces.find(s=>s.focused)?.uuid,bestEffort:true,
+    sideEffects:['focus_space','restore_focus'],phaseLimitMs:3000,budget:'confirmation',requiresReplan:true};
+}
+
 export function preparationsFor(snapshot,desired,{attemptedOptionalWindows=new Set(),runningApps=new Set()}={}) {
   // Active workspaces decide ownership exactly as layout selection does. An
   // inactive primary can still need observation before it becomes selectable;
@@ -70,14 +83,24 @@ export function preparationsFor(snapshot,desired,{attemptedOptionalWindows=new S
             commandPolicy:'outlook_reopen',window:identity(window),selection:role,bestEffort:true,
             sideEffects:['activate_app','possible_window_creation_or_replacement'],phaseLimitMs:3000,budget:'appRecovery',requiresReplan:true});
         } else if(window.id!=null && !attemptedOptionalWindows.has(`${workspace.workspaceId}:${role.role}:observe_space`)) {
-          const space=snapshot.spaces.find(s=>s.index===window.space);
-          const display=snapshot.displays.find(d=>d.index===space?.display);
-          const departure=snapshot.spaces.find(s=>s.display===space?.display && s.uuid!==space?.uuid);
-          if(space && display && departure) preparations.push({type:'observe_space',workspaceId:workspace.workspaceId,role:role.role,
-            window:identity(window),windows:[identity(window)],roles:[{workspaceId:workspace.workspaceId,role:role.role}],selection:role,
-            spaceUuid:space.uuid,displayUuid:display.uuid,departureSpaceUuid:departure.uuid,
-            returnSpaceUuid:snapshot.spaces.find(s=>s.focused)?.uuid,bestEffort:true,
-            sideEffects:['focus_space','restore_focus'],phaseLimitMs:3000,budget:'confirmation',requiresReplan:true});
+          const observation = optionalSpaceObservation(snapshot, workspace, role, window);
+          if (observation) preparations.push(observation);
+        }
+      }
+    }
+    // Notes and Reminders can regain AX access when their Space receives focus.
+    // Observe the configured Space before pinning layout and final focus.
+    if ((role.appKey === 'reminders' || role.appKey === 'notes') && !role.required
+      && !attemptedOptionalWindows.has(`${workspace.workspaceId}:${role.role}:observe_space`)
+      && !selectRole(snapshot.windows, role).eligible.length) {
+      const spaces = snapshot.spaces.filter(s => s.label === workspace.label && !s.ignoredDisplay);
+      if (spaces.length === 1 && !observations.some(p => p.spaceUuid === spaces[0].uuid)) {
+        const windows = snapshot.windows.filter(w => w.space === spaces[0].index && role.appNames.includes(w.app)
+          && (role.windowId == null || role.windowId === w.id) && w.hasAxReference === false
+          && w.frameVerified && w.frame.w > 0 && w.frame.h > 0 && !w.minimized && !w.sticky && !w.nativeFullscreen);
+        if (windows.length === 1) {
+          const observation = optionalSpaceObservation(snapshot, workspace, role, windows[0]);
+          if (observation?.returnSpaceUuid) preparations.push(observation);
         }
       }
     }

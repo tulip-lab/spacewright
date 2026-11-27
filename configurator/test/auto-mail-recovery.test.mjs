@@ -7,12 +7,12 @@ import { processIdentities, processIdentity } from '../lib/execution-coordinator
 
 const machine = { displayBindings: { primary: 'D' } };
 function mailPlan({ recovered = false, attemptedRefresh = false, attemptedObservation = false, outlookWindowId = 11,
-  noOutlookWindow = false, outlookRunning = false } = {}) {
+  noOutlookWindow = false, outlookRunning = false, outlookRequired = false } = {}) {
   const config = starterConfig();
   config.apps.outlook = { name: 'Outlook', match: { appNames: ['Microsoft Outlook'] } };
   config.workspaces.coding.windows = {
     primary: { app: 'code', required: true },
-    helper: { app: 'outlook', required: false }
+    helper: { app: 'outlook', required: outlookRequired }
   };
   const variant = {
     layout: { type: 'canvas', regions: [
@@ -24,7 +24,7 @@ function mailPlan({ recovered = false, attemptedRefresh = false, attemptedObserv
   for (const mode of ['solo', 'wide', 'tall']) config.workspaces.coding.variants[mode] = variant;
   const raw = {
     displays: [{ index: 1, uuid: 'D', frame: { x: 0, y: 0, w: 1000, h: 800 } }],
-    spaces: [{ index: 1, uuid: 'S', display: 1, label: 'coding_solo', type: 'float' },
+    spaces: [{ index: 1, uuid: 'S', display: 1, label: 'coding_solo', type: 'float', 'has-focus': true },
       { index: 2, uuid: 'O', display: 1, label: 'support_solo', type: 'float' }],
     windows: [
       { id: 10, pid: 100, app: 'Code', title: 'Editor', display: 1, space: 1,
@@ -62,8 +62,9 @@ test('AX-less optional Outlook gets one bounded reopen before mail layout planni
   assert.equal(mailPlan({ attemptedRefresh: true, outlookWindowId: 22 }).plan.preparations[0].type, 'observe_space');
   const exhausted = mailPlan({ attemptedRefresh: true, attemptedObservation: true });
   assert.equal(exhausted.plan.preparations.length, 0);
-  assert.equal(exhausted.plan.executable, false);
-  assert.ok(exhausted.plan.blockers.some(b=>b.code==='outlook_window_unavailable'));
+  assert.equal(exhausted.plan.executable, true);
+  assert.equal(exhausted.comparison.converged, true);
+  assert.ok(exhausted.plan.warnings.some(w => w.code === 'outlook_window_unavailable'));
   const [exe, args] = preparationCommand(preparation, snapshot);
   assert.equal(exe, 'osascript');
   assert.equal(args.at(-1), 'Microsoft Outlook');
@@ -74,16 +75,23 @@ test('AX-less optional Outlook gets one bounded reopen before mail layout planni
   assert.ok(mailPlan({ recovered: true }).plan.selectedWindows.some(w => w.role === 'helper' && w.id === 11));
 });
 
-test('running Outlook without a window is reopened once, then must become selectable', () => {
+test('running optional Outlook without a window is reopened once and warns if still unavailable', () => {
   const first = mailPlan({ noOutlookWindow: true, outlookRunning: true });
   assert.equal(first.plan.executable, true);
   assert.equal(first.plan.preparations[0].type, 'refresh_app');
   assert.equal(first.plan.preparations[0].window.id, null);
   assert.equal(preparationCommand(first.plan.preparations[0], first.snapshot)[0], 'osascript');
   const exhausted = mailPlan({ noOutlookWindow: true, outlookRunning: true, attemptedRefresh: true });
-  assert.equal(exhausted.plan.executable, false);
-  assert.ok(exhausted.plan.blockers.some(blocker => blocker.code === 'outlook_window_unavailable'));
+  assert.equal(exhausted.plan.preparations.length, 0);
+  assert.equal(exhausted.plan.executable, true);
+  assert.ok(exhausted.plan.warnings.some(w => w.code === 'outlook_window_unavailable'));
   assert.equal(mailPlan({ noOutlookWindow: true }).plan.preparations.length, 0);
+});
+
+test('a missing required Outlook window still blocks layout', () => {
+  const { plan } = mailPlan({ noOutlookWindow: true, outlookRunning: true, outlookRequired: true });
+  assert.equal(plan.executable, false);
+  assert.ok(plan.blockers.some(b => b.code === 'required_window_missing' && b.role === 'helper'));
 });
 
 test('batched process identity matches individual verification and excludes missing processes', async () => {

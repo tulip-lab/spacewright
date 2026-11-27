@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {generationDocument} from '../lib/config-store.mjs';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -44,6 +44,40 @@ async function json(url, path, token, options = {}) {
   const response = await fetch(new URL(path.slice(1), url), { ...options, headers: { 'content-type': 'application/json', ...(token ? { 'x-spacewright-token': token } : {}), ...(options.headers || {}) } });
   return { status: response.status, body: await response.json() };
 }
+
+test('web and CLI pin the same plan when running Outlook has no window', async context => {
+  const root = await mkdtemp(join(tmpdir(), 'spacewright-plan-parity-'));
+  const configRoot = join(root, 'config'), stateRoot = join(root, 'state'), fakeBin = join(root, 'bin');
+  await Promise.all([mkdir(configRoot), mkdir(stateRoot), mkdir(fakeBin)]);
+  const config = starterV3();
+  config.apps.outlook = { name: 'Outlook', match: { appNames: ['Microsoft Outlook'] } };
+  config.workspaces.coding.windows.helper = { app: 'outlook', required: false };
+  for (const configuration of Object.values(config.workspaces.coding.configurations)) {
+    configuration.runtime = { runner: 'primary_helper' };
+  }
+  await writeFile(join(configRoot, 'config.v3.json'), JSON.stringify(config));
+  await writeFile(join(stateRoot, 'machine.json'), JSON.stringify({ version: 2, hardwareProfile: 'mac_mini',
+    hardwareProfileConfirmed: true, displayBindings: { tall: 'D' }, topologySelections: { 'external:tall': 'single_tall' } }));
+  await writeFile(join(fakeBin, 'sysctl'), '#!/bin/sh\necho Macmini9,1\n', { mode: 0o755 });
+  await writeFile(join(fakeBin, 'pgrep'), '#!/bin/sh\necho 500\n', { mode: 0o755 });
+  await writeFile(join(fakeBin, 'yabai'), `#!/bin/sh
+case "$3" in
+ --displays) echo '[{"index":1,"uuid":"D","frame":{"x":0,"y":0,"w":900,"h":1200}}]';;
+ --spaces) echo '[{"index":1,"uuid":"S","display":1,"label":"coding_tall","type":"float","has-focus":true}]';;
+ --windows) echo '[{"id":10,"pid":100,"app":"Code","space":1,"display":1,"frame":{"x":0,"y":0,"w":900,"h":1200},"can-move":true,"can-resize":true}]';;
+ *) exit 7;;
+esac
+`, { mode: 0o755 });
+  const server = await startServer(configRoot, stateRoot, fakeBin);
+  context.after(async () => { server.child.kill('SIGTERM'); await new Promise(resolve => server.child.once('exit', resolve)); await rm(root, { recursive: true, force: true }); });
+  const web = await json(server.url, '/api/preview', server.token, { method: 'POST', body: JSON.stringify({ kind: 'workspace', target: 'coding' }) });
+  assert.equal(web.status, 200, JSON.stringify(web.body));
+  const cli = JSON.parse(execFileSync(process.execPath, [join(packageRoot, 'configurator/state-cli.mjs'), 'apply', 'coding', 'tall',
+    '--dry-run', '--json', `--config-root=${configRoot}`, `--state-root=${stateRoot}`],
+  { encoding: 'utf8', env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` } }));
+  assert.equal(web.body.plan.planId, cli.plan.planId);
+  assert.deepEqual(cli.plan.preparations.map(preparation => [preparation.type, preparation.role]), [['refresh_app', 'helper']]);
+});
 
 for (const scenario of ['v2-only', 'v3-only', 'both']) test(`R5 portable import/export round trip: ${scenario}`, async context => {
   const root = await mkdtemp(join(tmpdir(), 'spacewright-portable-'));
@@ -410,4 +444,110 @@ test('ignored virtual display is persisted through hardware confirmation and rem
   assert.equal(await select.locator('option[value="external"]').count(),1);
   await page.screenshot({path:'/tmp/spacewright-ignored-display-ui.png'});
   assert.deepEqual(errors,[]);
+});
+
+test('v3 browser registers an app, saves a workspace and previews it with the connected setup', async context => {
+  const root = await mkdtemp(join(tmpdir(), 'spacewright-v3-editor-'));
+  const configRoot = join(root, 'config'), stateRoot = join(root, 'state'), bin = join(root, 'bin');
+  const windowFile = join(root, 'windows.json');
+  await Promise.all([mkdir(configRoot), mkdir(stateRoot), mkdir(bin)]);
+  await writeFile(join(bin, 'sysctl'), '#!/bin/sh\necho Macmini9,1\n', { mode: 0o755 });
+  await writeFile(join(bin, 'yabai'), `#!/bin/sh
+case "$3" in
+--displays) echo '[{"index":1,"uuid":"TALL","frame":{"x":0,"y":0,"w":1200,"h":1920},"spaces":[1]}]' ;;
+--spaces) echo '[{"index":1,"uuid":"READING-SPACE","display":1,"label":"reading_default","type":"float","has-focus":true,"is-visible":true}]' ;;
+--windows) cat "$SW_V3_WINDOWS" ;;
+*) exit 1 ;;
+esac
+`, { mode: 0o755 });
+  const windows = [
+    { id: 10, app: 'Preview', title: 'Report.pdf', space: 1, display: 1, frame: { x: 0, y: 0, w: 600, h: 1920 }, 'can-move': true, 'can-resize': true },
+    { id: 11, app: 'Code', title: 'Editor', space: 1, display: 1, frame: { x: 600, y: 0, w: 600, h: 1920 }, 'can-move': true, 'can-resize': true }
+  ];
+  await writeFile(windowFile, JSON.stringify(windows));
+  const server = await startServer(configRoot, stateRoot, bin, { SW_V3_WINDOWS: windowFile });
+  context.after(async () => {
+    const exited = new Promise(resolve => server.child.once('exit', resolve));
+    server.child.kill('SIGTERM');
+    await exited;
+    await rm(root, { recursive: true, force: true });
+  });
+  const browser = await chromium.launch({ headless: true, ...(existsSync(systemChrome) ? { executablePath: systemChrome } : {}) });
+  context.after(() => browser.close());
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto(`${server.url}?token=${server.token}&view=apps`);
+  await page.getByRole('button', { name: 'Discover Open Apps' }).click();
+  await page.getByRole('button', { name: '+ Preview', exact: true }).click();
+
+  await page.locator('#nav [data-view="workspaces"]').click();
+  const form = page.locator('#v3-new-workspace');
+  await form.getByLabel('Workspace name').fill('Reading');
+  await form.getByLabel('First application').selectOption('preview');
+  await form.getByRole('button', { name: 'Add Workspace' }).click();
+  await page.getByLabel('primary title contains').fill('Report');
+  await page.locator('#v3-add-window').getByLabel('Window role').fill('notes');
+  await page.locator('#v3-add-window').getByLabel('Application').selectOption('code');
+  await page.getByRole('button', { name: 'Add Window' }).click();
+  await page.getByLabel('notes title contains').fill('Notes');
+  assert.equal(existsSync(join(configRoot, 'config.v3.json')), false);
+
+  await page.locator('#save').click();
+  await page.getByRole('button', { name: 'Confirm this setup' }).click();
+  await page.getByText('single_tall', { exact: true }).first().waitFor();
+  const save = page.waitForResponse(response => response.url().endsWith('/api/v3/save'));
+  await page.locator('#v3-save').click();
+  assert.equal((await save).status(), 200);
+  await page.getByText(/Saved and verified/).waitFor();
+  const config = JSON.parse(await readFile(join(configRoot, 'config.v3.json')));
+  assert.deepEqual(config.apps.preview.match.appNames, ['Preview']);
+  assert.equal(config.workspaces.reading.windows.primary.selector.title_include, 'Report');
+  assert.equal(config.workspaces.reading.windows.notes.selector.title_include, 'Notes');
+  assert.deepEqual(config.hardwareProfiles.mac_mini.setups.single_tall.lanes[0].workspaceOrder, ['coding', 'reading']);
+
+  await page.locator('#nav [data-view="workspaces"]').click();
+  await page.getByRole('button', { name: 'Preview Saved Workspace' }).click();
+  const previewRequest = page.waitForRequest(request => request.url().endsWith('/api/preview'));
+  await page.getByRole('button', { name: 'Preview Saved Plan' }).click();
+  assert.deepEqual((await previewRequest).postDataJSON(), { kind: 'workspace', target: 'reading' });
+  await page.locator('#run-preview').getByText(/(?:Ready to apply|Converged).*tall/).waitFor();
+  assert.equal(await page.locator('#execution-confirm').isEnabled(), true);
+
+  await page.locator('#run-target').selectOption('mode:auto');
+  assert.equal(await page.locator('#execution-confirm').isEnabled(), false);
+  await page.getByRole('button', { name: 'Preview Saved Plan' }).click();
+  await page.locator('#run-preview').getByText(/Plan .*tall/).waitFor();
+  await page.locator('#run-target').selectOption('workspace:reading');
+  await writeFile(windowFile, JSON.stringify(windows.slice(1)));
+  const blockedResponse = page.waitForResponse(response => response.url().endsWith('/api/preview'));
+  await page.getByRole('button', { name: 'Preview Saved Plan' }).click();
+  const blocked = await (await blockedResponse).json();
+  assert.equal(blocked.plan.executable, false);
+  await page.locator('#run-preview .errors').getByText(/required.*Reading.*primary.*Preview/i).waitFor();
+  assert.equal(await page.locator('#execution-confirm').isEnabled(), false);
+  const execute = await json(server.url, '/api/execute', server.token, { method: 'POST', body: JSON.stringify({
+    kind: 'workspace', target: 'reading', confirmed: true, expectedPlanId: blocked.plan.planId,
+    expectedConfigDigest: blocked.plan.configDigest, expectedSnapshotId: blocked.snapshot.snapshotId
+  }) });
+  assert.equal(execute.body.code, 'plan_blocked');
+  assert.deepEqual((await json(server.url, '/api/tasks', server.token)).body.tasks, []);
+
+  await writeFile(windowFile, JSON.stringify(windows));
+  await page.getByRole('button', { name: 'Preview Saved Plan' }).click();
+  await page.locator('#execution-confirm').check();
+  const queued = page.waitForResponse(response => response.url().endsWith('/api/execute'));
+  await page.getByRole('button', { name: 'Run Pinned Plan' }).click();
+  const response = await queued;
+  assert.equal(response.status(), 202);
+  const { task } = await response.json();
+  let result;
+  for (let attempt = 0; attempt < 50; attempt++) {
+    result = (await json(server.url, `/api/tasks/${task.id}`, server.token)).body.task;
+    if (!['queued', 'running'].includes(result.status)) break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  assert.equal(result.status, 'completed', result.logs.join('\n'));
+  assert.equal(result.mode, 'tall');
+  assert.deepEqual(errors, []);
 });

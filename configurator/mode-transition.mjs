@@ -297,10 +297,23 @@ export async function runTransition({
     if (requestedReason === 'cancelled') { status = 'cancelled'; message = 'Transition cancelled'; }
     else if (requestedReason === 'replaced') { status = 'replaced'; message = 'A newer mode request took over'; }
     else if (requestedReason === 'timed_out') { status = 'timed_out'; message = `Stopped after ${Math.ceil(timeoutMs / 1000)} seconds`; }
-    else if (exitCode.code === 0 && exitCode.stdout.split('\n').includes('SPACEWRIGHT_VERIFIED')) { status = 'completed'; message = scope === 'mode' ? `${resolvedTargetLabel} workspace is ready` : `${resolvedTargetLabel} is ready`; }
+    let layoutIssues = [];
+    if (!requestedReason && exitCode.code === 0 && exitCode.stdout.split('\n').includes('SPACEWRIGHT_VERIFIED')) {
+      status = 'completed';
+      message = scope === 'mode' ? `${resolvedTargetLabel} workspace is ready` : `${resolvedTargetLabel} is ready`;
+      try {
+        const result = JSON.parse(exitCode.stdout.split('\n').filter(line => line !== 'SPACEWRIGHT_VERIFIED').join('\n'));
+        if (Array.isArray(result.layoutIssues)) layoutIssues = result.layoutIssues;
+      } catch {} // The verified marker also supports compatible older executors.
+      if (layoutIssues.length) {
+        const skipped = layoutIssues.filter(issue => issue.kind === 'skipped');
+        const suffix = skipped.length ? `${skipped.length} skipped` : `${layoutIssues.length} layout warnings`;
+        message = `${resolvedTargetLabel} adjusted · ${suffix}`;
+      }
+    }
 
     const finishedAt = new Date().toISOString();
-    await updateState({ status, phase: message, finishedAt, durationMs: Math.max(0, new Date(finishedAt).getTime() - now) });
+    await updateState({ status, phase: message, layoutIssues, finishedAt, durationMs: Math.max(0, new Date(finishedAt).getTime() - now) });
     return { status, runId, mode, exitCode: exitCode.code };
   } catch (error) {
     rememberDiagnostic(diagnostics.errors, error.message);

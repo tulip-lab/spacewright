@@ -98,6 +98,16 @@ verification failure and timeout are terminal failures; diagnostic history
 retains the last step and output. The inherited total deadline also bounds child
 commands. Cancellation and replacement stop all registered process groups,
 escalate an unresponsive child, and only then release the execution lease.
+Successful runs list skipped windows, selected fallback regions, and overlaps
+under `layoutIssues` in the result and transition history. The banner calls out
+the presence of these issues alongside the completion status.
+
+An Auto Mode shortcut can build one replacement plan when its window list
+changes. It waits for two matching observations, preserves display and Space
+identities and the ownership of already selected windows, and uses the new
+occupancy census for cleanup. Newly opened unassigned windows remain outside
+Sandbox collection on this pass. The replacement runs on the same lease and
+deadline. A digest-pinned Web request retains the explicit preview contract.
 Direct `run`, `display`, `focus`, `order`, `finalize` and `postprocess` use the
 same lease. CLI scripts start Fish without personal startup configuration;
 consumer configuration is loaded through the documented configuration roots.

@@ -59,11 +59,13 @@ app is not launched just because its optional helper role is configured.
 If an AX-less Outlook window remains after the reopen, apply briefly visits its
 current Space and restores the original focus. Each attempt is followed by a
 fresh plan. If Outlook becomes selectable, both mail windows receive their
-configured layout. If a running Outlook app still has no selectable window,
-the transition reports an incomplete mail layout instead of success. It never
-takes over Outlook's whole Space, which may also contain other apps. Dry run
-only previews these steps.
+configured layout. If optional Outlook is still unavailable, the plan records
+an `outlook_window_unavailable` warning and applies the remaining layout,
+including the configured primary-only mail geometry. Outlook stays on its
+original Space. Dry run previews the recovery steps and warning.
 Required windows retain the bounded observation and recovery path.
+Optional Notes and Reminders can receive one bounded visit to their configured
+Space before layout when exactly one matching window there lacks an AX reference.
 For an optional multi-window role with selectable AX windows, those known windows
 can be laid out while other AX-less surfaces produce `optional_windows_unavailable`
 warnings. Required multi-window roles retain bounded AX observation and
@@ -106,6 +108,13 @@ pixel geometry with the fresh snapshot. Grid verification uses the usable macOS
 display frame plus yabai padding and edge gaps, with a two-pixel rounding
 tolerance. `settings.tallTopPercent` is applied to the same grids in planning,
 execution and verification; 50/50 cannot satisfy a configured 49/51 split.
+Canvas regions can declare `fit.minWidth` and `fit.minHeight` in macOS points.
+If the requested region is too small, planning uses `fit.fallbackGrid` when it
+meets both minimums. The preview reports the fallback and any overlap it
+causes. If neither region fits, layout stops before arranging windows and names
+the affected role. A command that first changes display geometry evaluates the
+minimums after the display settles. Set minimums from observed application
+limits.
 Adjoining Tall rows share transformed boundaries, including a middle row that
 crosses the midpoint. This permits a three-row canvas without gaps or overlap
 when the split percentage changes. Detached centered overlays keep their

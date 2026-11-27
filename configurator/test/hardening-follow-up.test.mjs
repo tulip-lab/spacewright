@@ -631,17 +631,62 @@ test('completed journals recover vanished yabai labels by live Space UUID',async
     assert.ok(!comparison.drifts.some(d=>d.code==='space_missing'));
   } finally { await rm(root,{recursive:true,force:true}); }
 });
+test('pinned resize reuses the initial discovery and rechecks after each command', async () => {
+  const display = { uuid: 'DISPLAY', index: 1, frame: { x: 0, y: 0, w: 1000, h: 600 } };
+  const space = { uuid: 'SPACE', index: 1, display: 1, label: 'coding', visible: true };
+  const window = { id: 10, app: 'Code', space: 1, pid: 5, frame: { x: 0, y: 0, w: 300, h: 300 } };
+  const plan = {
+    scope: 'workspace',
+    workspaces: [{ workspaceId: 'coding', label: 'coding', targetSpace: space, targetDisplay: display }],
+    selectedWindows: [{ ...window, workspaceId: 'coding', selector: {} }],
+    actions: [{ type: 'resize_window', workspaceId: 'coding', windowId: 10, geometry: { move_abs: '100:50', resize_abs: '600:400' } }]
+  };
+  const trace = [];
+  const discover = async () => {
+    trace.push('discover');
+    return { completeness: 'complete', capturedAt: new Date().toISOString(), displays: [display], spaces: [space], windows: [window] };
+  };
+  await executePinnedWorkspace(plan, 'coding', {
+    discover,
+    mutate: async (args, _intent, verify) => {
+      const command = args.at(-2);
+      trace.push(command);
+      Object.assign(window.frame, command === '--move' ? { x: 100, y: 50 } : { w: 600, h: 400 });
+      assert.equal(await verify(await discover()), true);
+    }
+  });
+  assert.deepEqual(trace, ['discover', '--move', 'discover', 'discover', '--resize', 'discover']);
+});
+
 test('monitor serializes sampling, resets debounce after partial discovery and drains events on stop',async()=>{
   let sampling=0,maxSampling=0,queries=0,release,activated=0;
   const gate=new Promise(resolve=>release=resolve),events=[];
-  const solo={completeness:'complete',windows:[],spaces:[],displays:[{builtIn:true,frame:{w:1000,h:800}}]};
-  const wide={...solo,displays:[...solo.displays,{builtIn:false,frame:{x:1000,w:1000,h:800}}]};
-  const monitor=createAutomationMonitor({intervalMs:100000,readConfig:async()=>({settings:{topologyStableSamples:2,eventAutomationEnabled:true},apps:{},workspaces:{},rules:[]}),
-    querySnapshot:async()=>{sampling++;maxSampling=Math.max(maxSampling,sampling);queries++;if(queries===1)await gate;sampling--;return queries===3?{...solo,completeness:'partial'}:queries===1?solo:wide;},
+  const solo={completeness:'complete',windows:[],spaces:[],displays:[{uuid:'BUILT',index:1,builtIn:true,frame:{w:1000,h:800}}]};
+  const wide={...solo,displays:[...solo.displays,{uuid:'WIDE',index:2,builtIn:false,frame:{x:1000,w:1000,h:800}}]};
+  const monitor=createAutomationMonitor({intervalMs:100000,readContext:async()=>({config:{version:3,settings:{topologyStableSamples:2,eventAutomationEnabled:true}},machine:{}}),
+    querySnapshot:async()=>{throw new Error('unexpected full discovery');}, queryDisplays:async()=>{sampling++;maxSampling=Math.max(maxSampling,sampling);queries++;if(queries===1)await gate;sampling--;return queries===3?{...solo,completeness:'partial'}:queries===1?solo:wide;},
     activity:async(...args)=>events.push(args),executeRule:async()=>{throw new Error('unexpected rule');},activateSetup:async()=>{activated++;return true;}});
   monitor.start();const first=monitor.sample(),second=monitor.sample();release();await Promise.all([first,second]);assert.equal(maxSampling,1);
   await monitor.sample();await monitor.sample();assert.equal(activated,0);await monitor.sample();assert.equal(activated,1);
   const pending=monitor.trigger('wake');await monitor.stop();await pending;const count=queries;await monitor.sample();await monitor.trigger('wake');assert.equal(queries,count);
+});
+test('monitor retries a stable topology after a transient activation read failure', async () => {
+  const config = { version: 3, settings: { topologyStableSamples: 2 } };
+  const snapshot = (w, h) => ({ completeness: 'complete', displays: [{ uuid: 'D', index: 1, frame: { x: 0, y: 0, w, h } }] });
+  let current = snapshot(1200, 900);
+  let attempts = 0;
+  const monitor = createAutomationMonitor({ intervalMs: 100000, readContext: async () => ({ config, machine: {} }),
+    queryDisplays: async () => current, activity: async () => {}, activateSetup: async () => {
+      if (++attempts === 1) throw new Error('temporary read failure');
+      return true;
+    } });
+  monitor.start();
+  try {
+    await monitor.sample();
+    current = snapshot(900, 1200);
+    for (let i = 0; i < 6; i++) await monitor.sample();
+    assert.equal(attempts, 2);
+  } finally { await monitor.stop(); }
 });
 test('an interrupted multi-file save leaves a guard and rejects both ordinary and machine-only readers',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'spacewright-save-interruption-'));const source=join(dir,'config.v2.json'),machinePath=join(dir,'machine.json');

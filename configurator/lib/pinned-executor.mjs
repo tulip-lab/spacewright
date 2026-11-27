@@ -61,6 +61,9 @@ async function focusForResize(snapshot, anchor, type, mutate) {
   await mutate(['-m', 'space', '--focus', String(space.index)], {
     type, spaceUuid: anchor.uuid, targetDisplayUuid: anchor.displayUuid, reversible: false
   }, after => {
+    if (after.completeness !== 'complete') {
+      throw Object.assign(new Error(`resize focus discovery incomplete: ${after.message}`), { code: 'SPACEWRIGHT_FOCUS_PENDING' });
+    }
     const focused = resolveFocusAnchor(complete(after), anchor);
     if (!focused.focused || !focused.visible) {
       throw Object.assign(new Error('resize focus did not settle'), { code: 'SPACEWRIGHT_FOCUS_PENDING' });
@@ -131,16 +134,21 @@ export async function executePinnedWorkspace(plan,workspaceId,{discover,mutate,r
     await registerCreated(createdSpaces);
     await mutate(['-m','space',String(added[0].index),'--label',workspace.label],{type:'label',workspaceId:workspace.workspaceId,spaceUuid:uuid,reversible:false},s=>s.spaces.find(x=>x.uuid===uuid)?.label===workspace.label);
   }
-  const getSpace=async()=>spaceFor(complete(await discover()),uuid,[workspace.label,workspace.targetSpace?.label || '']);
+  const resolveSpace = current => spaceFor(current, uuid, [workspace.label, workspace.targetSpace?.label || '']);
+  let initialSnapshot = creating ? null : snapshot;
   if(creating || plan.actions.some(a=>a.type==='set_space_layout' && a.workspaceId===workspace.workspaceId)) {
-    const space=await getSpace(), layout=workspace.spaceLayout || 'float';
+    const space = resolveSpace(initialSnapshot || complete(await discover()));
+    const layout = workspace.spaceLayout || 'float';
+    initialSnapshot = null;
     await mutate(['-m','space',String(space.index),'--layout',layout],{type:'set_space_layout',workspaceId:workspace.workspaceId,spaceUuid:uuid,layout,reversible:false},s=>s.spaces.find(x=>x.uuid===uuid)?.layout===layout);
   }
   for(const action of plan.actions.filter(a=>a.workspaceId===workspace.workspaceId)) {
     if(action.type==='recover_space_label' || action.type==='move_space') {
-      const space=await getSpace();
+      const current = initialSnapshot || complete(await discover());
+      const space = resolveSpace(current);
+      initialSnapshot = null;
       const operation=action.type==='move_space'?'--display':'--label';
-      const currentDisplay=displayFor(complete(await discover()),workspace.targetDisplay);
+      const currentDisplay=displayFor(current,workspace.targetDisplay);
       const value=operation==='--display'?String(currentDisplay.index):workspace.label;
       await mutate(['-m','space',String(space.index),operation,value],{type:action.type,spaceUuid:uuid,workspaceId:workspace.workspaceId,reversible:false},s=>{const live=s.spaces.find(x=>x.uuid===uuid);return operation==='--display'?live?.display===currentDisplay.index:live?.label===value;});
     }
@@ -152,7 +160,9 @@ export async function executePinnedWorkspace(plan,workspaceId,{discover,mutate,r
     const actions=plan.actions.filter(a=>a.windowId===expected.id && a.workspaceId===workspace.workspaceId);
     if(creating && !actions.some(a=>a.type==='move_window'))actions.unshift({type:'move_window'});
     for(const action of actions) {
-      const snapshot=complete(await discover()), current=snapshot.windows.find(w=>w.id===expected.id);
+      const snapshot = initialSnapshot || complete(await discover());
+      initialSnapshot = null;
+      const current = snapshot.windows.find(w => w.id === expected.id);
       if(!sameWindowIdentity(expected,current) || !selectorResult(current,{windowId:expected.id,appNames:[expected.app],selector:expected.selector}).matches)throw new Error('planned window identity/precondition changed; replan required');
       const space=spaceFor(snapshot,uuid,[workspace.label,workspace.targetSpace?.label || '']);
       const display=displayFor(snapshot,workspace.targetDisplay);
@@ -161,6 +171,7 @@ export async function executePinnedWorkspace(plan,workspaceId,{discover,mutate,r
         await mutate(['-m','window',String(expected.id),'--space',String(space.index)],intent,s=>sameWindowIdentity(expected,s.windows.find(w=>w.id===expected.id)) && s.windows.find(w=>w.id===expected.id)?.space===s.spaces.find(x=>x.uuid===uuid)?.index);
       } else if(action.type==='resize_window') {
         const commands=action.grid?[['--grid',action.grid]]:Object.entries(action.geometry || {}).map(([key,value])=>key==='grid'?['--grid',value]:[key==='move_abs'?'--move':'--resize',`abs:${value.replace(/^abs:/,'')}`]);
+        let beforeCommand = snapshot;
         for(const [op,value] of commands) {
           const resolve = snapshot => {
             const space = spaceFor(complete(snapshot), uuid, [workspace.label]);
@@ -180,9 +191,10 @@ export async function executePinnedWorkspace(plan,workspaceId,{discover,mutate,r
             return true;
           });
           await resizeWithFocusRetry({
-            before:resolve(await discover()), resolve, apply, query, discover, mutate,
+            before:resolve(beforeCommand || await discover()), resolve, apply, query, discover, mutate,
             retry:retryResize, keepFocus:keepResizeFocus
           }, action.focusRetry === 'hidden_space_once' && Boolean(retryResize));
+          beforeCommand = null;
         }
       }
     }

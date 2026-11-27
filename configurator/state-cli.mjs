@@ -7,7 +7,7 @@ import { access, stat, readFile, readdir, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState, rebindSnapshotDisplays, summarizeComparison } from './lib/state-engine.mjs';
+import { buildExecutionPlan, captureWorkspace, compareState, layoutIssues, rebindSnapshotDisplays, summarizeComparison } from './lib/state-engine.mjs';
 import { compileV2, validateV2 } from './lib/config-v2.mjs';
 import { describeDisplays, resolveV3, topologyKey, validateV3, resolveModeTransition } from './lib/config-v3.mjs';
 import { restoreWindow, sameWindowIdentity,recoveryCandidates } from './lib/recovery.mjs';
@@ -17,8 +17,8 @@ import { acquireExecution, runBounded, sleep, assertExecutionAllowed } from './l
 import { durableJson, operationRecords, journalMutation } from './lib/operation-journal.mjs';
 import { consumeBudget } from './lib/execution-budget.mjs';
 import { detectMacHardware } from './lib/hardware-detection.mjs';
-import { readSpaceLabelHints } from './lib/space-label-history.mjs';
-import { assertWindowCensus } from './lib/window-policy.mjs';
+import { planDesktop } from './lib/live-plan.mjs';
+import { assertReplanSelections, assertWindowCensus, WINDOWS_CHANGED, WINDOWS_CHANGED_EXIT } from './lib/window-policy.mjs';
 import { assertWorkspaceSpaceContinuity } from './lib/finalization-policy.mjs';
 import { recoverYabai, recoveryPreview } from './lib/yabai-recovery.mjs';
 import { AX_UNAVAILABLE_EXIT } from './lib/adapter-preparation.mjs';
@@ -102,26 +102,9 @@ async function livePlan(target = parseTarget(), frozen = null, snapshot = null) 
   const normalizedTarget = value.resolution && target.kind === 'workspace' && !target.mode
     ? { ...target, mode: value.config.modes[value.portableConfig.hardwareProfiles[value.resolution.hardwareProfileId].setups[value.resolution.setupId].compatibilityMode] ? value.portableConfig.hardwareProfiles[value.resolution.hardwareProfileId].setups[value.resolution.setupId].compatibilityMode : null }
     : target;
-  let desired = buildDesiredState(value.config, value.runtime, normalizedTarget, value.snapshot);
-  const spaceLabelHints = await readSpaceLabelHints(stateRoot, desired, value.snapshot);
-  if (Object.keys(spaceLabelHints).length) desired = buildDesiredState(value.config, value.runtime, normalizedTarget, value.snapshot, { spaceLabelHints });
-  if (flags['mode-transition'] && !value.displayPrepared) desired.orchestration.displayProfile = await transitionProfile(target.mode);
-  const runningApps = new Set();
-  if(desired.workspaces.some(workspace=>workspace.runner==='primary_helper'
-    && workspace.windows.some(role=>role.role==='helper' && role.appKey==='outlook'))
-    && !value.snapshot.windows.some(window=>window.app==='Microsoft Outlook')) {
-    try {
-      const {stdout}=await execFileAsync('pgrep',['-x','Microsoft Outlook'],{timeout:1000,signal:cancellation.signal});
-      if(stdout.trim()) runningApps.add('Microsoft Outlook');
-    } catch(error) {
-      if(error.code!==1) throw new Error(`Outlook process check failed: ${error.message}`);
-    }
-  }
-  const comparison = compareState(value.snapshot, desired, value.machine, { spaceLabelHints,runningApps,
-    attemptedOptionalWindows:value.attemptedOptionalWindows });
-  const plan = buildExecutionPlan(value.snapshot, desired, comparison, { displayPrepared: value.displayPrepared,
-    attemptedOptionalWindows:value.attemptedOptionalWindows,runningApps });
-  return { ...value, desired, comparison, plan };
+  const displayProfile = flags['mode-transition'] && !value.displayPrepared ? await transitionProfile(target.mode) : null;
+  const planning = await planDesktop({ ...value, target: normalizedTarget, stateRoot, displayProfile, signal: cancellation.signal });
+  return { ...value, ...planning };
 }
 
 function print(value) {
@@ -236,9 +219,7 @@ async function assertSavedConfiguration(initial) {
   if (JSON.stringify(currentConfig.machine) !== JSON.stringify(initial.savedMachine || initial.machine)) throw new Error('machine generation changed during execution; replan required');
 }
 
-async function assertExecutionContext(initial,effects = []) {
-  await assertSavedConfiguration(initial);
-  const snapshot = await discover(initial.machine);
+function assertLayoutContext(initial, snapshot, effects) {
   if (snapshot.completeness !== 'complete') throw new Error(snapshot.message);
   assertExpectedTopology(snapshot, initial.machine);
   if (initial.resolution) {
@@ -247,17 +228,69 @@ async function assertExecutionContext(initial,effects = []) {
       throw new Error('physical displays changed during execution; replan required');
     }
   }
-  if(initial.plan.scope==='mode')assertWindowCensus(initial.plan.preconditions.windows,snapshot.windows,initial.plan.selectedWindows);
-  const spaceLabelHints=Object.fromEntries(initial.plan.workspaces.filter(w=>w.targetSpace?.uuid).map(w=>[w.label,w.targetSpace.uuid]));
-  const comparison = compareState(snapshot, initial.desired, initial.machine, {spaceLabelHints});
-  const currentPlan = buildExecutionPlan(snapshot, initial.desired, comparison);
-  if(!currentPlan.executable)throw new Error(`execution preconditions changed: ${currentPlan.blockers.map(d=>d.code).join(', ')}; replan required`);
-  if (JSON.stringify(currentPlan.selectedWindows) !== JSON.stringify(initial.plan.selectedWindows)) throw new Error('planned windows or ownership changed; replan required');
   assertWorkspaceSpaceContinuity(initial.plan, snapshot, effects);
   for (const original of initial.plan.workspaces) {
-    const beforeDisplay = initial.snapshot.displays.find((d) => d.role === original.displayRole);
-    if (beforeDisplay && !snapshot.displays.some((d) => d.uuid === beforeDisplay.uuid && JSON.stringify(d.frame) === JSON.stringify(beforeDisplay.frame))) throw new Error('relevant display changed; replan required');
+    const beforeDisplay = initial.snapshot.displays.find((display) => display.role === original.displayRole);
+    if (beforeDisplay && !snapshot.displays.some(display => display.uuid === beforeDisplay.uuid && JSON.stringify(display.frame) === JSON.stringify(beforeDisplay.frame))) {
+      throw new Error('relevant display changed; replan required');
+    }
   }
+}
+
+async function assertExecutionContext(initial,effects = []) {
+  await assertSavedConfiguration(initial);
+  const snapshot = await discover(initial.machine);
+  assertLayoutContext(initial, snapshot, effects);
+  if(initial.plan.scope==='mode')assertWindowCensus(initial.plan.preconditions.windows,snapshot.windows,initial.plan.selectedWindows);
+  const spaceLabelHints=Object.fromEntries(initial.plan.workspaces.filter(w=>w.targetSpace?.uuid).map(w=>[w.label,w.targetSpace.uuid]));
+  const comparison = compareState(snapshot, initial.desired, initial.machine, {spaceLabelHints, displayPrepared: initial.displayPrepared});
+  const currentPlan = buildExecutionPlan(snapshot, initial.desired, comparison);
+  if(!currentPlan.executable)throw new Error(`execution preconditions changed: ${currentPlan.blockers.map(d=>d.code).join(', ')}; replan required`);
+  if (!sameSelection(currentPlan, initial.plan)) {
+    throw Object.assign(new Error('planned windows or ownership changed; replan required'), { code: WINDOWS_CHANGED });
+  }
+}
+
+function sameSelection(a, b) {
+  return JSON.stringify(a.selectedWindows) === JSON.stringify(b.selectedWindows);
+}
+
+async function sampleReplan(target, initial, effects, { allowPreparation = false } = {}) {
+  const sandboxWindowIds = initial.sandboxWindowIds || new Set(initial.plan.selectedWindows.filter(window => window.workspaceId === '__sandbox').map(window => window.id));
+  const frozen = { ...initial, sandboxWindowIds };
+  let previous;
+  for (let sample = 0; sample < 5; sample++) {
+    await assertSavedConfiguration(initial);
+    const snapshot = await discover(initial.machine);
+    assertLayoutContext(initial, snapshot, effects);
+    const next = await livePlan(target, frozen, snapshot);
+    assertReplanSelections(initial, next);
+    if (!next.plan.executable) throw new Error(`automatic replan is blocked: ${next.plan.blockers.map(item => item.message || item.code).join('; ')}`);
+    if (!allowPreparation && next.plan.preparations.some(preparation => !preparation.bestEffort)) {
+      throw new Error('a required window needs preparation after layout started');
+    }
+    if (previous === next.plan.planId) return next;
+    previous = next.plan.planId;
+    await sleep(150);
+  }
+  throw new Error('window state did not stabilize during automatic replan');
+}
+
+async function runLayout(context, journal, journalFile, attempt, recoverWindowChanges) {
+  for (const step of context.plan.executionSteps) {
+    assertNotCancelled();
+    try { await assertExecutionContext(context, journal.effects); }
+    catch (error) {
+      if (!recoverWindowChanges || error.code !== WINDOWS_CHANGED) throw error;
+      journal.logs.push({ timestamp: new Date().toISOString(), stream: 'system', line: error.message });
+      return WINDOWS_CHANGED_EXIT;
+    }
+    const exitCode = await runCommand(step.command, journal, journalFile, step, attempt);
+    assertNotCancelled();
+    if (exitCode !== 0) return exitCode;
+  }
+  await waitForDesktopStateToSettle(context.plan.executionSteps);
+  return 0;
 }
 
 // A display command may change geometry, but cannot authorize a new set of
@@ -387,6 +420,10 @@ async function applyPlan(target) {
       configDigest: flags['expected-config-digest'],
       snapshotId: flags['expected-snapshot-id']
     };
+    const refreshWindows = target.kind === 'mode' && Boolean(flags['expected-topology'])
+      && !expected.planId && !expected.configDigest && !expected.snapshotId && !flags['no-reconcile']
+      && initial.plan.recovery.automaticAttempts > 0;
+    if (refreshWindows) initial.contextSnapshot = initial.snapshot;
     if ((expected.planId && expected.planId !== initial.plan.planId)
       || (expected.configDigest && expected.configDigest !== initial.plan.configDigest)
       || (!expected.planId && expected.snapshotId && expected.snapshotId !== initial.snapshot.snapshotId)) {
@@ -420,14 +457,26 @@ async function applyPlan(target) {
     await atomicWrite(journal.envelopeFile, { plan: initial.plan, desired: initial.desired, machine: initial.machine });
     await executionLease.trackJournal(journalFile);
     await atomicWrite(journalFile, journal);
+    let automaticReplanUsed = false;
     const preflight = await livePlan(target);
     assertNotCancelled();
     if (preflight.plan.configDigest !== initial.plan.configDigest || preflight.plan.preconditionDigest !== initial.plan.preconditionDigest || preflight.plan.planId !== initial.plan.planId) {
-      journal.status = 'stale'; journal.exitCode = 75; journal.finishedAt = new Date().toISOString();
-      journal.preflight = { snapshotId: preflight.snapshot.snapshotId, planId: preflight.plan.planId, configDigest: preflight.plan.configDigest };
-      journal.logs.push({ timestamp: journal.finishedAt, stream: 'system', line: 'preflight state changed after planning; no mutation was attempted' });
-      await atomicWrite(journalFile, journal);
-      return { runId, status: journal.status, exitCode: journal.exitCode, plan: initial.plan, journal: journalFile, stale: journal.preflight };
+      if (refreshWindows && preflight.plan.configDigest === initial.plan.configDigest) {
+        await consumeBudget(stateRoot, 'reconciliation', { env: executionLease.env });
+        const next = await sampleReplan(target, initial, journal.effects, { allowPreparation: true });
+        automaticReplanUsed = true;
+        journal.planRelations = [{ phase: 'preflight_replan', fromPlanId: initial.plan.planId, toPlanId: next.plan.planId }];
+        initial = next;
+        journal.plan = next.plan;
+        journal.layoutBefore = next.snapshot;
+        await atomicWrite(journal.envelopeFile, { plan: next.plan, desired: next.desired, machine: next.machine });
+      } else {
+        journal.status = 'stale'; journal.exitCode = 75; journal.finishedAt = new Date().toISOString();
+        journal.preflight = { snapshotId: preflight.snapshot.snapshotId, planId: preflight.plan.planId, configDigest: preflight.plan.configDigest };
+        journal.logs.push({ timestamp: journal.finishedAt, stream: 'system', line: 'preflight state changed after planning; no mutation was attempted' });
+        await atomicWrite(journalFile, journal);
+        return { runId, status: journal.status, exitCode: journal.exitCode, plan: initial.plan, journal: journalFile, stale: journal.preflight };
+      }
     }
     journal.status = 'running';
     await atomicWrite(journalFile, journal);
@@ -493,52 +542,42 @@ async function applyPlan(target) {
       await atomicWrite(journal.envelopeFile,{plan:next.plan,desired:next.desired,machine:next.machine});
       await atomicWrite(journalFile,journal);
     }
-    for (const step of initial.plan.executionSteps) {
-      assertNotCancelled();
-      await assertExecutionContext(initial,journal.effects);
-      journal.exitCode = await runCommand(step.command, journal, journalFile, step, 0);
-      await atomicWrite(journalFile, journal);
-      assertNotCancelled();
-      if (journal.exitCode !== 0) break;
-    }
-    if (journal.exitCode === 0) await waitForDesktopStateToSettle(initial.plan.executionSteps);
+    journal.exitCode = await runLayout(initial, journal, journalFile, 0, refreshWindows && !automaticReplanUsed);
     assertNotCancelled();
     let verification = await livePlan(target, initial);
     assertNotCancelled();
     journal.after = verification.snapshot;
     journal.verification = verification.comparison;
-    if (journal.exitCode === 0 && JSON.stringify(verification.plan.selectedWindows) === JSON.stringify(initial.plan.selectedWindows) && !verification.comparison.converged && verification.plan.executable && verification.plan.actions.length && initial.plan.recovery.automaticAttempts > 0 && !flags['no-reconcile']) {
-      await consumeBudget(stateRoot,'reconciliation',{env:executionLease.env});
-      const reconciliation = { type: 'reconciliation', status: 'running', startedAt: new Date().toISOString(), remaining: verification.comparison.counts, planId: verification.plan.planId };
+    const windowChange = journal.exitCode === WINDOWS_CHANGED_EXIT || journal.exitCode === 0 && !sameSelection(verification.plan, initial.plan);
+    const recoverWindowChange = refreshWindows && windowChange;
+    const reconcileGeometry = journal.exitCode === 0 && !windowChange && !verification.comparison.converged
+      && verification.plan.executable && verification.plan.actions.length;
+    if (!automaticReplanUsed && (recoverWindowChange || reconcileGeometry) && initial.plan.recovery.automaticAttempts > 0 && !flags['no-reconcile']) {
+      await consumeBudget(stateRoot, 'reconciliation', { env: executionLease.env });
+      const next = recoverWindowChange ? await sampleReplan(target, initial, journal.effects) : verification;
+      const reconciliation = { type: 'reconciliation', status: 'running', startedAt: new Date().toISOString(),
+        reason: recoverWindowChange ? 'window_state_changed' : 'remaining_layout', remaining: next.comparison.counts, planId: next.plan.planId };
       journal.steps.push(reconciliation);
-      journal.reconciliationPlan = verification.plan;
-      (journal.planRelations ||= []).push({phase:'reconciliation',fromPlanId:initial.plan.planId,toPlanId:verification.plan.planId});
+      journal.reconciliationPlan = next.plan;
+      (journal.planRelations ||= []).push({phase:'reconciliation',fromPlanId:initial.plan.planId,toPlanId:next.plan.planId});
+      await atomicWrite(journal.envelopeFile, { plan: next.plan, desired: next.desired, machine: next.machine });
       await atomicWrite(journalFile, journal);
-      await atomicWrite(journal.envelopeFile, { plan: verification.plan, desired: initial.desired, machine: initial.machine });
-      // Reconciliation authorizes a fresh set of actions, including cleanup of
-      // Spaces emptied by the first pass. Validate against that same plan.
-      const reconciliationContext = { ...initial, plan: verification.plan, snapshot: verification.snapshot };
-      for (const step of verification.plan.executionSteps) {
-        assertNotCancelled();
-        await assertExecutionContext(reconciliationContext,journal.effects);
-        journal.exitCode = await runCommand(step.command, journal, journalFile, step, 1);
-        await atomicWrite(journalFile, journal);
-        assertNotCancelled();
-        if (journal.exitCode !== 0) break;
-      }
-      if (journal.exitCode === 0) await waitForDesktopStateToSettle(verification.plan.executionSteps);
+      journal.exitCode = await runLayout(next, journal, journalFile, 1, false);
+      initial = next;
       verification = await livePlan(target, initial);
+      assertNotCancelled();
       journal.after = verification.snapshot;
       journal.verification = verification.comparison;
       reconciliation.status = journal.exitCode === 0 && verification.comparison.converged
-        && JSON.stringify(verification.plan.selectedWindows) === JSON.stringify(initial.plan.selectedWindows) ? 'completed' : 'failed';
+        && sameSelection(verification.plan, initial.plan) ? 'completed' : 'failed';
       reconciliation.exitCode = reconciliation.status === 'completed' ? 0 : journal.exitCode || 1;
       reconciliation.finishedAt = new Date().toISOString();
     }
-    journal.status = journal.exitCode === 0 && journal.verification.converged && JSON.stringify(verification.plan.selectedWindows) === JSON.stringify(initial.plan.selectedWindows) ? 'completed' : 'failed';
+    journal.status = journal.exitCode === 0 && journal.verification.converged && sameSelection(verification.plan, initial.plan) ? 'completed' : 'failed';
     if (journal.status === 'failed' && journal.exitCode === 0) journal.exitCode = 1;
     if (journal.status === 'failed') journal.error = [...journal.logs].reverse().find(l=>l.stream==='stderr' && l.line.startsWith('SpaceWright:'))?.line
-      || `layout verification did not converge: ${journal.verification.drifts.filter(d=>d.severity!=='warning').map(d=>d.code).join(', ')}`;
+      || (!sameSelection(verification.plan, initial.plan) ? 'selected windows changed during final verification'
+        : `layout verification did not converge: ${journal.verification.drifts.filter(d=>d.severity!=='warning').map(d=>d.code).join(', ')}`);
     journal.finishedAt = new Date().toISOString();
     await atomicWrite(journalFile, journal);
     return { runId, status: journal.status, exitCode: journal.exitCode, error:journal.error, plan: initial.plan, verification: journal.verification, journal: journalFile };
@@ -688,6 +727,10 @@ async function main() {
     }
     const result = await applyPlan(target);
     if (result.error) process.stderr.write(`[ERROR] ${result.error}\n`);
+    if (result.noop || result.status === 'completed') {
+      result.layoutIssues = layoutIssues(result.verification || result.comparison);
+      for (const issue of result.layoutIssues) process.stderr.write(`[WARN] ${issue.message}\n`);
+    }
     const label = result.status === 'completed' ? 'OK' : result.status === 'stale' ? 'STALE' : 'FAIL';
     flags.json ? print(result) : console.log(result.noop ? 'OK      target is already converged' : `${label}    run=${result.runId} journal=${result.journal}`);
     if (flags['verified-marker'] && (result.noop || result.status === 'completed')) console.log('SPACEWRIGHT_VERIFIED');

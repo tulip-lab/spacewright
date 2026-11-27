@@ -14,13 +14,14 @@ import YAML from 'yaml';
 import { compileSkhd, compileV2, migrateV1, starterConfig, validateV2 } from './lib/config-v2.mjs';
 import { compileV3, confirmDisplaySetup, currentDisplayBindings, describeDisplays, matchingSetups, migrateV2ToV3, resolveV3, resolveSetupDisplayBindings, rememberTopologyBindings, selectHardwareProfile, setupBindingStatus, starterV3, topologyKey, validateV3 } from './lib/config-v3.mjs';
 import { detectMacHardware } from './lib/hardware-detection.mjs';
-import { buildDesiredState, buildExecutionPlan, captureWorkspace, compareState, rebindSnapshotDisplays } from './lib/state-engine.mjs';
+import { buildDesiredState, captureWorkspace, compareState, rebindSnapshotDisplays } from './lib/state-engine.mjs';
+import { planDesktop } from './lib/live-plan.mjs';
 import { generationDocument, verifyRuntimeDocument, withConfigurationWrite, stableRead,atomicText, hash } from './lib/config-store.mjs';
-import { discoverState } from './lib/discovery.mjs';
+import { discoverDisplays, discoverState } from './lib/discovery.mjs';
 import { classifyTopology, matchingRules, ruleContext } from './lib/automation-policy.mjs';
 import { runWebTask, cancelWebTask } from './lib/task-coordinator.mjs';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { createAutomationMonitor } from './lib/automation-monitor.mjs';
+import { createAutomationMonitor, displayTopology } from './lib/automation-monitor.mjs';
 import { clearTransitionHistory, readTransitionHistory } from './lib/transition-history.mjs';
 import { readSpaceLabelHints } from './lib/space-label-history.mjs';
 
@@ -156,18 +157,12 @@ function configDiff(before, after, path = '$', changes = []) {
   return changes;
 }
 
-async function queryDisplays() {
-  try { const { stdout } = await execFileAsync('yabai', ['-m', 'query', '--displays'], { timeout: 10_000, maxBuffer: 1_000_000 }); return { displays: JSON.parse(stdout) }; }
-  catch (error) { return { displays: [], unavailable: true, message: error.message }; }
-}
-
 async function detectHardware() {
   return detectMacHardware();
 }
 
 async function v3SetupState(config, machineOverride = null) {
-  const [machine, hardware, displayResult] = await Promise.all([machineOverride || readMachine(), detectHardware(), queryDisplays()]);
-  const snapshot = { unavailable: displayResult.unavailable === true, message: displayResult.message, displays: displayResult.displays || [] };
+  const [machine, hardware, snapshot] = await Promise.all([machineOverride || readMachine(), detectHardware(), discoverDisplays()]);
   const hardwareSelection = selectHardwareProfile(config, machine, hardware);
   const key = topologyKey(describeDisplays(snapshot, machine));
   const confirmedSetup = machine.topologySelections?.[key] || null;
@@ -225,16 +220,15 @@ async function livePlan(config, payload) {
     resolution = resolveV3(config, { machine, hardware, snapshot });
     effectiveConfig = resolution.v2;
     snapshot = rebindSnapshotDisplays(snapshot, resolution.displayBindings);
-    if (target.kind === 'workspace' && !target.mode) {
-      target = { ...target, mode: config.hardwareProfiles[resolution.hardwareProfileId].setups[resolution.setupId].compatibilityMode };
-    }
+    const mode = config.hardwareProfiles[resolution.hardwareProfileId].setups[resolution.setupId].compatibilityMode;
+    if (target.kind === 'workspace' && !target.mode) target = { ...target, mode };
+    if (target.kind === 'mode' && target.id === 'auto') target = { kind: 'mode', id: mode, mode };
   }
-  let desired = buildDesiredState(effectiveConfig, compileV2(effectiveConfig), target, snapshot);
-  const spaceLabelHints = await readSpaceLabelHints(stateRoot, desired, snapshot);
-  if (Object.keys(spaceLabelHints).length) desired = buildDesiredState(effectiveConfig, compileV2(effectiveConfig), target, snapshot, { spaceLabelHints });
-  const comparison = compareState(snapshot, desired, machine, { spaceLabelHints, displayBindings: resolution?.displayBindings });
-  const plan = buildExecutionPlan(snapshot, desired, comparison);
-  return { validation, snapshot, desired, comparison, plan, resolution: resolution ? {
+  const pinnedMachine = resolution ? { ...machine, displayBindings: resolution.displayBindings } : machine;
+  if (resolution) delete pinnedMachine.topologyBindings;
+  const planning = await planDesktop({ config: effectiveConfig, runtime: compileV2(effectiveConfig), target, snapshot,
+    machine: pinnedMachine, stateRoot });
+  return { validation, snapshot, ...planning, resolution: resolution ? {
     hardwareProfileId: resolution.hardwareProfileId,
     setupId: resolution.setupId,
     topologyKey: resolution.topologyKey
@@ -301,7 +295,7 @@ async function commandCheck(command, args = ['--version']) {
 }
 
 function taskView(task) {
-  return { id: task.id, kind: task.kind, target: task.target, mode: task.mode, status: task.status, createdAt: task.createdAt, startedAt: task.startedAt, finishedAt: task.finishedAt, exitCode: task.exitCode, logs: task.logs.slice(-300) };
+  return { id: task.id, kind: task.kind, target: task.target, mode: task.mode, status: task.status, createdAt: task.createdAt, startedAt: task.startedAt, finishedAt: task.finishedAt, exitCode: task.exitCode, layoutIssues: task.layoutIssues || [], logs: task.logs.slice(-300) };
 }
 
 function appendTaskLog(task, line) {
@@ -478,7 +472,7 @@ async function api(request, response, url) {
     const hardwareProfileId = payload.hardwareProfile; const setupId = payload.setup;
     if (!config.hardwareProfiles?.[hardwareProfileId]?.setups?.[setupId]) return json(response, 422, { error: 'valid hardwareProfile and setup are required' });
     const currentMachine=normalizedMachine(document.machine);
-    const [hardware, displayResult] = await Promise.all([detectHardware(), queryDisplays()]);
+    const [hardware, displayResult] = await Promise.all([detectHardware(), discoverDisplays()]);
     if (displayResult.unavailable) return json(response, 503, { error: displayResult.message });
     const provisional = { ...currentMachine, displayKinds: { ...currentMachine.displayKinds, ...payload.displayKinds } };
     const snapshot = { unavailable: false, displays: displayResult.displays };
@@ -692,11 +686,14 @@ async function api(request, response, url) {
     let currentPlan;
     try { currentPlan = await livePlan(config, payload); } catch (error) { return json(response, 422, { error: error.message }); }
     if (!currentPlan.validation.valid) return json(response, 422, currentPlan.validation);
-    if (currentPlan.plan.planId !== payload.expectedPlanId || currentPlan.plan.configDigest !== payload.expectedConfigDigest || false /* full snapshot is diagnostic; stable plan carries relevant preconditions */) {
+    if (currentPlan.plan.planId !== payload.expectedPlanId || currentPlan.plan.configDigest !== payload.expectedConfigDigest) {
       return json(response, 409, { error: 'the configuration or desktop changed after preview; review the refreshed plan before running', code: 'plan_stale', plan: currentPlan.plan, comparison: currentPlan.comparison });
     }
-    const executionPayload = config.version === 3 && payload.kind === 'workspace' && !payload.mode
-      ? { ...payload, mode: currentPlan.plan.target.mode }
+    if (!currentPlan.plan.executable) return json(response, 422, {
+      error: 'resolve the plan blockers before running', code: 'plan_blocked', blockers: currentPlan.plan.blockers
+    });
+    const executionPayload = config.version === 3 && (payload.kind === 'mode' && payload.target === 'auto' || payload.kind === 'workspace' && !payload.mode)
+      ? { ...payload, target: currentPlan.plan.target.id, mode: currentPlan.plan.target.mode }
       : payload;
     let execution; try { execution = commandsForExecution(currentPlan.effectiveConfig || config, executionPayload); } catch (error) { return json(response, 422, { error: error.message }); }
     for (const command of execution.commands) command.push(`--expected-plan-id=${payload.expectedPlanId}`, `--expected-config-digest=${payload.expectedConfigDigest}`, `--expected-snapshot-id=${payload.expectedSnapshotId}`);
@@ -706,7 +703,7 @@ async function api(request, response, url) {
   }
   if (url.pathname.match(/^\/api\/tasks\/[a-f0-9]+$/) && request.method === 'GET') { const id = url.pathname.split('/').at(-1); const task = tasks.get(id); return task ? json(response, 200, { task: taskView(task) }) : json(response, 404, { error: 'task not found' }); }
   if (url.pathname.match(/^\/api\/tasks\/[a-f0-9]+\/cancel$/) && request.method === 'POST') { const id = url.pathname.split('/')[3]; const task = tasks.get(id); if (!task) return json(response, 404, { error: 'task not found' }); if (!['queued', 'running'].includes(task.status)) return json(response, 409, { error: 'task is no longer running' }); cancelWebTask(task); appendTaskLog(task, 'SYSTEM cancellation requested'); return json(response, 200, { task: taskView(task) }); }
-  if (url.pathname === '/api/topology' && request.method === 'GET') { const result = await queryDisplays(); return json(response, 200, { ...result, topology: classifyTopology(result.displays), mutates: false }); }
+  if (url.pathname === '/api/topology' && request.method === 'GET') { const result = await discoverDisplays(); return json(response, 200, { ...result, topology: classifyTopology(result.displays), mutates: false }); }
   if (url.pathname === '/api/diagnostics' && request.method === 'GET') {
     const selectedPath = existsSync(configV3File) ? configV3File : configFile;
     let document = null, loadingError = null;
@@ -915,7 +912,7 @@ async function api(request, response, url) {
     });
   }
   if (url.pathname === '/api/displays' && request.method === 'GET') {
-    return json(response, 200, { ...(await queryDisplays()), mutates: false });
+    return json(response, 200, { ...(await discoverDisplays()), mutates: false });
   }
   if (url.pathname === '/api/apps' && request.method === 'GET') {
     try {
@@ -972,27 +969,38 @@ server.listen(listenPort, '127.0.0.1', async () => {
   if (!process.argv.includes('--no-open')) execFile('open', [url], () => {});
 });
 
-const monitor = createAutomationMonitor({readConfig:readOperationalConfig,querySnapshot,activity,executeRule,
+const monitor = createAutomationMonitor({
+  readContext: async () => {
+    const { config, machine, version } = await setupDocument();
+    return { config: version ? config : unsavedStarterConfig, machine: normalizedMachine(machine) };
+  },
+  queryDisplays: discoverDisplays,
+  querySnapshot: discoverState,
+  activity,
+  executeRule,
   activateSetup: async (topology, stopped) => {
     if(!existsSync(configV3File))return false;
-    await serializeConfigWrite(async () => {
-      if(stopped())return;
-      const document=await activeDocument();
-      if(document.version!==3)return;
+    return serializeConfigWrite(async () => {
+      if(stopped())return false;
+      const document=await setupDocument();
+      if(document.version!==3)return false;
       const setupState=await v3SetupState(document.config,normalizedMachine(document.machine));
-      if(stopped())return;
+      if(stopped() || displayTopology(setupState.snapshot, document.config, setupState.machine)?.signature !== topology.signature) return false;
       if(!setupState.ready) {
-        await activity('info','v3_topology_confirmation_required',{topologyKey:setupState.topologyKey,candidates:setupState.setupCandidates});return;
+        await activity('info','v3_topology_confirmation_required',{topologyKey:setupState.topologyKey,candidates:setupState.setupCandidates});
+        return true;
       }
       const machine={...setupState.machine,activeSetup:setupState.confirmedSetup};
       const runtime=compiledV3Document(document.config,{machine,hardware:setupState.hardware,snapshot:setupState.snapshot},document.source);
       await assertSetupDocument(document);
-      await atomicWrite(machineFile,`${JSON.stringify(machine,null,2)}\n`);
+      if (JSON.stringify(machine) !== JSON.stringify(document.machine)) {
+        await atomicWrite(machineFile, `${JSON.stringify(machine,null,2)}\n`);
+      }
       await atomicWrite(runtimeFile,`${JSON.stringify(runtime,null,2)}\n`);
       await verifySetupWrite(document,machine,runtime);
       await activity('info','v3_setup_activated',{hardwareProfile:setupState.hardwareSelection.id,setup:setupState.confirmedSetup,topologyKey:setupState.topologyKey});
+      return true;
     });
-    return true;
   }
 });
 monitor.start();
